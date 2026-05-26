@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: vault-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: vault
+      POSTGRES_DB: vault
+    ports:
+      - "5432:5432"
+    volumes:
+      - vault_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  vault_pg_data:
