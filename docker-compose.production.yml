@@ -1,5 +1,7 @@
+name: vault
+
 services:
-  vault-web:
+  web:
     build:
       context: .
       target: runner
@@ -8,44 +10,60 @@ services:
     env_file:
       - path: .env.production
         required: false
-    depends_on:
-      vault-postgres:
-        condition: service_healthy
     ports:
-      - "3000:3000"
+      # Bind locally on the mini-PC. Expose publicly only through FRP + VPC Caddy.
+      - "127.0.0.1:18210:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vault_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  vault-migrate:
+  migrate:
     build:
       context: .
       target: builder
     container_name: vault-migrate
+    restart: "no"
     env_file:
       - path: .env.production
         required: false
     depends_on:
-      vault-postgres:
+      postgres:
         condition: service_healthy
-    command: npm run db:migrate
+    command: ["npm", "run", "db:migrate"]
+    networks:
+      - vault_internal
     profiles:
       - migrate
 
-  vault-postgres:
-    image: postgres:16
+  postgres:
+    image: postgres:16-alpine
     container_name: vault-postgres
     restart: unless-stopped
     environment:
+      POSTGRES_DB: vault
       POSTGRES_USER: vault
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: vault
     volumes:
-      - vault_postgres_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
+      - vault_postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - vault_internal
 
 volumes:
-  vault_postgres_data:
+  vault_postgres:
+
+networks:
+  vault_internal:
+    driver: bridge
