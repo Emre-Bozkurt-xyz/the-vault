@@ -27,6 +27,12 @@ const updateDocumentSchema = z.object({
   contentJson: z.string().max(1_000_000),
 });
 
+const saveDocumentDraftSchema = z.object({
+  documentId: documentIdSchema,
+  title: z.string().trim().min(1, "Title is required").max(200),
+  content: z.unknown(),
+});
+
 const shareDocumentSchema = z.object({
   documentId: documentIdSchema,
   email: z.string().trim().email(),
@@ -60,6 +66,16 @@ function parseDocumentContent(contentJson: string) {
   }
 
   return parsed;
+}
+
+function validateDocumentContent(content: unknown) {
+  const contentJson = JSON.stringify(content);
+
+  if (contentJson.length > 1_000_000 || !isProseMirrorDoc(content)) {
+    throw new Error("Invalid document content");
+  }
+
+  return content;
 }
 
 function normalizeFriendPair(userA: string, userB: string) {
@@ -126,6 +142,61 @@ export async function updateDocumentAction(formData: FormData) {
     .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)));
 
   redirect(`/docs/${input.documentId}`);
+}
+
+export async function saveDocumentDraftAction(
+  input: unknown,
+): Promise<
+  | { ok: true; updatedAt: string }
+  | { ok: false; message: string }
+> {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const parsed = saveDocumentDraftSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Check the title and try saving again.",
+    };
+  }
+
+  let content;
+
+  try {
+    content = validateDocumentContent(parsed.data.content);
+  } catch {
+    return {
+      ok: false,
+      message: "This document is too large or has invalid content.",
+    };
+  }
+
+  const allowed = await canEditDocument(session.user.id, parsed.data.documentId);
+
+  if (!allowed) {
+    notFound();
+  }
+
+  await db
+    .update(documents)
+    .set({
+      title: parsed.data.title,
+      content,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+    );
+
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export async function archiveDocumentAction(formData: FormData) {

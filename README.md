@@ -1,17 +1,77 @@
 # Vault
 
-Vault is a self-hosted collaborative document and note platform.
+Vault is a self-hosted collaborative document platform with OAuth login, rich-text editing, private/public publishing, friend-based sharing, and server-enforced document permissions.
 
-Current MVP features:
+Live target:
 
-- GitHub OAuth with Auth.js.
-- PostgreSQL persistence with Drizzle ORM.
-- Private documents with server-side permission checks.
+```txt
+https://vault.ems-place.com
+```
+
+## Features
+
+- GitHub OAuth with Auth.js and database-backed sessions.
+- PostgreSQL persistence through Drizzle ORM.
 - Tiptap rich-text editing stored as ProseMirror JSONB.
-- Viewer/editor/owner document roles.
-- Basic document sharing and friend requests.
-- Public read-only document publishing.
-- Docker Compose local Postgres and production deployment scaffolding.
+- Autosave plus manual save status in the editor.
+- Private documents with server-side read/write/share checks.
+- Owner/editor/viewer document roles.
+- Friend requests and friend-based sharing.
+- Public read-only document publishing through stable slugs.
+- Dockerized production app and Postgres services.
+- GitHub Actions entrypoint for server-side deployment.
+- Health endpoint for service and database checks.
+
+## Architecture
+
+```txt
+Browser
+  |
+  | HTTPS
+  v
+Cloudflare DNS
+  |
+  v
+DigitalOcean VPS
+  |
+  | Caddy reverse proxy
+  v
+FRP tunnel
+  |
+  v
+Mini-PC Docker Compose
+  |
+  +-- vault-web
+  +-- vault-postgres
+```
+
+The main app is a Next.js App Router project. Server components and server actions handle authenticated document reads, writes, sharing, publishing, and dashboard data. PostgreSQL stores users, sessions, documents, collaborator roles, friend requests, friendships, and public slugs.
+
+## Security Model
+
+Vault treats document authorization as a server-side concern. Every private document read or write goes through the session user and permission helpers before returning content or mutating data. Inaccessible private documents return a not-found response to avoid leaking document existence. Public documents are served only through the dedicated read-only public route and only when visibility is explicitly set to `public`.
+
+Roles:
+
+```txt
+owner  - read, edit, archive, share, publish
+editor - read, edit
+viewer - read only
+```
+
+## Tech Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- shadcn/ui
+- Auth.js / NextAuth v5
+- PostgreSQL 16
+- Drizzle ORM
+- Tiptap / ProseMirror
+- Docker Compose
+- Caddy, FRP, Cloudflare DNS
 
 ## Local Development
 
@@ -44,36 +104,64 @@ GitHub OAuth callback:
 http://localhost:3000/api/auth/callback/github
 ```
 
-## Production Shape
+## Production Deployment
 
-Production target:
+Production is handled by GitHub Actions on a self-hosted mini-PC runner. The workflow calls a server-local deployment script at:
 
 ```txt
-https://vault.ems-place.com
+/opt/apps/vault/repo/scripts/deploy.sh
 ```
 
-Services:
-
-- `vault-web`
-- `vault-postgres`
-- `vault-migrate` one-off migration profile
+That script is intentionally server-managed for now. The repo contains the production Dockerfile and Compose file used by the deployment.
 
 Run migrations:
 
 ```bash
-docker compose -f docker-compose.production.yml --profile migrate run --rm vault-migrate
+docker compose -f docker-compose.production.yml --profile migrate run --rm migrate
 ```
 
 Start production services:
 
 ```bash
-docker compose -f docker-compose.production.yml up -d vault-postgres vault-web
+docker compose -f docker-compose.production.yml up -d postgres web
 ```
+
+Required production env, stored only on the server:
+
+```env
+NODE_ENV=production
+NEXTAUTH_URL=https://vault.ems-place.com
+AUTH_SECRET=<strong secret>
+GITHUB_CLIENT_ID=<github oauth client id>
+GITHUB_CLIENT_SECRET=<github oauth secret>
+POSTGRES_PASSWORD=<strong password>
+DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
+```
+
+Production GitHub OAuth callback:
+
+```txt
+https://vault.ems-place.com/api/auth/callback/github
+```
+
+Health check:
+
+```bash
+curl https://vault.ems-place.com/api/health
+```
+
+## Backups
 
 Create a backup:
 
 ```bash
 bash scripts/backup-db.sh
+```
+
+Restore from a backup:
+
+```bash
+bash scripts/restore-db.sh backups/<backup-file>.sql
 ```
 
 On Windows/PowerShell against the local dev compose file:
@@ -83,3 +171,18 @@ $env:COMPOSE_FILE="docker-compose.yml"
 $env:POSTGRES_SERVICE_NAME="postgres"
 .\scripts\backup-db.ps1
 ```
+
+## Portfolio Notes
+
+Resume-ready summary:
+
+```txt
+Built and deployed Vault, a self-hosted collaborative document platform using Next.js, TypeScript, PostgreSQL, Drizzle ORM, Auth.js OAuth authentication, server-enforced role-based permissions, and a Docker/Caddy/FRP home-lab deployment pipeline.
+```
+
+Roadmap:
+
+- Verify production OAuth and full document flow on `vault.ems-place.com`.
+- Add screenshots after production flow verification.
+- Add full-text search and richer document organization.
+- Add real-time collaboration with Yjs after the MVP permission model is stable.

@@ -364,7 +364,7 @@ Subdomain is cleaner.
 | [x] | Add viewer mode |
 | [x] | Add public document render |
 | [x] | Add dirty/saved state |
-| [ ] | Add autosave, optional |
+| [x] | Add autosave, optional |
 
 ---
 

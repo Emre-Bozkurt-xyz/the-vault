@@ -1,14 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { Save } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
 
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
 import { editorExtensions } from "@/components/editor/editor-extensions";
 import { Button } from "@/components/ui/button";
 import type { ProseMirrorDoc } from "@/lib/editor-content";
-import { updateDocumentAction } from "@/server/documents";
+import { saveDocumentDraftAction } from "@/server/documents";
 
 type VaultEditorProps = {
   documentId: string;
@@ -17,8 +17,13 @@ type VaultEditorProps = {
 };
 
 export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
-  const contentInputRef = useRef<HTMLInputElement>(null);
+  const [titleValue, setTitleValue] = useState(title);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const titleValueRef = useRef(title);
+  const savingRef = useRef(false);
 
   const editor = useEditor({
     extensions: editorExtensions,
@@ -33,22 +38,94 @@ export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
     onUpdate: () => setDirty(true),
   });
 
+  const saveDocument = useCallback(async () => {
+    if (!editor || savingRef.current) {
+      return;
+    }
+
+    const contentJson = JSON.stringify(editor.getJSON());
+    const titleAtSave = titleValueRef.current;
+
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+
+    const result = await saveDocumentDraftAction({
+      documentId,
+      title: titleAtSave,
+      content: editor.getJSON(),
+    });
+
+    savingRef.current = false;
+    setSaving(false);
+
+    if (!result.ok) {
+      setSaveError(result.message);
+      setDirty(true);
+      return;
+    }
+
+    setLastSavedAt(new Date(result.updatedAt));
+
+    const currentContentJson = JSON.stringify(editor.getJSON());
+    setDirty(
+      titleValueRef.current !== titleAtSave || currentContentJson !== contentJson,
+    );
+  }, [documentId, editor]);
+
+  useEffect(() => {
+    if (!dirty || !editor || saving) {
+      return;
+    }
+
+    const autosaveTimer = window.setTimeout(() => {
+      void saveDocument();
+    }, 1500);
+
+    return () => window.clearTimeout(autosaveTimer);
+  }, [dirty, editor, saveDocument, saving, titleValue]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveDocument();
+  }
+
+  const statusIcon = saving ? (
+    <Loader2 data-icon="inline-start" className="animate-spin" />
+  ) : saveError ? (
+    <AlertCircle data-icon="inline-start" />
+  ) : dirty ? (
+    <Save data-icon="inline-start" />
+  ) : (
+    <CheckCircle2 data-icon="inline-start" />
+  );
+
+  const statusText = saving
+    ? "Saving..."
+    : saveError
+      ? saveError
+      : dirty
+        ? "Unsaved changes"
+        : lastSavedAt
+          ? `Saved ${lastSavedAt.toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })}`
+          : "Saved";
+
   return (
     <form
-      action={updateDocumentAction}
+      onSubmit={handleSubmit}
       className="grid gap-5"
-      onSubmit={() => {
-        if (contentInputRef.current && editor) {
-          contentInputRef.current.value = JSON.stringify(editor.getJSON());
-        }
-      }}
     >
-      <input type="hidden" name="documentId" value={documentId} />
-      <input ref={contentInputRef} type="hidden" name="contentJson" />
       <input
         name="title"
-        defaultValue={title}
-        onChange={() => setDirty(true)}
+        value={titleValue}
+        onChange={(event) => {
+          titleValueRef.current = event.target.value;
+          setTitleValue(event.target.value);
+          setDirty(true);
+        }}
         className="w-full bg-transparent text-4xl font-semibold tracking-tight outline-none"
         aria-label="Document title"
       />
@@ -57,11 +134,12 @@ export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
         <EditorContent editor={editor} />
       </div>
       <div className="flex flex-col justify-between gap-3 border-t border-border pt-5 sm:flex-row">
-        <p className="text-sm text-muted-foreground">
-          {dirty ? "Unsaved changes" : "Saved"}
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          {statusIcon}
+          {statusText}
         </p>
-        <Button type="submit" onClick={() => setDirty(false)}>
-          <Save className="size-4" />
+        <Button type="submit" disabled={!dirty || saving || !editor}>
+          <Save data-icon="inline-start" />
           Save
         </Button>
       </div>

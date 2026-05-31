@@ -371,11 +371,11 @@ Manual tests:
 |---|---|
 | [ ] | Auth secret set in production |
 | [ ] | OAuth callback URL is correct |
-| [ ] | Session includes user ID |
-| [ ] | Server actions check auth |
-| [ ] | Server actions check role |
-| [ ] | Private docs do not leak |
-| [ ] | Public route only renders public docs |
-| [ ] | Share action owner-only |
-| [ ] | Publish action owner-only |
-| [ ] | Email addresses not exposed publicly |
+| [x] | Session includes user ID |
+| [x] | Server actions check auth |
+| [x] | Server actions check role |
+| [x] | Private docs do not leak |
+| [x] | Public route only renders public docs |
+| [x] | Share action owner-only |
+| [x] | Publish action owner-only |
+| [x] | Email addresses not exposed publicly |

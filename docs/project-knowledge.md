@@ -13,19 +13,19 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-05-26
+2026-05-31
 ```
 
 Current phase:
 
 ```txt
-Phase 0 — Bootstrap
+Phase 6 - Deployment verification and MVP polish
 ```
 
 Current deployment status:
 
 ```txt
-Not deployed yet
+GitHub Actions deploy path exists for the production server; live flow still needs manual verification.
 ```
 
 Current MVP status:
@@ -37,7 +37,7 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized local Postgres, Tiptap document editing, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, and a health endpoint that checks database connectivity.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized Postgres, Tiptap document editing with autosave, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, and GitHub Actions deployment wiring for the production server.
 ```
 
 ---
@@ -62,7 +62,7 @@ Database:
   - PostgreSQL 16 via Docker Compose
 
 ORM:
-  - Drizzle ORM configured, first real schema/migration pending
+  - Drizzle ORM with schema and migrations
 
 Auth:
   - Auth.js / NextAuth v5 beta
@@ -72,12 +72,14 @@ Auth:
 Editor:
   - Tiptap
   - ProseMirror JSON stored in Postgres JSONB
+  - Debounced autosave plus manual save
 
 Realtime collaboration:
   - Not implemented; intentionally post-MVP
 
 Deployment:
-  - Local dev only
+  - Production Docker/Compose scaffolding
+  - GitHub Actions workflow targeting a self-hosted mini-PC runner
 ```
 
 Notes:
@@ -104,6 +106,7 @@ vault/
       friends/
       settings/
     docs/[docId]/
+    healthz/
     login/
     public/[slug]/
   components/
@@ -116,6 +119,7 @@ vault/
   server/
   docs/
   public/
+  .github/workflows/
 ```
 
 Add notes as real files appear:
@@ -129,8 +133,10 @@ Add notes as real files appear:
 | `app/dashboard/friends/page.tsx` | Protected friend request/friend list page |
 | `app/dashboard/settings/page.tsx` | Protected account/settings page |
 | `app/docs/[docId]/page.tsx` | Protected document edit/view route |
+| `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub OAuth sign-in page |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
+| `.github/workflows/deploy.yml` | Production deploy workflow for the self-hosted mini-PC runner |
 | `app/loading.tsx` | Global loading skeleton |
 | `app/not-found.tsx` | Global not-found page for missing/private/unpublished docs |
 | `app/error.tsx` | Global recoverable error page |
@@ -157,7 +163,7 @@ Add notes as real files appear:
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `docs/` | Planning and project knowledge |
 | `docker-compose.yml` | Local Postgres service |
-| `docker-compose.production.yml` | Production web/postgres/migration compose file |
+| `docker-compose.production.yml` | Production web/postgres/migration compose file with `/api/health` container healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
 | `scripts/backup-db.sh` | Bash Postgres backup script |
 | `scripts/backup-db.ps1` | PowerShell Postgres backup script |
@@ -410,6 +416,7 @@ Current routes:
 | `/login` | Implemented | GitHub OAuth sign-in |
 | `/api/auth/[...nextauth]` | Implemented | Auth.js handlers |
 | `/api/health` | Implemented | App and database health check |
+| `/healthz` | Implemented | App-only lightweight health check |
 | `/dashboard` | Protected placeholder | Server-side auth guard redirects logged-out users to `/login` |
 | `/dashboard/friends` | Implemented | Friend request and friend list page |
 | `/dashboard/settings` | Implemented | Account/settings page |
@@ -429,7 +436,7 @@ Known document caveats:
 Current editor status:
 
 ```txt
-Tiptap editor implemented with manual save.
+Tiptap editor implemented with debounced autosave and manual save.
 ```
 
 Editor library:
@@ -462,13 +469,13 @@ Supported editor features:
 | Blockquote | Yes |
 | Link | Partial |
 | Read-only mode | Yes |
-| Save status | Basic dirty/saved text |
-| Autosave | No |
+| Save status | Saved/saving/unsaved/error status |
+| Autosave | Yes |
 
 Known editor caveats:
 
 ```txt
-- Manual save only; autosave is not implemented.
+- Autosave is debounced and writes through the same server-side permission checks as manual save.
 - Link editing UI is not implemented yet, but Tiptap autolink is enabled and read-only rendering supports link marks.
 ```
 
@@ -548,7 +555,7 @@ Known public note caveats:
 Current deployment status:
 
 ```txt
-Not deployed; production Docker/Compose scaffolding exists.
+GitHub Actions deploy workflow exists and calls a server-local mini-PC deploy script; production flow still needs manual verification.
 ```
 
 Production domain:
@@ -561,9 +568,9 @@ Current services:
 
 | Service | Location | Port | Status |
 |---|---|---:|---|
-| `vault-web` | local dev / future mini-PC Docker | 3000 | Runs with `npm run dev`; production image builds |
-| `vault-postgres` | local Docker / future mini-PC Docker | 5432 | Created for local dev |
-| `vault-migrate` | future mini-PC Docker | n/a | Production compose profile for `npm run db:migrate` |
+| `vault-web` | local dev / mini-PC Docker | 3000 in container, `127.0.0.1:18210` host bind | Runs with `npm run dev`; production image builds |
+| `vault-postgres` | local Docker / mini-PC Docker | 5432 internal | Created for local dev and production compose |
+| `vault-migrate` | mini-PC Docker | n/a | Production compose profile for `npm run db:migrate` |
 | `vault-redis` | mini-PC Docker | 6379 | Post-MVP |
 | `vault-collab` | mini-PC Docker | TBD | Post-MVP |
 
@@ -588,7 +595,7 @@ Not configured yet
 Migration command:
 
 ```bash
-docker compose -f docker-compose.production.yml --profile migrate run --rm vault-migrate
+docker compose -f docker-compose.production.yml --profile migrate run --rm migrate
 ```
 
 Backup command:
@@ -609,6 +616,7 @@ Known deployment caveats:
 
 ```txt
 - `.env.production` is intentionally not committed. Create it on the deployment host.
+- `.github/workflows/deploy.yml` calls `/opt/apps/vault/repo/scripts/deploy.sh`; that deploy script currently exists only on the server.
 - Bash backup scripts need Docker available in the shell environment. On this Windows machine, WSL Bash could not see Docker Desktop; the PowerShell backup script works locally.
 ```
 
@@ -646,8 +654,9 @@ Manual checks:
 | Deployment | `docker compose -f docker-compose.production.yml config` validates with placeholder `POSTGRES_PASSWORD` | Passed | 2026-05-26 |
 | Deployment | `docker build --target runner -t vault:test .` succeeds | Passed | 2026-05-26 |
 | Backups | `scripts/backup-db.ps1` creates a local Postgres dump | Passed | 2026-05-26 |
+| Editor | Autosave implementation builds and lints | Passed | 2026-05-31 |
 | Deployment | Production domain loads | Not tested |  |
-| Backups | DB backup created | Not tested |  |
+| Deployment | GitHub Actions deploy script exists on server | User-reported | 2026-05-31 |
 
 ---
 
@@ -695,7 +704,7 @@ Keep this short and current.
 ```txt
 1. Test real GitHub sign-in creates a `users` row and database session.
 2. Create, save, reopen, share, publish, unpublish, friend, and archive through the browser.
-3. Add form-level validation messages/toasts and complete deployment host configuration.
+3. Verify GitHub Actions deployment, production migrations, restart persistence, and OAuth callback on `vault.ems-place.com`.
 ```
 
 ---
@@ -721,3 +730,5 @@ Use this as a compact implementation log.
 | 2026-05-26 | Verified Windows backup path | PowerShell backup script created a local Postgres dump; Bash script needs Docker-visible shell environment |
 | 2026-05-26 | Added public-note and route polish | Added public badges, copy-public-link button, global loading state, not-found page, and error page |
 | 2026-05-26 | Removed dashboard noop controls | Sidebar labels are now anchors/routes, Public Notes has real data, and Settings is a real protected page |
+| 2026-05-31 | Added editor autosave and portfolio docs polish | Debounced autosave uses server-side permission checks; README now documents architecture, security, deployment, and resume positioning |
+| 2026-05-31 | Fixed production healthcheck target | Production compose now checks `/api/health` instead of a missing `/healthz` route |

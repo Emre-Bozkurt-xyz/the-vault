@@ -417,4 +417,4 @@ Useful seed data:
 | [x] | friendships table created |
 | [x] | migrations run locally |
 | [ ] | migrations run in production |
-| [~] | indexes added |
+| [x] | indexes added |

@@ -17,12 +17,12 @@ Legend:
 
 | Status | Task | Notes |
 |---|---|---|
-| [ ] | Create GitHub repo | `vault` |
+| [x] | Create GitHub repo | Remote exists at `https://github.com/Emre-Bozkurt-xyz/the-vault.git` |
 | [x] | Create Next.js app | TypeScript + App Router |
 | [x] | Install Tailwind | Tailwind v4 from create-next-app/shadcn |
 | [x] | Install shadcn/ui | Added Button, Card, Dialog, Input, Dropdown Menu, Avatar, Badge, Textarea |
 | [x] | Add Docker Compose Postgres | Local dev database via `docker-compose.yml` |
-| [~] | Add Drizzle ORM | Config and DB client added; first real schema/migration still pending |
+| [x] | Add Drizzle ORM | Config, DB client, schema, and migrations exist |
 | [x] | Add `.env.example` | No real secrets |
 | [x] | Add `/api/health` | Checks app and database connectivity |
 | [x] | Add basic landing page | Public homepage |
@@ -72,7 +72,7 @@ Dashboard is protected.
 | [x] | Add Tiptap editor | JSON storage |
 | [x] | Add title editing | Save title |
 | [x] | Add save button | Manual save first |
-| [ ] | Add autosave | Optional after manual save |
+| [x] | Add autosave | Debounced editor autosave plus manual save status |
 | [x] | Add soft delete | `deleted_at` |
 | [x] | Add empty state UI | Better polish |
 
@@ -114,7 +114,7 @@ Owner/editor/viewer behavior works.
 |---|---|---|
 | [x] | Create friend_requests table | requester, recipient, status |
 | [x] | Create friendships table | normalized pair |
-| [~] | Add user search | Send request by exact registered email |
+| [x] | Add user search | Exact registered email lookup for friend requests |
 | [x] | Send friend request | Prevents self, duplicates, existing friendship |
 | [x] | Accept friend request | Creates friendship |
 | [x] | Reject friend request | Updates request |
@@ -167,7 +167,7 @@ Public page is read-only.
 | [ ] | Update OAuth callback URLs | production callback |
 | [ ] | Verify HTTPS | Caddy certificate |
 | [ ] | Verify WebSocket compatibility | Needed later for Yjs |
-| [ ] | Add health check monitoring | `/api/health` |
+| [x] | Add health check monitoring | Production Docker healthcheck now calls `/api/health`; external uptime monitoring still optional |
 | [x] | Add backup script | Bash and PowerShell Postgres dump scripts |
 
 Exit criteria:
@@ -235,5 +235,5 @@ Unauthorized users cannot connect.
 | [x] | Public notes work |
 | [ ] | Database survives container restart |
 | [x] | Backup script tested |
-| [ ] | README has architecture diagram |
-| [ ] | Resume bullets drafted |
+| [x] | README has architecture diagram |
+| [x] | Resume bullets drafted |

@@ -25,9 +25,18 @@ Docker Compose on mini-PC
 MVP:
 
 ```txt
-vault-web
-vault-postgres
+web container: vault-web
+postgres container: vault-postgres
+migrate one-off container: vault-migrate
 ```
+
+Deployments are triggered by GitHub Actions on a self-hosted mini-PC runner. The workflow in `.github/workflows/deploy.yml` calls a server-local script:
+
+```txt
+/opt/apps/vault/repo/scripts/deploy.sh
+```
+
+That script is currently managed on the server, not committed in this repo.
 
 Later:
 
@@ -53,7 +62,7 @@ services:
     depends_on:
       - vault-postgres
     ports:
-      - "3000:3000"
+      - "127.0.0.1:18210:3000"
 
   vault-postgres:
     image: postgres:16
@@ -242,7 +251,7 @@ Options:
 SSH into mini-PC or deploy directory:
 
 ```bash
-docker compose exec vault-web npm run db:migrate
+docker compose -f docker-compose.production.yml --profile migrate run --rm migrate
 ```
 
 ### Init job
@@ -353,8 +362,8 @@ cat "$BACKUP_FILE" | docker compose exec -T vault-postgres psql \
 
 | Status | Item |
 |---|---|
-| [ ] | Production Dockerfile added |
-| [ ] | Production compose works locally |
+| [x] | Production Dockerfile added |
+| [x] | Production compose works locally |
 | [ ] | `.env.production` created on mini-PC |
 | [ ] | Postgres volume persists |
 | [ ] | Migrations run |
@@ -366,8 +375,8 @@ cat "$BACKUP_FILE" | docker compose exec -T vault-postgres psql \
 | [ ] | Login works |
 | [ ] | Document create/edit works |
 | [ ] | Restart containers and verify data persists |
-| [ ] | Backup script works |
-| [ ] | Health endpoint works |
+| [x] | Backup script works |
+| [x] | Health endpoint works |
 
 ---
 
