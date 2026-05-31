@@ -213,4 +213,28 @@
     height: 0;
     pointer-events: none;
   }
+
+  .vault-collab-caret {
+    position: relative;
+    margin-left: -1px;
+    margin-right: -1px;
+    border-left: 2px solid;
+    pointer-events: none;
+  }
+
+  .vault-collab-label {
+    position: absolute;
+    left: -1px;
+    top: -1.35rem;
+    border-radius: 3px;
+    color: white;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    white-space: nowrap;
+  }
+
+  .vault-collab-selection {
+    border-radius: 2px;
+  }
 }

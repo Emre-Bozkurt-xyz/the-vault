@@ -8,6 +8,7 @@ import { ReadOnlyDocument } from "@/components/editor/ReadOnlyDocument";
 import { VaultEditor } from "@/components/editor/VaultEditor";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
+import { createCollabToken } from "@/lib/collab-token";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -47,6 +48,21 @@ export default async function DocumentPage({
   const friends = document.access.canShare
     ? await listFriendsForUser(session.user.id)
     : [];
+  const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
+  const collabRole =
+    document.access.role === "owner" || document.access.role === "editor"
+      ? document.access.role
+      : null;
+  const collabToken =
+    document.access.canEdit && collabRole && collabUrl
+      ? createCollabToken({
+          documentId: document.id,
+          userId: session.user.id,
+          role: collabRole,
+          name: session.user.name ?? null,
+          email: session.user.email ?? null,
+        })
+      : null;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -74,6 +90,21 @@ export default async function DocumentPage({
               documentId={document.id}
               title={document.title}
               content={document.content}
+              collaboration={
+                collabToken && collabUrl
+                  ? {
+                      url: collabUrl,
+                      token: collabToken,
+                      user: {
+                        name:
+                          session.user.name ??
+                          session.user.email ??
+                          "Vault user",
+                        email: session.user.email ?? null,
+                      },
+                    }
+                  : null
+              }
             />
           ) : (
             <article className="grid gap-5">

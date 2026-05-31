@@ -25,7 +25,7 @@ Phase 6 - Deployment verification and MVP polish
 Current deployment status:
 
 ```txt
-GitHub Actions deploy path exists for the production server; live flow still needs manual verification.
+GitHub Actions deploy workflow works on the production server, the production domain works, OAuth works, document create/edit works, and Postgres data persists across redeploys.
 ```
 
 Current MVP status:
@@ -37,7 +37,7 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized Postgres, Tiptap document editing with autosave, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, and GitHub Actions deployment wiring for the production server.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized Postgres, Tiptap document editing with autosave, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and a first Yjs/Hocuspocus collaborative editing service.
 ```
 
 ---
@@ -75,11 +75,14 @@ Editor:
   - Debounced autosave plus manual save
 
 Realtime collaboration:
-  - Not implemented; intentionally post-MVP
+  - Yjs + Hocuspocus service for owner/editor live editing
+  - Collaboration caret presence
+  - ProseMirror JSON persistence back to Postgres
 
 Deployment:
   - Production Docker/Compose scaffolding
   - GitHub Actions workflow targeting a self-hosted mini-PC runner
+  - Separate `vault-collab` container scaffold
 ```
 
 Notes:
@@ -119,6 +122,7 @@ vault/
   server/
   docs/
   public/
+  scripts/
   .github/workflows/
 ```
 
@@ -142,7 +146,7 @@ Add notes as real files appear:
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
-| `components/editor/VaultEditor.tsx` | Tiptap editor and manual save form |
+| `components/editor/VaultEditor.tsx` | Tiptap editor with autosave and optional collaboration provider |
 | `components/editor/EditorToolbar.tsx` | Tiptap toolbar controls |
 | `components/editor/ReadOnlyDocument.tsx` | ProseMirror JSON read-only renderer |
 | `components/editor/editor-extensions.ts` | Tiptap extension configuration |
@@ -154,6 +158,7 @@ Add notes as real files appear:
 | `db/schema.ts` | Auth, document, and document permission schema |
 | `lib/` | Shared helpers |
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
+| `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
 | `lib/editor-content.ts` | ProseMirror JSON types and validation helpers |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
@@ -161,10 +166,12 @@ Add notes as real files appear:
 | `server/documents.ts` | Document server actions and queries |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
+| `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
 | `docs/` | Planning and project knowledge |
 | `docker-compose.yml` | Local Postgres service |
-| `docker-compose.production.yml` | Production web/postgres/migration compose file with `/api/health` container healthcheck |
+| `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
+| `Dockerfile.collab` | Production collaboration service image |
 | `scripts/backup-db.sh` | Bash Postgres backup script |
 | `scripts/backup-db.ps1` | PowerShell Postgres backup script |
 | `scripts/restore-db.sh` | Bash Postgres restore script |
@@ -183,6 +190,8 @@ AUTH_SECRET=replace-with-a-generated-secret
 NEXTAUTH_URL=http://localhost:3000
 GITHUB_CLIENT_ID=replace-with-github-oauth-client-id
 GITHUB_CLIENT_SECRET=replace-with-github-oauth-client-secret
+NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
+COLLAB_PORT=1234
 ```
 
 ### Production
@@ -204,6 +213,8 @@ Rules:
 | `NEXTAUTH_URL` | Yes | Auth.js | Public app URL |
 | `GITHUB_CLIENT_ID` | Yes | Auth.js | GitHub OAuth |
 | `GITHUB_CLIENT_SECRET` | Yes | Auth.js | GitHub OAuth secret |
+| `NEXT_PUBLIC_COLLAB_URL` | Optional | Editor | WebSocket URL for live collaboration; when absent, editor falls back to normal autosave |
+| `COLLAB_PORT` | Optional | Collab service | Internal Hocuspocus listen port, default `1234` |
 
 ---
 
@@ -481,7 +492,47 @@ Known editor caveats:
 
 ---
 
-## 10. Friend System
+## 10. Collaboration Implementation
+
+Current collaboration status:
+
+```txt
+First working Yjs/Hocuspocus slice is implemented for authenticated owner/editor sessions.
+```
+
+Important files:
+
+| Path | Purpose |
+|---|---|
+| `scripts/collab-server.mjs` | Hocuspocus websocket service |
+| `lib/collab-token.ts` | Signed room token helper |
+| `components/editor/VaultEditor.tsx` | Creates Hocuspocus provider and Tiptap Collaboration extensions |
+| `Dockerfile.collab` | Production collab service image |
+| `docker-compose.production.yml` | Adds `collab` service on `127.0.0.1:18211` |
+
+Current behavior:
+
+```txt
+- Only owner/editor document sessions receive a collaboration token.
+- Token includes document id, user id, role, display identity, expiry, and HMAC signature.
+- Collab service validates the token and re-checks current database edit permission before room access.
+- Hocuspocus loads existing `documents.content` into a Y.Doc.
+- Hocuspocus stores collaborative document state back to `documents.content` as ProseMirror JSON.
+- Viewer/public routes remain read-only and do not connect to the collaboration service.
+```
+
+Known collaboration caveats:
+
+```txt
+- Caddy/FRP WebSocket route for `/collab` still needs production verification.
+- Two-browser/two-user live editing still needs manual verification.
+- Title editing is still saved through the normal document autosave path, not collaborative Yjs state.
+- Yjs update-history tables are not implemented; current persistence stores compact ProseMirror JSON.
+```
+
+---
+
+## 11. Friend System
 
 Current friend system status:
 
@@ -517,7 +568,7 @@ Known friend system caveats:
 
 ---
 
-## 11. Public Notes
+## 12. Public Notes
 
 Current public notes status:
 
@@ -550,7 +601,7 @@ Known public note caveats:
 
 ---
 
-## 12. Deployment Knowledge
+## 13. Deployment Knowledge
 
 Current deployment status:
 
@@ -571,8 +622,8 @@ Current services:
 | `vault-web` | local dev / mini-PC Docker | 3000 in container, `127.0.0.1:18210` host bind | Runs with `npm run dev`; production image builds |
 | `vault-postgres` | local Docker / mini-PC Docker | 5432 internal | Created for local dev and production compose |
 | `vault-migrate` | mini-PC Docker | n/a | Production compose profile for `npm run db:migrate` |
+| `vault-collab` | mini-PC Docker | 1234 in container, `127.0.0.1:18211` host bind | Hocuspocus/Yjs websocket service |
 | `vault-redis` | mini-PC Docker | 6379 | Post-MVP |
-| `vault-collab` | mini-PC Docker | TBD | Post-MVP |
 
 FRP mapping:
 
@@ -622,7 +673,7 @@ Known deployment caveats:
 
 ---
 
-## 13. Testing / Verification
+## 14. Testing / Verification
 
 Current test setup:
 
@@ -655,12 +706,20 @@ Manual checks:
 | Deployment | `docker build --target runner -t vault:test .` succeeds | Passed | 2026-05-26 |
 | Backups | `scripts/backup-db.ps1` creates a local Postgres dump | Passed | 2026-05-26 |
 | Editor | Autosave implementation builds and lints | Passed | 2026-05-31 |
-| Deployment | Production domain loads | Not tested |  |
-| Deployment | GitHub Actions deploy script exists on server | User-reported | 2026-05-31 |
+| Deployment | Production domain loads | Passed, user-reported | 2026-05-31 |
+| Deployment | GitHub Actions deploy workflow runs on server | Passed, user-reported | 2026-05-31 |
+| Deployment | Postgres persists across redeploy | Passed, user-reported | 2026-05-31 |
+| Auth | Production GitHub OAuth works | Passed, user-reported | 2026-05-31 |
+| Documents | Production document create/edit works | Passed, user-reported | 2026-05-31 |
+| Collaboration | `npm run build` succeeds with collaboration code | Passed | 2026-05-31 |
+| Collaboration | `npm run lint` succeeds with collaboration code | Passed | 2026-05-31 |
+| Collaboration | `node --check scripts/collab-server.mjs` succeeds | Passed | 2026-05-31 |
+| Collaboration | `node scripts/collab-server.mjs` starts locally with env values | Passed | 2026-05-31 |
+| Collaboration | Two-browser/two-user live editing | Not tested |  |
 
 ---
 
-## 14. Known Bugs / Issues
+## 15. Known Bugs / Issues
 
 | Status | Issue | Impact | Notes |
 |---|---|---|---|
@@ -668,7 +727,7 @@ Manual checks:
 
 ---
 
-## 15. Important Decisions Made
+## 16. Important Decisions Made
 
 | Date | Decision | Reason | Files affected |
 |---|---|---|---|
@@ -681,7 +740,7 @@ Manual checks:
 
 ---
 
-## 16. Things Future Agents Should Not Break
+## 17. Things Future Agents Should Not Break
 
 Add invariants here as they emerge.
 
@@ -697,19 +756,19 @@ Current invariants:
 
 ---
 
-## 17. Next Best Tasks
+## 18. Next Best Tasks
 
 Keep this short and current.
 
 ```txt
-1. Test real GitHub sign-in creates a `users` row and database session.
-2. Create, save, reopen, share, publish, unpublish, friend, and archive through the browser.
-3. Verify GitHub Actions deployment, production migrations, restart persistence, and OAuth callback on `vault.ems-place.com`.
+1. Configure Caddy/FRP routing for `wss://vault.ems-place.com/collab` to the `vault-collab` service.
+2. Set `NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab` in production and confirm the deploy script starts `collab`.
+3. Test two owner/editor browser sessions editing the same shared document.
 ```
 
 ---
 
-## 18. Changelog
+## 19. Changelog
 
 Use this as a compact implementation log.
 
@@ -731,4 +790,5 @@ Use this as a compact implementation log.
 | 2026-05-26 | Added public-note and route polish | Added public badges, copy-public-link button, global loading state, not-found page, and error page |
 | 2026-05-26 | Removed dashboard noop controls | Sidebar labels are now anchors/routes, Public Notes has real data, and Settings is a real protected page |
 | 2026-05-31 | Added editor autosave and portfolio docs polish | Debounced autosave uses server-side permission checks; README now documents architecture, security, deployment, and resume positioning |
-| 2026-05-31 | Fixed production healthcheck target | Production compose now checks `/api/health` instead of a missing `/healthz` route |
+| 2026-05-31 | Clarified healthcheck split | Docker healthcheck uses `/healthz` for liveness; `/api/health` remains the database readiness endpoint |
+| 2026-05-31 | Added first collaborative editing slice | Added Yjs/Hocuspocus dependencies, collab room tokens, `vault-collab` service, Tiptap collaboration/caret wiring, and Postgres JSON persistence |

@@ -78,14 +78,14 @@ Responsibilities:
 
 ### `vault-collab`
 
-Post-MVP real-time collaboration service.
+Real-time collaboration service.
 
 Responsibilities:
 
 - Yjs websocket sync.
 - Room authorization.
 - Presence/awareness.
-- CRDT persistence.
+- Persisting collaborative document state back to Postgres JSONB.
 
 ---
 
@@ -228,6 +228,19 @@ vault.ems-place.com
 ```
 
 For WebSockets later, make sure the proxy supports upgrade headers. Caddy usually handles this automatically with `reverse_proxy`.
+
+Current collaboration service shape:
+
+```txt
+Browser editor
+  -> wss://vault.ems-place.com/collab
+  -> VPS Caddy
+  -> FRP remote port for collab
+  -> mini-PC 127.0.0.1:18211
+  -> vault-collab:1234
+```
+
+The Next.js document page only issues collaboration tokens after server-side edit permission checks. The collab service validates the signed token and re-checks current database edit permission before joining a room.
 
 ---
 

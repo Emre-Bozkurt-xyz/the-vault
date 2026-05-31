@@ -14,6 +14,8 @@ https://vault.ems-place.com
 - PostgreSQL persistence through Drizzle ORM.
 - Tiptap rich-text editing stored as ProseMirror JSONB.
 - Autosave plus manual save status in the editor.
+- Real-time collaborative editing for authorized owner/editor sessions.
+- Live collaborator caret presence.
 - Private documents with server-side read/write/share checks.
 - Owner/editor/viewer document roles.
 - Friend requests and friend-based sharing.
@@ -43,9 +45,10 @@ Mini-PC Docker Compose
   |
   +-- vault-web
   +-- vault-postgres
+  +-- vault-collab
 ```
 
-The main app is a Next.js App Router project. Server components and server actions handle authenticated document reads, writes, sharing, publishing, and dashboard data. PostgreSQL stores users, sessions, documents, collaborator roles, friend requests, friendships, and public slugs.
+The main app is a Next.js App Router project. Server components and server actions handle authenticated document reads, writes, sharing, publishing, and dashboard data. PostgreSQL stores users, sessions, documents, collaborator roles, friend requests, friendships, and public slugs. A separate Hocuspocus/Yjs service handles live document rooms and persists collaborative document state back to PostgreSQL.
 
 ## Security Model
 
@@ -69,7 +72,8 @@ viewer - read only
 - Auth.js / NextAuth v5
 - PostgreSQL 16
 - Drizzle ORM
-- Tiptap / ProseMirror
+- Tiptap / ProseMirror / Yjs
+- Hocuspocus
 - Docker Compose
 - Caddy, FRP, Cloudflare DNS
 
@@ -80,6 +84,12 @@ npm install
 docker compose up -d postgres
 npm run db:migrate
 npm run dev
+```
+
+In a second shell, start collaboration:
+
+```bash
+npm run collab
 ```
 
 Open:
@@ -96,6 +106,7 @@ NEXTAUTH_URL=http://localhost:3000
 AUTH_SECRET=<local secret>
 GITHUB_CLIENT_ID=<github oauth client id>
 GITHUB_CLIENT_SECRET=<github oauth secret>
+NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
 ```
 
 GitHub OAuth callback:
@@ -123,7 +134,7 @@ docker compose -f docker-compose.production.yml --profile migrate run --rm migra
 Start production services:
 
 ```bash
-docker compose -f docker-compose.production.yml up -d postgres web
+docker compose -f docker-compose.production.yml up -d postgres collab web
 ```
 
 Required production env, stored only on the server:
@@ -136,6 +147,8 @@ GITHUB_CLIENT_ID=<github oauth client id>
 GITHUB_CLIENT_SECRET=<github oauth secret>
 POSTGRES_PASSWORD=<strong password>
 DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
+NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab
+COLLAB_PORT=1234
 ```
 
 Production GitHub OAuth callback:
@@ -182,7 +195,6 @@ Built and deployed Vault, a self-hosted collaborative document platform using Ne
 
 Roadmap:
 
-- Verify production OAuth and full document flow on `vault.ems-place.com`.
 - Add screenshots after production flow verification.
 - Add full-text search and richer document organization.
-- Add real-time collaboration with Yjs after the MVP permission model is stable.
+- Verify production WebSocket routing and two-user live editing.

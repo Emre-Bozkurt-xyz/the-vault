@@ -204,11 +204,11 @@ Make it feel like a clean public article page.
 
 ## 8. Collaboration v2
 
-After MVP, add:
+Implemented first collaboration slice with:
 
 ```txt
 Yjs
-y-websocket
+Hocuspocus server/provider
 Tiptap Collaboration extension
 Tiptap CollaborationCursor extension
 ```
@@ -242,7 +242,7 @@ ws://server/doc-123
 Better:
 
 ```txt
-Client asks Next.js for short-lived room token
+Next.js document page creates short-lived room token
   |
 Server checks canEditDocument/canReadDocument
   |
@@ -251,9 +251,11 @@ Server issues signed token
 Client connects to collab server with token
   |
 Collab server validates token
+  |
+Collab server re-checks current database edit permission
 ```
 
-Room token should include:
+Room token includes:
 
 ```txt
 document_id
@@ -292,7 +294,9 @@ Read-only Yjs clients can be tricky. Simpler:
 
 ### Simple Post-MVP
 
-Use Yjs updates stored in database.
+Current first slice serializes the collaborative Y.Doc back to `documents.content` as ProseMirror JSON through `onStoreDocument`.
+
+Later, use Yjs updates stored in database.
 
 ```txt
 yjs_updates
@@ -317,7 +321,7 @@ This is less ideal but simpler.
 Add service:
 
 ```yaml
-vault-collab:
+collab:
   build:
     context: .
     dockerfile: Dockerfile.collab
@@ -325,7 +329,7 @@ vault-collab:
     DATABASE_URL: ...
     AUTH_SECRET: ...
   ports:
-    - "1234:1234"
+    - "127.0.0.1:18211:1234"
 ```
 
 Caddy later:
@@ -372,14 +376,14 @@ Subdomain is cleaner.
 
 | Status | Item |
 |---|---|
-| [ ] | Install Yjs |
-| [ ] | Create websocket server |
-| [ ] | Add document room model |
-| [ ] | Add room token generation |
-| [ ] | Add token validation |
-| [ ] | Add Tiptap collaboration extension |
-| [ ] | Add cursor/presence |
-| [ ] | Add persistence |
-| [ ] | Add Docker service |
+| [x] | Install Yjs |
+| [x] | Create websocket server |
+| [x] | Add document room model |
+| [x] | Add room token generation |
+| [x] | Add token validation |
+| [x] | Add Tiptap collaboration extension |
+| [x] | Add cursor/presence |
+| [x] | Add persistence |
+| [x] | Add Docker service |
 | [ ] | Add Caddy/FRP route |
 | [ ] | Test two-user editing |

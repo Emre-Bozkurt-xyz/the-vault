@@ -42,7 +42,7 @@ Health endpoint returns OK.
 
 | Status | Task | Notes |
 |---|---|---|
-| [~] | Create GitHub OAuth app | Local provider endpoint sees GitHub; real browser login still needs manual verification |
+| [x] | Create GitHub OAuth app | Production OAuth verified |
 | [x] | Add Auth.js | NextAuth v5 route at `/api/auth/[...nextauth]` |
 | [x] | Add Drizzle/Auth adapter | Auth tables migrated locally |
 | [x] | Add login page | GitHub button added; requires real OAuth env values |
@@ -159,15 +159,15 @@ Public page is read-only.
 | [x] | Add production Dockerfile | Next.js standalone output |
 | [x] | Add production docker-compose | web + postgres + migrate profile |
 | [x] | Add persistent Docker volumes | Postgres data |
-| [ ] | Add production env file | On server only |
-| [ ] | Run production migration | `drizzle-kit migrate` |
-| [ ] | Configure FRP port mapping | VPS to mini-PC |
-| [ ] | Configure Caddy route | `vault.ems-place.com` |
-| [ ] | Configure Cloudflare DNS | subdomain to VPS |
-| [ ] | Update OAuth callback URLs | production callback |
-| [ ] | Verify HTTPS | Caddy certificate |
-| [ ] | Verify WebSocket compatibility | Needed later for Yjs |
-| [x] | Add health check monitoring | Production Docker healthcheck now calls `/api/health`; external uptime monitoring still optional |
+| [x] | Add production env file | Verified on server |
+| [x] | Run production migration | Verified through deployment |
+| [x] | Configure FRP port mapping | Verified live deployment |
+| [x] | Configure Caddy route | `vault.ems-place.com` verified |
+| [x] | Configure Cloudflare DNS | Domain verified |
+| [x] | Update OAuth callback URLs | Production auth verified |
+| [x] | Verify HTTPS | `vault.ems-place.com` verified |
+| [~] | Verify WebSocket compatibility | Collab service added; Caddy/FRP route and browser test still need verification |
+| [x] | Add health check monitoring | `/healthz` for liveness; `/api/health` for database readiness |
 | [x] | Add backup script | Bash and PowerShell Postgres dump scripts |
 
 Exit criteria:
@@ -185,13 +185,13 @@ Backup works.
 
 | Status | Task | Notes |
 |---|---|---|
-| [ ] | Add Yjs packages | `yjs`, `y-websocket`, Tiptap collaboration |
-| [ ] | Create collab service | Separate Node service |
-| [ ] | Add room authorization | Token-based room access |
-| [ ] | Connect editor to Yjs | Only for shared docs |
-| [ ] | Add awareness/presence | User cursors/names |
-| [ ] | Persist Yjs updates | Redis/Postgres |
-| [ ] | Add collab service to Docker Compose | Separate container |
+| [x] | Add Yjs packages | `yjs`, Hocuspocus, Tiptap collaboration |
+| [x] | Create collab service | `scripts/collab-server.mjs` |
+| [x] | Add room authorization | Short-lived signed token plus DB permission re-check |
+| [x] | Connect editor to Yjs | Owner/editor sessions connect when `NEXT_PUBLIC_COLLAB_URL` is set |
+| [x] | Add awareness/presence | Collaboration caret user names/colors |
+| [x] | Persist Yjs updates | Collab server stores ProseMirror JSON back to `documents.content` |
+| [x] | Add collab service to Docker Compose | `vault-collab` container on host port `18211` |
 | [ ] | Route WebSocket through Caddy/FRP | Test production |
 | [ ] | Test two browsers/two users | Core acceptance |
 
@@ -227,13 +227,13 @@ Unauthorized users cannot connect.
 
 | Status | Requirement |
 |---|---|
-| [ ] | Production domain loads |
-| [ ] | OAuth production callback works |
+| [x] | Production domain loads |
+| [x] | OAuth production callback works |
 | [x] | Private documents are private |
 | [x] | Shared docs work |
 | [x] | Viewer/editor roles work |
 | [x] | Public notes work |
-| [ ] | Database survives container restart |
+| [x] | Database survives container restart |
 | [x] | Backup script tested |
 | [x] | README has architecture diagram |
 | [x] | Resume bullets drafted |

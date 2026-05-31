@@ -1,11 +1,22 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
+import { HocuspocusProvider } from "@hocuspocus/provider";
+import * as Y from "yjs";
 
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
-import { editorExtensions } from "@/components/editor/editor-extensions";
+import { createEditorExtensions } from "@/components/editor/editor-extensions";
 import { Button } from "@/components/ui/button";
 import type { ProseMirrorDoc } from "@/lib/editor-content";
 import { saveDocumentDraftAction } from "@/server/documents";
@@ -14,20 +25,119 @@ type VaultEditorProps = {
   documentId: string;
   title: string;
   content: ProseMirrorDoc;
+  collaboration?: {
+    url: string;
+    token: string;
+    user: {
+      name: string;
+      email: string | null;
+    };
+  } | null;
 };
 
-export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
+type CollabSession = {
+  ydoc: Y.Doc;
+  provider: HocuspocusProvider;
+};
+
+export function VaultEditor({
+  documentId,
+  title,
+  content,
+  collaboration = null,
+}: VaultEditorProps) {
   const [titleValue, setTitleValue] = useState(title);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [collabStatus, setCollabStatus] = useState<
+    "off" | "connecting" | "connected" | "disconnected"
+  >(collaboration ? "connecting" : "off");
   const titleValueRef = useRef(title);
   const savingRef = useRef(false);
+  const collaborationKey = collaboration
+    ? `${documentId}:${collaboration.url}:${collaboration.token}`
+    : "local";
+
+  const collabSession = useMemo<CollabSession | null>(() => {
+    if (!collaboration) {
+      return null;
+    }
+
+    const ydoc = new Y.Doc();
+    const provider = new HocuspocusProvider({
+      url: collaboration.url,
+      name: documentId,
+      document: ydoc,
+      token: collaboration.token,
+      onStatus: ({ status }) => {
+        setCollabStatus(status);
+      },
+      onAuthenticationFailed: () => {
+        setCollabStatus("disconnected");
+      },
+    });
+
+    return { ydoc, provider };
+  }, [collaboration, documentId]);
+
+  useEffect(() => {
+    if (!collabSession) {
+      return;
+    }
+
+    return () => {
+      collabSession.provider.destroy();
+      collabSession.ydoc.destroy();
+    };
+  }, [collabSession]);
+
+  const extensions = useMemo(() => {
+    if (collaboration && collabSession) {
+      const color = colorFromString(
+        collaboration.user.email ?? collaboration.user.name,
+      );
+
+      return [
+        ...createEditorExtensions({ history: false }),
+        Collaboration.configure({
+          document: collabSession.ydoc,
+          field: "default",
+        }),
+        CollaborationCaret.configure({
+          provider: collabSession.provider,
+          user: {
+            name: collaboration.user.name,
+            color,
+          },
+          render: (user) => {
+            const cursor = document.createElement("span");
+            cursor.classList.add("vault-collab-caret");
+            cursor.style.borderColor = user.color;
+
+            const label = document.createElement("span");
+            label.classList.add("vault-collab-label");
+            label.style.backgroundColor = user.color;
+            label.textContent = user.name;
+            cursor.append(label);
+
+            return cursor;
+          },
+          selectionRender: (user) => ({
+            class: "vault-collab-selection",
+            style: `background-color: ${user.color}33`,
+          }),
+        }),
+      ];
+    }
+
+    return createEditorExtensions();
+  }, [collabSession, collaboration]);
 
   const editor = useEditor({
-    extensions: editorExtensions,
-    content,
+    extensions,
+    content: collaboration ? undefined : content,
     immediatelyRender: false,
     editorProps: {
       attributes: {
@@ -36,7 +146,7 @@ export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
       },
     },
     onUpdate: () => setDirty(true),
-  });
+  }, [collaborationKey, extensions]);
 
   const saveDocument = useCallback(async () => {
     if (!editor || savingRef.current) {
@@ -110,8 +220,16 @@ export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
           ? `Saved ${lastSavedAt.toLocaleTimeString([], {
               hour: "numeric",
               minute: "2-digit",
-            })}`
+          })}`
           : "Saved";
+  const collaborationStatusText =
+    collabStatus === "connected"
+      ? "Live collaboration connected"
+      : collabStatus === "connecting"
+        ? "Connecting live collaboration..."
+        : collabStatus === "disconnected"
+          ? "Live collaboration disconnected"
+          : null;
 
   return (
     <form
@@ -134,10 +252,13 @@ export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
         <EditorContent editor={editor} />
       </div>
       <div className="flex flex-col justify-between gap-3 border-t border-border pt-5 sm:flex-row">
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          {statusIcon}
-          {statusText}
-        </p>
+        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <p className="flex items-center gap-1.5">
+            {statusIcon}
+            {statusText}
+          </p>
+          {collaborationStatusText ? <p>{collaborationStatusText}</p> : null}
+        </div>
         <Button type="submit" disabled={!dirty || saving || !editor}>
           <Save data-icon="inline-start" />
           Save
@@ -145,4 +266,15 @@ export function VaultEditor({ documentId, title, content }: VaultEditorProps) {
       </div>
     </form>
   );
+}
+
+function colorFromString(value: string) {
+  const colors = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#0891b2"];
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % colors.length;
+  }
+
+  return colors[hash];
 }

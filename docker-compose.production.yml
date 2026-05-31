@@ -16,10 +16,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      collab:
+        condition: service_started
     networks:
       - vault_internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -42,6 +44,25 @@ services:
       - vault_internal
     profiles:
       - migrate
+
+  collab:
+    build:
+      context: .
+      dockerfile: Dockerfile.collab
+    container_name: vault-collab
+    restart: unless-stopped
+    env_file:
+      - path: .env.production
+        required: false
+    environment:
+      COLLAB_PORT: 1234
+    ports:
+      - "127.0.0.1:18211:1234"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vault_internal
 
   postgres:
     image: postgres:16-alpine

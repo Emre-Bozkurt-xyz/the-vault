@@ -369,8 +369,8 @@ Manual tests:
 
 | Status | Item |
 |---|---|
-| [ ] | Auth secret set in production |
-| [ ] | OAuth callback URL is correct |
+| [x] | Auth secret set in production |
+| [x] | OAuth callback URL is correct |
 | [x] | Session includes user ID |
 | [x] | Server actions check auth |
 | [x] | Server actions check role |

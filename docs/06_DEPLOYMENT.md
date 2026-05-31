@@ -28,6 +28,7 @@ MVP:
 web container: vault-web
 postgres container: vault-postgres
 migrate one-off container: vault-migrate
+collab container: vault-collab
 ```
 
 Deployments are triggered by GitHub Actions on a self-hosted mini-PC runner. The workflow in `.github/workflows/deploy.yml` calls a server-local script:
@@ -42,7 +43,6 @@ Later:
 
 ```txt
 vault-redis
-vault-collab
 ```
 
 ---
@@ -79,6 +79,12 @@ services:
 
 volumes:
   vault_postgres_data:
+```
+
+The real production compose also includes `collab`, built from `Dockerfile.collab`, bound to:
+
+```txt
+127.0.0.1:18211 -> container 1234
 ```
 
 Do not expose Postgres publicly.
@@ -135,7 +141,9 @@ GITHUB_CLIENT_ID=<github oauth client id>
 GITHUB_CLIENT_SECRET=<github oauth secret>
 
 POSTGRES_PASSWORD=<strong password>
-DATABASE_URL=postgres://vault:<password>@vault-postgres:5432/vault
+DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
+NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab
+COLLAB_PORT=1234
 ```
 
 Do not commit `.env.production`.
@@ -217,6 +225,17 @@ vault.ems-place.com {
 
 If using WebSockets later, Caddy should handle upgrades automatically.
 
+For the collaboration service, route a WebSocket path to the collab FRP/VPS port. Conceptual example:
+
+```caddy
+vault.ems-place.com {
+    reverse_proxy /collab* 127.0.0.1:18031
+    reverse_proxy 127.0.0.1:18030
+}
+```
+
+Use the actual FRP remote port that maps to mini-PC `127.0.0.1:18211`.
+
 After editing Caddyfile:
 
 ```bash
@@ -270,7 +289,9 @@ Implement:
 GET /api/health
 ```
 
-Should check:
+`/healthz` is the lightweight container liveness endpoint. It only proves the Next.js process is responding and is appropriate for Docker healthchecks.
+
+`/api/health` is the deeper readiness endpoint. It checks:
 
 - App alive.
 - Database reachable.
@@ -364,19 +385,21 @@ cat "$BACKUP_FILE" | docker compose exec -T vault-postgres psql \
 |---|---|
 | [x] | Production Dockerfile added |
 | [x] | Production compose works locally |
-| [ ] | `.env.production` created on mini-PC |
-| [ ] | Postgres volume persists |
-| [ ] | Migrations run |
-| [ ] | FRP proxy configured |
-| [ ] | Caddy route configured |
-| [ ] | Cloudflare DNS configured |
-| [ ] | GitHub OAuth production callback configured |
-| [ ] | `https://vault.ems-place.com` loads |
-| [ ] | Login works |
-| [ ] | Document create/edit works |
-| [ ] | Restart containers and verify data persists |
+| [x] | `.env.production` created on mini-PC |
+| [x] | Postgres volume persists |
+| [x] | Migrations run |
+| [x] | FRP proxy configured |
+| [x] | Caddy route configured |
+| [x] | Cloudflare DNS configured |
+| [x] | GitHub OAuth production callback configured |
+| [x] | `https://vault.ems-place.com` loads |
+| [x] | Login works |
+| [x] | Document create/edit works |
+| [x] | Restart containers and verify data persists |
 | [x] | Backup script works |
 | [x] | Health endpoint works |
+| [ ] | Collab WebSocket route works |
+| [ ] | Two-user live editing works |
 
 ---
 
