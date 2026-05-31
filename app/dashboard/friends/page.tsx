@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   acceptFriendRequestAction,
@@ -29,8 +30,8 @@ export default async function FriendsPage() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between border-b border-border pb-5">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-10 px-6 py-8">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-6">
           <Link
             href="/dashboard"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
@@ -42,34 +43,35 @@ export default async function FriendsPage() {
             <ThemeToggle />
             <Badge variant="outline">Friends</Badge>
           </div>
-        </nav>
+        </header>
 
-        <section className="grid flex-1 gap-8 py-10 lg:grid-cols-[320px_1fr]">
-          <aside className="border border-border bg-card p-5 text-card-foreground">
+        <section className="grid gap-8 lg:grid-cols-[320px_1fr]">
+          <aside className="vault-fade-up rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
             <UserPlus className="mb-4 size-8 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Add a friend</h1>
+            <h1 className="text-2xl font-semibold tracking-tight vault-display">
+              Add a friend
+            </h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Send a request to another registered Vault user by email. Friends
               are useful collaborators for document sharing.
             </p>
 
             <form action={sendFriendRequestAction} className="mt-6 grid gap-3">
-              <input
+              <Input
                 name="email"
                 type="email"
                 required
                 placeholder="person@example.com"
-                className="h-9 border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
               />
-              <Button type="submit">
+              <Button type="submit" className="gap-2">
                 <UserPlus className="size-4" />
                 Send request
               </Button>
             </form>
           </aside>
 
-          <div className="grid gap-8">
-            <section className="border border-border bg-card p-5 text-card-foreground">
+          <div className="grid gap-6">
+            <section className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Friends</h2>
                 <Badge variant="outline">{friends.length}</Badge>
@@ -82,7 +84,7 @@ export default async function FriendsPage() {
                   {friends.map((friend) => (
                     <div
                       key={friend.id}
-                      className="flex flex-col gap-3 border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <UserSummary
                         name={friend.name}
@@ -101,7 +103,7 @@ export default async function FriendsPage() {
               )}
             </section>
 
-            <section className="border border-border bg-card p-5 text-card-foreground">
+            <section className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Incoming requests</h2>
                 <Badge variant="outline">{incomingRequests.length}</Badge>
@@ -114,7 +116,7 @@ export default async function FriendsPage() {
                   {incomingRequests.map((request) => (
                     <div
                       key={request.id}
-                      className="flex flex-col gap-3 border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <UserSummary
                         name={request.requesterName}
@@ -141,7 +143,7 @@ export default async function FriendsPage() {
               )}
             </section>
 
-            <section className="border border-border bg-card p-5 text-card-foreground">
+            <section className="vault-fade-up vault-delay-3 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Sent requests</h2>
                 <Badge variant="outline">{outgoingRequests.length}</Badge>
@@ -154,7 +156,7 @@ export default async function FriendsPage() {
                   {outgoingRequests.map((request) => (
                     <div
                       key={request.id}
-                      className="flex items-center justify-between border border-border bg-background p-4"
+                      className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-4"
                     >
                       <div>
                         <p className="font-medium">
@@ -181,7 +183,7 @@ export default async function FriendsPage() {
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="mt-4 border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
+    <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">
       {text}
     </div>
   );

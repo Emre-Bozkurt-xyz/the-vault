@@ -4,7 +4,7 @@ import type { ProseMirrorDoc, ProseMirrorNode } from "@/lib/editor-content";
 
 export function ReadOnlyDocument({ content }: { content: ProseMirrorDoc }) {
   return (
-    <div className="vault-editor-content">
+    <div className="vault-editor-content vault-readonly mx-auto max-w-3xl">
       {(content.content ?? []).map((node, index) => (
         <NodeRenderer key={index} node={node} />
       ))}

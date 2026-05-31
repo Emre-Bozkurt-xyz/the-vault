@@ -142,7 +142,7 @@ export function VaultEditor({
     editorProps: {
       attributes: {
         class:
-          "vault-editor-content min-h-[520px] px-5 py-4 text-base leading-7 outline-none",
+          "vault-editor-content mx-auto min-h-[520px] w-full max-w-3xl px-6 py-6 text-[1.02rem] leading-7 outline-none sm:px-10",
       },
     },
     onUpdate: () => setDirty(true),
@@ -201,13 +201,13 @@ export function VaultEditor({
   }
 
   const statusIcon = saving ? (
-    <Loader2 data-icon="inline-start" className="animate-spin" />
+    <Loader2 data-icon="inline-start" className="size-4 animate-spin" />
   ) : saveError ? (
-    <AlertCircle data-icon="inline-start" />
+    <AlertCircle data-icon="inline-start" className="size-4" />
   ) : dirty ? (
-    <Save data-icon="inline-start" />
+    <Save data-icon="inline-start" className="size-4" />
   ) : (
-    <CheckCircle2 data-icon="inline-start" />
+    <CheckCircle2 data-icon="inline-start" className="size-4" />
   );
 
   const statusText = saving
@@ -232,10 +232,21 @@ export function VaultEditor({
           : null;
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="grid gap-5"
-    >
+    <form onSubmit={handleSubmit} className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+        <span>Editing session</span>
+        {collaborationStatusText ? (
+          <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-[0.68rem] font-medium text-foreground">
+            <span className="size-2 rounded-full bg-primary/70" />
+            {collaborationStatusText}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-[0.68rem] font-medium text-foreground">
+            <span className="size-2 rounded-full bg-primary/50" />
+            Local draft
+          </span>
+        )}
+      </div>
       <input
         name="title"
         value={titleValue}
@@ -244,24 +255,28 @@ export function VaultEditor({
           setTitleValue(event.target.value);
           setDirty(true);
         }}
-        className="w-full bg-transparent text-4xl font-semibold tracking-tight outline-none"
+        className="w-full bg-transparent text-4xl font-semibold leading-[1.05] tracking-tight outline-none sm:text-5xl vault-display"
         aria-label="Document title"
       />
-      <div className="overflow-hidden border border-border bg-card text-card-foreground">
+      <div className="overflow-hidden rounded-3xl border border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur">
         <EditorToolbar editor={editor} />
-        <EditorContent editor={editor} />
+        <div className="border-t border-border/70">
+          <EditorContent editor={editor} />
+        </div>
       </div>
-      <div className="flex flex-col justify-between gap-3 border-t border-border pt-5 sm:flex-row">
-        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-          <p className="flex items-center gap-1.5">
+      <div className="flex flex-col justify-between gap-3 border-t border-border/60 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-1">
+          <p className="flex items-center gap-2">
             {statusIcon}
             {statusText}
           </p>
-          {collaborationStatusText ? <p>{collaborationStatusText}</p> : null}
+          {saveError ? (
+            <p className="text-xs text-destructive">Try again in a moment.</p>
+          ) : null}
         </div>
-        <Button type="submit" disabled={!dirty || saving || !editor}>
+        <Button type="submit" size="lg" disabled={!dirty || saving || !editor}>
           <Save data-icon="inline-start" />
-          Save
+          Save changes
         </Button>
       </div>
     </form>

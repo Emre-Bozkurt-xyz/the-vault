@@ -21,8 +21,8 @@ export default async function SettingsPage() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between border-b border-border pb-5">
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-10 px-6 py-8">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-6">
           <Link
             href="/dashboard"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
@@ -34,10 +34,10 @@ export default async function SettingsPage() {
             <ThemeToggle />
             <Badge variant="outline">Settings</Badge>
           </div>
-        </nav>
+        </header>
 
-        <section className="grid gap-6 py-10">
-          <div className="border border-border bg-card p-6 text-card-foreground">
+        <section className="grid gap-6">
+          <div className="vault-fade-up rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <Avatar className="size-14">
@@ -45,7 +45,9 @@ export default async function SettingsPage() {
                   <AvatarFallback>{fallback}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>
+                  <h1 className="text-2xl font-semibold tracking-tight vault-display">
+                    {name}
+                  </h1>
                   <p className="text-sm text-muted-foreground">{session.user.email}</p>
                 </div>
               </div>
@@ -63,16 +65,16 @@ export default async function SettingsPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <section className="border border-border bg-card p-5 text-card-foreground">
+            <section className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <KeyRound className="mb-4 size-6 text-primary" />
               <h2 className="text-lg font-semibold">Authentication</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Vault currently uses GitHub OAuth through Auth.js with database
-                sessions stored in Postgres.
+                Vault uses GitHub OAuth through Auth.js with database sessions
+                stored in Postgres.
               </p>
             </section>
 
-            <section className="border border-border bg-card p-5 text-card-foreground">
+            <section className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <ShieldCheck className="mb-4 size-6 text-primary" />
               <h2 className="text-lg font-semibold">Privacy model</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">

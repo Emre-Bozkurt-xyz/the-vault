@@ -1,7 +1,7 @@
+import type { ComponentType, ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
-  ArrowLeft,
   FilePlus2,
   FileText,
   Globe2,
@@ -23,7 +23,13 @@ import {
   listSharedDocumentsForUser,
 } from "@/server/documents";
 
-export default async function DashboardPage() {
+type DashboardTab = "owned" | "shared" | "public";
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: DashboardTab }>;
+}) {
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -36,196 +42,364 @@ export default async function DashboardPage() {
     listPublishedDocumentsForUser(session.user.id),
   ]);
 
+  const { tab } = await searchParams;
+  const activeTab: DashboardTab =
+    tab === "shared" ? "shared" : tab === "public" ? "public" : "owned";
+  const userLabel = session.user.name ?? session.user.email ?? "Vault user";
+
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between border-b border-border pb-5">
-          <Link
-            href="/"
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
-          >
-            <ArrowLeft className="size-4" />
-            Home
-          </Link>
-          <div className="flex items-center gap-2">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-10 px-6 py-8">
+        <header className="flex flex-col gap-6 border-b border-border/60 pb-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-4">
+            <div className="vault-fade-up flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground">
+              <span className="size-2 rounded-full bg-primary/70" />
+              Vault workspace
+            </div>
+            <div className="vault-fade-up vault-delay-1 space-y-3">
+              <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl vault-display">
+                Dashboard
+              </h1>
+              <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
+                Organize your private vault, track shared collaborations, and
+                publish selected notes as clean public pages.
+              </p>
+            </div>
+            <div className="vault-fade-up vault-delay-2 flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{userLabel}</Badge>
+              <Badge variant="secondary">{documentList.length} owned</Badge>
+              <Badge variant="secondary">{sharedDocumentList.length} shared</Badge>
+              <Badge variant="secondary">{publicDocumentList.length} public</Badge>
+            </div>
+          </div>
+          <div className="vault-fade-up vault-delay-2 flex flex-wrap items-center gap-2">
+            <form action={createDocumentAction}>
+              <Button size="lg" className="gap-2">
+                <FilePlus2 className="size-4" />
+                New document
+              </Button>
+            </form>
             <ThemeToggle />
-            <Badge variant="outline">{session.user.email ?? session.user.name}</Badge>
             <form
               action={async () => {
                 "use server";
                 await signOut({ redirectTo: "/" });
               }}
             >
-              <Button type="submit" variant="outline" size="sm">
+              <Button type="submit" variant="outline" size="lg">
                 Sign out
               </Button>
             </form>
           </div>
-        </nav>
+        </header>
 
-        <section className="grid flex-1 content-center gap-8 py-12 lg:grid-cols-[280px_1fr]">
-          <aside className="border border-border bg-card p-5 text-card-foreground">
-            <h1 className="text-xl font-semibold">Vault</h1>
-            <div className="mt-6 grid gap-1 text-sm text-muted-foreground">
-              <a
-                href="#my-documents"
-                className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <FileText className="size-4" />
-                My Documents
-              </a>
-              <a
-                href="#shared-with-me"
-                className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Share2 className="size-4" />
-                Shared With Me
-              </a>
-              <a
-                href="#public-notes"
-                className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Globe2 className="size-4" />
-                Public Notes
-              </a>
-              <Link
-                href="/dashboard/friends"
-                className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Users className="size-4" />
-                Friends
-              </Link>
-              <Link
-                href="/dashboard/settings"
-                className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Settings className="size-4" />
-                Settings
-              </Link>
+        <section className="grid gap-8 lg:grid-cols-[260px_1fr]">
+          <aside className="flex flex-col gap-6">
+            <div className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Navigation
+              </h2>
+              <div className="mt-4 grid gap-1 text-sm">
+                <Link
+                  href="/dashboard?tab=owned"
+                  className={cn(
+                    "flex items-center justify-between rounded-2xl px-3 py-2 transition",
+                    activeTab === "owned"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <LockKeyhole className="size-4" />
+                    My documents
+                  </span>
+                  <span className="text-xs">{documentList.length}</span>
+                </Link>
+                <Link
+                  href="/dashboard?tab=shared"
+                  className={cn(
+                    "flex items-center justify-between rounded-2xl px-3 py-2 transition",
+                    activeTab === "shared"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <Share2 className="size-4" />
+                    Shared with me
+                  </span>
+                  <span className="text-xs">{sharedDocumentList.length}</span>
+                </Link>
+                <Link
+                  href="/dashboard?tab=public"
+                  className={cn(
+                    "flex items-center justify-between rounded-2xl px-3 py-2 transition",
+                    activeTab === "public"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <Globe2 className="size-4" />
+                    Public notes
+                  </span>
+                  <span className="text-xs">{publicDocumentList.length}</span>
+                </Link>
+                <Link
+                  href="/dashboard/friends"
+                  className="flex items-center gap-2 rounded-2xl px-3 py-2 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Users className="size-4" />
+                  Friends
+                </Link>
+                <Link
+                  href="/dashboard/settings"
+                  className="flex items-center gap-2 rounded-2xl px-3 py-2 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Settings className="size-4" />
+                  Settings
+                </Link>
+              </div>
+            </div>
+
+            <div className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Workspace stats
+              </h3>
+              <div className="mt-4 grid gap-3">
+                <StatRow icon={FileText} label="Owned documents" value={documentList.length} />
+                <StatRow icon={Share2} label="Shared with you" value={sharedDocumentList.length} />
+                <StatRow icon={Globe2} label="Public notes" value={publicDocumentList.length} />
+              </div>
             </div>
           </aside>
 
-          <div className="border border-dashed border-border bg-card p-8 text-card-foreground">
-            <div id="my-documents" className="flex scroll-mt-8 items-start justify-between gap-4">
+          <div className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <LockKeyhole className="mb-4 size-8 text-primary" />
-                <h2 className="text-3xl font-semibold tracking-tight">
-                  My documents
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                  {activeTab === "owned"
+                    ? "My documents"
+                    : activeTab === "shared"
+                      ? "Shared with me"
+                      : "Public notes"}
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight vault-display">
+                  {activeTab === "owned"
+                    ? "Your private library"
+                    : activeTab === "shared"
+                      ? "Collaborations"
+                      : "Published vault"}
                 </h2>
-                <p className="mt-2 max-w-2xl text-muted-foreground">
-                  Documents listed here are loaded server-side for the signed-in
-                  user. Private document access now goes through Auth.js and the
-                  permission helpers.
-                </p>
               </div>
-              <form action={createDocumentAction}>
-                <Button type="submit">
-                  <FilePlus2 className="size-4" />
-                  New document
-                </Button>
-              </form>
+              <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/70 bg-background/70 p-1">
+                <TabButton active={activeTab === "owned"} href="/dashboard?tab=owned">
+                  Owned
+                </TabButton>
+                <TabButton active={activeTab === "shared"} href="/dashboard?tab=shared">
+                  Shared
+                </TabButton>
+                <TabButton active={activeTab === "public"} href="/dashboard?tab=public">
+                  Public
+                </TabButton>
+              </div>
             </div>
 
-            {documentList.length === 0 ? (
-              <div className="mt-8 border border-border bg-background p-5">
-                <p className="font-medium">No documents yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Create your first private document to verify persistence and
-                  owner-only access.
-                </p>
-              </div>
-            ) : (
-              <div className="mt-8 grid gap-3">
-                {documentList.map((document) => (
-                  <Link
-                    key={document.id}
-                    href={`/docs/${document.id}`}
-                    className="flex items-center justify-between border border-border bg-background px-4 py-3 transition-colors hover:bg-muted"
-                  >
-                    <span className="flex items-center gap-3">
-                      <FileText className="size-4 text-primary" />
-                      <span className="font-medium">{document.title}</span>
-                    </span>
-                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                      {document.visibility === "public" ? (
-                        <Badge variant="outline">Public</Badge>
-                      ) : null}
-                      {document.updatedAt.toLocaleDateString()}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            <div id="shared-with-me" className="mt-10 scroll-mt-8">
-              <h3 className="text-lg font-semibold">Shared with me</h3>
-              {sharedDocumentList.length === 0 ? (
-                <div className="mt-3 border border-border bg-background p-5">
-                  <p className="font-medium">No shared documents</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Documents shared with you as viewer or editor will appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-3 grid gap-3">
-                  {sharedDocumentList.map((document) => (
-                    <Link
-                      key={document.id}
-                      href={`/docs/${document.id}`}
-                      className="flex items-center justify-between border border-border bg-background px-4 py-3 transition-colors hover:bg-muted"
-                    >
-                      <span className="flex items-center gap-3">
-                        <FileText className="size-4 text-primary" />
-                        <span className="font-medium">{document.title}</span>
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {document.role}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div id="public-notes" className="mt-10 scroll-mt-8">
-              <h3 className="text-lg font-semibold">Public notes</h3>
-              {publicDocumentList.length === 0 ? (
-                <div className="mt-3 border border-border bg-background p-5">
-                  <p className="font-medium">No public notes</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Published documents will appear here with their public route.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-3 grid gap-3">
-                  {publicDocumentList.map((document) => (
-                    <div
-                      key={document.id}
-                      className="flex flex-col gap-3 border border-border bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <Link
+            <div className="mt-8">
+              {activeTab === "owned" ? (
+                documentList.length === 0 ? (
+                  <EmptyState
+                    title="No documents yet"
+                    description="Create your first private document to start capturing ideas."
+                    action={
+                      <form action={createDocumentAction}>
+                        <Button size="sm">New document</Button>
+                      </form>
+                    }
+                  />
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {documentList.map((document) => (
+                      <DocCard
+                        key={document.id}
                         href={`/docs/${document.id}`}
-                        className="flex items-center gap-3 transition-colors hover:text-primary"
-                      >
-                        <Globe2 className="size-4 text-primary" />
-                        <span className="font-medium">{document.title}</span>
-                      </Link>
-                      {document.publicSlug ? (
-                        <Link
-                          href={`/public/${document.publicSlug}`}
-                          className={buttonVariants({ variant: "outline", size: "sm" })}
-                        >
-                          Public page
-                        </Link>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
+                        title={document.title}
+                        meta={`Updated ${document.updatedAt.toLocaleDateString()}`}
+                        icon={FileText}
+                        badge={
+                          <Badge variant="outline">
+                            {document.visibility === "public" ? "Public" : "Private"}
+                          </Badge>
+                        }
+                      />
+                    ))}
+                  </div>
+                )
+              ) : null}
+
+              {activeTab === "shared" ? (
+                sharedDocumentList.length === 0 ? (
+                  <EmptyState
+                    title="No shared documents"
+                    description="When collaborators share a vault document, it will appear here."
+                  />
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {sharedDocumentList.map((document) => (
+                      <DocCard
+                        key={document.id}
+                        href={`/docs/${document.id}`}
+                        title={document.title}
+                        meta="Shared workspace"
+                        icon={Share2}
+                        badge={<Badge variant="secondary">{document.role}</Badge>}
+                      />
+                    ))}
+                  </div>
+                )
+              ) : null}
+
+              {activeTab === "public" ? (
+                publicDocumentList.length === 0 ? (
+                  <EmptyState
+                    title="No public notes"
+                    description="Publish a document to generate a clean public page."
+                  />
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {publicDocumentList.map((document) => (
+                      <DocCard
+                        key={document.id}
+                        href={`/docs/${document.id}`}
+                        title={document.title}
+                        meta={`Updated ${document.updatedAt.toLocaleDateString()}`}
+                        icon={Globe2}
+                        badge={<Badge variant="outline">Public</Badge>}
+                        action={
+                          document.publicSlug ? (
+                            <Link
+                              href={`/public/${document.publicSlug}`}
+                              className={buttonVariants({
+                                variant: "outline",
+                                size: "sm",
+                              })}
+                            >
+                              Public page
+                            </Link>
+                          ) : null
+                        }
+                      />
+                    ))}
+                  </div>
+                )
+              ) : null}
             </div>
           </div>
         </section>
       </div>
     </main>
+  );
+}
+
+function TabButton({
+  active,
+  href,
+  children,
+}: {
+  active: boolean;
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function StatRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/60 px-3 py-2 text-sm">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="size-4 text-primary" />
+        {label}
+      </div>
+      <span className="font-semibold text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="rounded-3xl border border-dashed border-border/70 bg-background/60 p-6 text-sm text-muted-foreground">
+      <p className="text-base font-semibold text-foreground">{title}</p>
+      <p className="mt-2 max-w-md">{description}</p>
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
+}
+
+function DocCard({
+  href,
+  title,
+  meta,
+  icon: Icon,
+  badge,
+  action,
+}: {
+  href: string;
+  title: string;
+  meta: string;
+  icon: ComponentType<{ className?: string }>;
+  badge?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <article className="group flex h-full flex-col justify-between gap-4 rounded-3xl border border-border/60 bg-background/70 p-5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background/90">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 rounded-2xl border border-border/60 bg-background/80 p-2 text-primary">
+            <Icon className="size-4" />
+          </span>
+          <div>
+            <Link
+              href={href}
+              className="text-lg font-semibold leading-tight transition group-hover:text-primary"
+            >
+              {title}
+            </Link>
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              {meta}
+            </p>
+          </div>
+        </div>
+        {badge}
+      </div>
+      {action ? <div className="pt-1">{action}</div> : null}
+    </article>
   );
 }
