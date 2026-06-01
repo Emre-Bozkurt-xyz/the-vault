@@ -50,6 +50,8 @@ Health endpoint returns OK.
 | [x] | Protect dashboard route | Server-side redirect to `/login` |
 | [x] | Add session helper | `auth()` exported from `auth.ts` and `lib/auth.ts` |
 | [x] | Add user profile display | Dashboard shows email/name from session |
+| [x] | Add profile completion gate | Users choose unique username plus free-form nickname after login |
+| [x] | Add settings profile editing | Nickname and username can be changed; username availability is checked live |
 
 Exit criteria:
 
@@ -121,6 +123,7 @@ Owner/editor/viewer behavior works.
 | [x] | List friends | `/dashboard/friends` |
 | [x] | Use friends in share dialog | Friend selector added to document sharing |
 | [x] | Add remove friend action | Optional MVP completed |
+| [x] | Add username/nickname friend search suggestions | Autocomplete searches nickname, username, and email |
 
 Exit criteria:
 
@@ -215,7 +218,7 @@ Unauthorized users cannot connect.
 | [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with raw HTML skipped; needs browser UX verification |
 | [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; needs browser UX verification |
 | [~] | Move collaboration to Y.Text | Hocuspocus now loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding wired; needs two-browser verification |
-| [~] | Add live preview | Source/split/preview modes implemented in the Markdown editor; needs browser UX verification |
+| [~] | Add live preview | Live mode is now default; Source/Split/Preview remain available; needs browser UX verification |
 
 Exit criteria:
 

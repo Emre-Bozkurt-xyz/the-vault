@@ -31,6 +31,7 @@ export const users = pgTable(
     emailVerified: timestamp("email_verified", { mode: "date" }),
     image: text("image"),
     username: text("username"),
+    profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -41,6 +42,7 @@ export const users = pgTable(
   (table) => [
     uniqueIndex("users_email_unique").on(table.email),
     uniqueIndex("users_username_unique").on(table.username),
+    index("users_name_idx").on(table.name),
   ],
 );
 

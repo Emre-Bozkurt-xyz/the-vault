@@ -74,6 +74,7 @@ Auth:
   - Auth.js / NextAuth v5 beta
   - GitHub OAuth provider configured
   - Drizzle adapter with database sessions
+  - First-run profile completion for username/nickname
 
 Editor:
   - CodeMirror Markdown editor on document pages
@@ -143,10 +144,13 @@ Add notes as real files appear:
 | `app/dashboard/page.tsx` | Server-protected dashboard with owned/shared/public document sections |
 | `app/dashboard/friends/page.tsx` | Protected friend request/friend list page |
 | `app/dashboard/settings/page.tsx` | Protected account/settings page |
+| `app/onboarding/page.tsx` | First-run profile completion page for username and nickname |
 | `app/docs/[docId]/page.tsx` | Protected document edit/view route |
 | `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub OAuth sign-in page |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
+| `app/api/users/search/route.ts` | Authenticated user search API for friend/profile lookup |
+| `app/api/users/username-availability/route.ts` | Authenticated username validation/uniqueness API for settings |
 | `.github/workflows/deploy.yml` | Production deploy workflow for the self-hosted mini-PC runner |
 | `app/loading.tsx` | Global loading skeleton |
 | `app/not-found.tsx` | Global not-found page for missing/private/unpublished docs |
@@ -162,6 +166,8 @@ Add notes as real files appear:
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer that skips raw HTML |
 | `components/theme-provider.tsx` | Root client theme provider using `next-themes` |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
+| `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
+| `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
@@ -177,6 +183,7 @@ Add notes as real files appear:
 | `server/documents.ts` | Document server actions and queries |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
+| `server/profile.ts` | Profile completion, profile gate, and user search helpers |
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
 | `docs/` | Planning and project knowledge |
@@ -268,11 +275,14 @@ Current migrations:
 | `0001_black_barracuda.sql` | Documents and document_permissions | Yes | No |
 | `0002_sturdy_archangel.sql` | Friend requests and friendships | Yes | No |
 | `0003_slimy_puppet_master.sql` | Adds transitional `documents.markdown` column | Yes | No |
+| `0004_goofy_kylun.sql` | Adds `users.profile_completed_at` and `users_name_idx` | Yes | No |
 
 Schema notes:
 
 ```txt
 - `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, friend_requests, and friendships.
+- `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion.
+- Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
 - `documents.markdown` is the active local editor/viewer/public rendering source for the Markdown pivot.
 - `documents.content` still stores legacy ProseMirror JSONB and remains required during the transition for rollback/fallback.
 - `documents.content` stores legacy ProseMirror-style JSONB and remains required during the transition.
@@ -324,6 +334,8 @@ Known auth caveats:
 - The provider config uses placeholder fallback strings only so builds succeed before secrets are configured; those are not valid credentials.
 - `auth.ts` uses a development-only fallback `AUTH_SECRET` so logged-out auth routes can run locally before `.env.local` exists. Production must provide a real `AUTH_SECRET`.
 - In non-production, `/login` shows dev-only database-session login buttons for `dev.owner@vault.local` and `dev.collaborator@vault.local`; set `ENABLE_DEV_LOGIN=false` to hide them.
+- After login, users without `profile_completed_at`, `username`, or nickname are redirected to `/onboarding`.
+- `/dashboard/settings` lets users change nickname and username. Username availability is checked through `/api/users/username-availability`, rechecked by `updateProfileAction()`, and finally enforced by the database unique constraint.
 ```
 
 Manual auth tests performed:
@@ -525,6 +537,8 @@ Known editor caveats:
 - Autosave is debounced and writes through the same server-side permission checks as manual save.
 - Markdown toolbar buttons insert syntax into CodeMirror source, not rich-text nodes.
 - Inline toolbar buttons now toggle matching Markdown syntax off when the selected text is already wrapped.
+- Bold, italic, inline-code, and link toolbar actions are object-aware: if the cursor or partial selection is inside an existing formatted Markdown object, the whole object is unwrapped; with no selection on plain text, the current word is wrapped.
+- New italic formatting uses underscores so it does not collide with bold double-asterisk markers.
 - Heading/list/blockquote toolbar buttons now remove or replace existing line prefixes instead of blindly stacking prefixes.
 - Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block.
 - Raw HTML is skipped in read-only/public rendering. HTML inside fenced code blocks displays as code.
@@ -583,7 +597,7 @@ Known collaboration caveats:
 Current friend system status:
 
 ```txt
-Implemented with exact-email requests, accept/reject, friend list, remove friend, and friend-aware document sharing.
+Implemented with profile search suggestions, accept/reject, friend list, remove friend, and friend-aware document sharing.
 ```
 
 Important files:
@@ -608,7 +622,8 @@ listFriendsForUser()
 Known friend system caveats:
 
 ```txt
-- User lookup is exact email only, not fuzzy search.
+- Friend search matches nickname, username, and email through `/api/users/search`.
+- Manual friend request submit falls back to exact username/email when no suggestion is selected.
 - Friend-based document sharing verifies friendship server-side before granting access.
 ```
 
@@ -767,6 +782,8 @@ Manual checks:
 | Markdown pivot | `npm run lint` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
 | Markdown pivot | `npm run build` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
 | Markdown pivot | Browser check for create/edit/reopen/source/split/preview | Not tested |  |
+| Profile | `users.profile_completed_at` migration applied locally | Passed | 2026-06-01 |
+| Profile | Settings username/nickname update builds and lints | Passed | 2026-06-01 |
 | Markdown collaboration | `node --check scripts/collab-server.mjs` succeeds after Y.Text migration | Passed | 2026-06-01 |
 | Markdown collaboration | `npm run build` succeeds with CodeMirror/Yjs binding | Passed | 2026-06-01 |
 | Markdown collaboration | Two-browser owner/editor live Markdown editing | Not tested |  |
@@ -850,3 +867,5 @@ Use this as a compact implementation log.
 | 2026-06-01 | Started Markdown schema prep | Added additive `documents.markdown` column, generated/applied local migration, and made new documents write initial Markdown |
 | 2026-06-01 | Added local Markdown editor and renderer | Added CodeMirror source editing, Markdown toolbar syntax insertion, safe GFM rendering, dashboard previews, and source/split/preview modes backed by `documents.markdown` |
 | 2026-06-01 | Migrated collaboration path to Markdown text | Collab service now loads/stores `documents.markdown` as `Y.Text`; Markdown editor binds CodeMirror to Hocuspocus/Yjs when a collab URL is configured |
+| 2026-06-01 | Added profile completion and friend search | Added username/nickname onboarding, profile completion gate, authenticated user search API, friend autocomplete, and profile migration |
+| 2026-06-01 | Added settings profile editing | Users can update nickname and username from settings; username availability is checked live and relationships remain stable because references use `users.id` |

@@ -24,6 +24,7 @@ users
   email_verified TIMESTAMP
   image TEXT
   username TEXT UNIQUE
+  profile_completed_at TIMESTAMP
   created_at TIMESTAMP
   updated_at TIMESTAMP
 ```
@@ -32,6 +33,9 @@ Notes:
 
 - `email` may be nullable depending on OAuth provider.
 - Add `username` for nicer search/share UX.
+- `name` is currently used as the free-form non-unique nickname.
+- `profile_completed_at` gates first-run onboarding after OAuth/dev login.
+- `username` is searchable and user-editable; relational data must keep using `users.id` as the stable key.
 - Do not expose raw internal user IDs publicly unless needed.
 
 ---

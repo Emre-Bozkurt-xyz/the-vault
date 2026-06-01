@@ -25,6 +25,7 @@ import {
   updateCollaboratorRoleAction,
 } from "@/server/documents";
 import { listFriendsForUser } from "@/server/friends";
+import { requireCompletedProfile } from "@/server/profile";
 
 export default async function DocumentPage({
   params,
@@ -37,6 +38,7 @@ export default async function DocumentPage({
     redirect("/login");
   }
 
+  const profile = await requireCompletedProfile();
   const { docId } = await params;
   const document = await getDocumentForUser(session.user.id, docId);
 
@@ -63,8 +65,8 @@ export default async function DocumentPage({
           documentId: document.id,
           userId: session.user.id,
           role: collabRole,
-          name: session.user.name ?? null,
-          email: session.user.email ?? null,
+          name: profile.nickname ?? null,
+          email: profile.email ?? null,
         })
       : null;
 
@@ -109,10 +111,10 @@ export default async function DocumentPage({
                         token: collabToken,
                         user: {
                           name:
-                            session.user.name ??
-                            session.user.email ??
+                            profile.nickname ??
+                            profile.email ??
                             "Vault user",
-                          email: session.user.email ?? null,
+                          email: profile.email ?? null,
                         },
                       }
                     : null

@@ -1,22 +1,30 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, KeyRound, ShieldCheck } from "lucide-react";
+import { ArrowLeft, KeyRound, ShieldCheck, UserRoundCog } from "lucide-react";
 
 import { auth, signOut } from "@/auth";
+import { ProfileSettingsForm } from "@/components/profile-settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { requireCompletedProfile } from "@/server/profile";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
   const session = await auth();
 
   if (!session?.user?.id) {
     redirect("/login");
   }
 
-  const name = session.user.name ?? session.user.email ?? "Vault user";
+  const profile = await requireCompletedProfile();
+  const { error, saved } = await searchParams;
+  const name = profile.nickname ?? profile.email ?? "Vault user";
   const fallback = name.slice(0, 1).toUpperCase();
 
   return (
@@ -41,14 +49,16 @@ export default async function SettingsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <Avatar className="size-14">
-                  <AvatarImage src={session.user.image ?? undefined} alt={name} />
+                  <AvatarImage src={profile.image ?? undefined} alt={name} />
                   <AvatarFallback>{fallback}</AvatarFallback>
                 </Avatar>
                 <div>
                   <h1 className="text-2xl font-semibold tracking-tight vault-display">
                     {name}
                   </h1>
-                  <p className="text-sm text-muted-foreground">{session.user.email}</p>
+                  <p className="text-sm text-muted-foreground">
+                    @{profile.username} - {profile.email}
+                  </p>
                 </div>
               </div>
               <form
@@ -64,8 +74,26 @@ export default async function SettingsPage() {
             </div>
           </div>
 
+          <section className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+            <UserRoundCog className="mb-4 size-6 text-primary" />
+            <h2 className="text-lg font-semibold">Profile</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Your username is unique and searchable. Your nickname is
+              free-form. Friends, shared documents, and collaborator access stay
+              attached to your account ID when your username changes.
+            </p>
+            <div className="mt-5 max-w-md">
+              <ProfileSettingsForm
+                username={profile.username ?? ""}
+                nickname={profile.nickname ?? ""}
+                error={error}
+                saved={saved}
+              />
+            </div>
+          </section>
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <section className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+            <section className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <KeyRound className="mb-4 size-6 text-primary" />
               <h2 className="text-lg font-semibold">Authentication</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -74,7 +102,7 @@ export default async function SettingsPage() {
               </p>
             </section>
 
-            <section className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+            <section className="vault-fade-up vault-delay-3 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
               <ShieldCheck className="mb-4 size-6 text-primary" />
               <h2 className="text-lg font-semibold">Privacy model</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">

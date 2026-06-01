@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { UserSearchField } from "@/components/user-search-field";
 import { cn } from "@/lib/utils";
 import {
   acceptFriendRequestAction,
@@ -16,6 +16,7 @@ import {
   removeFriendAction,
   sendFriendRequestAction,
 } from "@/server/friends";
+import { requireCompletedProfile } from "@/server/profile";
 
 export default async function FriendsPage() {
   const session = await auth();
@@ -24,6 +25,7 @@ export default async function FriendsPage() {
     redirect("/login");
   }
 
+  await requireCompletedProfile();
   const { friends, incomingRequests, outgoingRequests } = await listFriendPageData(
     session.user.id,
   );
@@ -52,17 +54,12 @@ export default async function FriendsPage() {
               Add a friend
             </h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Send a request to another registered Vault user by email. Friends
-              are useful collaborators for document sharing.
+              Search by nickname, username, or email. Friends are useful
+              collaborators for document sharing.
             </p>
 
             <form action={sendFriendRequestAction} className="mt-6 grid gap-3">
-              <Input
-                name="email"
-                type="email"
-                required
-                placeholder="person@example.com"
-              />
+              <UserSearchField />
               <Button type="submit" className="gap-2">
                 <UserPlus className="size-4" />
                 Send request
@@ -88,6 +85,7 @@ export default async function FriendsPage() {
                     >
                       <UserSummary
                         name={friend.name}
+                        username={friend.username}
                         email={friend.email}
                         image={friend.image}
                       />
@@ -120,6 +118,7 @@ export default async function FriendsPage() {
                     >
                       <UserSummary
                         name={request.requesterName}
+                        username={request.requesterUsername}
                         email={request.requesterEmail}
                         image={request.requesterImage}
                       />
@@ -158,16 +157,12 @@ export default async function FriendsPage() {
                       key={request.id}
                       className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-4"
                     >
-                      <div>
-                        <p className="font-medium">
-                          {request.recipientName ??
-                            request.recipientEmail ??
-                            "Unnamed user"}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {request.recipientEmail}
-                        </p>
-                      </div>
+                      <UserSummary
+                        name={request.recipientName}
+                        username={request.recipientUsername}
+                        email={request.recipientEmail}
+                        image={request.recipientImage}
+                      />
                       <Badge variant="outline">Pending</Badge>
                     </div>
                   ))}
@@ -191,14 +186,16 @@ function EmptyState({ text }: { text: string }) {
 
 function UserSummary({
   name,
+  username,
   email,
   image,
 }: {
   name: string | null;
+  username?: string | null;
   email: string | null;
   image: string | null;
 }) {
-  const fallback = (name ?? email ?? "U").slice(0, 1).toUpperCase();
+  const fallback = (name ?? username ?? email ?? "U").slice(0, 1).toUpperCase();
 
   return (
     <div className="flex items-center gap-3">
@@ -207,7 +204,12 @@ function UserSummary({
         <AvatarFallback>{fallback}</AvatarFallback>
       </Avatar>
       <div>
-        <p className="font-medium">{name ?? email ?? "Unnamed user"}</p>
+        <p className="font-medium">
+          {name ?? username ?? email ?? "Unnamed user"}
+          {username ? (
+            <span className="ml-2 text-muted-foreground">@{username}</span>
+          ) : null}
+        </p>
         <p className="text-sm text-muted-foreground">{email}</p>
       </div>
     </div>

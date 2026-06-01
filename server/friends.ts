@@ -8,7 +8,10 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { friendRequests, friendships, users } from "@/db/schema";
 
-const emailSchema = z.string().trim().email();
+const friendTargetSchema = z.object({
+  userId: z.string().uuid().optional(),
+  query: z.string().trim().min(1).max(120).optional(),
+});
 const requestIdSchema = z.string().uuid();
 const userIdSchema = z.string().uuid();
 
@@ -25,13 +28,29 @@ export async function sendFriendRequestAction(formData: FormData) {
     redirect("/login");
   }
 
-  const email = emailSchema.parse(formData.get("email"));
+  const input = friendTargetSchema.parse({
+    userId: formData.get("userId") || undefined,
+    query: formData.get("query") || undefined,
+  });
 
-  const [recipient] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
+  const [recipient] = input.userId
+    ? await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .limit(1)
+    : input.query
+      ? await db
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            or(
+              eq(users.email, input.query.toLowerCase()),
+              eq(users.username, input.query.toLowerCase().replace(/^@/, "")),
+            ),
+          )
+          .limit(1)
+      : [];
 
   if (!recipient || recipient.id === session.user.id) {
     redirect("/dashboard/friends");
@@ -202,6 +221,7 @@ export async function listFriendPageData(userId: string) {
         id: friendRequests.id,
         requesterId: users.id,
         requesterName: users.name,
+        requesterUsername: users.username,
         requesterEmail: users.email,
         requesterImage: users.image,
       })
@@ -217,7 +237,9 @@ export async function listFriendPageData(userId: string) {
       .select({
         id: friendRequests.id,
         recipientName: users.name,
+        recipientUsername: users.username,
         recipientEmail: users.email,
+        recipientImage: users.image,
       })
       .from(friendRequests)
       .innerJoin(users, eq(friendRequests.recipientId, users.id))
@@ -274,6 +296,7 @@ async function listUsersByIds(userIds: string[]) {
     .select({
       id: users.id,
       name: users.name,
+      username: users.username,
       email: users.email,
       image: users.image,
     })

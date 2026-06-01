@@ -24,6 +24,7 @@ import {
   listPublishedDocumentsForUser,
   listSharedDocumentsForUser,
 } from "@/server/documents";
+import { requireCompletedProfile } from "@/server/profile";
 
 type DashboardTab = "owned" | "shared" | "public";
 
@@ -38,6 +39,7 @@ export default async function DashboardPage({
     redirect("/login");
   }
 
+  const profile = await requireCompletedProfile();
   const [documentList, sharedDocumentList, publicDocumentList] = await Promise.all([
     listDocumentsForUser(session.user.id),
     listSharedDocumentsForUser(session.user.id),
@@ -47,7 +49,7 @@ export default async function DashboardPage({
   const { tab } = await searchParams;
   const activeTab: DashboardTab =
     tab === "shared" ? "shared" : tab === "public" ? "public" : "owned";
-  const userLabel = session.user.name ?? session.user.email ?? "Vault user";
+  const userLabel = profile.nickname ?? profile.email ?? "Vault user";
 
   return (
     <main className="min-h-screen bg-background text-foreground">

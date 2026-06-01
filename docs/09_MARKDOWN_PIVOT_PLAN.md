@@ -490,6 +490,7 @@ Live mode:
   edit in CodeMirror
   inactive Markdown syntax is hidden/styled as preview
   cursor object remains source-like
+  current default editor mode
 
 Split mode:
   Markdown source left, rendered preview right

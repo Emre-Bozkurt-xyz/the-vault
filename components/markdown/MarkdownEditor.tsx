@@ -78,7 +78,7 @@ export function MarkdownEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("source");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("live");
   const [collabStatus, setCollabStatus] = useState<CollabStatus>(
     collaboration ? "connecting" : "off",
   );
@@ -342,17 +342,17 @@ export function MarkdownEditor({
     }
 
     if (format === "bold") {
-      toggleInlineWrapper(view, "**", "bold text");
+      toggleInlineFormat(view, "bold");
       return;
     }
 
     if (format === "italic") {
-      toggleInlineWrapper(view, "*", "italic text");
+      toggleInlineFormat(view, "italic");
       return;
     }
 
     if (format === "inlineCode") {
-      toggleInlineWrapper(view, "`", "code");
+      toggleInlineFormat(view, "code");
       return;
     }
 
@@ -931,58 +931,257 @@ function PreviewModeButton({
   );
 }
 
-function toggleInlineWrapper(
-  view: EditorView,
-  marker: "**" | "*" | "`",
-  placeholder: string,
-) {
+type InlineFormat = "bold" | "italic" | "code";
+
+type InlineRange = {
+  from: number;
+  to: number;
+  contentFrom: number;
+  contentTo: number;
+  open: string;
+  close: string;
+};
+
+const inlineFormatConfig: Record<
+  InlineFormat,
+  {
+    wrappers: Array<{ open: string; close: string }>;
+    preferred: { open: string; close: string };
+    placeholder: string;
+  }
+> = {
+  bold: {
+    wrappers: [{ open: "**", close: "**" }],
+    preferred: { open: "**", close: "**" },
+    placeholder: "bold text",
+  },
+  italic: {
+    wrappers: [
+      { open: "_", close: "_" },
+      { open: "*", close: "*" },
+    ],
+    preferred: { open: "_", close: "_" },
+    placeholder: "italic text",
+  },
+  code: {
+    wrappers: [{ open: "`", close: "`" }],
+    preferred: { open: "`", close: "`" },
+    placeholder: "code",
+  },
+};
+
+function toggleInlineFormat(view: EditorView, format: InlineFormat) {
   const selection = view.state.selection.main;
-  const selectedText = view.state.sliceDoc(selection.from, selection.to);
-  const markerLength = marker.length;
+  const config = inlineFormatConfig[format];
+  const existingRange = findInlineFormatRange(view, format);
 
-  if (selectedText.startsWith(marker) && selectedText.endsWith(marker)) {
-    const unwrapped = selectedText.slice(markerLength, -markerLength);
-
-    view.dispatch({
-      changes: { from: selection.from, to: selection.to, insert: unwrapped },
-      selection: EditorSelection.range(
-        selection.from,
-        selection.from + unwrapped.length,
-      ),
-      scrollIntoView: true,
-    });
-    view.focus();
+  if (existingRange) {
+    unwrapInlineRange(view, existingRange, selection);
     return;
   }
 
-  const before =
-    selection.from >= markerLength
-      ? view.state.sliceDoc(selection.from - markerLength, selection.from)
-      : "";
-  const after = view.state.sliceDoc(selection.to, selection.to + markerLength);
+  const target = getInlineWrapTarget(view, config.placeholder);
+  wrapInlineRange(view, target.from, target.to, config.preferred, target.text);
+}
 
-  if (selectedText && before === marker && after === marker) {
-    view.dispatch({
-      changes: [
-        { from: selection.to, to: selection.to + markerLength },
-        { from: selection.from - markerLength, to: selection.from },
-      ],
-      selection: EditorSelection.range(
-        selection.from - markerLength,
-        selection.to - markerLength,
-      ),
-      scrollIntoView: true,
-    });
-    view.focus();
-    return;
+function findInlineFormatRange(
+  view: EditorView,
+  format: InlineFormat,
+): InlineRange | null {
+  const selection = view.state.selection.main;
+  const text = view.state.doc.toString();
+  const config = inlineFormatConfig[format];
+
+  for (const wrapper of config.wrappers) {
+    const ranges = findWrapperRanges(text, wrapper.open, wrapper.close, format);
+    const selectedText = view.state.sliceDoc(selection.from, selection.to);
+
+    if (
+      selectedText.startsWith(wrapper.open) &&
+      selectedText.endsWith(wrapper.close)
+    ) {
+      return {
+        from: selection.from,
+        to: selection.to,
+        contentFrom: selection.from + wrapper.open.length,
+        contentTo: selection.to - wrapper.close.length,
+        open: wrapper.open,
+        close: wrapper.close,
+      };
+    }
+
+    const range = ranges.find((candidate) =>
+      selectionTouchesInlineRange(selection.from, selection.to, candidate),
+    );
+
+    if (range) {
+      return range;
+    }
   }
 
-  const replacement = `${marker}${selectedText || placeholder}${marker}`;
-  const anchor = selection.from + markerLength;
-  const head = anchor + (selectedText || placeholder).length;
+  return null;
+}
+
+function findWrapperRanges(
+  text: string,
+  open: string,
+  close: string,
+  format: InlineFormat,
+) {
+  const ranges: InlineRange[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < text.length) {
+    const openIndex = findNextMarker(text, open, searchFrom, format);
+
+    if (openIndex === -1) {
+      break;
+    }
+
+    const contentFrom = openIndex + open.length;
+    const closeIndex = findNextMarker(text, close, contentFrom, format);
+
+    if (closeIndex === -1) {
+      break;
+    }
+
+    ranges.push({
+      from: openIndex,
+      to: closeIndex + close.length,
+      contentFrom,
+      contentTo: closeIndex,
+      open,
+      close,
+    });
+    searchFrom = closeIndex + close.length;
+  }
+
+  return ranges;
+}
+
+function findNextMarker(
+  text: string,
+  marker: string,
+  from: number,
+  format: InlineFormat,
+) {
+  let index = text.indexOf(marker, from);
+
+  while (index !== -1) {
+    if (format !== "italic" || marker !== "*" || isSingleAsterisk(text, index)) {
+      return index;
+    }
+
+    index = text.indexOf(marker, index + 1);
+  }
+
+  return -1;
+}
+
+function isSingleAsterisk(text: string, index: number) {
+  return text[index - 1] !== "*" && text[index + 1] !== "*";
+}
+
+function selectionTouchesInlineRange(
+  selectionFrom: number,
+  selectionTo: number,
+  range: InlineRange,
+) {
+  if (selectionFrom === selectionTo) {
+    return selectionFrom > range.from && selectionFrom < range.to;
+  }
+
+  return selectionFrom < range.to && selectionTo > range.from;
+}
+
+function unwrapInlineRange(
+  view: EditorView,
+  range: InlineRange,
+  selection: EditorSelection["main"],
+) {
+  const removedBeforeSelection =
+    selection.from > range.contentFrom ? range.open.length : 0;
+  const removedBeforeSelectionEnd =
+    selection.to > range.contentFrom ? range.open.length : 0;
 
   view.dispatch({
-    changes: { from: selection.from, to: selection.to, insert: replacement },
+    changes: [
+      { from: range.contentTo, to: range.contentTo + range.close.length },
+      { from: range.from, to: range.from + range.open.length },
+    ],
+    selection: EditorSelection.range(
+      Math.max(range.from, selection.from - removedBeforeSelection),
+      Math.max(range.from, selection.to - removedBeforeSelectionEnd),
+    ),
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
+function getInlineWrapTarget(view: EditorView, placeholder: string) {
+  const selection = view.state.selection.main;
+  const selectedText = view.state.sliceDoc(selection.from, selection.to);
+
+  if (selectedText) {
+    return {
+      from: selection.from,
+      to: selection.to,
+      text: selectedText,
+    };
+  }
+
+  const word = wordRangeAtPosition(view, selection.from);
+
+  if (word) {
+    return word;
+  }
+
+  return {
+    from: selection.from,
+    to: selection.to,
+    text: placeholder,
+  };
+}
+
+function wordRangeAtPosition(view: EditorView, position: number) {
+  const line = view.state.doc.lineAt(position);
+  const offset = position - line.from;
+  const wordPattern = /[A-Za-z0-9_'-]/;
+  let start = offset;
+  let end = offset;
+
+  while (start > 0 && wordPattern.test(line.text[start - 1])) {
+    start -= 1;
+  }
+
+  while (end < line.text.length && wordPattern.test(line.text[end])) {
+    end += 1;
+  }
+
+  if (start === end) {
+    return null;
+  }
+
+  return {
+    from: line.from + start,
+    to: line.from + end,
+    text: line.text.slice(start, end),
+  };
+}
+
+function wrapInlineRange(
+  view: EditorView,
+  from: number,
+  to: number,
+  wrapper: { open: string; close: string },
+  text: string,
+) {
+  const replacement = `${wrapper.open}${text}${wrapper.close}`;
+  const anchor = from + wrapper.open.length;
+  const head = anchor + text.length;
+
+  view.dispatch({
+    changes: { from, to, insert: replacement },
     selection: EditorSelection.range(anchor, head),
     scrollIntoView: true,
   });
@@ -991,15 +1190,26 @@ function toggleInlineWrapper(
 
 function toggleLink(view: EditorView) {
   const selection = view.state.selection.main;
-  const selectedText = view.state.sliceDoc(selection.from, selection.to);
-  const selectedLink = selectedText.match(/^\[([^\]]+)]\(([^)]+)\)$/);
+  const existingLink = findLinkRange(view);
 
-  if (selectedLink) {
+  if (existingLink) {
     view.dispatch({
-      changes: { from: selection.from, to: selection.to, insert: selectedLink[1] },
+      changes: {
+        from: existingLink.from,
+        to: existingLink.to,
+        insert: existingLink.label,
+      },
       selection: EditorSelection.range(
-        selection.from,
-        selection.from + selectedLink[1].length,
+        Math.max(
+          existingLink.from,
+          Math.min(selection.from, existingLink.labelEnd) -
+            (selection.from > existingLink.labelStart ? 1 : 0),
+        ),
+        Math.max(
+          existingLink.from,
+          Math.min(selection.to, existingLink.labelEnd) -
+            (selection.to > existingLink.labelStart ? 1 : 0),
+        ),
       ),
       scrollIntoView: true,
     });
@@ -1007,17 +1217,51 @@ function toggleLink(view: EditorView) {
     return;
   }
 
-  const text = selectedText || "link text";
+  const target = getInlineWrapTarget(view, "link text");
+  const text = target.text;
   const url = "https://example.com";
   const replacement = `[${text}](${url})`;
-  const urlStart = selection.from + text.length + 3;
+  const urlStart = target.from + text.length + 3;
 
   view.dispatch({
-    changes: { from: selection.from, to: selection.to, insert: replacement },
+    changes: { from: target.from, to: target.to, insert: replacement },
     selection: EditorSelection.range(urlStart, urlStart + url.length),
     scrollIntoView: true,
   });
   view.focus();
+}
+
+function findLinkRange(view: EditorView) {
+  const selection = view.state.selection.main;
+  const text = view.state.doc.toString();
+
+  for (const match of text.matchAll(/\[([^\]\n]+)]\(([^)\n]+)\)/g)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const from = match.index;
+    const to = from + match[0].length;
+
+    if (
+      selection.from === selection.to
+        ? selection.from > from && selection.from < to
+        : selection.from < to && selection.to > from
+    ) {
+      const labelStart = from + 1;
+      const labelEnd = labelStart + match[1].length;
+
+      return {
+        from,
+        to,
+        label: match[1],
+        labelStart,
+        labelEnd,
+      };
+    }
+  }
+
+  return null;
 }
 
 function toggleCodeFence(view: EditorView) {
