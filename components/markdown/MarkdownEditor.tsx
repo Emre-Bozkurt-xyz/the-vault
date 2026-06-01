@@ -246,8 +246,20 @@ export function MarkdownEditor({
           textDecorationColor:
             "color-mix(in oklab, var(--foreground) 55%, transparent)",
         },
-        ".vault-cm-hidden-md": {
-          display: "none",
+        ".vault-markdown-editor-source & .cm-content span, .vault-markdown-editor-split & .cm-content span": {
+          fontFamily: "var(--font-mono)",
+          fontSize: "inherit",
+          fontStyle: "normal",
+          fontWeight: "inherit",
+          fontVariantLigatures: "none",
+          fontFeatureSettings: '"liga" 0, "calt" 0',
+          letterSpacing: "0",
+          textDecoration: "none",
+          textDecorationLine: "none",
+        },
+        ".vault-markdown-editor-source & .cm-content, .vault-markdown-editor-split & .cm-content": {
+          fontVariantLigatures: "none",
+          fontFeatureSettings: '"liga" 0, "calt" 0',
         },
         ".vault-cm-preview-heading-1": {
           fontFamily: "var(--font-heading)",
@@ -266,6 +278,25 @@ export function MarkdownEditor({
           fontSize: "1.2rem",
           fontWeight: "600",
           lineHeight: "1.3",
+        },
+        ".vault-cm-preview-heading-4": {
+          fontFamily: "var(--font-heading)",
+          fontSize: "1.05rem",
+          fontWeight: "600",
+          lineHeight: "1.35",
+        },
+        ".vault-cm-preview-heading-5": {
+          fontFamily: "var(--font-heading)",
+          fontSize: "1rem",
+          fontWeight: "600",
+          lineHeight: "1.4",
+        },
+        ".vault-cm-preview-heading-6": {
+          fontFamily: "var(--font-heading)",
+          fontSize: "0.95rem",
+          fontWeight: "600",
+          lineHeight: "1.45",
+          color: "var(--muted-foreground)",
         },
         ".vault-cm-preview-bold": {
           fontWeight: "700",
@@ -381,7 +412,7 @@ export function MarkdownEditor({
       heading2: "## ",
       heading3: "### ",
       bulletList: "- ",
-      orderedList: "1. ",
+      orderedList: "",
       taskList: "- [ ] ",
       blockquote: "> ",
       bold: null,
@@ -393,6 +424,11 @@ export function MarkdownEditor({
       horizontalRule: null,
     };
     const prefix = linePrefix[format];
+
+    if (format === "orderedList") {
+      toggleLinePrefix(view, "1. ", format);
+      return;
+    }
 
     if (prefix) {
       toggleLinePrefix(view, prefix, format);
@@ -480,7 +516,12 @@ export function MarkdownEditor({
         className="w-full bg-transparent text-3xl font-semibold leading-[1.08] tracking-tight outline-none sm:text-5xl vault-display"
         aria-label="Document title"
       />
-      <div className="vault-markdown-editor overflow-hidden rounded-2xl border border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl">
+      <div
+        className={cn(
+          "vault-markdown-editor overflow-hidden rounded-2xl border border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl",
+          `vault-markdown-editor-${previewMode}`,
+        )}
+      >
         {previewMode !== "preview" ? (
           <MarkdownToolbar onFormat={applyFormat} />
         ) : null}
@@ -566,7 +607,7 @@ function colorFromString(value: string) {
   return colors[hash];
 }
 
-const hiddenMarkdown = Decoration.mark({ class: "vault-cm-hidden-md" });
+const hiddenMarkdown = Decoration.replace({});
 const previewBold = Decoration.mark({ class: "vault-cm-preview-bold" });
 const previewItalic = Decoration.mark({ class: "vault-cm-preview-italic" });
 const previewCode = Decoration.mark({ class: "vault-cm-preview-code" });
@@ -574,6 +615,9 @@ const previewLink = Decoration.mark({ class: "vault-cm-preview-link" });
 const previewHeading1 = Decoration.line({ class: "vault-cm-preview-heading-1" });
 const previewHeading2 = Decoration.line({ class: "vault-cm-preview-heading-2" });
 const previewHeading3 = Decoration.line({ class: "vault-cm-preview-heading-3" });
+const previewHeading4 = Decoration.line({ class: "vault-cm-preview-heading-4" });
+const previewHeading5 = Decoration.line({ class: "vault-cm-preview-heading-5" });
+const previewHeading6 = Decoration.line({ class: "vault-cm-preview-heading-6" });
 const previewQuote = Decoration.line({ class: "vault-cm-preview-quote" });
 const previewCodeBlock = Decoration.line({ class: "vault-cm-preview-codeblock" });
 const previewList = Decoration.line({ class: "vault-cm-preview-list" });
@@ -766,14 +810,7 @@ function decorateInactiveMarkdownLine(
 
   if (heading) {
     const level = heading[1].length;
-    ranges.push(
-      (level === 1
-        ? previewHeading1
-        : level === 2
-          ? previewHeading2
-          : previewHeading3
-      ).range(lineFrom),
-    );
+    ranges.push(headingDecorationForLevel(level).range(lineFrom));
     ranges.push(hiddenMarkdown.range(lineFrom, lineFrom + heading[0].length));
   }
 
@@ -793,6 +830,30 @@ function decorateInactiveMarkdownLine(
   addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
 
   return ranges;
+}
+
+function headingDecorationForLevel(level: number) {
+  if (level === 1) {
+    return previewHeading1;
+  }
+
+  if (level === 2) {
+    return previewHeading2;
+  }
+
+  if (level === 3) {
+    return previewHeading3;
+  }
+
+  if (level === 4) {
+    return previewHeading4;
+  }
+
+  if (level === 5) {
+    return previewHeading5;
+  }
+
+  return previewHeading6;
 }
 
 function addInlinePreviewDecorations(
@@ -1317,32 +1378,105 @@ function toggleLinePrefix(
     lines.push(view.state.doc.line(lineNumber));
   }
 
-  const allHavePrefix = lines.every((line) =>
-    line.text.startsWith(prefix),
+  const prefixMatches = lines.map((line) =>
+    getRemovablePrefixLength(format, line.text, prefix),
   );
-  const changes = lines.map((line) => {
+  const allHavePrefix = prefixMatches.every((length) => length > 0);
+  const orderedListStart =
+    format === "orderedList"
+      ? orderedListStartNumber(view, fromLine.number)
+      : 1;
+  const changes = lines.map((line, index) => {
+    const removablePrefixLength = getRemovablePrefixLength(
+      format,
+      line.text,
+      prefix,
+    );
+
     if (allHavePrefix) {
-      return { from: line.from, to: line.from + prefix.length, insert: "" };
+      return {
+        from: line.from,
+        to: line.from + removablePrefixLength,
+        insert: "",
+      };
     }
 
     const lineText = line.text;
     const existingPrefix = prefixToReplace(format, lineText);
     const from = line.from;
     const to = existingPrefix ? line.from + existingPrefix.length : line.from;
+    const insert =
+      format === "orderedList"
+        ? `${orderedListStart + index}. `
+        : prefix;
 
-    return { from, to, insert: prefix };
+    return { from, to, insert };
   });
-  const selectionDelta = allHavePrefix ? -prefix.length : prefix.length;
-
-  view.dispatch({
+  const transaction = view.state.update({
     changes,
-    selection: EditorSelection.range(
-      Math.max(fromLine.from, selection.from + selectionDelta),
-      Math.max(fromLine.from, selection.to + selectionDelta * changes.length),
+    selection: view.state.selection.map(
+      view.state.changes(changes),
+      1,
     ),
     scrollIntoView: true,
   });
+
+  view.dispatch(transaction);
   view.focus();
+}
+
+function orderedListStartNumber(view: EditorView, firstLineNumber: number) {
+  const doc = view.state.doc;
+  let expectedNumber = 1;
+
+  for (let lineNumber = firstLineNumber - 1; lineNumber >= 1; lineNumber -= 1) {
+    const lineText = doc.line(lineNumber).text;
+
+    if (!lineText.trim()) {
+      break;
+    }
+
+    const match = lineText.match(/^(\s*)(\d+)\.\s+/);
+
+    if (match) {
+      expectedNumber = Number(match[2]) + 1;
+      break;
+    }
+
+    if (!isListContinuation(lineText)) {
+      break;
+    }
+  }
+
+  return expectedNumber;
+}
+
+function getRemovablePrefixLength(
+  format: MarkdownFormat,
+  lineText: string,
+  prefix: string,
+) {
+  if (format === "orderedList") {
+    return lineText.match(/^(\s*)\d+\.\s+/)?.[0].length ?? 0;
+  }
+
+  if (format === "bulletList") {
+    return lineText.match(/^(\s*)[-*+]\s+/)?.[0].length ?? 0;
+  }
+
+  if (format === "taskList") {
+    return lineText.match(/^(\s*)[-*+]\s+\[[ xX]]\s+/)?.[0].length ?? 0;
+  }
+
+  if (format === "heading1" || format === "heading2" || format === "heading3") {
+    return lineText.startsWith(prefix) ? prefix.length : 0;
+  }
+
+  if (format === "blockquote") {
+    return lineText.match(/^(>\s+)/)?.[0].length ?? 0;
+  }
+
+  return lineText.startsWith(prefix) ? prefix.length : 0;
 }
 
 function prefixToReplace(format: MarkdownFormat, lineText: string) {

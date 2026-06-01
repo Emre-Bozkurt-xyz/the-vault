@@ -376,6 +376,22 @@
     line-height: 1.35;
   }
 
+  .vault-md-h5 {
+    font-family: var(--font-heading);
+    font-size: 0.95rem;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .vault-md-h6 {
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+
   .vault-md-p,
   .vault-md-li {
     line-height: 1.75;
@@ -476,6 +492,100 @@
     font-style: italic;
   }
 
+  .vault-md-html-block,
+  .vault-md-section {
+    display: block;
+  }
+
+  .vault-md-section {
+    border-left: 2px solid color-mix(in oklab, var(--border) 85%, transparent);
+    padding-left: 1rem;
+  }
+
+  .vault-md-aside {
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+    padding: 1rem;
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-figure {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .vault-md-figcaption {
+    color: var(--muted-foreground);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .vault-md-details {
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 35%, transparent);
+    padding: 0.8rem 1rem;
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .vault-md-details[open] .vault-md-summary {
+    margin-bottom: 0.75rem;
+  }
+
+  .vault-md-mark {
+    background: color-mix(in oklab, var(--primary) 24%, transparent);
+    color: var(--foreground);
+    padding: 0.05rem 0.2rem;
+    border-radius: 0.25rem;
+  }
+
+  .vault-md-small {
+    color: var(--muted-foreground);
+    font-size: 0.85em;
+  }
+
+  .vault-md-kbd {
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--border) 90%, transparent);
+    padding: 0.08rem 0.32rem;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    border-radius: 0.35rem;
+  }
+
+  .vault-md-abbr {
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2rem;
+  }
+
+  .vault-md-dl {
+    display: grid;
+    gap: 0.35rem 1rem;
+  }
+
+  .vault-md-dt {
+    font-weight: 700;
+  }
+
+  .vault-md-dd {
+    margin-left: 1rem;
+    color: var(--muted-foreground);
+  }
+
+  .vault-md-img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    border-radius: 0.65rem;
+  }
+
   .vault-markdown-compact {
     max-width: none;
     font-size: 0.62rem;
@@ -542,6 +652,25 @@
     border-radius: 2px;
   }
 
+  .vault-markdown-editor-source .cm-content span,
+  .vault-markdown-editor-split .cm-content span {
+    font-family: var(--font-mono);
+    font-size: inherit;
+    font-style: normal;
+    font-weight: inherit;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+    letter-spacing: 0;
+    text-decoration: none;
+    text-decoration-line: none;
+  }
+
+  .vault-markdown-editor-source .cm-content,
+  .vault-markdown-editor-split .cm-content {
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+
   @media (max-width: 640px) {
     .vault-markdown-editor .cm-content {
       min-height: calc(100svh - 17rem);
@@ -567,6 +696,16 @@
 
     .vault-markdown-editor .vault-cm-preview-heading-2 {
       font-size: 1.25rem;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-3 {
+      font-size: 1.08rem;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-4,
+    .vault-markdown-editor .vault-cm-preview-heading-5,
+    .vault-markdown-editor .vault-cm-preview-heading-6 {
+      font-size: 0.95rem;
     }
   }
 }

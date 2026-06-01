@@ -163,7 +163,7 @@ Add notes as real files appear:
 | `components/editor/editor-extensions.ts` | Tiptap extension configuration |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
-| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer that skips raw HTML |
+| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist |
 | `components/theme-provider.tsx` | Root client theme provider using `next-themes` |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
@@ -539,9 +539,9 @@ Known editor caveats:
 - Inline toolbar buttons now toggle matching Markdown syntax off when the selected text is already wrapped.
 - Bold, italic, inline-code, and link toolbar actions are object-aware: if the cursor or partial selection is inside an existing formatted Markdown object, the whole object is unwrapped; with no selection on plain text, the current word is wrapped.
 - New italic formatting uses underscores so it does not collide with bold double-asterisk markers.
-- Heading/list/blockquote toolbar buttons now remove or replace existing line prefixes instead of blindly stacking prefixes.
-- Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block.
-- Raw HTML is skipped in read-only/public rendering. HTML inside fenced code blocks displays as code.
+- Heading/list/blockquote toolbar buttons now remove or replace existing line prefixes instead of blindly stacking prefixes. Ordered-list insertion computes visible source numbers from the previous ordered item instead of always inserting `1. `.
+- Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block. Hidden Markdown markers use CodeMirror replacement decorations so heading markers do not overlap when rendered at larger heading sizes.
+- Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, iframes, forms, inline styles, and unsafe URL protocols are not allowed; HTML inside fenced code blocks still displays as code.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses reduced page/card padding, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides to keep the writing area wider on phone screens.
 - Browser UX verification is still needed after the CodeMirror swap.

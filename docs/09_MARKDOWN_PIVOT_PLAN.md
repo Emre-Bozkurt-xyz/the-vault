@@ -144,11 +144,9 @@ Allowed:
   - fenced code blocks containing HTML source
   - inline code showing HTML source
 
-Potentially allowed later:
-  - sanitized raw HTML rendering behind an explicit setting
-
-Default:
-  - do not render arbitrary raw HTML unsanitized
+Current:
+  - sanitized raw HTML rendering through an explicit allowlist
+  - no scripts, event handlers, iframes, forms, inline styles, or unsafe URL protocols
 ```
 
 Raw HTML in Markdown is a security boundary. Treat unsafe rendering as a bug.
@@ -387,7 +385,7 @@ Tasks:
 - Add `components/markdown/MarkdownDocument.tsx`. Done locally.
 - Support headings, lists, task lists, tables, links, code fences, blockquotes, horizontal rules. Done locally.
 - Add syntax highlighting for code blocks if lightweight. Deferred.
-- Sanitize or disallow raw HTML rendering. Raw HTML is skipped by default.
+- Sanitize or disallow raw HTML rendering. Done locally with `rehype-raw` plus an explicit `rehype-sanitize` allowlist.
 - Replace public route renderer for Markdown-backed docs. Done locally.
 
 Acceptance:
@@ -672,7 +670,7 @@ Mitigation:
 ```txt
 Render HTML code fences as code.
 Sanitize any raw HTML if enabled.
-Default to escaping raw HTML in public pages.
+Raw HTML is allowed only through an explicit sanitizer allowlist in public/viewer rendering.
 ```
 
 ### Deployment

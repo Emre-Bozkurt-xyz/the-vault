@@ -10,7 +10,7 @@ Current Markdown pivot status:
 
 ```txt
 Editable document pages now use CodeMirror for Markdown source editing.
-Viewer/public pages render `documents.markdown` with raw HTML skipped.
+Viewer/public pages render `documents.markdown` with sanitized raw HTML support.
 Source/split/preview modes exist locally.
 The Markdown editor is wired to Hocuspocus/Yjs through `Y.Text` when `NEXT_PUBLIC_COLLAB_URL` is set.
 ```
