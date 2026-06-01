@@ -72,8 +72,8 @@ export default async function DocumentPage({
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-8">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-6">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-5 px-3 py-4 sm:gap-8 sm:px-6 sm:py-8">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4 sm:gap-4 sm:pb-6">
           <Link
             href="/dashboard"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
@@ -98,7 +98,7 @@ export default async function DocumentPage({
             showSidePanel ? "lg:grid-cols-[minmax(0,1fr)_320px]" : null,
           )}
         >
-          <div className="vault-fade-up rounded-3xl border border-border/60 bg-card/70 p-6 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur">
+          <div className="vault-fade-up rounded-2xl border border-border/60 bg-card/70 p-2 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:p-6">
             {document.access.canEdit ? (
               <MarkdownEditor
                 documentId={document.id}
@@ -133,7 +133,7 @@ export default async function DocumentPage({
                     Updated {document.updatedAt.toLocaleDateString()}
                   </p>
                 </div>
-                <div className="rounded-3xl border border-border/60 bg-background/70 p-6">
+                <div className="rounded-2xl border border-border/60 bg-background/70 p-4 sm:rounded-3xl sm:p-6">
                   <MarkdownDocument markdown={markdown} />
                 </div>
               </article>

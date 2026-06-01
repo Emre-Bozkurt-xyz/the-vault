@@ -435,10 +435,10 @@ export function MarkdownEditor({
           : "Local Markdown draft";
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+    <form onSubmit={handleSubmit} className="grid gap-4 sm:gap-6">
+      <div className="flex flex-col gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <span>Markdown source</span>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="-mx-1 flex max-w-full items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
           <PreviewModeButton
             active={previewMode === "source"}
             label="Source"
@@ -477,18 +477,18 @@ export function MarkdownEditor({
           setTitleValue(event.target.value);
           setDirty(true);
         }}
-        className="w-full bg-transparent text-4xl font-semibold leading-[1.05] tracking-tight outline-none sm:text-5xl vault-display"
+        className="w-full bg-transparent text-3xl font-semibold leading-[1.08] tracking-tight outline-none sm:text-5xl vault-display"
         aria-label="Document title"
       />
-      <div className="overflow-hidden rounded-3xl border border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur">
+      <div className="vault-markdown-editor overflow-hidden rounded-2xl border border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl">
         {previewMode !== "preview" ? (
           <MarkdownToolbar onFormat={applyFormat} />
         ) : null}
         <div
           className={cn(
             previewMode === "split"
-              ? "grid min-h-[520px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
-              : "min-h-[520px]",
+              ? "grid min-h-[calc(100svh-17rem)] lg:min-h-[520px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+              : "min-h-[calc(100svh-17rem)] lg:min-h-[520px]",
           )}
         >
           {previewMode !== "preview" ? (
@@ -529,7 +529,7 @@ export function MarkdownEditor({
           ) : null}
           {previewMode !== "source" &&
           previewMode !== "live" ? (
-            <div className="min-h-[520px] bg-background/45 px-6 py-6 sm:px-8">
+            <div className="min-h-[calc(100svh-17rem)] bg-background/45 px-4 py-5 sm:min-h-[520px] sm:px-8 sm:py-6">
               <MarkdownDocument markdown={markdownValue} />
             </div>
           ) : null}
@@ -923,7 +923,7 @@ function PreviewModeButton({
       size="sm"
       onClick={onClick}
       aria-pressed={active}
-      className="gap-1.5 normal-case tracking-normal"
+      className="shrink-0 gap-1.5 normal-case tracking-normal"
     >
       <Icon className="size-3.5" />
       {label}

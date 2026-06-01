@@ -41,7 +41,7 @@ export type MarkdownFormat =
 
 export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border/70 bg-muted/40 px-3 py-2">
+    <div className="flex items-center gap-2 overflow-x-auto border-b border-border/70 bg-muted/40 px-2 py-2 sm:flex-wrap sm:px-3">
       <ToolbarGroup>
         <ToolbarButton label="Heading 1" icon={Heading1} onClick={() => onFormat("heading1")} />
         <ToolbarButton label="Heading 2" icon={Heading2} onClick={() => onFormat("heading2")} />
@@ -72,7 +72,7 @@ function ToolbarGroup({ children }: { children: ReactNode }) {
   return (
     <div
       data-slot="button-group"
-      className="flex items-center rounded-full border border-border/70 bg-background/70 p-1 shadow-sm"
+      className="flex shrink-0 items-center rounded-full border border-border/70 bg-background/70 p-1 shadow-sm"
     >
       {children}
     </div>

@@ -541,6 +541,34 @@
   .vault-collab-selection {
     border-radius: 2px;
   }
+
+  @media (max-width: 640px) {
+    .vault-markdown-editor .cm-content {
+      min-height: calc(100svh - 17rem);
+      padding: 0.9rem 0.65rem;
+      font-size: 0.95rem;
+    }
+
+    .vault-markdown-editor .cm-line {
+      padding-inline: 0.2rem;
+    }
+
+    .vault-markdown-editor .cm-gutterElement {
+      padding-inline: 0.35rem 0.45rem;
+    }
+
+    .vault-markdown-editor .cm-scroller {
+      overflow-x: hidden;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-1 {
+      font-size: 1.55rem;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-2 {
+      font-size: 1.25rem;
+    }
+  }
 }
 
 @layer utilities {

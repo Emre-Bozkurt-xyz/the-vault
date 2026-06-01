@@ -216,7 +216,7 @@ Unauthorized users cannot connect.
 | [x] | Make new documents write initial Markdown | Legacy JSON remains active editor/rendering format |
 | [ ] | Deploy latest Markdown schema migration | Held intentionally until local Markdown UX is verified |
 | [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with raw HTML skipped; needs browser UX verification |
-| [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; needs browser UX verification |
+| [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; mobile layout tightened; needs browser UX verification |
 | [~] | Move collaboration to Y.Text | Hocuspocus now loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding wired; needs two-browser verification |
 | [~] | Add live preview | Live mode is now default; Source/Split/Preview remain available; needs browser UX verification |
 

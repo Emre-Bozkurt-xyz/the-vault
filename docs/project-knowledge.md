@@ -543,6 +543,7 @@ Known editor caveats:
 - Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block.
 - Raw HTML is skipped in read-only/public rendering. HTML inside fenced code blocks displays as code.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
+- Mobile document editing uses reduced page/card padding, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides to keep the writing area wider on phone screens.
 - Browser UX verification is still needed after the CodeMirror swap.
 ```
 
@@ -782,6 +783,7 @@ Manual checks:
 | Markdown pivot | `npm run lint` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
 | Markdown pivot | `npm run build` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
 | Markdown pivot | Browser check for create/edit/reopen/source/split/preview | Not tested |  |
+| Mobile UI | `npm run lint` and `npm run build` succeed after mobile editor layout pass | Passed | 2026-06-01 |
 | Profile | `users.profile_completed_at` migration applied locally | Passed | 2026-06-01 |
 | Profile | Settings username/nickname update builds and lints | Passed | 2026-06-01 |
 | Markdown collaboration | `node --check scripts/collab-server.mjs` succeeds after Y.Text migration | Passed | 2026-06-01 |
@@ -869,3 +871,4 @@ Use this as a compact implementation log.
 | 2026-06-01 | Migrated collaboration path to Markdown text | Collab service now loads/stores `documents.markdown` as `Y.Text`; Markdown editor binds CodeMirror to Hocuspocus/Yjs when a collab URL is configured |
 | 2026-06-01 | Added profile completion and friend search | Added username/nickname onboarding, profile completion gate, authenticated user search API, friend autocomplete, and profile migration |
 | 2026-06-01 | Added settings profile editing | Users can update nickname and username from settings; username availability is checked live and relationships remain stable because references use `users.id` |
+| 2026-06-01 | Tightened mobile editor layout | Reduced nested mobile padding, made editor toolbars horizontally scrollable, and added CodeMirror phone-width overrides |
