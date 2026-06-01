@@ -31,13 +31,13 @@ migrate one-off container: vault-migrate
 collab container: vault-collab
 ```
 
-Deployments are triggered by GitHub Actions on a self-hosted mini-PC runner. The workflow in `.github/workflows/deploy.yml` calls a server-local script:
+Deployments are triggered by GitHub Actions on a self-hosted mini-PC runner. The workflow in `.github/workflows/deploy.yml` resets `/opt/apps/vault/repo` to `origin/master` and runs the repo deploy script:
 
 ```txt
 /opt/apps/vault/repo/scripts/deploy.sh
 ```
 
-That script is currently managed on the server, not committed in this repo.
+Because the workflow uses `git reset --hard origin/master`, `scripts/deploy.sh` must be committed in this repo. The current script builds images, starts Postgres, waits for Postgres health, runs the Compose `migrate` profile, starts `collab` and `web`, then checks `/healthz` and the local collab port.
 
 Later:
 

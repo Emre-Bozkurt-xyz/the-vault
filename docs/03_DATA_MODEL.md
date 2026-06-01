@@ -93,6 +93,7 @@ documents
   owner_id UUID NOT NULL REFERENCES users(id)
 
   title TEXT NOT NULL
+  markdown TEXT NOT NULL DEFAULT ''
   content JSONB NOT NULL
 
   visibility TEXT NOT NULL DEFAULT 'private'
@@ -117,11 +118,21 @@ unlisted
 workspace
 ```
 
-Content format:
+Current primary content format:
+
+```txt
+documents.markdown TEXT
+```
+
+Markdown is now the active editor/viewer/public rendering source in local development. It still exists alongside legacy ProseMirror JSON so deploys and rollback remain safer during the pivot.
+
+Legacy content format:
 
 ```txt
 Tiptap/ProseMirror JSON
 ```
+
+`documents.content` remains required during the transition but is no longer the UI editing backbone once the Markdown editor route is active.
 
 Example:
 
@@ -375,6 +386,7 @@ export const documents = pgTable("documents", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: uuid("owner_id").notNull().references(() => users.id),
   title: text("title").notNull(),
+  markdown: text("markdown").notNull().default(""),
   content: jsonb("content").notNull(),
   visibility: text("visibility").notNull().default("private"),
   publicSlug: text("public_slug").unique(),
@@ -415,6 +427,7 @@ Useful seed data:
 | [x] | document_permissions table created |
 | [x] | friend_requests table created |
 | [x] | friendships table created |
+| [x] | transitional documents.markdown column generated |
 | [x] | migrations run locally |
-| [ ] | migrations run in production |
+| [~] | latest migration applied locally; pending production deploy |
 | [x] | indexes added |

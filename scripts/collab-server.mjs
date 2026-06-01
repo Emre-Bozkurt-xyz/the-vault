@@ -1,14 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import nextEnv from "@next/env";
 import { Server } from "@hocuspocus/server";
-import { getSchema } from "@tiptap/core";
-import Link from "@tiptap/extension-link";
-import StarterKit from "@tiptap/starter-kit";
-import {
-  prosemirrorJSONToYDoc,
-  yDocToProsemirrorJSON,
-} from "@tiptap/y-tiptap";
 import postgres from "postgres";
+import * as Y from "yjs";
+
+nextEnv.loadEnvConfig(process.cwd());
 
 const port = Number(process.env.COLLAB_PORT ?? 1234);
 const databaseUrl = process.env.DATABASE_URL;
@@ -18,20 +15,6 @@ if (!databaseUrl) {
 }
 
 const db = postgres(databaseUrl, { max: 5 });
-const schema = getSchema([
-  StarterKit.configure({
-    heading: {
-      levels: [1, 2, 3],
-    },
-    link: false,
-    undoRedo: false,
-  }),
-  Link.configure({
-    openOnClick: false,
-    autolink: true,
-    defaultProtocol: "https",
-  }),
-]);
 
 const server = new Server({
   port,
@@ -71,7 +54,7 @@ const server = new Server({
 
   async onLoadDocument({ documentName }) {
     const [document] = await db`
-      select content
+      select markdown, content
       from documents
       where id = ${documentName}
         and deleted_at is null
@@ -82,15 +65,22 @@ const server = new Server({
       throw new Error("Document not found");
     }
 
-    return prosemirrorJSONToYDoc(schema, document.content, "default");
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText("markdown");
+    ytext.insert(
+      0,
+      normalizeStoredMarkdown(document.markdown, document.content),
+    );
+
+    return ydoc;
   },
 
   async onStoreDocument({ document, documentName }) {
-    const content = yDocToProsemirrorJSON(document, "default");
+    const markdown = document.getText("markdown").toString();
 
     await db`
       update documents
-      set content = ${JSON.stringify(content)}::jsonb,
+      set markdown = ${markdown},
           updated_at = now()
       where id = ${documentName}
         and deleted_at is null
@@ -164,4 +154,109 @@ function getSecret() {
   }
 
   return secret;
+}
+
+function normalizeStoredMarkdown(markdown, fallbackContent) {
+  if (typeof markdown === "string" && markdown.trim().length > 0) {
+    return markdown;
+  }
+
+  return proseMirrorToMarkdown(fallbackContent);
+}
+
+function proseMirrorToMarkdown(content) {
+  if (!content || !Array.isArray(content.content)) {
+    return "";
+  }
+
+  return content.content
+    .map((node) => nodeToMarkdown(node))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function nodeToMarkdown(node) {
+  const children = inlineChildrenToMarkdown(node.content);
+
+  if (node.type === "heading") {
+    const level = node.attrs?.level === 1 ? 1 : node.attrs?.level === 2 ? 2 : 3;
+    return `${"#".repeat(level)} ${children}`.trim();
+  }
+
+  if (node.type === "bulletList") {
+    return listChildrenToMarkdown(node.content, "-");
+  }
+
+  if (node.type === "orderedList") {
+    return listChildrenToMarkdown(node.content, "1.");
+  }
+
+  if (node.type === "listItem") {
+    return children;
+  }
+
+  if (node.type === "blockquote") {
+    return children
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+
+  if (node.type === "codeBlock") {
+    return `\`\`\`txt\n${children}\n\`\`\``;
+  }
+
+  if (node.type === "hardBreak") {
+    return "\n";
+  }
+
+  return children;
+}
+
+function inlineChildrenToMarkdown(children = []) {
+  return children.map((child) => inlineNodeToMarkdown(child)).join("");
+}
+
+function inlineNodeToMarkdown(node) {
+  if (node.type !== "text") {
+    return nodeToMarkdown(node);
+  }
+
+  return applyMarkdownMarks(node.text ?? "", node.marks);
+}
+
+function applyMarkdownMarks(text, marks = []) {
+  return marks.reduce((current, mark) => {
+    if (mark.type === "bold") {
+      return `**${current}**`;
+    }
+
+    if (mark.type === "italic") {
+      return `*${current}*`;
+    }
+
+    if (mark.type === "code") {
+      return `\`${current}\``;
+    }
+
+    if (mark.type === "link") {
+      const href = typeof mark.attrs?.href === "string" ? mark.attrs.href : "";
+      return href ? `[${current}](${href})` : current;
+    }
+
+    return current;
+  }, text);
+}
+
+function listChildrenToMarkdown(children = [], marker) {
+  return children
+    .map((child) => {
+      const text = nodeToMarkdown(child)
+        .split("\n")
+        .map((line, index) => (index === 0 ? line : `  ${line}`))
+        .join("\n");
+
+      return `${marker} ${text}`.trimEnd();
+    })
+    .join("\n");
 }

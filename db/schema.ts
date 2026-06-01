@@ -122,6 +122,7 @@ export const documents = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
+    markdown: text("markdown").notNull().default(""),
     content: jsonb("content").$type<ProseMirrorDoc>().notNull(),
     visibility: text("visibility").$type<DocumentVisibility>().notNull().default("private"),
     publicSlug: text("public_slug"),

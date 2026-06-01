@@ -151,6 +151,7 @@
   .vault-editor-content {
     color: var(--foreground);
     font-family: var(--font-sans);
+    caret-color: var(--foreground);
   }
 
   .vault-doc-card {
@@ -330,6 +331,183 @@
     color: var(--primary);
     text-decoration: underline;
     text-underline-offset: 0.2rem;
+  }
+
+  .vault-markdown {
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    overflow-wrap: anywhere;
+  }
+
+  .vault-markdown > * + *,
+  .vault-markdown .vault-md-table-wrap + *,
+  .vault-markdown * + .vault-md-table-wrap {
+    margin-top: 0.85rem;
+  }
+
+  .vault-md-h1,
+  .vault-md-h2,
+  .vault-md-h3,
+  .vault-md-h4 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .vault-md-h1 {
+    font-size: 2rem;
+    line-height: 1.15;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  }
+
+  .vault-md-h2 {
+    font-size: 1.5rem;
+    line-height: 1.25;
+  }
+
+  .vault-md-h3 {
+    font-size: 1.2rem;
+    line-height: 1.3;
+  }
+
+  .vault-md-h4 {
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+
+  .vault-md-p,
+  .vault-md-li {
+    line-height: 1.75;
+  }
+
+  .vault-md-ul,
+  .vault-md-ol {
+    padding-left: 1.5rem;
+  }
+
+  .vault-md-ul {
+    list-style: disc;
+  }
+
+  .vault-md-ol {
+    list-style: decimal;
+  }
+
+  .vault-md-checkbox {
+    margin-right: 0.45rem;
+    vertical-align: -0.1rem;
+  }
+
+  .vault-md-blockquote {
+    border-left: 3px solid var(--border);
+    color: var(--muted-foreground);
+    padding-left: 1rem;
+  }
+
+  .vault-md-pre {
+    overflow-x: auto;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    padding: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-code {
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--muted) 75%, transparent);
+    padding: 0.1rem 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    border-radius: 0.3rem;
+  }
+
+  .vault-md-pre .vault-md-code {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .vault-md-table-wrap {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .vault-md-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .vault-md-th,
+  .vault-md-td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.65rem;
+    text-align: left;
+  }
+
+  .vault-md-th {
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+    font-weight: 600;
+  }
+
+  .vault-md-hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 1.5rem 0;
+  }
+
+  .vault-md-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+    font-weight: 500;
+  }
+
+  .vault-md-strong {
+    font-weight: 700;
+  }
+
+  .vault-md-em {
+    font-style: italic;
+  }
+
+  .vault-markdown-compact {
+    max-width: none;
+    font-size: 0.62rem;
+    line-height: 1.25;
+  }
+
+  .vault-markdown-compact > * + * {
+    margin-top: 0.25rem;
+  }
+
+  .vault-markdown-compact .vault-md-h1 {
+    font-size: 0.95rem;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .vault-markdown-compact .vault-md-h2 {
+    font-size: 0.88rem;
+  }
+
+  .vault-markdown-compact .vault-md-h3 {
+    font-size: 0.84rem;
+  }
+
+  .vault-markdown-compact .vault-md-p,
+  .vault-markdown-compact .vault-md-li {
+    line-height: 1.25;
+  }
+
+  .vault-markdown-compact .vault-md-pre,
+  .vault-markdown-compact .vault-md-table-wrap {
+    display: none;
   }
 
   .vault-editor-content .is-editor-empty:first-child::before {

@@ -15,9 +15,9 @@ import { auth, signOut } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { ReadOnlyDocument } from "@/components/editor/ReadOnlyDocument";
-import { emptyDocumentContent, type ProseMirrorDoc } from "@/lib/editor-content";
+import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { cn } from "@/lib/utils";
+import { normalizeStoredMarkdown } from "@/lib/markdown";
 import {
   createDocumentAction,
   listDocumentsForUser,
@@ -235,7 +235,10 @@ export default async function DashboardPage({
                             {document.visibility === "public" ? "Public" : "Private"}
                           </Badge>
                         }
-                        preview={document.content ?? emptyDocumentContent}
+                        preview={normalizeStoredMarkdown(
+                          document.markdown,
+                          document.content,
+                        )}
                       />
                     ))}
                   </div>
@@ -258,7 +261,10 @@ export default async function DashboardPage({
                         meta="Shared workspace"
                         icon={Share2}
                         badge={<Badge variant="secondary">{document.role}</Badge>}
-                        preview={document.content ?? emptyDocumentContent}
+                        preview={normalizeStoredMarkdown(
+                          document.markdown,
+                          document.content,
+                        )}
                       />
                     ))}
                   </div>
@@ -281,7 +287,10 @@ export default async function DashboardPage({
                         meta={`Updated ${document.updatedAt.toLocaleDateString()}`}
                         icon={Globe2}
                         badge={<Badge variant="outline">Public</Badge>}
-                        preview={document.content ?? emptyDocumentContent}
+                        preview={normalizeStoredMarkdown(
+                          document.markdown,
+                          document.content,
+                        )}
                         action={
                           document.publicSlug ? (
                             <Link
@@ -385,7 +394,7 @@ function DocCard({
   icon: ComponentType<{ className?: string }>;
   badge?: ReactNode;
   action?: ReactNode;
-  preview?: ProseMirrorDoc;
+  preview?: string;
 }) {
   return (
     <article className="vault-doc-card group">
@@ -395,7 +404,7 @@ function DocCard({
             <div className="vault-doc-preview-sheet">
               <span className="vault-doc-preview-edge" aria-hidden="true" />
               <div className="vault-doc-preview-content">
-                <ReadOnlyDocument content={preview} />
+                <MarkdownDocument markdown={preview} compact disableLinks />
               </div>
               <div className="vault-doc-preview-fade" />
             </div>

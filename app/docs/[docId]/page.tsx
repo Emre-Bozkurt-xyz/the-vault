@@ -4,13 +4,14 @@ import { ArrowLeft, Trash2 } from "lucide-react";
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
-import { ReadOnlyDocument } from "@/components/editor/ReadOnlyDocument";
-import { VaultEditor } from "@/components/editor/VaultEditor";
+import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { createCollabToken } from "@/lib/collab-token";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { createCollabToken } from "@/lib/collab-token";
+import { normalizeStoredMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import {
   archiveDocumentAction,
@@ -49,6 +50,8 @@ export default async function DocumentPage({
   const friends = document.access.canShare
     ? await listFriendsForUser(session.user.id)
     : [];
+  const showSidePanel = document.access.canDelete || document.access.canShare;
+  const markdown = normalizeStoredMarkdown(document.markdown, document.content);
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
   const collabRole =
     document.access.role === "owner" || document.access.role === "editor"
@@ -64,7 +67,6 @@ export default async function DocumentPage({
           email: session.user.email ?? null,
         })
       : null;
-  const showSidePanel = document.access.canDelete || document.access.canShare;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -96,10 +98,10 @@ export default async function DocumentPage({
         >
           <div className="vault-fade-up rounded-3xl border border-border/60 bg-card/70 p-6 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur">
             {document.access.canEdit ? (
-              <VaultEditor
+              <MarkdownEditor
                 documentId={document.id}
                 title={document.title}
-                content={document.content}
+                markdown={markdown}
                 collaboration={
                   collabToken && collabUrl
                     ? {
@@ -130,7 +132,7 @@ export default async function DocumentPage({
                   </p>
                 </div>
                 <div className="rounded-3xl border border-border/60 bg-background/70 p-6">
-                  <ReadOnlyDocument content={document.content} />
+                  <MarkdownDocument markdown={markdown} />
                 </div>
               </article>
             )}

@@ -13,13 +13,13 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-05-31
+2026-06-01
 ```
 
 Current phase:
 
 ```txt
-Phase 6 - Deployment verification and MVP polish
+Phase 8 - Markdown backbone pivot, local verification
 ```
 
 Current deployment status:
@@ -37,7 +37,13 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized Postgres, Tiptap document editing with autosave, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and a first Yjs/Hocuspocus collaborative editing service.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and a first legacy Tiptap/Yjs collaboration service that still needs to be moved to Markdown/Y.Text.
+```
+
+Planned direction:
+
+```txt
+The next major editor direction is a Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md`. Do not deepen the Tiptap/ProseMirror JSON dependency without checking that plan first.
 ```
 
 ---
@@ -70,14 +76,15 @@ Auth:
   - Drizzle adapter with database sessions
 
 Editor:
-  - Tiptap
-  - ProseMirror JSON stored in Postgres JSONB
+  - CodeMirror Markdown editor on document pages
+  - Markdown text stored in `documents.markdown`
+  - Legacy Tiptap/ProseMirror JSON components still exist during migration
   - Debounced autosave plus manual save
 
 Realtime collaboration:
-  - Yjs + Hocuspocus service for owner/editor live editing
-  - Collaboration caret presence
-  - ProseMirror JSON persistence back to Postgres
+  - Yjs + Hocuspocus service for owner/editor Markdown live editing
+  - CodeMirror remote cursor/selection awareness through `y-codemirror.next`
+  - Markdown `Y.Text` persistence back to `documents.markdown`
 
 Deployment:
   - Production Docker/Compose scaffolding
@@ -150,6 +157,9 @@ Add notes as real files appear:
 | `components/editor/EditorToolbar.tsx` | Tiptap toolbar controls |
 | `components/editor/ReadOnlyDocument.tsx` | ProseMirror JSON read-only renderer |
 | `components/editor/editor-extensions.ts` | Tiptap extension configuration |
+| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
+| `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
+| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer that skips raw HTML |
 | `components/theme-provider.tsx` | Root client theme provider using `next-themes` |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/ui/` | shadcn/ui components |
@@ -160,6 +170,7 @@ Add notes as real files appear:
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
 | `lib/editor-content.ts` | ProseMirror JSON types and validation helpers |
+| `lib/markdown.ts` | Markdown limits plus legacy ProseMirror-to-Markdown fallback conversion |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
 | `lib/utils.ts` | shadcn utility for class merging |
@@ -169,6 +180,7 @@ Add notes as real files appear:
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
 | `docs/` | Planning and project knowledge |
+| `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan for replacing ProseMirror JSON with Markdown as the document backbone |
 | `docker-compose.yml` | Local Postgres service |
 | `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
@@ -255,12 +267,15 @@ Current migrations:
 | `0000_closed_jackal.sql` | Auth.js users/accounts/sessions/verification_tokens | Yes | No |
 | `0001_black_barracuda.sql` | Documents and document_permissions | Yes | No |
 | `0002_sturdy_archangel.sql` | Friend requests and friendships | Yes | No |
+| `0003_slimy_puppet_master.sql` | Adds transitional `documents.markdown` column | Yes | No |
 
 Schema notes:
 
 ```txt
 - `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, friend_requests, and friendships.
-- `documents.content` stores ProseMirror-style JSONB, even while the UI is temporarily a textarea.
+- `documents.markdown` is the active local editor/viewer/public rendering source for the Markdown pivot.
+- `documents.content` still stores legacy ProseMirror JSONB and remains required during the transition for rollback/fallback.
+- `documents.content` stores legacy ProseMirror-style JSONB and remains required during the transition.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `/api/health` uses `select 1` and does not require any application tables.
 ```
@@ -393,7 +408,8 @@ Basic private document CRUD, sharing, and public publishing are implemented.
 Document storage format:
 
 ```txt
-ProseMirror-style JSONB
+Active local UI: Markdown text in `documents.markdown`
+Transitional fallback: legacy ProseMirror JSONB remains in `documents.content`
 ```
 
 Important files:
@@ -405,12 +421,15 @@ Important files:
 | `app/dashboard/page.tsx` | Owned document list and create form |
 | `app/docs/[docId]/page.tsx` | Protected editor/viewer route |
 | `lib/editor-content.ts` | ProseMirror JSON types and validation |
+| `lib/markdown.ts` | Markdown helpers and legacy fallback conversion |
 
 Current document actions:
 
 ```txt
 createDocumentAction()
 updateDocumentAction()
+saveDocumentDraftAction()
+saveMarkdownDocumentAction()
 archiveDocumentAction()
 shareDocumentAction()
 shareDocumentWithFriendAction()
@@ -453,13 +472,19 @@ Known document caveats:
 Current editor status:
 
 ```txt
-Tiptap editor implemented with debounced autosave and manual save.
+Markdown editor implemented locally with CodeMirror, debounced autosave, manual save, toolbar syntax insertion, and source/split/preview modes.
+```
+
+Legacy editor status:
+
+```txt
+The prior Tiptap editor and ProseMirror renderer still exist in `components/editor/` for rollback/reference during the transition. Do not deepen that path without checking `docs/09_MARKDOWN_PIVOT_PLAN.md`.
 ```
 
 Editor library:
 
 ```txt
-Tiptap
+CodeMirror 6 through `@uiw/react-codemirror`
 ```
 
 Important files:
@@ -467,10 +492,14 @@ Important files:
 | Path | Purpose |
 |---|---|
 | `app/docs/[docId]/page.tsx` | Protected editor/viewer route |
-| `components/editor/VaultEditor.tsx` | Editable Tiptap document component |
-| `components/editor/EditorToolbar.tsx` | Formatting toolbar |
-| `components/editor/ReadOnlyDocument.tsx` | Read-only renderer for viewer/public pages |
+| `components/markdown/MarkdownEditor.tsx` | Editable Markdown document component |
+| `components/markdown/MarkdownToolbar.tsx` | Markdown syntax toolbar |
+| `components/markdown/MarkdownDocument.tsx` | Read-only renderer for viewer/public pages |
+| `components/editor/VaultEditor.tsx` | Legacy editable Tiptap document component |
+| `components/editor/EditorToolbar.tsx` | Legacy formatting toolbar |
+| `components/editor/ReadOnlyDocument.tsx` | Legacy ProseMirror renderer |
 | `lib/editor-content.ts` | ProseMirror JSON validation/types |
+| `lib/markdown.ts` | Markdown helpers and fallback conversion |
 
 Supported editor features:
 
@@ -488,12 +517,19 @@ Supported editor features:
 | Read-only mode | Yes |
 | Save status | Saved/saving/unsaved/error status |
 | Autosave | Yes |
+| Source/live/split/preview modes | Yes |
 
 Known editor caveats:
 
 ```txt
 - Autosave is debounced and writes through the same server-side permission checks as manual save.
-- Link editing UI is not implemented yet, but Tiptap autolink is enabled and read-only rendering supports link marks.
+- Markdown toolbar buttons insert syntax into CodeMirror source, not rich-text nodes.
+- Inline toolbar buttons now toggle matching Markdown syntax off when the selected text is already wrapped.
+- Heading/list/blockquote toolbar buttons now remove or replace existing line prefixes instead of blindly stacking prefixes.
+- Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block.
+- Raw HTML is skipped in read-only/public rendering. HTML inside fenced code blocks displays as code.
+- `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
+- Browser UX verification is still needed after the CodeMirror swap.
 ```
 
 ---
@@ -503,7 +539,7 @@ Known editor caveats:
 Current collaboration status:
 
 ```txt
-First working Yjs/Hocuspocus slice is implemented for authenticated owner/editor sessions.
+Markdown collaboration is wired at code/build level. Owner/editor sessions receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown`. Two-browser manual verification is still required.
 ```
 
 Important files:
@@ -512,7 +548,8 @@ Important files:
 |---|---|
 | `scripts/collab-server.mjs` | Hocuspocus websocket service |
 | `lib/collab-token.ts` | Signed room token helper |
-| `components/editor/VaultEditor.tsx` | Creates Hocuspocus provider and Tiptap Collaboration extensions |
+| `components/markdown/MarkdownEditor.tsx` | Creates Hocuspocus provider and CodeMirror/Yjs binding |
+| `components/editor/VaultEditor.tsx` | Legacy Tiptap collaboration component retained during migration |
 | `Dockerfile.collab` | Production collab service image |
 | `docker-compose.production.yml` | Adds `collab` service on `127.0.0.1:18211` |
 
@@ -522,18 +559,21 @@ Current behavior:
 - Only owner/editor document sessions receive a collaboration token.
 - Token includes document id, user id, role, display identity, expiry, and HMAC signature.
 - Collab service validates the token and re-checks current database edit permission before room access.
-- Hocuspocus loads existing `documents.content` into a Y.Doc.
-- Hocuspocus stores collaborative document state back to `documents.content` as ProseMirror JSON.
+- Hocuspocus loads existing `documents.markdown` into a `Y.Text` named `markdown`; if markdown is still empty, it falls back from legacy ProseMirror JSON during room load.
+- Hocuspocus stores collaborative document state back to `documents.markdown`.
+- The Markdown editor starts in normal local-autosave mode and only upgrades to Yjs collaboration after the Hocuspocus provider reports sync. This prevents a blank editor and lost body saves when `ws://localhost:1234` is unavailable.
+- After collaboration is synced, the normal server action saves title changes only so it does not overwrite the live Yjs body.
 - Viewer/public routes remain read-only and do not connect to the collaboration service.
 ```
 
 Known collaboration caveats:
 
 ```txt
+- If Firefox reports `ws://localhost:1234` connection refused, the local collab server is not running or failed to start. Run `npm run collab` in a separate terminal.
 - Caddy/FRP WebSocket route for `/collab` still needs production verification.
 - Two-browser/two-user live editing still needs manual verification.
 - Title editing is still saved through the normal document autosave path, not collaborative Yjs state.
-- Yjs update-history tables are not implemented; current persistence stores compact ProseMirror JSON.
+- Yjs update-history tables are not implemented; current persistence stores compact Markdown text.
 ```
 
 ---
@@ -612,7 +652,7 @@ Known public note caveats:
 Current deployment status:
 
 ```txt
-GitHub Actions deploy workflow exists and calls a server-local mini-PC deploy script; production flow still needs manual verification.
+GitHub Actions deploy workflow works on the mini-PC runner and runs the repo `scripts/deploy.sh` after resetting `/opt/apps/vault/repo` to `origin/master`.
 ```
 
 Production domain:
@@ -673,7 +713,8 @@ Known deployment caveats:
 
 ```txt
 - `.env.production` is intentionally not committed. Create it on the deployment host.
-- `.github/workflows/deploy.yml` calls `/opt/apps/vault/repo/scripts/deploy.sh`; that deploy script currently exists only on the server.
+- `.github/workflows/deploy.yml` calls `/opt/apps/vault/repo/scripts/deploy.sh`; because the workflow resets the repo to `origin/master`, that script must stay committed.
+- The deploy script starts Postgres and runs the Compose `migrate` profile before starting `web`, so additive Drizzle migrations such as `documents.markdown` are handled by the normal deploy path.
 - Bash backup scripts need Docker available in the shell environment. On this Windows machine, WSL Bash could not see Docker Desktop; the PowerShell backup script works locally.
 ```
 
@@ -722,6 +763,13 @@ Manual checks:
 | Collaboration | `node --check scripts/collab-server.mjs` succeeds | Passed | 2026-05-31 |
 | Collaboration | `node scripts/collab-server.mjs` starts locally with env values | Passed | 2026-05-31 |
 | Collaboration | Two-browser/two-user live editing | Not tested |  |
+| Markdown pivot | `documents.markdown` migration applied locally | Passed | 2026-06-01 |
+| Markdown pivot | `npm run lint` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
+| Markdown pivot | `npm run build` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
+| Markdown pivot | Browser check for create/edit/reopen/source/split/preview | Not tested |  |
+| Markdown collaboration | `node --check scripts/collab-server.mjs` succeeds after Y.Text migration | Passed | 2026-06-01 |
+| Markdown collaboration | `npm run build` succeeds with CodeMirror/Yjs binding | Passed | 2026-06-01 |
+| Markdown collaboration | Two-browser owner/editor live Markdown editing | Not tested |  |
 
 ---
 
@@ -767,9 +815,9 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Configure Caddy/FRP routing for `wss://vault.ems-place.com/collab` to the `vault-collab` service.
-2. Set `NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab` in production and confirm the deploy script starts `collab`.
-3. Test two owner/editor browser sessions editing the same shared document.
+1. Browser-test two owner/editor sessions editing the same Markdown document with `npm run collab` running.
+2. Confirm reload shows the final collaborative Markdown from `documents.markdown`.
+3. Decide whether to add Yjs update-history tables or keep compact Markdown persistence for this phase.
 ```
 
 ---
@@ -798,3 +846,7 @@ Use this as a compact implementation log.
 | 2026-05-31 | Added editor autosave and portfolio docs polish | Debounced autosave uses server-side permission checks; README now documents architecture, security, deployment, and resume positioning |
 | 2026-05-31 | Clarified healthcheck split | Docker healthcheck uses `/healthz` for liveness; `/api/health` remains the database readiness endpoint |
 | 2026-05-31 | Added first collaborative editing slice | Added Yjs/Hocuspocus dependencies, collab room tokens, `vault-collab` service, Tiptap collaboration/caret wiring, and Postgres JSON persistence |
+| 2026-06-01 | Added Markdown pivot plan | Documented staged path from ProseMirror JSON/Tiptap to Markdown source of truth with CodeMirror, Y.Text collaboration, migration safety, and live preview |
+| 2026-06-01 | Started Markdown schema prep | Added additive `documents.markdown` column, generated/applied local migration, and made new documents write initial Markdown |
+| 2026-06-01 | Added local Markdown editor and renderer | Added CodeMirror source editing, Markdown toolbar syntax insertion, safe GFM rendering, dashboard previews, and source/split/preview modes backed by `documents.markdown` |
+| 2026-06-01 | Migrated collaboration path to Markdown text | Collab service now loads/stores `documents.markdown` as `Y.Text`; Markdown editor binds CodeMirror to Hocuspocus/Yjs when a collab URL is configured |

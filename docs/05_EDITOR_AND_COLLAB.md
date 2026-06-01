@@ -1,5 +1,22 @@
 # Vault — Editor and Collaboration Plan
 
+Note:
+
+```txt
+The original implementation used Tiptap/ProseMirror JSON. The active local development direction is the Markdown-native replacement documented in `docs/09_MARKDOWN_PIVOT_PLAN.md`.
+```
+
+Current Markdown pivot status:
+
+```txt
+Editable document pages now use CodeMirror for Markdown source editing.
+Viewer/public pages render `documents.markdown` with raw HTML skipped.
+Source/split/preview modes exist locally.
+The Markdown editor is wired to Hocuspocus/Yjs through `Y.Text` when `NEXT_PUBLIC_COLLAB_URL` is set.
+```
+
+---
+
 ## 1. MVP Editor Strategy
 
 Use:
@@ -294,7 +311,7 @@ Read-only Yjs clients can be tricky. Simpler:
 
 ### Simple Post-MVP
 
-Current first slice serializes the collaborative Y.Doc back to `documents.content` as ProseMirror JSON through `onStoreDocument`.
+Current Markdown pivot slice serializes the collaborative Y.Doc text back to `documents.markdown` through `onStoreDocument`.
 
 Later, use Yjs updates stored in database.
 

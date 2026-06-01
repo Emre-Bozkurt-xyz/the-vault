@@ -204,6 +204,29 @@ Unauthorized users cannot connect.
 
 ---
 
+## Phase 8 - Markdown Backbone Pivot
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write Markdown pivot plan | `docs/09_MARKDOWN_PIVOT_PLAN.md` |
+| [x] | Add transitional markdown column | `documents.markdown TEXT NOT NULL DEFAULT ''`; migration applied locally |
+| [x] | Make new documents write initial Markdown | Legacy JSON remains active editor/rendering format |
+| [ ] | Deploy latest Markdown schema migration | Held intentionally until local Markdown UX is verified |
+| [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with raw HTML skipped; needs browser UX verification |
+| [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; needs browser UX verification |
+| [~] | Move collaboration to Y.Text | Hocuspocus now loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding wired; needs two-browser verification |
+| [~] | Add live preview | Source/split/preview modes implemented in the Markdown editor; needs browser UX verification |
+
+Exit criteria:
+
+```txt
+Markdown is the canonical document source.
+Users can edit Markdown with collaboration and live preview.
+Legacy ProseMirror JSON is no longer required.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |

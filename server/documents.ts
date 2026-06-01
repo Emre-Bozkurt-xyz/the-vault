@@ -17,9 +17,11 @@ import {
   canShareDocument,
   getDocumentAccess,
 } from "@/lib/permissions";
+import { maxMarkdownLength } from "@/lib/markdown";
 import { slugify } from "@/lib/slug";
 
 const documentIdSchema = z.string().uuid();
+const initialMarkdownContent = "# Untitled document\n\nStart writing...\n";
 
 const updateDocumentSchema = z.object({
   documentId: documentIdSchema,
@@ -31,6 +33,17 @@ const saveDocumentDraftSchema = z.object({
   documentId: documentIdSchema,
   title: z.string().trim().min(1, "Title is required").max(200),
   content: z.unknown(),
+});
+
+const saveMarkdownDocumentSchema = z.object({
+  documentId: documentIdSchema,
+  title: z.string().trim().min(1, "Title is required").max(200),
+  markdown: z.string().max(maxMarkdownLength),
+});
+
+const saveDocumentTitleSchema = z.object({
+  documentId: documentIdSchema,
+  title: z.string().trim().min(1, "Title is required").max(200),
 });
 
 const shareDocumentSchema = z.object({
@@ -97,6 +110,7 @@ export async function createDocumentAction() {
       .values({
         ownerId: session.user.id,
         title: "Untitled document",
+        markdown: initialMarkdownContent,
         content: emptyDocumentContent,
       })
       .returning({ id: documents.id });
@@ -187,6 +201,93 @@ export async function saveDocumentDraftAction(
     .set({
       title: parsed.data.title,
       content,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+    );
+
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function saveMarkdownDocumentAction(
+  input: unknown,
+): Promise<
+  | { ok: true; updatedAt: string }
+  | { ok: false; message: string }
+> {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const parsed = saveMarkdownDocumentSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "This Markdown document is too large or has an invalid title.",
+    };
+  }
+
+  const allowed = await canEditDocument(session.user.id, parsed.data.documentId);
+
+  if (!allowed) {
+    notFound();
+  }
+
+  await db
+    .update(documents)
+    .set({
+      title: parsed.data.title,
+      markdown: parsed.data.markdown,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+    );
+
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function saveDocumentTitleAction(
+  input: unknown,
+): Promise<
+  | { ok: true; updatedAt: string }
+  | { ok: false; message: string }
+> {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const parsed = saveDocumentTitleSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Check the title and try saving again.",
+    };
+  }
+
+  const allowed = await canEditDocument(session.user.id, parsed.data.documentId);
+
+  if (!allowed) {
+    notFound();
+  }
+
+  await db
+    .update(documents)
+    .set({
+      title: parsed.data.title,
       updatedAt: sql`now()`,
     })
     .where(
@@ -471,6 +572,7 @@ export async function listDocumentsForUser(userId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      markdown: documents.markdown,
       content: documents.content,
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
@@ -485,6 +587,7 @@ export async function listSharedDocumentsForUser(userId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      markdown: documents.markdown,
       content: documents.content,
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
@@ -507,6 +610,7 @@ export async function listPublishedDocumentsForUser(userId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      markdown: documents.markdown,
       content: documents.content,
       publicSlug: documents.publicSlug,
       updatedAt: documents.updatedAt,
@@ -566,6 +670,7 @@ export async function getDocumentForUser(userId: string, documentId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      markdown: documents.markdown,
       content: documents.content,
       visibility: documents.visibility,
       publicSlug: documents.publicSlug,
@@ -589,6 +694,7 @@ export async function getPublicDocumentBySlug(slug: string) {
   const [document] = await db
     .select({
       title: documents.title,
+      markdown: documents.markdown,
       content: documents.content,
       updatedAt: documents.updatedAt,
     })
