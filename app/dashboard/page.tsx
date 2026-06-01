@@ -386,33 +386,40 @@ function DocCard({
   preview?: ProseMirrorDoc;
 }) {
   return (
-    <article className="group flex h-full flex-col justify-between gap-4 rounded-3xl border border-border/60 bg-background/70 p-5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background/90">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 rounded-2xl border border-border/60 bg-background/80 p-2 text-primary">
-            <Icon className="size-4" />
-          </span>
-          <div>
-            <Link
-              href={href}
-              className="text-lg font-semibold leading-tight transition group-hover:text-primary"
-            >
-              {title}
-            </Link>
-            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              {meta}
-            </p>
+    <article className="vault-doc-card group">
+      {preview ? (
+        <div className="vault-doc-preview">
+          <div className="vault-doc-preview-sheet">
+            <span className="vault-doc-preview-edge" aria-hidden="true" />
+            <div className="vault-doc-preview-content">
+              <ReadOnlyDocument content={preview} />
+            </div>
+            <div className="vault-doc-preview-fade" />
           </div>
         </div>
-        {badge}
-      </div>
-      {preview ? (
-        <div className="vault-preview max-h-36 rounded-2xl p-3">
-          <ReadOnlyDocument content={preview} />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background/95 to-transparent" />
-        </div>
       ) : null}
-      {action ? <div className="pt-1">{action}</div> : null}
+      <div className="vault-doc-body">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 rounded-2xl border border-border/60 bg-background/80 p-2 text-foreground">
+              <Icon className="size-4" />
+            </span>
+            <div>
+              <Link
+                href={href}
+                className="text-lg font-semibold leading-tight transition group-hover:text-foreground"
+              >
+                {title}
+              </Link>
+              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                {meta}
+              </p>
+            </div>
+          </div>
+          {badge}
+        </div>
+        {action ? <div className="pt-3">{action}</div> : null}
+      </div>
     </article>
   );
 }

@@ -149,30 +149,96 @@
     font-family: var(--font-sans);
   }
 
-  .vault-preview {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--card) 85%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
+  .vault-doc-card {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-radius: 1.75rem;
+    border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+    background: color-mix(in oklab, var(--background) 85%, transparent);
+    padding: 1rem;
+    transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
   }
 
-  .vault-preview .vault-editor-content {
-    font-size: 0.85rem;
+  .vault-doc-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--border) 45%, transparent);
+    background: color-mix(in oklab, var(--background) 92%, transparent);
+  }
+
+  .vault-doc-preview {
+    position: relative;
+    padding: 0 0.35rem;
+  }
+
+  .vault-doc-preview-sheet {
+    position: relative;
+    height: 150px;
+    overflow: hidden;
+    border-radius: 1.4rem;
+    border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+    background: color-mix(in oklab, var(--card) 92%, transparent);
+    box-shadow: 0 24px 50px -40px color-mix(in oklab, var(--foreground) 60%, transparent);
+    transform: translateY(-12px);
+  }
+
+  .vault-doc-preview-edge {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 10px;
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--background) 85%, transparent),
+      transparent
+    );
+    opacity: 0.9;
+  }
+
+  .vault-doc-preview-content {
+    padding: 0.85rem;
+  }
+
+  .vault-doc-preview-fade {
+    pointer-events: none;
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 45px;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      color-mix(in oklab, var(--background) 85%, transparent)
+    );
+  }
+
+  .vault-doc-preview-sheet .vault-editor-content {
+    font-size: 0.82rem;
     line-height: 1.55;
     color: color-mix(in oklab, var(--foreground) 70%, var(--muted-foreground));
+    max-width: none;
+    margin: 0;
   }
 
-  .vault-preview .vault-editor-content h1 {
-    font-size: 1.05rem;
+  .vault-doc-preview-sheet .vault-editor-content h1 {
+    font-size: 1.02rem;
   }
 
-  .vault-preview .vault-editor-content h2 {
-    font-size: 0.95rem;
+  .vault-doc-preview-sheet .vault-editor-content h2 {
+    font-size: 0.94rem;
   }
 
-  .vault-preview .vault-editor-content h3 {
-    font-size: 0.9rem;
+  .vault-doc-preview-sheet .vault-editor-content h3 {
+    font-size: 0.88rem;
+  }
+
+  .vault-doc-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-radius: 1.4rem;
+    border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+    background: color-mix(in oklab, var(--background) 92%, transparent);
+    padding: 1rem 1.1rem 1.2rem;
   }
 
   .vault-editor-content > * + * {
