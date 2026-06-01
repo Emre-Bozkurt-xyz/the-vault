@@ -1,1 +1,1 @@
-ALTER TABLE "documents" ADD COLUMN "markdown" text DEFAULT '' NOT NULL;
+ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "markdown" text DEFAULT '' NOT NULL;
