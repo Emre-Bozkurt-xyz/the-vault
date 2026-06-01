@@ -32,7 +32,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 echo "[deploy] Building images..."
-dc build
+dc --profile migrate build web collab migrate
 
 echo "[deploy] Starting Postgres..."
 dc up -d postgres
@@ -55,7 +55,7 @@ for i in {1..30}; do
 done
 
 echo "[deploy] Running database migrations..."
-dc --profile migrate run --rm migrate
+dc --profile migrate run --rm --build migrate
 
 echo "[deploy] Starting Vault web + collab..."
 dc up -d --remove-orphans collab web

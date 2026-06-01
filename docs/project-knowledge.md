@@ -714,7 +714,7 @@ Known deployment caveats:
 ```txt
 - `.env.production` is intentionally not committed. Create it on the deployment host.
 - `.github/workflows/deploy.yml` calls `/opt/apps/vault/repo/scripts/deploy.sh`; because the workflow resets the repo to `origin/master`, that script must stay committed.
-- The deploy script starts Postgres and runs the Compose `migrate` profile before starting `web`, so additive Drizzle migrations such as `documents.markdown` are handled by the normal deploy path.
+- The deploy script explicitly builds `web`, `collab`, and the profile-gated `migrate` image, then runs migrations with `--build` before starting `web`. This is required because profile-gated services may otherwise use stale images missing new migration files.
 - Bash backup scripts need Docker available in the shell environment. On this Windows machine, WSL Bash could not see Docker Desktop; the PowerShell backup script works locally.
 ```
 

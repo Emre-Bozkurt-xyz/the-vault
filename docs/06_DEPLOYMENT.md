@@ -37,7 +37,16 @@ Deployments are triggered by GitHub Actions on a self-hosted mini-PC runner. The
 /opt/apps/vault/repo/scripts/deploy.sh
 ```
 
-Because the workflow uses `git reset --hard origin/master`, `scripts/deploy.sh` must be committed in this repo. The current script builds images, starts Postgres, waits for Postgres health, runs the Compose `migrate` profile, starts `collab` and `web`, then checks `/healthz` and the local collab port.
+Because the workflow uses `git reset --hard origin/master`, `scripts/deploy.sh` must be committed in this repo. The current script builds `web`, `collab`, and the profile-gated `migrate` image, starts Postgres, waits for Postgres health, runs the Compose `migrate` profile with `--build`, starts `collab` and `web`, then checks `/healthz` and the local collab port.
+
+Important migration caveat:
+
+```txt
+The `migrate` service is behind a Compose profile. A plain `docker compose build`
+may not rebuild that image, so new migration files can be missing inside the
+migrate container even when the server repo is up to date. Use the deploy script
+or run the migrate service with `--build`.
+```
 
 Later:
 
