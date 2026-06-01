@@ -4,6 +4,7 @@ import rehypeSanitize from "rehype-sanitize";
 import { defaultSchema, type Schema } from "hast-util-sanitize";
 import remarkGfm from "remark-gfm";
 
+import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 
 type MarkdownDocumentProps = {
@@ -56,6 +57,7 @@ const safeHtmlSchema: Schema = {
       "id",
       "title",
       "className",
+      "style",
       "aria-label",
       "aria-describedby",
       "aria-hidden",
@@ -94,94 +96,140 @@ const safeHtmlSchema: Schema = {
   clobberPrefix: "vault-user-content-",
 };
 
+type HastNode = {
+  type?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+function rehypeSanitizeInlineStyles() {
+  return function transform(tree: HastNode) {
+    visitHastNode(tree, (node) => {
+      const style = sanitizeInlineStyle(node.properties?.style);
+
+      if (style) {
+        node.properties = { ...node.properties, style };
+        return;
+      }
+
+      if (node.properties && "style" in node.properties) {
+        delete node.properties.style;
+        const properties = node.properties;
+        node.properties = properties;
+      }
+    });
+  };
+}
+
+function visitHastNode(node: HastNode, visitor: (node: HastNode) => void) {
+  if (node.type === "element") {
+    visitor(node);
+  }
+
+  for (const child of node.children ?? []) {
+    visitHastNode(child, visitor);
+  }
+}
+
+function styledProps(
+  baseClassName: string,
+  className?: string,
+  style?: unknown,
+) {
+  return {
+    className: cn(baseClassName, className),
+    style: inlineStyleToReactStyle(style),
+  };
+}
+
 function createMarkdownComponents(disableLinks: boolean): Components {
   return {
-  h1({ children }) {
-    return <h1 className="vault-md-h1">{children}</h1>;
+  h1({ children, className, style }) {
+    return <h1 {...styledProps("vault-md-h1", className, style)}>{children}</h1>;
   },
-  h2({ children }) {
-    return <h2 className="vault-md-h2">{children}</h2>;
+  h2({ children, className, style }) {
+    return <h2 {...styledProps("vault-md-h2", className, style)}>{children}</h2>;
   },
-  h3({ children }) {
-    return <h3 className="vault-md-h3">{children}</h3>;
+  h3({ children, className, style }) {
+    return <h3 {...styledProps("vault-md-h3", className, style)}>{children}</h3>;
   },
-  h4({ children }) {
-    return <h4 className="vault-md-h4">{children}</h4>;
+  h4({ children, className, style }) {
+    return <h4 {...styledProps("vault-md-h4", className, style)}>{children}</h4>;
   },
-  h5({ children }) {
-    return <h5 className="vault-md-h5">{children}</h5>;
+  h5({ children, className, style }) {
+    return <h5 {...styledProps("vault-md-h5", className, style)}>{children}</h5>;
   },
-  h6({ children }) {
-    return <h6 className="vault-md-h6">{children}</h6>;
+  h6({ children, className, style }) {
+    return <h6 {...styledProps("vault-md-h6", className, style)}>{children}</h6>;
   },
-  p({ children }) {
-    return <p className="vault-md-p">{children}</p>;
+  p({ children, className, style }) {
+    return <p {...styledProps("vault-md-p", className, style)}>{children}</p>;
   },
-  div({ children, className }) {
-    return <div className={cn("vault-md-html-block", className)}>{children}</div>;
+  div({ children, className, style }) {
+    return <div {...styledProps("vault-md-html-block", className, style)}>{children}</div>;
   },
-  span({ children, className }) {
-    return <span className={cn("vault-md-html-inline", className)}>{children}</span>;
+  span({ children, className, style }) {
+    return <span {...styledProps("vault-md-html-inline", className, style)}>{children}</span>;
   },
-  section({ children, className }) {
-    return <section className={cn("vault-md-section", className)}>{children}</section>;
+  section({ children, className, style }) {
+    return <section {...styledProps("vault-md-section", className, style)}>{children}</section>;
   },
-  article({ children, className }) {
-    return <article className={cn("vault-md-section", className)}>{children}</article>;
+  article({ children, className, style }) {
+    return <article {...styledProps("vault-md-section", className, style)}>{children}</article>;
   },
-  aside({ children, className }) {
-    return <aside className={cn("vault-md-aside", className)}>{children}</aside>;
+  aside({ children, className, style }) {
+    return <aside {...styledProps("vault-md-aside", className, style)}>{children}</aside>;
   },
-  header({ children, className }) {
-    return <header className={cn("vault-md-html-block", className)}>{children}</header>;
+  header({ children, className, style }) {
+    return <header {...styledProps("vault-md-html-block", className, style)}>{children}</header>;
   },
-  footer({ children, className }) {
-    return <footer className={cn("vault-md-html-block", className)}>{children}</footer>;
+  footer({ children, className, style }) {
+    return <footer {...styledProps("vault-md-html-block", className, style)}>{children}</footer>;
   },
-  figure({ children, className }) {
-    return <figure className={cn("vault-md-figure", className)}>{children}</figure>;
+  figure({ children, className, style }) {
+    return <figure {...styledProps("vault-md-figure", className, style)}>{children}</figure>;
   },
-  figcaption({ children, className }) {
-    return <figcaption className={cn("vault-md-figcaption", className)}>{children}</figcaption>;
+  figcaption({ children, className, style }) {
+    return <figcaption {...styledProps("vault-md-figcaption", className, style)}>{children}</figcaption>;
   },
-  details({ children, className }) {
-    return <details className={cn("vault-md-details", className)}>{children}</details>;
+  details({ children, className, style }) {
+    return <details {...styledProps("vault-md-details", className, style)}>{children}</details>;
   },
-  summary({ children, className }) {
-    return <summary className={cn("vault-md-summary", className)}>{children}</summary>;
+  summary({ children, className, style }) {
+    return <summary {...styledProps("vault-md-summary", className, style)}>{children}</summary>;
   },
-  mark({ children, className }) {
-    return <mark className={cn("vault-md-mark", className)}>{children}</mark>;
+  mark({ children, className, style }) {
+    return <mark {...styledProps("vault-md-mark", className, style)}>{children}</mark>;
   },
-  small({ children, className }) {
-    return <small className={cn("vault-md-small", className)}>{children}</small>;
+  small({ children, className, style }) {
+    return <small {...styledProps("vault-md-small", className, style)}>{children}</small>;
   },
-  sub({ children, className }) {
-    return <sub className={cn("vault-md-sub", className)}>{children}</sub>;
+  sub({ children, className, style }) {
+    return <sub {...styledProps("vault-md-sub", className, style)}>{children}</sub>;
   },
-  sup({ children, className }) {
-    return <sup className={cn("vault-md-sup", className)}>{children}</sup>;
+  sup({ children, className, style }) {
+    return <sup {...styledProps("vault-md-sup", className, style)}>{children}</sup>;
   },
-  kbd({ children, className }) {
-    return <kbd className={cn("vault-md-kbd", className)}>{children}</kbd>;
+  kbd({ children, className, style }) {
+    return <kbd {...styledProps("vault-md-kbd", className, style)}>{children}</kbd>;
   },
-  abbr({ children, title, className }) {
+  abbr({ children, title, className, style }) {
     return (
-      <abbr title={title} className={cn("vault-md-abbr", className)}>
+      <abbr title={title} {...styledProps("vault-md-abbr", className, style)}>
         {children}
       </abbr>
     );
   },
-  dl({ children, className }) {
-    return <dl className={cn("vault-md-dl", className)}>{children}</dl>;
+  dl({ children, className, style }) {
+    return <dl {...styledProps("vault-md-dl", className, style)}>{children}</dl>;
   },
-  dt({ children, className }) {
-    return <dt className={cn("vault-md-dt", className)}>{children}</dt>;
+  dt({ children, className, style }) {
+    return <dt {...styledProps("vault-md-dt", className, style)}>{children}</dt>;
   },
-  dd({ children, className }) {
-    return <dd className={cn("vault-md-dd", className)}>{children}</dd>;
+  dd({ children, className, style }) {
+    return <dd {...styledProps("vault-md-dd", className, style)}>{children}</dd>;
   },
-  img({ src, alt, title, className }) {
+  img({ src, alt, title, className, style }) {
     const safeSrc =
       typeof src === "string" && allowedImageProtocol.test(src) ? src : null;
 
@@ -196,21 +244,21 @@ function createMarkdownComponents(disableLinks: boolean): Components {
         alt={alt ?? ""}
         title={title}
         loading="lazy"
-        className={cn("vault-md-img", className)}
+        {...styledProps("vault-md-img", className, style)}
       />
     );
   },
-  ul({ children, className }) {
-    return <ul className={cn("vault-md-ul", className)}>{children}</ul>;
+  ul({ children, className, style }) {
+    return <ul {...styledProps("vault-md-ul", className, style)}>{children}</ul>;
   },
-  ol({ children }) {
-    return <ol className="vault-md-ol">{children}</ol>;
+  ol({ children, className, style }) {
+    return <ol {...styledProps("vault-md-ol", className, style)}>{children}</ol>;
   },
-  li({ children, className }) {
-    return <li className={cn("vault-md-li", className)}>{children}</li>;
+  li({ children, className, style }) {
+    return <li {...styledProps("vault-md-li", className, style)}>{children}</li>;
   },
-  blockquote({ children }) {
-    return <blockquote className="vault-md-blockquote">{children}</blockquote>;
+  blockquote({ children, className, style }) {
+    return <blockquote {...styledProps("vault-md-blockquote", className, style)}>{children}</blockquote>;
   },
   hr() {
     return <hr className="vault-md-hr" />;
@@ -228,21 +276,21 @@ function createMarkdownComponents(disableLinks: boolean): Components {
   td({ children }) {
     return <td className="vault-md-td">{children}</td>;
   },
-  pre({ children }) {
-    return <pre className="vault-md-pre">{children}</pre>;
+  pre({ children, className, style }) {
+    return <pre {...styledProps("vault-md-pre", className, style)}>{children}</pre>;
   },
-  code({ children, className }) {
-    return <code className={cn("vault-md-code", className)}>{children}</code>;
+  code({ children, className, style }) {
+    return <code {...styledProps("vault-md-code", className, style)}>{children}</code>;
   },
-  strong({ children }) {
-    return <strong className="vault-md-strong">{children}</strong>;
+  strong({ children, className, style }) {
+    return <strong {...styledProps("vault-md-strong", className, style)}>{children}</strong>;
   },
-  em({ children }) {
-    return <em className="vault-md-em">{children}</em>;
+  em({ children, className, style }) {
+    return <em {...styledProps("vault-md-em", className, style)}>{children}</em>;
   },
-  a({ href, children }) {
+  a({ href, children, className, style }) {
     if (disableLinks) {
-      return <span className="vault-md-link">{children}</span>;
+      return <span {...styledProps("vault-md-link", className, style)}>{children}</span>;
     }
 
     const safeHref = href && allowedLinkProtocol.test(href) ? href : "#";
@@ -256,7 +304,7 @@ function createMarkdownComponents(disableLinks: boolean): Components {
             ? undefined
             : "_blank"
         }
-        className="vault-md-link"
+        {...styledProps("vault-md-link", className, style)}
       >
         {children}
       </a>
@@ -284,7 +332,11 @@ export function MarkdownDocument({
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, safeHtmlSchema]]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, safeHtmlSchema],
+          rehypeSanitizeInlineStyles,
+        ]}
         components={createMarkdownComponents(disableLinks)}
       >
         {markdown || "_No content yet._"}

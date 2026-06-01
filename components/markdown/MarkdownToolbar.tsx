@@ -43,24 +43,24 @@ export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
   return (
     <div className="flex items-center gap-2 overflow-x-auto border-b border-border/70 bg-muted/40 px-2 py-2 sm:flex-wrap sm:px-3">
       <ToolbarGroup>
-        <ToolbarButton label="Heading 1" icon={Heading1} onClick={() => onFormat("heading1")} />
-        <ToolbarButton label="Heading 2" icon={Heading2} onClick={() => onFormat("heading2")} />
-        <ToolbarButton label="Heading 3" icon={Heading3} onClick={() => onFormat("heading3")} />
+        <ToolbarButton label="Heading 1" shortcut="Ctrl+Alt+1" icon={Heading1} onClick={() => onFormat("heading1")} />
+        <ToolbarButton label="Heading 2" shortcut="Ctrl+Alt+2" icon={Heading2} onClick={() => onFormat("heading2")} />
+        <ToolbarButton label="Heading 3" shortcut="Ctrl+Alt+3" icon={Heading3} onClick={() => onFormat("heading3")} />
       </ToolbarGroup>
       <ToolbarGroup>
-        <ToolbarButton label="Bold" icon={Bold} onClick={() => onFormat("bold")} />
-        <ToolbarButton label="Italic" icon={Italic} onClick={() => onFormat("italic")} />
-        <ToolbarButton label="Link" icon={Link2} onClick={() => onFormat("link")} />
-        <ToolbarButton label="Inline code" icon={Code} onClick={() => onFormat("inlineCode")} />
+        <ToolbarButton label="Bold" shortcut="Ctrl+B" icon={Bold} onClick={() => onFormat("bold")} />
+        <ToolbarButton label="Italic" shortcut="Ctrl+I" icon={Italic} onClick={() => onFormat("italic")} />
+        <ToolbarButton label="Link" shortcut="Ctrl+K" icon={Link2} onClick={() => onFormat("link")} />
+        <ToolbarButton label="Inline code" shortcut="Ctrl+E" icon={Code} onClick={() => onFormat("inlineCode")} />
       </ToolbarGroup>
       <ToolbarGroup>
-        <ToolbarButton label="Bullet list" icon={List} onClick={() => onFormat("bulletList")} />
-        <ToolbarButton label="Ordered list" icon={ListOrdered} onClick={() => onFormat("orderedList")} />
+        <ToolbarButton label="Bullet list" shortcut="Ctrl+Shift+8" icon={List} onClick={() => onFormat("bulletList")} />
+        <ToolbarButton label="Ordered list" shortcut="Ctrl+Shift+7" icon={ListOrdered} onClick={() => onFormat("orderedList")} />
         <ToolbarButton label="Task list" icon={CheckSquare} onClick={() => onFormat("taskList")} />
-        <ToolbarButton label="Blockquote" icon={Quote} onClick={() => onFormat("blockquote")} />
+        <ToolbarButton label="Blockquote" shortcut="Ctrl+Shift+9" icon={Quote} onClick={() => onFormat("blockquote")} />
       </ToolbarGroup>
       <ToolbarGroup>
-        <ToolbarButton label="Code fence" icon={Code} onClick={() => onFormat("codeFence")} />
+        <ToolbarButton label="Code fence" shortcut="Ctrl+Alt+C" icon={Code} onClick={() => onFormat("codeFence")} />
         <ToolbarButton label="Table" icon={Table2} onClick={() => onFormat("table")} />
         <ToolbarButton label="Horizontal rule" icon={Minus} onClick={() => onFormat("horizontalRule")} />
       </ToolbarGroup>
@@ -81,19 +81,23 @@ function ToolbarGroup({ children }: { children: ReactNode }) {
 
 function ToolbarButton({
   label,
+  shortcut,
   onClick,
   icon: Icon,
 }: {
   label: string;
+  shortcut?: string;
   onClick: () => void;
   icon: ComponentType<{ className?: string }>;
 }) {
+  const title = shortcut ? `${label} (${shortcut})` : label;
+
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon-sm"
-      title={label}
+      title={title}
       aria-label={label}
       onClick={onClick}
       className="text-muted-foreground transition hover:text-foreground"

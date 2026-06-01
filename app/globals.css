@@ -653,7 +653,8 @@
   }
 
   .vault-markdown-editor-source .cm-content span,
-  .vault-markdown-editor-split .cm-content span {
+  .vault-markdown-editor-split .cm-content span,
+  .vault-markdown-editor-live .cm-content span {
     font-family: var(--font-mono);
     font-size: inherit;
     font-style: normal;
@@ -666,9 +667,95 @@
   }
 
   .vault-markdown-editor-source .cm-content,
-  .vault-markdown-editor-split .cm-content {
+  .vault-markdown-editor-split .cm-content,
+  .vault-markdown-editor-live .cm-content {
     font-variant-ligatures: none;
     font-feature-settings: "liga" 0, "calt" 0;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-bold {
+    font-weight: 700;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-italic {
+    font-style: italic;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-code {
+    font-family: var(--font-mono);
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-link {
+    color: var(--foreground);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-html-preview {
+    max-width: 100%;
+    padding-block: 0.15rem;
+    font-family: var(--font-sans);
+    white-space: normal;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-html-preview * {
+    white-space: normal;
+  }
+
+  .vault-markdown-editor .cm-tooltip {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: color-mix(in oklab, var(--card) 96%, black 4%);
+    color: var(--card-foreground);
+    box-shadow: 0 24px 80px -45px rgb(0 0 0 / 0.85);
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete {
+    min-width: 14rem;
+    padding: 0.35rem;
+    font-family: var(--font-sans);
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete > ul {
+    max-height: 15rem;
+    padding: 0;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete ul li {
+    min-height: 2rem;
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.55rem;
+    color: var(--muted-foreground);
+    line-height: 1.25;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete ul li[aria-selected] {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon {
+    color: var(--muted-foreground);
+    opacity: 0.75;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionLabel {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionDetail {
+    margin-left: 0.75rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionMatchedText {
+    color: var(--foreground);
+    font-weight: 700;
+    text-decoration: none;
   }
 
   @media (max-width: 640px) {

@@ -8,14 +8,21 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  acceptCompletion,
+  completionStatus,
+} from "@codemirror/autocomplete";
 import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
-import { EditorSelection } from "@codemirror/state";
+import { EditorSelection, Prec } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
+  keymap,
+  type KeyBinding,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from "@codemirror/view";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import CodeMirror from "@uiw/react-codemirror";
@@ -37,6 +44,7 @@ import {
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
 import { Button } from "@/components/ui/button";
+import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
   saveDocumentTitleAction,
@@ -202,6 +210,7 @@ export function MarkdownEditor({
       const baseExtensions = [
       markdownLanguage(),
       EditorView.lineWrapping,
+      Prec.highest(keymap.of(createMarkdownShortcutKeymap())),
       EditorView.theme({
         "&": {
           backgroundColor: "transparent",
@@ -236,6 +245,53 @@ export function MarkdownEditor({
           backgroundColor:
             "color-mix(in oklab, var(--primary) 24%, transparent)",
         },
+        ".cm-tooltip": {
+          border: "1px solid var(--border)",
+          borderRadius: "0.75rem",
+          backgroundColor: "color-mix(in oklab, var(--card) 96%, black 4%)",
+          color: "var(--card-foreground)",
+          boxShadow: "0 24px 80px -45px rgba(0, 0, 0, 0.85)",
+          overflow: "hidden",
+        },
+        ".cm-tooltip-autocomplete": {
+          minWidth: "14rem",
+          padding: "0.35rem",
+          fontFamily: "var(--font-sans)",
+        },
+        ".cm-tooltip-autocomplete > ul": {
+          maxHeight: "15rem",
+          padding: "0",
+        },
+        ".cm-tooltip-autocomplete ul li": {
+          minHeight: "2rem",
+          borderRadius: "0.5rem",
+          padding: "0.35rem 0.55rem",
+          color: "var(--muted-foreground)",
+          lineHeight: "1.25",
+        },
+        ".cm-tooltip-autocomplete ul li[aria-selected]": {
+          backgroundColor:
+            "color-mix(in oklab, var(--primary) 18%, transparent)",
+          color: "var(--foreground)",
+        },
+        ".cm-tooltip-autocomplete .cm-completionIcon": {
+          color: "var(--muted-foreground)",
+          opacity: "0.75",
+        },
+        ".cm-tooltip-autocomplete .cm-completionLabel": {
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.82rem",
+        },
+        ".cm-tooltip-autocomplete .cm-completionDetail": {
+          color: "var(--muted-foreground)",
+          fontSize: "0.75rem",
+          marginLeft: "0.75rem",
+        },
+        ".cm-tooltip-autocomplete .cm-completionMatchedText": {
+          color: "var(--foreground)",
+          fontWeight: "700",
+          textDecoration: "none",
+        },
         ".cm-line .ͼc, .cm-line .ͼd, .cm-line .ͼe, .cm-line .ͼf, .cm-line .ͼg, .cm-line .ͼh, .cm-line .ͼi, .cm-line .ͼj": {
           color: "var(--foreground)",
         },
@@ -246,7 +302,7 @@ export function MarkdownEditor({
           textDecorationColor:
             "color-mix(in oklab, var(--foreground) 55%, transparent)",
         },
-        ".vault-markdown-editor-source & .cm-content span, .vault-markdown-editor-split & .cm-content span": {
+        ".vault-markdown-editor-source & .cm-content span, .vault-markdown-editor-split & .cm-content span, .vault-markdown-editor-live & .cm-content span": {
           fontFamily: "var(--font-mono)",
           fontSize: "inherit",
           fontStyle: "normal",
@@ -257,7 +313,7 @@ export function MarkdownEditor({
           textDecoration: "none",
           textDecorationLine: "none",
         },
-        ".vault-markdown-editor-source & .cm-content, .vault-markdown-editor-split & .cm-content": {
+        ".vault-markdown-editor-source & .cm-content, .vault-markdown-editor-split & .cm-content, .vault-markdown-editor-live & .cm-content": {
           fontVariantLigatures: "none",
           fontFeatureSettings: '"liga" 0, "calt" 0',
         },
@@ -298,20 +354,20 @@ export function MarkdownEditor({
           lineHeight: "1.45",
           color: "var(--muted-foreground)",
         },
-        ".vault-cm-preview-bold": {
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-bold": {
           fontWeight: "700",
         },
-        ".vault-cm-preview-italic": {
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-italic": {
           fontStyle: "italic",
         },
-        ".vault-cm-preview-code": {
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-code": {
           border: "1px solid var(--border)",
           borderRadius: "0.3rem",
           backgroundColor: "color-mix(in oklab, var(--muted) 75%, transparent)",
           padding: "0.1rem 0.3rem",
           fontFamily: "var(--font-mono)",
         },
-        ".vault-cm-preview-link": {
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-link": {
           color: "var(--foreground)",
           fontWeight: "500",
           textDecoration: "underline",
@@ -607,6 +663,52 @@ function colorFromString(value: string) {
   return colors[hash];
 }
 
+function createMarkdownShortcutKeymap(): KeyBinding[] {
+  const run = (command: (view: EditorView) => void) => (view: EditorView) => {
+    command(view);
+    return true;
+  };
+
+  return [
+    {
+      key: "Tab",
+      run: (view) =>
+        completionStatus(view.state) === "active"
+          ? acceptCompletion(view)
+          : false,
+    },
+    { key: "Mod-b", run: run((view) => toggleInlineFormat(view, "bold")) },
+    { key: "Mod-i", run: run((view) => toggleInlineFormat(view, "italic")) },
+    { key: "Mod-e", run: run((view) => toggleInlineFormat(view, "code")) },
+    { key: "Mod-k", run: run(toggleLink) },
+    {
+      key: "Mod-Alt-1",
+      run: run((view) => toggleLinePrefix(view, "# ", "heading1")),
+    },
+    {
+      key: "Mod-Alt-2",
+      run: run((view) => toggleLinePrefix(view, "## ", "heading2")),
+    },
+    {
+      key: "Mod-Alt-3",
+      run: run((view) => toggleLinePrefix(view, "### ", "heading3")),
+    },
+    {
+      key: "Mod-Shift-8",
+      run: run((view) => toggleLinePrefix(view, "- ", "bulletList")),
+    },
+    {
+      key: "Mod-Shift-7",
+      run: run((view) => toggleLinePrefix(view, "1. ", "orderedList")),
+    },
+    {
+      key: "Mod-Shift-9",
+      run: run((view) => toggleLinePrefix(view, "> ", "blockquote")),
+    },
+    { key: "Mod-Alt-c", run: run(toggleCodeFence) },
+  ];
+}
+
 const hiddenMarkdown = Decoration.replace({});
 const previewBold = Decoration.mark({ class: "vault-cm-preview-bold" });
 const previewItalic = Decoration.mark({ class: "vault-cm-preview-italic" });
@@ -621,6 +723,52 @@ const previewHeading6 = Decoration.line({ class: "vault-cm-preview-heading-6" })
 const previewQuote = Decoration.line({ class: "vault-cm-preview-quote" });
 const previewCodeBlock = Decoration.line({ class: "vault-cm-preview-codeblock" });
 const previewList = Decoration.line({ class: "vault-cm-preview-list" });
+const htmlVoidTags = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+const blockedHtmlTags = new Set([
+  "script",
+  "style",
+  "iframe",
+  "form",
+  "object",
+  "embed",
+  "link",
+  "meta",
+]);
+const safeHtmlUrl = /^(https?:|mailto:|\/|#)/i;
+
+class HtmlBlockPreviewWidget extends WidgetType {
+  constructor(private readonly html: string) {
+    super();
+  }
+
+  eq(widget: HtmlBlockPreviewWidget) {
+    return widget.html === this.html;
+  }
+
+  toDOM() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "vault-cm-html-preview vault-markdown";
+    wrapper.innerHTML = this.html;
+    sanitizeHtmlPreviewDom(wrapper);
+
+    return wrapper;
+  }
+}
 
 const markdownLivePreviewExtension = ViewPlugin.fromClass(
   class {
@@ -651,14 +799,33 @@ function buildLivePreviewDecorations(view: EditorView) {
   const activeLines = getActiveStructuralLines(view);
   const activePositions = view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
+  const doc = view.state.doc;
 
   for (const visibleRange of view.visibleRanges) {
     let position = visibleRange.from;
 
     while (position <= visibleRange.to) {
-      const line = view.state.doc.lineAt(position);
+      const line = doc.lineAt(position);
 
       if (!activeLines.has(line.number)) {
+        const htmlBlock = htmlBlockRangeFromStart(doc, line.number);
+
+        if (htmlBlock) {
+          const fromLine = doc.line(htmlBlock.from);
+          const toLine = doc.line(htmlBlock.to);
+          const html = doc.sliceString(fromLine.from, toLine.to);
+
+          ranges.push(
+            Decoration.replace({
+              block: true,
+              widget: new HtmlBlockPreviewWidget(html),
+            }).range(fromLine.from, toLine.to),
+          );
+
+          position = toLine.to + 1;
+          continue;
+        }
+
         const lineRanges = decorateInactiveMarkdownLine(
           line.from,
           line.text,
@@ -724,6 +891,15 @@ function getActiveMarkdownBlockRange(
     return { from: fromLineNumber, to: toLineNumber };
   }
 
+  const htmlBlock = htmlBlockRangeContainingLine(doc, fromLineNumber);
+
+  if (htmlBlock) {
+    return {
+      from: htmlBlock.from,
+      to: Math.max(htmlBlock.to, toLineNumber),
+    };
+  }
+
   const listPrefix = startLine.text.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/);
 
   if (listPrefix) {
@@ -765,6 +941,65 @@ function codeFenceBlockRange(doc: EditorView["state"]["doc"], lineNumber: number
   }
 
   return { from, to };
+}
+
+function htmlBlockRangeContainingLine(
+  doc: EditorView["state"]["doc"],
+  lineNumber: number,
+) {
+  for (let candidate = lineNumber; candidate >= 1; candidate -= 1) {
+    const candidateText = doc.line(candidate).text;
+
+    if (!candidateText.trim()) {
+      break;
+    }
+
+    const range = htmlBlockRangeFromStart(doc, candidate);
+
+    if (range && lineNumber >= range.from && lineNumber <= range.to) {
+      return range;
+    }
+  }
+
+  return null;
+}
+
+function htmlBlockRangeFromStart(
+  doc: EditorView["state"]["doc"],
+  lineNumber: number,
+) {
+  const line = doc.line(lineNumber);
+  const openTag = line.text.match(/^\s{0,3}<([A-Za-z][\w:-]*)(?:\s[^>]*)?>/);
+
+  if (!openTag) {
+    return null;
+  }
+
+  const tagName = openTag[1].toLowerCase();
+
+  if (blockedHtmlTags.has(tagName)) {
+    return null;
+  }
+
+  if (
+    htmlVoidTags.has(tagName) ||
+    /\/>\s*$/.test(line.text) ||
+    new RegExp(`</${escapeRegExp(tagName)}>`, "i").test(line.text)
+  ) {
+    return { from: lineNumber, to: lineNumber };
+  }
+
+  const closeTag = new RegExp(`</${escapeRegExp(tagName)}>`, "i");
+
+  for (let nextLineNumber = lineNumber + 1; nextLineNumber <= doc.lines; nextLineNumber += 1) {
+    const nextLine = doc.line(nextLineNumber);
+
+    if (closeTag.test(nextLine.text)) {
+      return { from: lineNumber, to: nextLineNumber };
+    }
+  }
+
+  return null;
 }
 
 function getCodeFenceLines(view: EditorView) {
@@ -810,8 +1045,14 @@ function decorateInactiveMarkdownLine(
 
   if (heading) {
     const level = heading[1].length;
+    const markerFrom = lineFrom;
+    const markerTo = lineFrom + heading[0].length;
+
     ranges.push(headingDecorationForLevel(level).range(lineFrom));
-    ranges.push(hiddenMarkdown.range(lineFrom, lineFrom + heading[0].length));
+
+    if (!hasActivePositionInRange(activePositions, markerFrom, markerTo)) {
+      ranges.push(hiddenMarkdown.range(markerFrom, markerTo));
+    }
   }
 
   const quote = text.match(/^(>\s+)/);
@@ -918,7 +1159,7 @@ function addRegexDecorations(
     const from = lineFrom + match.index;
     const to = from + match[0].length;
 
-    if (activePositions.some((position) => position >= from && position <= to)) {
+    if (hasActivePositionInRange(activePositions, from, to)) {
       continue;
     }
 
@@ -948,7 +1189,7 @@ function addLinkDecorations(
     const labelEnd = labelStart + match[1].length;
     const to = from + match[0].length;
 
-    if (activePositions.some((position) => position >= from && position <= to)) {
+    if (hasActivePositionInRange(activePositions, from, to)) {
       continue;
     }
 
@@ -956,6 +1197,67 @@ function addLinkDecorations(
     ranges.push(hiddenMarkdown.range(from, labelStart));
     ranges.push(hiddenMarkdown.range(labelEnd, to));
   }
+}
+
+function hasActivePositionInRange(
+  activePositions: number[],
+  from: number,
+  to: number,
+) {
+  return activePositions.some((position) => position >= from && position <= to);
+}
+
+function sanitizeHtmlPreviewDom(root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  const elementsToRemove: Element[] = [];
+  const elements: Element[] = [];
+
+  while (walker.nextNode()) {
+    elements.push(walker.currentNode as Element);
+  }
+
+  for (const element of elements) {
+    const tagName = element.tagName.toLowerCase();
+
+    if (blockedHtmlTags.has(tagName)) {
+      elementsToRemove.push(element);
+      continue;
+    }
+
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value;
+
+      if (name.startsWith("on")) {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+
+      if (name === "style") {
+        const style = sanitizeInlineStyle(value);
+
+        if (style) {
+          element.setAttribute("style", style);
+        } else {
+          element.removeAttribute(attribute.name);
+        }
+
+        continue;
+      }
+
+      if ((name === "href" || name === "src") && !safeHtmlUrl.test(value)) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+
+  for (const element of elementsToRemove) {
+    element.remove();
+  }
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isCodeFenceLine(text: string) {
