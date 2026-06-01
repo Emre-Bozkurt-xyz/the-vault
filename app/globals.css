@@ -703,6 +703,12 @@
     white-space: normal;
   }
 
+  .vault-markdown-editor-live .cm-content .vault-cm-html-inline-preview,
+  .vault-markdown-editor-live .cm-content .vault-cm-html-inline-preview * {
+    font-family: inherit;
+    white-space: normal;
+  }
+
   .vault-markdown-editor .cm-tooltip {
     overflow: hidden;
     border: 1px solid var(--border);

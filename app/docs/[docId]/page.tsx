@@ -72,7 +72,7 @@ export default async function DocumentPage({
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-5 px-3 py-4 sm:gap-8 sm:px-6 sm:py-8">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1720px] flex-col gap-5 px-3 py-4 sm:gap-8 sm:px-6 sm:py-8 2xl:px-10">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4 sm:gap-4 sm:pb-6">
           <Link
             href="/dashboard"
@@ -95,7 +95,9 @@ export default async function DocumentPage({
         <section
           className={cn(
             "grid gap-8",
-            showSidePanel ? "lg:grid-cols-[minmax(0,1fr)_320px]" : null,
+            showSidePanel
+              ? "lg:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]"
+              : null,
           )}
         >
           <div className="vault-fade-up rounded-2xl border border-border/60 bg-card/70 p-2 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:p-6">

@@ -67,6 +67,7 @@ type MarkdownEditorProps = {
 
 type PreviewMode = "source" | "live" | "split" | "preview";
 type CollabStatus = "off" | "connecting" | "connected" | "disconnected";
+type RangeLike = ReturnType<Decoration["range"]>;
 type CollabSession = {
   ydoc: Y.Doc;
   ytext: Y.Text;
@@ -749,6 +750,31 @@ const blockedHtmlTags = new Set([
   "link",
   "meta",
 ]);
+const htmlBlockTags = new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "details",
+  "dialog",
+  "div",
+  "dl",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "header",
+  "hr",
+  "main",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "summary",
+  "table",
+  "ul",
+]);
 const safeHtmlUrl = /^(https?:|mailto:|\/|#)/i;
 
 class HtmlBlockPreviewWidget extends WidgetType {
@@ -763,6 +789,25 @@ class HtmlBlockPreviewWidget extends WidgetType {
   toDOM() {
     const wrapper = document.createElement("div");
     wrapper.className = "vault-cm-html-preview vault-markdown";
+    wrapper.innerHTML = this.html;
+    sanitizeHtmlPreviewDom(wrapper);
+
+    return wrapper;
+  }
+}
+
+class InlineHtmlPreviewWidget extends WidgetType {
+  constructor(private readonly html: string) {
+    super();
+  }
+
+  eq(widget: InlineHtmlPreviewWidget) {
+    return widget.html === this.html;
+  }
+
+  toDOM() {
+    const wrapper = document.createElement("span");
+    wrapper.className = "vault-cm-html-inline-preview";
     wrapper.innerHTML = this.html;
     sanitizeHtmlPreviewDom(wrapper);
 
@@ -817,7 +862,6 @@ function buildLivePreviewDecorations(view: EditorView) {
 
           ranges.push(
             Decoration.replace({
-              block: true,
               widget: new HtmlBlockPreviewWidget(html),
             }).range(fromLine.from, toLine.to),
           );
@@ -977,7 +1021,7 @@ function htmlBlockRangeFromStart(
 
   const tagName = openTag[1].toLowerCase();
 
-  if (blockedHtmlTags.has(tagName)) {
+  if (blockedHtmlTags.has(tagName) || !htmlBlockTags.has(tagName)) {
     return null;
   }
 
@@ -1098,11 +1142,12 @@ function headingDecorationForLevel(level: number) {
 }
 
 function addInlinePreviewDecorations(
-  ranges: ReturnType<typeof hiddenMarkdown.range>[],
+  ranges: RangeLike[],
   lineFrom: number,
   text: string,
   activePositions: number[],
 ) {
+  addInlineHtmlDecorations(ranges, lineFrom, text, activePositions);
   addRegexDecorations(
     ranges,
     lineFrom,
@@ -1142,8 +1187,37 @@ function addInlinePreviewDecorations(
   addLinkDecorations(ranges, lineFrom, text, activePositions);
 }
 
+function addInlineHtmlDecorations(
+  ranges: RangeLike[],
+  lineFrom: number,
+  text: string,
+  activePositions: number[],
+) {
+  const inlineHtml =
+    /<(a|abbr|b|cite|code|data|del|em|i|ins|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var)(\s[^>]*)?>[\s\S]*?<\/\1>/gi;
+
+  for (const match of text.matchAll(inlineHtml)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const from = lineFrom + match.index;
+    const to = from + match[0].length;
+
+    if (hasActivePositionInRange(activePositions, from, to)) {
+      continue;
+    }
+
+    ranges.push(
+      Decoration.replace({
+        widget: new InlineHtmlPreviewWidget(match[0]),
+      }).range(from, to),
+    );
+  }
+}
+
 function addRegexDecorations(
-  ranges: ReturnType<typeof hiddenMarkdown.range>[],
+  ranges: RangeLike[],
   lineFrom: number,
   text: string,
   regex: RegExp,
@@ -1174,7 +1248,7 @@ function addRegexDecorations(
 }
 
 function addLinkDecorations(
-  ranges: ReturnType<typeof hiddenMarkdown.range>[],
+  ranges: RangeLike[],
   lineFrom: number,
   text: string,
   activePositions: number[],

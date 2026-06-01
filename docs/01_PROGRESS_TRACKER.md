@@ -216,9 +216,9 @@ Unauthorized users cannot connect.
 | [x] | Make new documents write initial Markdown | Legacy JSON remains active editor/rendering format |
 | [ ] | Deploy latest Markdown schema migration | Held intentionally until local Markdown UX is verified |
 | [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML and constrained inline styles; needs browser UX verification |
-| [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; mobile layout tightened; live heading marker and HTML block rendering fixed; autocomplete popup themed; formatting shortcuts added; needs browser UX verification |
+| [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; mobile and wide-screen layout tightened; live heading marker plus inline/block HTML rendering fixed; autocomplete popup themed; formatting shortcuts added; needs browser UX verification |
 | [~] | Move collaboration to Y.Text | Hocuspocus now loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding wired; needs two-browser verification |
-| [~] | Add live preview | Live mode is now default; Source/Split/Preview remain available; heading marker spans are neutralized and inactive HTML blocks render as sanitized preview widgets; needs browser UX verification |
+| [~] | Add live preview | Live mode is now default; Source/Split/Preview remain available; heading marker spans are neutralized and inactive inline/block HTML renders as sanitized preview widgets; needs browser UX verification |
 
 Exit criteria:
 
