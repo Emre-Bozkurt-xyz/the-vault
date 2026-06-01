@@ -71,7 +71,7 @@ services:
     environment:
       POSTGRES_DB: vault
       POSTGRES_USER: vault
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - vault_postgres:/var/lib/postgresql/data
     healthcheck:

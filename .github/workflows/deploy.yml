@@ -15,6 +15,7 @@ on:
       - "scripts/**"
       - "auth.ts"
       - "Dockerfile"
+      - "Dockerfile.collab"
       - "docker-compose.production.yml"
       - "package.json"
       - "package-lock.json"
@@ -35,8 +36,25 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Check deployment script
-        run: test -x /opt/apps/vault/repo/scripts/deploy.sh
+      - name: Bootstrap server repo
+        run: |
+          set -euo pipefail
+
+          APP_DIR="/opt/apps/vault/repo"
+
+          echo "[workflow] Bootstrapping server repo..."
+          cd "$APP_DIR"
+
+          echo "[workflow] Fetching latest master..."
+          git fetch origin master
+          git reset --hard origin/master
+
+          echo "[workflow] Ensuring deploy script is runnable..."
+          chmod +x scripts/deploy.sh
+          test -f scripts/deploy.sh
+
+          echo "[workflow] Server repo ready."
+          ls -la scripts/deploy.sh
 
       - name: Deploy Vault
-        run: /opt/apps/vault/repo/scripts/deploy.sh
+        run: bash /opt/apps/vault/repo/scripts/deploy.sh
