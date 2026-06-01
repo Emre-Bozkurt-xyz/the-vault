@@ -107,7 +107,14 @@ AUTH_SECRET=<local secret>
 GITHUB_CLIENT_ID=<github oauth client id>
 GITHUB_CLIENT_SECRET=<github oauth secret>
 NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
+ENABLE_DEV_LOGIN=true
 ```
+
+For localhost work, you do not need GitHub OAuth. In non-production, `/login`
+shows dev-only buttons for `Dev owner` and `Dev collaborator`. Those buttons
+create normal database-backed Auth.js sessions, so dashboard, document
+permissions, sharing, and collaboration still use the real server-side auth
+path. Set `ENABLE_DEV_LOGIN=false` to hide them.
 
 GitHub OAuth callback:
 
@@ -149,6 +156,7 @@ POSTGRES_PASSWORD=<strong password>
 DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
 NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab
 COLLAB_PORT=1234
+ENABLE_DEV_LOGIN=false
 ```
 
 Production GitHub OAuth callback:

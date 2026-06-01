@@ -76,7 +76,7 @@ export default async function DashboardPage({
           </div>
           <div className="vault-fade-up vault-delay-2 flex flex-wrap items-center gap-2">
             <form action={createDocumentAction}>
-              <Button size="lg" className="gap-2">
+              <Button type="submit" size="lg" className="gap-2">
                 <FilePlus2 className="size-4" />
                 New document
               </Button>
@@ -215,7 +215,9 @@ export default async function DashboardPage({
                     description="Create your first private document to start capturing ideas."
                     action={
                       <form action={createDocumentAction}>
-                        <Button size="sm">New document</Button>
+                        <Button type="submit" size="sm">
+                          New document
+                        </Button>
                       </form>
                     }
                   />
@@ -387,39 +389,38 @@ function DocCard({
 }) {
   return (
     <article className="vault-doc-card group">
-      {preview ? (
-        <div className="vault-doc-preview">
-          <div className="vault-doc-preview-sheet">
-            <span className="vault-doc-preview-edge" aria-hidden="true" />
-            <div className="vault-doc-preview-content">
-              <ReadOnlyDocument content={preview} />
-            </div>
-            <div className="vault-doc-preview-fade" />
-          </div>
-        </div>
-      ) : null}
-      <div className="vault-doc-body">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 rounded-2xl border border-border/60 bg-background/80 p-2 text-foreground">
-              <Icon className="size-4" />
-            </span>
-            <div>
-              <Link
-                href={href}
-                className="text-lg font-semibold leading-tight transition group-hover:text-foreground"
-              >
-                {title}
-              </Link>
-              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                {meta}
-              </p>
+      <Link href={href} className="vault-doc-link">
+        {preview ? (
+          <div className="vault-doc-preview">
+            <div className="vault-doc-preview-sheet">
+              <span className="vault-doc-preview-edge" aria-hidden="true" />
+              <div className="vault-doc-preview-content">
+                <ReadOnlyDocument content={preview} />
+              </div>
+              <div className="vault-doc-preview-fade" />
             </div>
           </div>
-          {badge}
+        ) : null}
+        <div className="vault-doc-body">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-start gap-2">
+              <span className="mt-0.5 rounded-md border border-border/60 bg-background/80 p-1.5 text-foreground">
+                <Icon className="size-3.5" />
+              </span>
+              <div className="min-w-0">
+                <span className="vault-doc-title text-base font-semibold leading-tight">
+                  {title}
+                </span>
+                <p className="mt-1 text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">
+                  {meta}
+                </p>
+              </div>
+            </div>
+            {badge}
+          </div>
         </div>
-        {action ? <div className="pt-3">{action}</div> : null}
-      </div>
+      </Link>
+      {action ? <div className="pt-3">{action}</div> : null}
     </article>
   );
 }

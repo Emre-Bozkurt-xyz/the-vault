@@ -6,6 +6,7 @@ import { signIn, auth } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { devSignInAction, isDevLoginEnabled } from "@/server/dev-auth";
 
 export default async function LoginPage() {
   const session = await auth();
@@ -13,6 +14,8 @@ export default async function LoginPage() {
   if (session?.user?.id) {
     redirect("/dashboard");
   }
+
+  const showDevLogin = isDevLoginEnabled();
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -57,6 +60,28 @@ export default async function LoginPage() {
               Local setup requires `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
               `AUTH_SECRET`, and `NEXTAUTH_URL` in `.env.local`.
             </p>
+
+            {showDevLogin ? (
+              <div className="mt-6 border-t border-border pt-5">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Local development
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <form action={devSignInAction}>
+                    <input type="hidden" name="devUser" value="owner" />
+                    <Button type="submit" variant="outline" className="w-full">
+                      Dev owner
+                    </Button>
+                  </form>
+                  <form action={devSignInAction}>
+                    <input type="hidden" name="devUser" value="collaborator" />
+                    <Button type="submit" variant="outline" className="w-full">
+                      Dev collaborator
+                    </Button>
+                  </form>
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>

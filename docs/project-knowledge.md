@@ -164,6 +164,7 @@ Add notes as real files appear:
 | `lib/slug.ts` | Public slug generation helper |
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
+| `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
@@ -192,6 +193,7 @@ GITHUB_CLIENT_ID=replace-with-github-oauth-client-id
 GITHUB_CLIENT_SECRET=replace-with-github-oauth-client-secret
 NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
 COLLAB_PORT=1234
+ENABLE_DEV_LOGIN=true
 ```
 
 ### Production
@@ -215,6 +217,7 @@ Rules:
 | `GITHUB_CLIENT_SECRET` | Yes | Auth.js | GitHub OAuth secret |
 | `NEXT_PUBLIC_COLLAB_URL` | Optional | Editor | WebSocket URL for live collaboration; when absent, editor falls back to normal autosave |
 | `COLLAB_PORT` | Optional | Collab service | Internal Hocuspocus listen port, default `1234` |
+| `ENABLE_DEV_LOGIN` | Optional | Login page | Enables dev-only local Auth.js database-session login when not production; defaults enabled outside production unless set to `false` |
 
 ---
 
@@ -285,6 +288,7 @@ Important files:
 | `auth.ts` | Auth.js config, provider, adapter, session callback |
 | `app/api/auth/[...nextauth]/route.ts` | GET/POST route handlers |
 | `app/login/page.tsx` | Sign-in UI and GitHub sign-in action |
+| `server/dev-auth.ts` | Dev-only local sign-in action |
 | `app/dashboard/page.tsx` | Protected route and sign-out action |
 | `types/next-auth.d.ts` | Adds `session.user.id` to TypeScript session type |
 
@@ -304,6 +308,7 @@ Known auth caveats:
 - GitHub OAuth app callback for local dev must be `http://localhost:3000/api/auth/callback/github`.
 - The provider config uses placeholder fallback strings only so builds succeed before secrets are configured; those are not valid credentials.
 - `auth.ts` uses a development-only fallback `AUTH_SECRET` so logged-out auth routes can run locally before `.env.local` exists. Production must provide a real `AUTH_SECRET`.
+- In non-production, `/login` shows dev-only database-session login buttons for `dev.owner@vault.local` and `dev.collaborator@vault.local`; set `ENABLE_DEV_LOGIN=false` to hide them.
 ```
 
 Manual auth tests performed:
@@ -314,6 +319,7 @@ Manual auth tests performed:
 | `/login` renders | Passed | 2026-05-26 |
 | `/api/auth/session` returns `null` when logged out | Passed | 2026-05-26 |
 | Auth tables exist after migration | Passed | 2026-05-26 |
+| Dev login creates normal database session | Pending manual browser check | 2026-05-31 |
 
 ---
 

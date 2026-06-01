@@ -71,6 +71,11 @@ DATABASE_URL=postgres://...
 
 Use a different OAuth app or at least separate callback URLs for production.
 
+Local development can also use the dev-only login buttons on `/login`. Those
+buttons are disabled in production and create normal database-backed Auth.js
+sessions for local test users, avoiding GitHub OAuth callback churn while still
+exercising the real permission model.
+
 ---
 
 ## 4. OAuth Callback URLs
