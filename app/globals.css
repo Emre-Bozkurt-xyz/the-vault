@@ -410,9 +410,59 @@
     list-style: decimal;
   }
 
-  .vault-md-checkbox {
-    margin-right: 0.45rem;
-    vertical-align: -0.1rem;
+  .vault-md-checkbox,
+  .vault-cm-task-checkbox {
+    position: relative;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.34rem 0.15rem 0 0;
+    flex: 0 0 auto;
+    appearance: none;
+    border: 1px solid color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    background: color-mix(in oklab, var(--background) 82%, var(--card) 18%);
+    border-radius: 0.28rem;
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 8%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--background) 70%, transparent);
+    opacity: 1;
+    vertical-align: -0.16rem;
+  }
+
+  .vault-md-checkbox:checked,
+  .vault-cm-task-checkbox[data-checked="true"] {
+    border-color: color-mix(in oklab, var(--primary) 86%, var(--foreground) 14%);
+    background:
+      linear-gradient(135deg, transparent 58%, color-mix(in oklab, white 12%, transparent) 58%),
+      var(--primary);
+  }
+
+  .vault-md-checkbox:checked::after,
+  .vault-cm-task-checkbox[data-checked="true"]::after {
+    position: absolute;
+    left: 0.31rem;
+    top: 0.12rem;
+    width: 0.32rem;
+    height: 0.56rem;
+    border: solid var(--primary-foreground);
+    border-width: 0 0.12rem 0.12rem 0;
+    content: "";
+    transform: rotate(45deg);
+  }
+
+  .vault-md-li:has(.vault-md-checkbox) {
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    column-gap: 0.7rem;
+    align-items: start;
+    list-style: none;
+  }
+
+  .vault-md-li:has(.vault-md-checkbox)::marker {
+    content: "";
+  }
+
+  .vault-md-li:has(.vault-md-checkbox) .vault-md-checkbox {
+    grid-column: 1;
   }
 
   .vault-md-blockquote {
@@ -707,6 +757,11 @@
   .vault-markdown-editor-live .cm-content .vault-cm-html-inline-preview * {
     font-family: inherit;
     white-space: normal;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-task-checkbox {
+    display: inline-block;
+    margin-right: 0.55rem;
   }
 
   .vault-markdown-editor .cm-tooltip {

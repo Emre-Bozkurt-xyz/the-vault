@@ -815,6 +815,25 @@ class InlineHtmlPreviewWidget extends WidgetType {
   }
 }
 
+class TaskCheckboxWidget extends WidgetType {
+  constructor(private readonly checked: boolean) {
+    super();
+  }
+
+  eq(widget: TaskCheckboxWidget) {
+    return widget.checked === this.checked;
+  }
+
+  toDOM() {
+    const checkbox = document.createElement("span");
+    checkbox.className = "vault-cm-task-checkbox";
+    checkbox.dataset.checked = String(this.checked);
+    checkbox.setAttribute("aria-hidden", "true");
+
+    return checkbox;
+  }
+}
+
 const markdownLivePreviewExtension = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -1110,6 +1129,18 @@ function decorateInactiveMarkdownLine(
 
   if (list) {
     ranges.push(previewList.range(lineFrom));
+
+    const task = text.match(/^(\s*)[-*+]\s+\[([ xX])]\s+/);
+
+    if (task) {
+      const markerFrom = lineFrom + task[1].length;
+      const markerTo = lineFrom + task[0].length;
+      ranges.push(
+        Decoration.replace({
+          widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x"),
+        }).range(markerFrom, markerTo),
+      );
+    }
   }
 
   addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
