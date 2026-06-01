@@ -15,6 +15,8 @@ import { auth, signOut } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ReadOnlyDocument } from "@/components/editor/ReadOnlyDocument";
+import { emptyDocumentContent, type ProseMirrorDoc } from "@/lib/editor-content";
 import { cn } from "@/lib/utils";
 import {
   createDocumentAction,
@@ -231,6 +233,7 @@ export default async function DashboardPage({
                             {document.visibility === "public" ? "Public" : "Private"}
                           </Badge>
                         }
+                        preview={document.content ?? emptyDocumentContent}
                       />
                     ))}
                   </div>
@@ -253,6 +256,7 @@ export default async function DashboardPage({
                         meta="Shared workspace"
                         icon={Share2}
                         badge={<Badge variant="secondary">{document.role}</Badge>}
+                        preview={document.content ?? emptyDocumentContent}
                       />
                     ))}
                   </div>
@@ -275,6 +279,7 @@ export default async function DashboardPage({
                         meta={`Updated ${document.updatedAt.toLocaleDateString()}`}
                         icon={Globe2}
                         badge={<Badge variant="outline">Public</Badge>}
+                        preview={document.content ?? emptyDocumentContent}
                         action={
                           document.publicSlug ? (
                             <Link
@@ -370,6 +375,7 @@ function DocCard({
   icon: Icon,
   badge,
   action,
+  preview,
 }: {
   href: string;
   title: string;
@@ -377,6 +383,7 @@ function DocCard({
   icon: ComponentType<{ className?: string }>;
   badge?: ReactNode;
   action?: ReactNode;
+  preview?: ProseMirrorDoc;
 }) {
   return (
     <article className="group flex h-full flex-col justify-between gap-4 rounded-3xl border border-border/60 bg-background/70 p-5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background/90">
@@ -399,6 +406,12 @@ function DocCard({
         </div>
         {badge}
       </div>
+      {preview ? (
+        <div className="vault-preview max-h-36 rounded-2xl p-3">
+          <ReadOnlyDocument content={preview} />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background/95 to-transparent" />
+        </div>
+      ) : null}
       {action ? <div className="pt-1">{action}</div> : null}
     </article>
   );

@@ -471,6 +471,7 @@ export async function listDocumentsForUser(userId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      content: documents.content,
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
     })
@@ -484,6 +485,7 @@ export async function listSharedDocumentsForUser(userId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      content: documents.content,
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
       role: documentPermissions.role,
@@ -505,6 +507,7 @@ export async function listPublishedDocumentsForUser(userId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      content: documents.content,
       publicSlug: documents.publicSlug,
       updatedAt: documents.updatedAt,
     })

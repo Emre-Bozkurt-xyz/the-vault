@@ -207,105 +207,150 @@ export default async function DocumentPage({
                     read and save changes.
                   </p>
 
-                  <form
-                    action={shareDocumentAction}
-                    className="mt-4 grid gap-3"
-                  >
-                    <input type="hidden" name="documentId" value={document.id} />
-                    <Input name="email" type="email" placeholder="person@example.com" required />
-                    <select
-                      name="role"
-                      className="h-9 rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                      defaultValue="viewer"
-                    >
-                      <option value="viewer">Viewer</option>
-                      <option value="editor">Editor</option>
-                    </select>
-                    <Button type="submit">Share</Button>
-                  </form>
-
-                  {friends.length > 0 ? (
-                    <form
-                      action={shareDocumentWithFriendAction}
-                      className="mt-3 grid gap-3"
-                    >
-                      <input type="hidden" name="documentId" value={document.id} />
-                      <select
-                        name="userId"
-                        className="h-9 rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                        required
+                  <div className="mt-4 space-y-5">
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                        Share by email
+                      </p>
+                      <form
+                        action={shareDocumentAction}
+                        className="mt-3 grid gap-3"
                       >
-                        {friends.map((friend) => (
-                          <option key={friend.id} value={friend.id}>
-                            {friend.name ?? friend.email ?? "Unnamed user"}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        name="role"
-                        className="h-9 rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                        defaultValue="viewer"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="editor">Editor</option>
-                      </select>
-                      <Button type="submit" variant="outline">
-                        Share friend
-                      </Button>
-                    </form>
-                  ) : null}
+                        <input type="hidden" name="documentId" value={document.id} />
+                        <Input
+                          name="email"
+                          type="email"
+                          placeholder="person@example.com"
+                          required
+                        />
+                        <select
+                          name="role"
+                          className="h-9 w-full rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                          defaultValue="viewer"
+                        >
+                          <option value="viewer">Viewer</option>
+                          <option value="editor">Editor</option>
+                        </select>
+                        <Button type="submit">Share</Button>
+                      </form>
+                    </div>
 
-                  <div className="mt-4 grid gap-2">
-                    {collaborators.map((collaborator) => (
-                      <div
-                        key={collaborator.userId}
-                        className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div>
-                          <p className="font-medium">
-                            {collaborator.name ?? collaborator.email ?? "Unnamed user"}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {collaborator.email} - {collaborator.role}
-                          </p>
-                        </div>
-
-                        {collaborator.role !== "owner" ? (
-                          <div className="flex flex-wrap gap-2">
-                            <form action={updateCollaboratorRoleAction}>
-                              <input type="hidden" name="documentId" value={document.id} />
-                              <input
-                                type="hidden"
-                                name="userId"
-                                value={collaborator.userId}
-                              />
-                              <select
-                                name="role"
-                                className="h-8 rounded-lg border border-border/70 bg-background/70 px-2 text-sm"
-                                defaultValue={collaborator.role}
-                              >
-                                <option value="viewer">Viewer</option>
-                                <option value="editor">Editor</option>
-                              </select>
-                              <Button type="submit" size="sm" variant="outline">
-                                Update
-                              </Button>
-                            </form>
-                            <form action={removeCollaboratorAction}>
-                              <input type="hidden" name="documentId" value={document.id} />
-                              <input
-                                type="hidden"
-                                name="userId"
-                                value={collaborator.userId}
-                              />
-                              <Button type="submit" size="sm" variant="destructive">
-                                Remove
-                              </Button>
-                            </form>
-                          </div>
-                        ) : null}
+                    {friends.length > 0 ? (
+                      <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                          Share with a friend
+                        </p>
+                        <form
+                          action={shareDocumentWithFriendAction}
+                          className="mt-3 grid gap-3"
+                        >
+                          <input type="hidden" name="documentId" value={document.id} />
+                          <select
+                            name="userId"
+                            className="h-9 w-full rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                            required
+                          >
+                            {friends.map((friend) => (
+                              <option key={friend.id} value={friend.id}>
+                                {friend.name ?? friend.email ?? "Unnamed user"}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            name="role"
+                            className="h-9 w-full rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                            defaultValue="viewer"
+                          >
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                          </select>
+                          <Button type="submit" variant="outline">
+                            Share friend
+                          </Button>
+                        </form>
                       </div>
-                    ))}
+                    ) : null}
+
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                        Collaborators
+                      </p>
+                      <div className="mt-3 grid gap-3">
+                        {collaborators.map((collaborator) => (
+                          <div
+                            key={collaborator.userId}
+                            className="rounded-2xl border border-border/60 bg-background/70 p-4"
+                          >
+                            <div>
+                              <p className="font-medium">
+                                {collaborator.name ??
+                                  collaborator.email ??
+                                  "Unnamed user"}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {collaborator.email} - {collaborator.role}
+                              </p>
+                            </div>
+
+                            {collaborator.role !== "owner" ? (
+                              <div className="mt-3 grid gap-2">
+                                <form
+                                  action={updateCollaboratorRoleAction}
+                                  className="grid gap-2"
+                                >
+                                  <input
+                                    type="hidden"
+                                    name="documentId"
+                                    value={document.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="userId"
+                                    value={collaborator.userId}
+                                  />
+                                  <select
+                                    name="role"
+                                    className="h-8 w-full rounded-lg border border-border/70 bg-background/70 px-2 text-sm"
+                                    defaultValue={collaborator.role}
+                                  >
+                                    <option value="viewer">Viewer</option>
+                                    <option value="editor">Editor</option>
+                                  </select>
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full"
+                                  >
+                                    Update role
+                                  </Button>
+                                </form>
+                                <form action={removeCollaboratorAction}>
+                                  <input
+                                    type="hidden"
+                                    name="documentId"
+                                    value={document.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="userId"
+                                    value={collaborator.userId}
+                                  />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="destructive"
+                                    className="w-full"
+                                  >
+                                    Remove collaborator
+                                  </Button>
+                                </form>
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </section>
               ) : null}
