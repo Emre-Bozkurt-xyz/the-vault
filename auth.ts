@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
+import Google from "next-auth/providers/google";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 
 import { db } from "@/db";
@@ -22,6 +23,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       clientId: process.env.GITHUB_CLIENT_ID ?? "missing-github-client-id",
       clientSecret:
         process.env.GITHUB_CLIENT_SECRET ?? "missing-github-client-secret",
+    }),
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "missing-google-client-id",
+      clientSecret:
+        process.env.GOOGLE_CLIENT_SECRET ?? "missing-google-client-secret",
     }),
   ],
   session: {

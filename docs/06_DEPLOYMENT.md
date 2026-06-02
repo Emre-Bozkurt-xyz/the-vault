@@ -148,6 +148,8 @@ AUTH_SECRET=<generate strong secret>
 
 GITHUB_CLIENT_ID=<github oauth client id>
 GITHUB_CLIENT_SECRET=<github oauth secret>
+GOOGLE_CLIENT_ID=<google oauth client id>
+GOOGLE_CLIENT_SECRET=<google oauth secret>
 
 POSTGRES_PASSWORD=<strong password>
 DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
@@ -165,12 +167,18 @@ Commit only:
 
 ---
 
-## 6. GitHub OAuth Production Setup
+## 6. OAuth Production Setup
 
-Callback URL:
+GitHub callback URL:
 
 ```txt
 https://vault.ems-place.com/api/auth/callback/github
+```
+
+Google callback URL:
+
+```txt
+https://vault.ems-place.com/api/auth/callback/google
 ```
 
 Homepage URL:
@@ -401,6 +409,7 @@ cat "$BACKUP_FILE" | docker compose exec -T vault-postgres psql \
 | [x] | Caddy route configured |
 | [x] | Cloudflare DNS configured |
 | [x] | GitHub OAuth production callback configured |
+| [ ] | Google OAuth production callback configured |
 | [x] | `https://vault.ems-place.com` loads |
 | [x] | Login works |
 | [x] | Document create/edit works |
@@ -422,6 +431,7 @@ Check:
 NEXTAUTH_URL
 AUTH_SECRET
 GitHub callback URL
+Google callback URL
 Cloudflare HTTPS mode
 ```
 

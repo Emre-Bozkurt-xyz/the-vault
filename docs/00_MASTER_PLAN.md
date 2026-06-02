@@ -47,7 +47,7 @@ Database:
 Auth:
   Auth.js / NextAuth
   GitHub OAuth
-  Google OAuth optional after GitHub works
+  Google OAuth
 
 Editor:
   Tiptap
@@ -74,7 +74,7 @@ The MVP should start without real-time editing. Add real-time collaboration afte
 
 | Feature | Required? | Notes |
 |---|---:|---|
-| OAuth login | Yes | GitHub first |
+| OAuth login | Yes | GitHub and Google |
 | User profile | Yes | Display name, avatar, email |
 | Create document | Yes | Owner-only initially |
 | Edit document | Yes | Tiptap editor |
@@ -222,6 +222,7 @@ Tasks:
 
 - Configure Auth.js.
 - Add GitHub OAuth app.
+- Add Google OAuth app.
 - Add Auth.js database adapter.
 - Create login page.
 - Create protected dashboard route.
@@ -231,7 +232,7 @@ Done when:
 
 ```txt
 Unauthenticated users cannot access /dashboard.
-GitHub login creates a user row.
+OAuth login creates a user row.
 Signed-in user can sign out.
 ```
 

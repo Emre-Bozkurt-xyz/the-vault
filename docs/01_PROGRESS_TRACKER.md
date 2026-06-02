@@ -45,7 +45,8 @@ Health endpoint returns OK.
 | [x] | Create GitHub OAuth app | Production OAuth verified |
 | [x] | Add Auth.js | NextAuth v5 route at `/api/auth/[...nextauth]` |
 | [x] | Add Drizzle/Auth adapter | Auth tables migrated locally |
-| [x] | Add login page | GitHub button added; requires real OAuth env values |
+| [x] | Add login page | GitHub and Google buttons added; require real OAuth env values |
+| [x] | Add Google OAuth | Auth.js Google provider added; no schema migration required |
 | [x] | Add logout button | Dashboard sign-out form added |
 | [x] | Protect dashboard route | Server-side redirect to `/login` |
 | [x] | Add session helper | `auth()` exported from `auth.ts` and `lib/auth.ts` |

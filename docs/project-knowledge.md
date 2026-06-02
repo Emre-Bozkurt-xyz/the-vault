@@ -73,6 +73,7 @@ ORM:
 Auth:
   - Auth.js / NextAuth v5 beta
   - GitHub OAuth provider configured
+  - Google OAuth provider configured
   - Drizzle adapter with database sessions
   - First-run profile completion for username/nickname
 
@@ -147,7 +148,7 @@ Add notes as real files appear:
 | `app/onboarding/page.tsx` | First-run profile completion page for username and nickname |
 | `app/docs/[docId]/page.tsx` | Protected document edit/view route |
 | `app/healthz/route.ts` | Lightweight app-only health route |
-| `app/login/page.tsx` | GitHub OAuth sign-in page |
+| `app/login/page.tsx` | GitHub/Google OAuth sign-in page |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
 | `app/api/users/search/route.ts` | Authenticated user search API for friend/profile lookup |
 | `app/api/users/username-availability/route.ts` | Authenticated username validation/uniqueness API for settings |
@@ -211,6 +212,8 @@ AUTH_SECRET=replace-with-a-generated-secret
 NEXTAUTH_URL=http://localhost:3000
 GITHUB_CLIENT_ID=replace-with-github-oauth-client-id
 GITHUB_CLIENT_SECRET=replace-with-github-oauth-client-secret
+GOOGLE_CLIENT_ID=replace-with-google-oauth-client-id
+GOOGLE_CLIENT_SECRET=replace-with-google-oauth-client-secret
 NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
 COLLAB_PORT=1234
 ENABLE_DEV_LOGIN=true
@@ -235,6 +238,8 @@ Rules:
 | `NEXTAUTH_URL` | Yes | Auth.js | Public app URL |
 | `GITHUB_CLIENT_ID` | Yes | Auth.js | GitHub OAuth |
 | `GITHUB_CLIENT_SECRET` | Yes | Auth.js | GitHub OAuth secret |
+| `GOOGLE_CLIENT_ID` | Yes | Auth.js | Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | Yes | Auth.js | Google OAuth secret |
 | `NEXT_PUBLIC_COLLAB_URL` | Optional | Editor | WebSocket URL for live collaboration; when absent, editor falls back to normal autosave |
 | `COLLAB_PORT` | Optional | Collab service | Internal Hocuspocus listen port, default `1234` |
 | `ENABLE_DEV_LOGIN` | Optional | Login page | Enables dev-only local Auth.js database-session login when not production; defaults enabled outside production unless set to `false` |
@@ -298,13 +303,14 @@ Schema notes:
 Current auth status:
 
 ```txt
-Implemented structurally; real GitHub login still requires OAuth credentials in `.env.local`.
+Implemented structurally; real GitHub/Google login still requires OAuth credentials in `.env.local`.
 ```
 
 Provider(s):
 
 ```txt
 GitHub
+Google
 ```
 
 Important files:
@@ -313,7 +319,7 @@ Important files:
 |---|---|
 | `auth.ts` | Auth.js config, provider, adapter, session callback |
 | `app/api/auth/[...nextauth]/route.ts` | GET/POST route handlers |
-| `app/login/page.tsx` | Sign-in UI and GitHub sign-in action |
+| `app/login/page.tsx` | Sign-in UI and GitHub/Google sign-in actions |
 | `server/dev-auth.ts` | Dev-only local sign-in action |
 | `app/dashboard/page.tsx` | Protected route and sign-out action |
 | `types/next-auth.d.ts` | Adds `session.user.id` to TypeScript session type |
@@ -330,9 +336,11 @@ session.user.image?: string | null
 Known auth caveats:
 
 ```txt
-- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `AUTH_SECRET`, and `NEXTAUTH_URL` must be set in `.env.local` before real sign-in will work.
+- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, and `NEXTAUTH_URL` must be set in `.env.local` before all real sign-in providers will work.
 - GitHub OAuth app callback for local dev must be `http://localhost:3000/api/auth/callback/github`.
+- Google OAuth app callback for local dev must be `http://localhost:3000/api/auth/callback/google`.
 - The provider config uses placeholder fallback strings only so builds succeed before secrets are configured; those are not valid credentials.
+- Provider-account linking is conservative; do not enable automatic cross-provider email linking without adding an explicit account-linking plan/flow.
 - `auth.ts` uses a development-only fallback `AUTH_SECRET` so logged-out auth routes can run locally before `.env.local` exists. Production must provide a real `AUTH_SECRET`.
 - In non-production, `/login` shows dev-only database-session login buttons for `dev.owner@vault.local` and `dev.collaborator@vault.local`; set `ENABLE_DEV_LOGIN=false` to hide them.
 - After login, users without `profile_completed_at`, `username`, or nickname are redirected to `/onboarding`.
@@ -470,7 +478,7 @@ Current routes:
 | Route | Status | Purpose |
 |---|---|---|
 | `/` | Implemented | Public homepage/app shell |
-| `/login` | Implemented | GitHub OAuth sign-in |
+| `/login` | Implemented | GitHub/Google OAuth sign-in |
 | `/api/auth/[...nextauth]` | Implemented | Auth.js handlers |
 | `/api/health` | Implemented | App and database health check |
 | `/healthz` | Implemented | App-only lightweight health check |
@@ -791,6 +799,7 @@ Manual checks:
 | Deployment | GitHub Actions deploy workflow runs on server | Passed, user-reported | 2026-05-31 |
 | Deployment | Postgres persists across redeploy | Passed, user-reported | 2026-05-31 |
 | Auth | Production GitHub OAuth works | Passed, user-reported | 2026-05-31 |
+| Auth | Google login provider renders/builds | Passed | 2026-06-02 |
 | Documents | Production document create/edit works | Passed, user-reported | 2026-05-31 |
 | Collaboration | `npm run build` succeeds with collaboration code | Passed | 2026-05-31 |
 | Collaboration | `npm run lint` succeeds with collaboration code | Passed | 2026-05-31 |
@@ -896,3 +905,4 @@ Use this as a compact implementation log.
 | 2026-06-02 | Fixed collaborative refresh duplication race | Removed the independent `Y.Text.observe()` React state update path so CodeMirror/Yjs changes do not echo full-document replacements back into collaboration state |
 | 2026-06-02 | Added safe media iframe embeds | Markdown rendering now allows explicit HTTPS iframe embeds for YouTube, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp with normalized iframe permissions |
 | 2026-06-02 | Fixed iframe rendering in preview/live modes | Added `iframe` to the sanitizer tag allowlist, normalized self-closing iframe syntax, and allowed safe iframe blocks in live preview |
+| 2026-06-02 | Added Google OAuth provider | Auth.js now offers GitHub and Google sign-in buttons; Google requires local/prod OAuth credentials and callback URL configuration |

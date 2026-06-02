@@ -4,16 +4,16 @@
 
 The MVP should support OAuth login and protected document access.
 
-Start with:
+Current OAuth providers:
 
 ```txt
 GitHub OAuth
+Google OAuth
 ```
 
 Add later:
 
 ```txt
-Google OAuth
 Email magic links
 Passkeys
 ```
@@ -56,6 +56,9 @@ AUTH_SECRET=
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
 DATABASE_URL=postgres://vault:vault@localhost:5432/vault
 ```
 
@@ -66,6 +69,8 @@ NEXTAUTH_URL=https://vault.ems-place.com
 AUTH_SECRET=<strong secret>
 GITHUB_CLIENT_ID=<prod github oauth app id>
 GITHUB_CLIENT_SECRET=<prod github oauth app secret>
+GOOGLE_CLIENT_ID=<prod google oauth client id>
+GOOGLE_CLIENT_SECRET=<prod google oauth client secret>
 DATABASE_URL=postgres://...
 ```
 
@@ -84,13 +89,21 @@ Local:
 
 ```txt
 http://localhost:3000/api/auth/callback/github
+http://localhost:3000/api/auth/callback/google
 ```
 
 Production:
 
 ```txt
 https://vault.ems-place.com/api/auth/callback/github
+https://vault.ems-place.com/api/auth/callback/google
 ```
+
+Provider-account linking is currently conservative. Users can sign in with
+GitHub or Google, but a separately created OAuth account with the same email is
+not automatically merged unless Auth.js safely links it through an existing
+authenticated flow. Add an explicit settings-page "connected accounts" flow
+before enabling automatic cross-provider email linking.
 
 ---
 
