@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -620,7 +620,7 @@ export async function listSharedDocumentsForUser(userId: string) {
     .orderBy(desc(documents.updatedAt));
 }
 
-export async function listPublishedDocumentsForUser(userId: string) {
+export async function listPublicDocuments() {
   return db
     .select({
       id: documents.id,
@@ -629,12 +629,15 @@ export async function listPublishedDocumentsForUser(userId: string) {
       content: documents.content,
       publicSlug: documents.publicSlug,
       updatedAt: documents.updatedAt,
+      ownerName: users.name,
+      ownerUsername: users.username,
     })
     .from(documents)
+    .innerJoin(users, eq(documents.ownerId, users.id))
     .where(
       and(
-        eq(documents.ownerId, userId),
         eq(documents.visibility, "public"),
+        isNotNull(documents.publicSlug),
         isNull(documents.deletedAt),
       ),
     )

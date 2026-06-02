@@ -21,7 +21,7 @@ import { normalizeStoredMarkdown } from "@/lib/markdown";
 import {
   createDocumentAction,
   listDocumentsForUser,
-  listPublishedDocumentsForUser,
+  listPublicDocuments,
   listSharedDocumentsForUser,
 } from "@/server/documents";
 import { requireCompletedProfile } from "@/server/profile";
@@ -43,7 +43,7 @@ export default async function DashboardPage({
   const [documentList, sharedDocumentList, publicDocumentList] = await Promise.all([
     listDocumentsForUser(session.user.id),
     listSharedDocumentsForUser(session.user.id),
-    listPublishedDocumentsForUser(session.user.id),
+    listPublicDocuments(),
   ]);
 
   const { tab } = await searchParams;
@@ -277,16 +277,20 @@ export default async function DashboardPage({
                 publicDocumentList.length === 0 ? (
                   <EmptyState
                     title="No public notes"
-                    description="Publish a document to generate a clean public page."
+                    description="Published notes from Vault users will appear here."
                   />
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">
                     {publicDocumentList.map((document) => (
                       <DocCard
                         key={document.id}
-                        href={`/docs/${document.id}`}
+                        href={`/public/${document.publicSlug}`}
                         title={document.title}
-                        meta={`Updated ${document.updatedAt.toLocaleDateString()}`}
+                        meta={`Published by ${
+                          document.ownerUsername
+                            ? `@${document.ownerUsername}`
+                            : document.ownerName ?? "Vault user"
+                        } - updated ${document.updatedAt.toLocaleDateString()}`}
                         icon={Globe2}
                         badge={<Badge variant="outline">Public</Badge>}
                         preview={normalizeStoredMarkdown(
@@ -294,17 +298,15 @@ export default async function DashboardPage({
                           document.content,
                         )}
                         action={
-                          document.publicSlug ? (
-                            <Link
-                              href={`/public/${document.publicSlug}`}
-                              className={buttonVariants({
-                                variant: "outline",
-                                size: "sm",
-                              })}
-                            >
-                              Public page
-                            </Link>
-                          ) : null
+                          <Link
+                            href={`/public/${document.publicSlug}`}
+                            className={buttonVariants({
+                              variant: "outline",
+                              size: "sm",
+                            })}
+                          >
+                            Public page
+                          </Link>
                         }
                       />
                     ))}

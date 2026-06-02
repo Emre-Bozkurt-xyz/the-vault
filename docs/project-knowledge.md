@@ -462,7 +462,7 @@ publishDocumentAction()
 unpublishDocumentAction()
 listDocumentsForUser()
 listSharedDocumentsForUser()
-listPublishedDocumentsForUser()
+listPublicDocuments()
 getDocumentForUser()
 getPublicDocumentBySlug()
 ```
@@ -679,6 +679,8 @@ Current behavior:
 - Publishing generates a stable `public_slug` if one does not already exist.
 - Unpublishing keeps the slug reserved and sets visibility back to private.
 - `/public/[slug]` selects only title/content/updated_at for public, non-deleted documents.
+- The dashboard Public Notes tab lists all published documents globally, not only the current user's own published documents.
+- Public Notes cards link to `/public/[slug]` and show owner nickname/username only, not owner email.
 - Public documents show a badge in dashboard/editor views.
 - Published documents expose a copy-link button in the editor.
 ```
@@ -789,6 +791,7 @@ Manual checks:
 | Public notes | Public slug works logged out | Passed | 2026-05-26 |
 | Public notes | Unknown public slug returns 404 | Passed | 2026-05-26 |
 | Public notes | Public badge/copy-link UI builds | Passed | 2026-05-26 |
+| Public notes | Dashboard public tab uses global published-document query | Passed | 2026-06-02 |
 | Friends | Friend tables migrated locally | Passed | 2026-05-26 |
 | Friends | Logged-out `/dashboard/friends` redirects to `/login` | Passed | 2026-05-26 |
 | Dashboard | Sidebar items are real anchors/routes, not noop labels | Passed | 2026-05-26 |
@@ -910,3 +913,4 @@ Use this as a compact implementation log.
 | 2026-06-02 | Fixed iframe rendering in preview/live modes | Added `iframe` to the sanitizer tag allowlist, normalized self-closing iframe syntax, and allowed safe iframe blocks in live preview |
 | 2026-06-02 | Added Google OAuth provider | Auth.js now offers GitHub and Google sign-in buttons; Google requires local/prod OAuth credentials and callback URL configuration |
 | 2026-06-02 | Added OAuth account connection flow | Settings now lists GitHub/Google connection state and lets signed-in users safely link a missing OAuth provider; login explains `OAuthAccountNotLinked` email clashes |
+| 2026-06-02 | Fixed public dashboard visibility for new users | Public Notes now lists all published documents globally and links to public slugs instead of only showing the current user's own public docs |
