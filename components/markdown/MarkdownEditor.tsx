@@ -529,7 +529,7 @@ export function MarkdownEditor({
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-4 sm:gap-6">
-      <div className="flex flex-col gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 px-3 pt-4 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-0 sm:pt-0">
         <span>Markdown source</span>
         <div className="-mx-1 flex max-w-full items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
           <PreviewModeButton
@@ -570,12 +570,12 @@ export function MarkdownEditor({
           setTitleValue(event.target.value);
           setDirty(true);
         }}
-        className="w-full bg-transparent text-3xl font-semibold leading-[1.08] tracking-tight outline-none sm:text-5xl vault-display"
+        className="w-full bg-transparent px-3 text-3xl font-semibold leading-[1.08] tracking-tight outline-none sm:px-0 sm:text-5xl vault-display"
         aria-label="Document title"
       />
       <div
         className={cn(
-          "vault-markdown-editor overflow-hidden rounded-2xl border border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl",
+          "vault-markdown-editor overflow-hidden border-y border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:border",
           `vault-markdown-editor-${previewMode}`,
         )}
       >
@@ -633,7 +633,7 @@ export function MarkdownEditor({
           ) : null}
         </div>
       </div>
-      <div className="flex flex-col justify-between gap-3 border-t border-border/60 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-3 border-t border-border/60 px-3 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:px-0">
         <div className="flex flex-col gap-1">
           <p className="flex items-center gap-2">
             {statusIcon}

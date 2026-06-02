@@ -822,16 +822,43 @@
   @media (max-width: 640px) {
     .vault-markdown-editor .cm-content {
       min-height: calc(100svh - 17rem);
-      padding: 0.9rem 0.65rem;
+      padding: 0.8rem 0.55rem;
       font-size: 0.95rem;
     }
 
     .vault-markdown-editor .cm-line {
-      padding-inline: 0.2rem;
+      padding-inline: 0.15rem;
+    }
+
+    .vault-markdown-editor .cm-gutters {
+      width: 1.85rem;
+      min-width: 1.85rem;
+      max-width: 1.85rem;
+      overflow: hidden;
+    }
+
+    .vault-markdown-editor .cm-foldGutter,
+    .vault-markdown-editor .cm-foldGutterOpen,
+    .vault-markdown-editor .cm-foldGutterFolded {
+      display: none;
+      width: 0;
+      min-width: 0;
+      max-width: 0;
+      padding: 0;
+    }
+
+    .vault-markdown-editor .cm-lineNumbers {
+      width: 1.85rem;
+      min-width: 1.85rem;
+      max-width: 1.85rem;
     }
 
     .vault-markdown-editor .cm-gutterElement {
-      padding-inline: 0.35rem 0.45rem;
+      width: 1.85rem;
+      min-width: 1.85rem;
+      max-width: 1.85rem;
+      padding-inline: 0 0.35rem;
+      text-align: right;
     }
 
     .vault-markdown-editor .cm-scroller {

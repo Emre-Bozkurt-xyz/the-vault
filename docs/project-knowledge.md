@@ -547,7 +547,7 @@ Known editor caveats:
 - Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, iframes, forms, unsafe URL protocols, and unsafe CSS values are not allowed; a constrained inline `style` allowlist supports common presentation styles. HTML inside fenced code blocks still displays as code.
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode replaces inactive `- [ ]` / `- [x]` markers with the same styled checkbox widget.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
-- Mobile document editing uses reduced page/card padding, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides to keep the writing area wider on phone screens.
+- Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
 - Document edit pages use a wider responsive workspace (`max-w-[1720px]`) with a slightly wider side rail on 2xl screens so the editor does not feel cramped on large displays.
 - Browser UX verification is still needed after the CodeMirror swap.
 ```
@@ -789,6 +789,7 @@ Manual checks:
 | Markdown pivot | `npm run build` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
 | Markdown pivot | Browser check for create/edit/reopen/source/split/preview | Not tested |  |
 | Mobile UI | `npm run lint` and `npm run build` succeed after mobile editor layout pass | Passed | 2026-06-01 |
+| Mobile UI | `npm run lint` and `npm run build` succeed after edge-to-edge editor/gutter pass | Passed | 2026-06-02 |
 | Profile | `users.profile_completed_at` migration applied locally | Passed | 2026-06-01 |
 | Profile | Settings username/nickname update builds and lints | Passed | 2026-06-01 |
 | Markdown collaboration | `node --check scripts/collab-server.mjs` succeeds after Y.Text migration | Passed | 2026-06-01 |
@@ -877,3 +878,4 @@ Use this as a compact implementation log.
 | 2026-06-01 | Added profile completion and friend search | Added username/nickname onboarding, profile completion gate, authenticated user search API, friend autocomplete, and profile migration |
 | 2026-06-01 | Added settings profile editing | Users can update nickname and username from settings; username availability is checked live and relationships remain stable because references use `users.id` |
 | 2026-06-01 | Tightened mobile editor layout | Reduced nested mobile padding, made editor toolbars horizontally scrollable, and added CodeMirror phone-width overrides |
+| 2026-06-02 | Expanded mobile editor width | Made document editor pages edge-to-edge on phones, reduced toolbar density, hid mobile CodeMirror fold gutter, and narrowed the line-number gutter |
