@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { accounts, users } from "@/db/schema";
 
 const usernameSchema = z
   .string()
@@ -44,6 +44,11 @@ export type UsernameAvailability =
   | { available: true; normalizedUsername: string; message: string }
   | { available: false; normalizedUsername: string; message: string };
 
+export type ConnectedAuthProviders = {
+  github: boolean;
+  google: boolean;
+};
+
 export async function getCurrentUserProfile() {
   const session = await auth();
 
@@ -79,6 +84,26 @@ export async function requireCompletedProfile() {
   }
 
   return user;
+}
+
+export async function listConnectedAuthProviders(): Promise<ConnectedAuthProviders> {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const linkedAccounts = await db
+    .select({ provider: accounts.provider })
+    .from(accounts)
+    .where(eq(accounts.userId, session.user.id));
+
+  const providers = new Set(linkedAccounts.map((account) => account.provider));
+
+  return {
+    github: providers.has("github"),
+    google: providers.has("google"),
+  };
 }
 
 export async function completeProfileAction(formData: FormData) {

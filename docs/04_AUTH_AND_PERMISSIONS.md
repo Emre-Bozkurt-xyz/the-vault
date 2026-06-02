@@ -102,8 +102,25 @@ https://vault.ems-place.com/api/auth/callback/google
 Provider-account linking is currently conservative. Users can sign in with
 GitHub or Google, but a separately created OAuth account with the same email is
 not automatically merged unless Auth.js safely links it through an existing
-authenticated flow. Add an explicit settings-page "connected accounts" flow
-before enabling automatic cross-provider email linking.
+authenticated flow.
+
+Current connected-account flow:
+
+```txt
+Sign in with original provider
+  |
+Open /dashboard/settings
+  |
+Authentication section
+  |
+Connect missing OAuth provider
+  |
+Auth.js links the provider account to the current users.id
+```
+
+Do not enable global `allowDangerousEmailAccountLinking` without a specific
+security review. The settings-page linking flow is safer because the user has
+already proven control of the existing Vault session.
 
 ---
 

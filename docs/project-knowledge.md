@@ -340,7 +340,9 @@ Known auth caveats:
 - GitHub OAuth app callback for local dev must be `http://localhost:3000/api/auth/callback/github`.
 - Google OAuth app callback for local dev must be `http://localhost:3000/api/auth/callback/google`.
 - The provider config uses placeholder fallback strings only so builds succeed before secrets are configured; those are not valid credentials.
-- Provider-account linking is conservative; do not enable automatic cross-provider email linking without adding an explicit account-linking plan/flow.
+- Provider-account linking is conservative; do not enable automatic cross-provider email linking without a security review.
+- `/dashboard/settings` shows connected OAuth providers and lets an already signed-in user connect a missing provider. This uses Auth.js' safe link path, where the OAuth account is linked to the current authenticated `users.id`.
+- If a signed-out user tries an unlinked OAuth provider with an email already used by another provider, Auth.js redirects to `/login?error=OAuthAccountNotLinked`; the login page explains that the user should sign in with the original provider and connect the new provider from settings.
 - `auth.ts` uses a development-only fallback `AUTH_SECRET` so logged-out auth routes can run locally before `.env.local` exists. Production must provide a real `AUTH_SECRET`.
 - In non-production, `/login` shows dev-only database-session login buttons for `dev.owner@vault.local` and `dev.collaborator@vault.local`; set `ENABLE_DEV_LOGIN=false` to hide them.
 - After login, users without `profile_completed_at`, `username`, or nickname are redirected to `/onboarding`.
@@ -800,6 +802,7 @@ Manual checks:
 | Deployment | Postgres persists across redeploy | Passed, user-reported | 2026-05-31 |
 | Auth | Production GitHub OAuth works | Passed, user-reported | 2026-05-31 |
 | Auth | Google login provider renders/builds | Passed | 2026-06-02 |
+| Auth | Connected-account Settings UI builds | Passed | 2026-06-02 |
 | Documents | Production document create/edit works | Passed, user-reported | 2026-05-31 |
 | Collaboration | `npm run build` succeeds with collaboration code | Passed | 2026-05-31 |
 | Collaboration | `npm run lint` succeeds with collaboration code | Passed | 2026-05-31 |
@@ -906,3 +909,4 @@ Use this as a compact implementation log.
 | 2026-06-02 | Added safe media iframe embeds | Markdown rendering now allows explicit HTTPS iframe embeds for YouTube, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp with normalized iframe permissions |
 | 2026-06-02 | Fixed iframe rendering in preview/live modes | Added `iframe` to the sanitizer tag allowlist, normalized self-closing iframe syntax, and allowed safe iframe blocks in live preview |
 | 2026-06-02 | Added Google OAuth provider | Auth.js now offers GitHub and Google sign-in buttons; Google requires local/prod OAuth credentials and callback URL configuration |
+| 2026-06-02 | Added OAuth account connection flow | Settings now lists GitHub/Google connection state and lets signed-in users safely link a missing OAuth provider; login explains `OAuthAccountNotLinked` email clashes |

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, LogIn, LockKeyhole } from "lucide-react";
+import { AlertCircle, ArrowLeft, LogIn, LockKeyhole } from "lucide-react";
 
 import { signIn, auth } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -8,7 +8,11 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { devSignInAction, isDevLoginEnabled } from "@/server/dev-auth";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const session = await auth();
 
   if (session?.user?.id) {
@@ -16,6 +20,8 @@ export default async function LoginPage() {
   }
 
   const showDevLogin = isDevLoginEnabled();
+  const { error } = await searchParams;
+  const accountNotLinked = error === "OAuthAccountNotLinked";
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -41,6 +47,19 @@ export default async function LoginPage() {
               Sign in with an OAuth provider so Vault can attach every document
               operation to a server-verified user id.
             </p>
+
+            {accountNotLinked ? (
+              <div className="mt-5 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-700 dark:text-amber-200">
+                <div className="flex gap-2">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  <p>
+                    That email is already attached to another sign-in method.
+                    Sign in with the provider you used first, then connect this
+                    provider from Settings.
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-8 grid gap-3">
               <form

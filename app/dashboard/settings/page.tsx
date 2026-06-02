@@ -1,20 +1,30 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, KeyRound, ShieldCheck, UserRoundCog } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  KeyRound,
+  LinkIcon,
+  ShieldCheck,
+  UserRoundCog,
+} from "lucide-react";
 
-import { auth, signOut } from "@/auth";
+import { auth, signIn, signOut } from "@/auth";
 import { ProfileSettingsForm } from "@/components/profile-settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { requireCompletedProfile } from "@/server/profile";
+import {
+  listConnectedAuthProviders,
+  requireCompletedProfile,
+} from "@/server/profile";
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ connected?: string; error?: string; saved?: string }>;
 }) {
   const session = await auth();
 
@@ -23,7 +33,8 @@ export default async function SettingsPage({
   }
 
   const profile = await requireCompletedProfile();
-  const { error, saved } = await searchParams;
+  const connectedProviders = await listConnectedAuthProviders();
+  const { connected, error, saved } = await searchParams;
   const name = profile.nickname ?? profile.email ?? "Vault user";
   const fallback = name.slice(0, 1).toUpperCase();
 
@@ -97,9 +108,37 @@ export default async function SettingsPage({
               <KeyRound className="mb-4 size-6 text-primary" />
               <h2 className="text-lg font-semibold">Authentication</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Vault uses GitHub OAuth through Auth.js with database sessions
-                stored in Postgres.
+                Connect OAuth providers to this Vault account. Linked providers
+                all resolve to the same user id, so friends, documents, and
+                collaborator access stay attached.
               </p>
+              {connected === "google" || connected === "github" ? (
+                <div className="mt-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-300">
+                  {connected === "google" ? "Google" : "GitHub"} is connected.
+                </div>
+              ) : null}
+              <div className="mt-5 grid gap-3">
+                <AuthProviderRow
+                  providerName="GitHub"
+                  connected={connectedProviders.github}
+                  connectAction={async () => {
+                    "use server";
+                    await signIn("github", {
+                      redirectTo: "/dashboard/settings?connected=github",
+                    });
+                  }}
+                />
+                <AuthProviderRow
+                  providerName="Google"
+                  connected={connectedProviders.google}
+                  connectAction={async () => {
+                    "use server";
+                    await signIn("google", {
+                      redirectTo: "/dashboard/settings?connected=google",
+                    });
+                  }}
+                />
+              </div>
             </section>
 
             <section className="vault-fade-up vault-delay-3 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
@@ -114,5 +153,39 @@ export default async function SettingsPage({
         </section>
       </div>
     </main>
+  );
+}
+
+function AuthProviderRow({
+  providerName,
+  connected,
+  connectAction,
+}: {
+  providerName: string;
+  connected: boolean;
+  connectAction: () => Promise<void>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/50 px-4 py-3">
+      <div>
+        <p className="text-sm font-medium">{providerName}</p>
+        <p className="text-xs text-muted-foreground">
+          {connected ? "Available for sign-in." : "Not connected yet."}
+        </p>
+      </div>
+      {connected ? (
+        <Badge variant="outline" className="gap-1.5">
+          <CheckCircle2 className="size-3.5" />
+          Connected
+        </Badge>
+      ) : (
+        <form action={connectAction}>
+          <Button type="submit" size="sm" variant="outline">
+            <LinkIcon className="size-4" />
+            Connect
+          </Button>
+        </form>
+      )}
+    </div>
   );
 }
