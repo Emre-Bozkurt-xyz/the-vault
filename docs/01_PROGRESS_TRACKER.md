@@ -95,7 +95,7 @@ User can create, edit, save, reopen, and delete own docs.
 | [x] | Add `canReadDocument()` | Server-side helper |
 | [x] | Add `canEditDocument()` | Server-side helper |
 | [x] | Block unauthorized access | Private inaccessible docs return `notFound()` |
-| [x] | Add share dialog UI | Inline email/role form |
+| [x] | Add share dialog UI | Smart user search by nickname, username, or email plus role selector |
 | [x] | Add collaborator list | Show current collaborators |
 | [x] | Add remove collaborator action | Owner only |
 | [x] | Add role update action | Owner only |
@@ -215,7 +215,7 @@ Unauthorized users cannot connect.
 | [x] | Add transitional markdown column | `documents.markdown TEXT NOT NULL DEFAULT ''`; migration applied locally |
 | [x] | Make new documents write initial Markdown | Legacy JSON remains active editor/rendering format |
 | [ ] | Deploy latest Markdown schema migration | Held intentionally until local Markdown UX is verified |
-| [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML and constrained inline styles; needs browser UX verification |
+| [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML, constrained inline styles, and explicit safe media iframe embeds; needs browser UX verification |
 | [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; mobile and wide-screen layout tightened; live heading marker plus inline/block HTML rendering fixed; autocomplete popup themed; formatting shortcuts added; needs browser UX verification |
 | [~] | Move collaboration to Y.Text | Hocuspocus now loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding wired; needs two-browser verification |
 | [~] | Add live preview | Live mode is now default; Source/Split/Preview remain available; heading marker spans are neutralized and inactive inline/block HTML renders as sanitized preview widgets; needs browser UX verification |

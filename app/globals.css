@@ -636,6 +636,19 @@
     border-radius: 0.65rem;
   }
 
+  .vault-md-iframe {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    border-radius: 0.8rem;
+    background: var(--card);
+  }
+
+  .vault-markdown-compact .vault-md-iframe {
+    display: none;
+  }
+
   .vault-markdown-compact {
     max-width: none;
     font-size: 0.62rem;

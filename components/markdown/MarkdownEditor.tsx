@@ -145,23 +145,10 @@ export function MarkdownEditor({
       color,
       colorLight: `${color}33`,
     });
-
-    const syncPreview = () => {
-      if (!mounted) {
-        return;
-      }
-
-      const nextMarkdown = ytext.toString();
-      markdownValueRef.current = nextMarkdown;
-      setMarkdownValue(nextMarkdown);
-    };
-
-    ytext.observe(syncPreview);
     setCollabSession({ ydoc, ytext, undoManager, provider });
 
     return () => {
       mounted = false;
-      ytext.unobserve(syncPreview);
       provider.destroy();
       ydoc.destroy();
     };
@@ -396,7 +383,7 @@ export function MarkdownEditor({
         baseExtensions.push(markdownLivePreviewExtension);
       }
 
-      if (collaboration && collabSession) {
+      if (isCollaborative && collabSession) {
         return [
           ...baseExtensions,
           yCollab(collabSession.ytext, collabSession.provider.awareness, {
@@ -407,7 +394,7 @@ export function MarkdownEditor({
 
       return baseExtensions;
     },
-    [collabSession, collaboration, previewMode],
+    [collabSession, isCollaborative, previewMode],
   );
 
   useEffect(() => {
@@ -743,7 +730,6 @@ const htmlVoidTags = new Set([
 const blockedHtmlTags = new Set([
   "script",
   "style",
-  "iframe",
   "form",
   "object",
   "embed",
@@ -765,6 +751,7 @@ const htmlBlockTags = new Set([
   "footer",
   "header",
   "hr",
+  "iframe",
   "main",
   "nav",
   "ol",
@@ -776,6 +763,78 @@ const htmlBlockTags = new Set([
   "ul",
 ]);
 const safeHtmlUrl = /^(https?:|mailto:|\/|#)/i;
+const iframeSandbox =
+  "allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox";
+const iframeAllow =
+  "accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share";
+const allowedIframeProviders = [
+  {
+    hosts: new Set(["www.youtube.com", "youtube.com"]),
+    path: /^\/embed\//,
+  },
+  {
+    hosts: new Set(["www.youtube-nocookie.com", "youtube-nocookie.com"]),
+    path: /^\/embed\//,
+  },
+  {
+    hosts: new Set(["open.spotify.com"]),
+    path: /^\/embed\//,
+  },
+  {
+    hosts: new Set(["embed.tidal.com"]),
+    path: /^\/(tracks|albums|playlists|mixes|videos)\//,
+  },
+  {
+    hosts: new Set(["player.vimeo.com"]),
+    path: /^\/video\//,
+  },
+  {
+    hosts: new Set(["w.soundcloud.com"]),
+    path: /^\/player\//,
+  },
+  {
+    hosts: new Set(["embed.music.apple.com"]),
+    path: /^\//,
+  },
+  {
+    hosts: new Set<string>(),
+    hostPattern: /(^|\.)bandcamp\.com$/,
+    path: /^\/EmbeddedPlayer\//,
+  },
+] as const;
+
+function safeIframeSrc(src: unknown) {
+  if (typeof src !== "string") {
+    return null;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(src);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== "https:") {
+    return null;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  const allowed = allowedIframeProviders.some((provider) => {
+    const hostMatches =
+      provider.hosts.has(hostname) ||
+      ("hostPattern" in provider && provider.hostPattern.test(hostname));
+
+    return hostMatches && provider.path.test(url.pathname);
+  });
+
+  return allowed ? url.toString() : null;
+}
+
+function normalizeSelfClosingIframes(html: string) {
+  return html.replace(/<iframe\b([^>]*)\/>/gi, "<iframe$1></iframe>");
+}
 
 class HtmlBlockPreviewWidget extends WidgetType {
   constructor(private readonly html: string) {
@@ -789,7 +848,7 @@ class HtmlBlockPreviewWidget extends WidgetType {
   toDOM() {
     const wrapper = document.createElement("div");
     wrapper.className = "vault-cm-html-preview vault-markdown";
-    wrapper.innerHTML = this.html;
+    wrapper.innerHTML = normalizeSelfClosingIframes(this.html);
     sanitizeHtmlPreviewDom(wrapper);
 
     return wrapper;
@@ -808,7 +867,7 @@ class InlineHtmlPreviewWidget extends WidgetType {
   toDOM() {
     const wrapper = document.createElement("span");
     wrapper.className = "vault-cm-html-inline-preview";
-    wrapper.innerHTML = this.html;
+    wrapper.innerHTML = normalizeSelfClosingIframes(this.html);
     sanitizeHtmlPreviewDom(wrapper);
 
     return wrapper;
@@ -1327,6 +1386,37 @@ function sanitizeHtmlPreviewDom(root: HTMLElement) {
     if (blockedHtmlTags.has(tagName)) {
       elementsToRemove.push(element);
       continue;
+    }
+
+    if (tagName === "iframe") {
+      const safeSrc = safeIframeSrc(element.getAttribute("src"));
+
+      if (!safeSrc) {
+        elementsToRemove.push(element);
+        continue;
+      }
+
+      for (const attribute of Array.from(element.attributes)) {
+        if (
+          ![
+            "src",
+            "title",
+            "width",
+            "height",
+            "style",
+            "class",
+          ].includes(attribute.name.toLowerCase())
+        ) {
+          element.removeAttribute(attribute.name);
+        }
+      }
+
+      element.setAttribute("src", safeSrc);
+      element.setAttribute("allow", iframeAllow);
+      element.setAttribute("allowfullscreen", "true");
+      element.setAttribute("loading", "lazy");
+      element.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+      element.setAttribute("sandbox", iframeSandbox);
     }
 
     for (const attribute of Array.from(element.attributes)) {

@@ -16,6 +16,45 @@ type MarkdownDocumentProps = {
 
 const allowedLinkProtocol = /^(https?:|mailto:|\/|#)/i;
 const allowedImageProtocol = /^(https?:|\/)/i;
+const iframeSandbox =
+  "allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox";
+const iframeAllow =
+  "accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share";
+const allowedIframeProviders = [
+  {
+    hosts: new Set(["www.youtube.com", "youtube.com"]),
+    path: /^\/embed\//,
+  },
+  {
+    hosts: new Set(["www.youtube-nocookie.com", "youtube-nocookie.com"]),
+    path: /^\/embed\//,
+  },
+  {
+    hosts: new Set(["open.spotify.com"]),
+    path: /^\/embed\//,
+  },
+  {
+    hosts: new Set(["embed.tidal.com"]),
+    path: /^\/(tracks|albums|playlists|mixes|videos)\//,
+  },
+  {
+    hosts: new Set(["player.vimeo.com"]),
+    path: /^\/video\//,
+  },
+  {
+    hosts: new Set(["w.soundcloud.com"]),
+    path: /^\/player\//,
+  },
+  {
+    hosts: new Set(["embed.music.apple.com"]),
+    path: /^\//,
+  },
+  {
+    hosts: new Set<string>(),
+    hostPattern: /(^|\.)bandcamp\.com$/,
+    path: /^\/EmbeddedPlayer\//,
+  },
+] as const;
 
 const safeHtmlSchema: Schema = {
   ...defaultSchema,
@@ -49,6 +88,7 @@ const safeHtmlSchema: Schema = {
     "span",
     "br",
     "img",
+    "iframe",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -79,6 +119,22 @@ const safeHtmlSchema: Schema = {
       "width",
       "height",
       "loading",
+    ],
+    iframe: [
+      "src",
+      "title",
+      "width",
+      "height",
+      "allow",
+      "allowFullScreen",
+      "allowfullscreen",
+      "frameBorder",
+      "frameborder",
+      "loading",
+      "referrerPolicy",
+      "referrerpolicy",
+      "sandbox",
+      "style",
     ],
     input: [
       ...(defaultSchema.attributes?.input ?? []),
@@ -140,6 +196,54 @@ function styledProps(
     className: cn(baseClassName, className),
     style: inlineStyleToReactStyle(style),
   };
+}
+
+function safeIframeSrc(src: unknown) {
+  if (typeof src !== "string") {
+    return null;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(src);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== "https:") {
+    return null;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  const allowed = allowedIframeProviders.some((provider) => {
+    const hostMatches =
+      provider.hosts.has(hostname) ||
+      ("hostPattern" in provider && provider.hostPattern.test(hostname));
+
+    return hostMatches && provider.path.test(url.pathname);
+  });
+
+  return allowed ? url.toString() : null;
+}
+
+function iframeDimension(value: unknown, fallback: number, max: number) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : Number.NaN;
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, max);
+}
+
+function normalizeSelfClosingIframes(markdown: string) {
+  return markdown.replace(/<iframe\b([^>]*)\/>/gi, "<iframe$1></iframe>");
 }
 
 function createMarkdownComponents(disableLinks: boolean): Components {
@@ -248,6 +352,31 @@ function createMarkdownComponents(disableLinks: boolean): Components {
       />
     );
   },
+  iframe({ src, title, width, height, className, style }) {
+    const safeSrc = safeIframeSrc(src);
+
+    if (!safeSrc) {
+      return null;
+    }
+
+    const embedWidth = iframeDimension(width, 560, 1200);
+    const embedHeight = iframeDimension(height, 315, 900);
+
+    return (
+      <iframe
+        src={safeSrc}
+        title={typeof title === "string" ? title : "Embedded media"}
+        width={embedWidth}
+        height={embedHeight}
+        allow={iframeAllow}
+        allowFullScreen
+        loading="lazy"
+        referrerPolicy="strict-origin-when-cross-origin"
+        sandbox={iframeSandbox}
+        {...styledProps("vault-md-iframe", className, style)}
+      />
+    );
+  },
   ul({ children, className, style }) {
     return <ul {...styledProps("vault-md-ul", className, style)}>{children}</ul>;
   },
@@ -339,7 +468,7 @@ export function MarkdownDocument({
         ]}
         components={createMarkdownComponents(disableLinks)}
       >
-        {markdown || "_No content yet._"}
+        {normalizeSelfClosingIframes(markdown || "_No content yet._")}
       </ReactMarkdown>
     </div>
   );

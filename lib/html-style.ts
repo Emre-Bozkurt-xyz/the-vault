@@ -9,6 +9,7 @@ const allowedStyleProperties = new Set([
   "border-style",
   "border-width",
   "color",
+  "color-scheme",
   "display",
   "font-size",
   "font-style",

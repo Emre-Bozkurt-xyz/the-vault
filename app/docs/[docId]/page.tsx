@@ -4,12 +4,13 @@ import { ArrowLeft, Trash2 } from "lucide-react";
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
+import { DocumentWorkspace } from "@/components/document-workspace";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { UserSearchField } from "@/components/user-search-field";
 import { createCollabToken } from "@/lib/collab-token";
 import { normalizeStoredMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
@@ -92,58 +93,53 @@ export default async function DocumentPage({
           </div>
         </header>
 
-        <section
-          className={cn(
-            "grid gap-8",
-            showSidePanel
-              ? "lg:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]"
-              : null,
-          )}
-        >
-          <div className="vault-fade-up border-y border-border/60 bg-card/70 p-0 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:border sm:p-6">
-            {document.access.canEdit ? (
-              <MarkdownEditor
-                documentId={document.id}
-                title={document.title}
-                markdown={markdown}
-                collaboration={
-                  collabToken && collabUrl
-                    ? {
-                        url: collabUrl,
-                        token: collabToken,
-                        user: {
-                          name:
-                            profile.nickname ??
-                            profile.email ??
-                            "Vault user",
-                          email: profile.email ?? null,
-                        },
-                      }
-                    : null
-                }
-              />
-            ) : (
-              <article className="grid gap-6">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                    Document
-                  </p>
-                  <h1 className="mt-2 text-4xl font-semibold tracking-tight vault-display">
-                    {document.title}
-                  </h1>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Updated {document.updatedAt.toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/70 p-4 sm:rounded-3xl sm:p-6">
-                  <MarkdownDocument markdown={markdown} />
-                </div>
-              </article>
-            )}
-          </div>
-
-          {showSidePanel ? (
-            <aside className="space-y-6">
+        <DocumentWorkspace
+          editor={
+            <div className="vault-fade-up border-y border-border/60 bg-card/70 p-0 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:border sm:p-6">
+              {document.access.canEdit ? (
+                <MarkdownEditor
+                  documentId={document.id}
+                  title={document.title}
+                  markdown={markdown}
+                  collaboration={
+                    collabToken && collabUrl
+                      ? {
+                          url: collabUrl,
+                          token: collabToken,
+                          user: {
+                            name:
+                              profile.nickname ??
+                              profile.email ??
+                              "Vault user",
+                            email: profile.email ?? null,
+                          },
+                        }
+                      : null
+                  }
+                />
+              ) : (
+                <article className="grid gap-6">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                      Document
+                    </p>
+                    <h1 className="mt-2 text-4xl font-semibold tracking-tight vault-display">
+                      {document.title}
+                    </h1>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Updated {document.updatedAt.toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border/60 bg-background/70 p-4 sm:rounded-3xl sm:p-6">
+                    <MarkdownDocument markdown={markdown} />
+                  </div>
+                </article>
+              )}
+            </div>
+          }
+          sidePanel={
+            showSidePanel ? (
+              <>
               {document.access.canDelete ? (
                 <div className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
@@ -209,24 +205,22 @@ export default async function DocumentPage({
                     Sharing
                   </h2>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Add registered users by email. Viewer can read; editor can
-                    read and save changes.
+                    Add registered users by nickname, username, or email.
+                    Viewer can read; editor can read and save changes.
                   </p>
 
                   <div className="mt-4 space-y-5">
                     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                        Share by email
+                        Share with a user
                       </p>
                       <form
                         action={shareDocumentAction}
                         className="mt-3 grid gap-3"
                       >
                         <input type="hidden" name="documentId" value={document.id} />
-                        <Input
-                          name="email"
-                          type="email"
-                          placeholder="person@example.com"
+                        <UserSearchField
+                          placeholder="Nickname, username, or email"
                           required
                         />
                         <select
@@ -360,9 +354,10 @@ export default async function DocumentPage({
                   </div>
                 </section>
               ) : null}
-            </aside>
-          ) : null}
-        </section>
+              </>
+            ) : undefined
+          }
+        />
       </div>
     </main>
   );

@@ -146,7 +146,8 @@ Allowed:
 
 Current:
   - sanitized raw HTML rendering through an explicit allowlist
-  - no scripts, event handlers, iframes, forms, inline styles, or unsafe URL protocols
+  - no scripts, event handlers, forms, arbitrary iframes, arbitrary inline styles, or unsafe URL protocols
+  - HTTPS iframes are allowed only for explicit media embed sources such as YouTube, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp
 ```
 
 Raw HTML in Markdown is a security boundary. Treat unsafe rendering as a bug.
@@ -385,7 +386,7 @@ Tasks:
 - Add `components/markdown/MarkdownDocument.tsx`. Done locally.
 - Support headings, lists, task lists, tables, links, code fences, blockquotes, horizontal rules. Done locally.
 - Add syntax highlighting for code blocks if lightweight. Deferred.
-- Sanitize or disallow raw HTML rendering. Done locally with `rehype-raw` plus an explicit `rehype-sanitize` allowlist.
+- Sanitize or disallow raw HTML rendering. Done locally with `rehype-raw` plus an explicit `rehype-sanitize` allowlist, including a provider allowlist for safe media iframes.
 - Replace public route renderer for Markdown-backed docs. Done locally.
 
 Acceptance:
@@ -671,6 +672,8 @@ Mitigation:
 Render HTML code fences as code.
 Sanitize any raw HTML if enabled.
 Raw HTML is allowed only through an explicit sanitizer allowlist in public/viewer rendering.
+Iframes are a special case: allow them only for explicit HTTPS media embed hosts
+and normalize iframe permissions in the React renderer.
 ```
 
 ### Deployment

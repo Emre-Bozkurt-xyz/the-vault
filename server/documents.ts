@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -48,7 +48,8 @@ const saveDocumentTitleSchema = z.object({
 
 const shareDocumentSchema = z.object({
   documentId: documentIdSchema,
-  email: z.string().trim().email(),
+  userId: z.string().uuid().optional().or(z.literal("")),
+  query: z.string().trim().max(120).optional().or(z.literal("")),
   role: z.enum(["viewer", "editor"]),
 });
 
@@ -334,7 +335,8 @@ export async function shareDocumentAction(formData: FormData) {
 
   const input = shareDocumentSchema.parse({
     documentId: formData.get("documentId"),
-    email: formData.get("email"),
+    userId: formData.get("userId"),
+    query: formData.get("query"),
     role: formData.get("role"),
   });
 
@@ -344,11 +346,24 @@ export async function shareDocumentAction(formData: FormData) {
     notFound();
   }
 
-  const [targetUser] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, input.email))
-    .limit(1);
+  const query = input.query?.trim() ?? "";
+  const normalizedQuery = query.toLowerCase().replace(/^@/, "");
+  const [targetUser] = input.userId
+    ? await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .limit(1)
+    : await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          or(
+            eq(users.email, query.toLowerCase()),
+            eq(users.username, normalizedQuery),
+          ),
+        )
+        .limit(1);
 
   if (!targetUser || targetUser.id === session.user.id) {
     redirect(`/docs/${input.documentId}`);

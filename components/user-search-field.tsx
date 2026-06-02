@@ -17,12 +17,14 @@ type UserSearchFieldProps = {
   inputName?: string;
   userIdName?: string;
   placeholder?: string;
+  required?: boolean;
 };
 
 export function UserSearchField({
   inputName = "query",
   userIdName = "userId",
   placeholder = "Nickname, username, or email",
+  required = false,
 }: UserSearchFieldProps) {
   const [query, setQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
@@ -71,8 +73,14 @@ export function UserSearchField({
       <Input
         name={inputName}
         value={query}
-        autoComplete="off"
+        type="search"
+        autoComplete="new-password"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        inputMode="search"
         placeholder={placeholder}
+        required={required}
         onChange={(event) => {
           setSelectedUser(null);
           setQuery(event.target.value);

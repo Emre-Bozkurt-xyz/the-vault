@@ -13,7 +13,7 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-01
+2026-06-02
 ```
 
 Current phase:
@@ -168,6 +168,7 @@ Add notes as real files appear:
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
 | `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
+| `components/document-workspace.tsx` | Client wrapper for the document editor workspace and collapsible right-side action panel |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
@@ -456,6 +457,14 @@ getDocumentForUser()
 getPublicDocumentBySlug()
 ```
 
+Sharing behavior:
+
+```txt
+- `shareDocumentAction()` accepts the reusable smart user search field: selected suggestions submit `users.id`, while manual entry falls back to exact username or email lookup.
+- Sharing still checks `canShareDocument()` server-side and stores collaborator relationships by `users.id`, not username/email.
+- The document page action rail is collapsible on desktop editable/viewable document pages. When collapsed on desktop, the editor workspace recenters and a compact reopen button remains available. On mobile, the same actions render in a modal dialog opened from the top of the editor area instead of appearing below the editor.
+```
+
 Current routes:
 
 | Route | Status | Purpose |
@@ -544,11 +553,13 @@ Known editor caveats:
 - CodeMirror autocomplete is a direct dependency. `Tab` accepts the active autocomplete option before falling back to indentation behavior.
 - Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block. Hidden Markdown markers use CodeMirror replacement decorations, inactive inline/block HTML renders as sanitized preview widgets, and live-mode syntax-highlight spans are neutralized so heading hash markers do not resize or overlap while typing. Inline live HTML currently covers `a`, `abbr`, `b`, `cite`, `code`, `data`, `del`, `em`, `i`, `ins`, `kbd`, `mark`, `q`, `s`, `samp`, `small`, `span`, `strong`, `sub`, `sup`, `time`, `u`, and `var`.
 - CodeMirror autocomplete/tooltips are styled with Vault theme tokens in both the editor theme and global editor CSS so HTML completion popups match the dark-first UI.
-- Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, iframes, forms, unsafe URL protocols, and unsafe CSS values are not allowed; a constrained inline `style` allowlist supports common presentation styles. HTML inside fenced code blocks still displays as code.
+- Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, forms, unsafe URL protocols, and unsafe CSS values are not allowed; a constrained inline `style` allowlist supports common presentation styles. HTML inside fenced code blocks still displays as code.
+- Iframes are allowed only for explicit HTTPS embed sources in `MarkdownDocument`: YouTube/YouTube nocookie, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp. The renderer normalizes iframe `sandbox`, `allow`, `allowFullScreen`, `loading`, and `referrerPolicy` attributes instead of trusting arbitrary author-provided iframe permissions. Self-closing iframe syntax is normalized to a closing-tag iframe before Markdown HTML parsing.
+- Live preview allows the same iframe block tags and applies the same source allowlist plus normalized iframe permissions before rendering the inactive block preview.
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode replaces inactive `- [ ]` / `- [x]` markers with the same styled checkbox widget.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
-- Document edit pages use a wider responsive workspace (`max-w-[1720px]`) with a slightly wider side rail on 2xl screens so the editor does not feel cramped on large displays.
+- Document edit pages use a wider responsive workspace (`max-w-[1720px]`) with a collapsible desktop side rail. When the rail is open, the editor shifts left to leave room for visibility/sharing controls; when collapsed, the editor recenters to reduce distractions. On mobile, visibility/sharing controls open in a modal so they do not sit below the editor or affect editor width.
 - Browser UX verification is still needed after the CodeMirror swap.
 ```
 
@@ -581,7 +592,8 @@ Current behavior:
 - Collab service validates the token and re-checks current database edit permission before room access.
 - Hocuspocus loads existing `documents.markdown` into a `Y.Text` named `markdown`; if markdown is still empty, it falls back from legacy ProseMirror JSON during room load.
 - Hocuspocus stores collaborative document state back to `documents.markdown`.
-- The Markdown editor starts in normal local-autosave mode and only upgrades to Yjs collaboration after the Hocuspocus provider reports sync. This prevents a blank editor and lost body saves when `ws://localhost:1234` is unavailable.
+- The Markdown editor starts in normal local-autosave mode and only attaches the CodeMirror/Yjs binding after the Hocuspocus provider reports sync. This prevents a blank editor, lost body saves when `ws://localhost:1234` is unavailable, and duplicate full-document inserts from binding local text into an unsynced empty `Y.Text`.
+- In collaborative mode, CodeMirror state should be updated through the `y-codemirror.next` binding and the editor `onChange` callback. Do not add a separate `Y.Text.observe()` path that calls `setMarkdownValue()`: `@uiw/react-codemirror` treats `value` prop changes as external document replacements, and those replacements can be echoed back into `Y.Text` as local edits.
 - After collaboration is synced, the normal server action saves title changes only so it does not overwrite the live Yjs body.
 - Viewer/public routes remain read-only and do not connect to the collaboration service.
 ```
@@ -628,8 +640,9 @@ listFriendsForUser()
 Known friend system caveats:
 
 ```txt
-- Friend search matches nickname, username, and email through `/api/users/search`.
-- Manual friend request submit falls back to exact username/email when no suggestion is selected.
+- Friend and document sharing search matches nickname, username, and email through `/api/users/search`.
+- User-search inputs suppress browser autofill/autocomplete (`new-password`, no autocorrect/capitalize/spellcheck) so Firefox/Chrome contact suggestions do not cover Vault's custom suggestion popover.
+- Manual friend request and document sharing submit fall back to exact username/email when no suggestion is selected.
 - Friend-based document sharing verifies friendship server-side before granting access.
 ```
 
@@ -879,3 +892,7 @@ Use this as a compact implementation log.
 | 2026-06-01 | Added settings profile editing | Users can update nickname and username from settings; username availability is checked live and relationships remain stable because references use `users.id` |
 | 2026-06-01 | Tightened mobile editor layout | Reduced nested mobile padding, made editor toolbars horizontally scrollable, and added CodeMirror phone-width overrides |
 | 2026-06-02 | Expanded mobile editor width | Made document editor pages edge-to-edge on phones, reduced toolbar density, hid mobile CodeMirror fold gutter, and narrowed the line-number gutter |
+| 2026-06-02 | Added smart sharing and responsive document panel | Document sharing now uses the reusable user search field; the action rail collapses on desktop and opens as a modal on mobile |
+| 2026-06-02 | Fixed collaborative refresh duplication race | Removed the independent `Y.Text.observe()` React state update path so CodeMirror/Yjs changes do not echo full-document replacements back into collaboration state |
+| 2026-06-02 | Added safe media iframe embeds | Markdown rendering now allows explicit HTTPS iframe embeds for YouTube, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp with normalized iframe permissions |
+| 2026-06-02 | Fixed iframe rendering in preview/live modes | Added `iframe` to the sanitizer tag allowlist, normalized self-closing iframe syntax, and allowed safe iframe blocks in live preview |
