@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { UserSearchField } from "@/components/user-search-field";
 import { createCollabToken } from "@/lib/collab-token";
-import { normalizeStoredMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import {
   archiveDocumentAction,
@@ -54,7 +53,7 @@ export default async function DocumentPage({
     ? await listFriendsForUser(session.user.id)
     : [];
   const showSidePanel = document.access.canDelete || document.access.canShare;
-  const markdown = normalizeStoredMarkdown(document.markdown, document.content);
+  const markdown = document.markdown;
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
   const collabRole =
     document.access.role === "owner" || document.access.role === "editor"

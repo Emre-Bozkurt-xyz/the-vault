@@ -3,7 +3,6 @@ import { relations, sql } from "drizzle-orm";
 import {
   index,
   integer,
-  jsonb,
   primaryKey,
   pgTable,
   text,
@@ -11,8 +10,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-
-import type { ProseMirrorDoc } from "@/lib/editor-content";
 
 export type DocumentRole = "owner" | "editor" | "viewer";
 export type DocumentVisibility = "private" | "public";
@@ -125,7 +122,6 @@ export const documents = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     markdown: text("markdown").notNull().default(""),
-    content: jsonb("content").$type<ProseMirrorDoc>().notNull(),
     visibility: text("visibility").$type<DocumentVisibility>().notNull().default("private"),
     publicSlug: text("public_slug"),
     createdAt: timestamp("created_at", { withTimezone: true })

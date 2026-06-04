@@ -50,12 +50,11 @@ Auth:
   Google OAuth
 
 Editor:
-  Tiptap
-  ProseMirror JSON document storage
+  CodeMirror Markdown editor
+  Markdown text document storage
 
 Collaboration:
-  Phase 1: no real-time collaboration
-  Phase 2: Yjs + y-websocket
+  Yjs + Hocuspocus + CodeMirror/Y.Text binding
 
 Infra:
   Docker Compose
@@ -77,7 +76,7 @@ The MVP should start without real-time editing. Add real-time collaboration afte
 | OAuth login | Yes | GitHub and Google |
 | User profile | Yes | Display name, avatar, email |
 | Create document | Yes | Owner-only initially |
-| Edit document | Yes | Tiptap editor |
+| Edit document | Yes | Markdown editor |
 | Delete/archive document | Yes | Soft delete preferred |
 | Dashboard | Yes | List owned/shared/public docs |
 | Document permissions | Yes | Owner, editor, viewer |
@@ -248,7 +247,7 @@ Tasks:
 - Add document create action.
 - Add dashboard document list.
 - Add document editor route.
-- Store title and Tiptap JSON content.
+- Store title and Markdown content.
 - Add autosave or manual save.
 - Add soft delete.
 
@@ -450,7 +449,7 @@ Top bar:
   - User avatar menu
 
 Editor area:
-  - Tiptap editor
+  - CodeMirror Markdown editor
 ```
 
 ---

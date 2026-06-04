@@ -13,13 +13,13 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-02
+2026-06-04
 ```
 
 Current phase:
 
 ```txt
-Phase 8 - Markdown backbone pivot, local verification
+Phase 8 - Markdown backbone pivot cleanup
 ```
 
 Current deployment status:
@@ -37,13 +37,13 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and a first legacy Tiptap/Yjs collaboration service that still needs to be moved to Markdown/Y.Text.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
 ```
 
 Planned direction:
 
 ```txt
-The next major editor direction is a Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md`. Do not deepen the Tiptap/ProseMirror JSON dependency without checking that plan first.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is now the active implementation. The next recovery-focused feature is batched document update history/version checkpoints.
 ```
 
 ---
@@ -80,7 +80,6 @@ Auth:
 Editor:
   - CodeMirror Markdown editor on document pages
   - Markdown text stored in `documents.markdown`
-  - Legacy Tiptap/ProseMirror JSON components still exist during migration
   - Debounced autosave plus manual save
 
 Realtime collaboration:
@@ -122,7 +121,7 @@ vault/
     login/
     public/[slug]/
   components/
-    editor/
+    markdown/
     theme-provider.tsx
     theme-toggle.tsx
     ui/
@@ -158,10 +157,6 @@ Add notes as real files appear:
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
-| `components/editor/VaultEditor.tsx` | Tiptap editor with autosave and optional collaboration provider |
-| `components/editor/EditorToolbar.tsx` | Tiptap toolbar controls |
-| `components/editor/ReadOnlyDocument.tsx` | ProseMirror JSON read-only renderer |
-| `components/editor/editor-extensions.ts` | Tiptap extension configuration |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist |
@@ -177,8 +172,7 @@ Add notes as real files appear:
 | `lib/` | Shared helpers |
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
-| `lib/editor-content.ts` | ProseMirror JSON types and validation helpers |
-| `lib/markdown.ts` | Markdown limits plus legacy ProseMirror-to-Markdown fallback conversion |
+| `lib/markdown.ts` | Shared Markdown limits |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
 | `lib/utils.ts` | shadcn utility for class merging |
@@ -189,7 +183,7 @@ Add notes as real files appear:
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
 | `docs/` | Planning and project knowledge |
-| `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan for replacing ProseMirror JSON with Markdown as the document backbone |
+| `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan and status notes for the Markdown backbone pivot |
 | `docker-compose.yml` | Local Postgres service |
 | `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
@@ -282,6 +276,7 @@ Current migrations:
 | `0002_sturdy_archangel.sql` | Friend requests and friendships | Yes | No |
 | `0003_slimy_puppet_master.sql` | Adds transitional `documents.markdown` column | Yes | No |
 | `0004_goofy_kylun.sql` | Adds `users.profile_completed_at` and `users_name_idx` | Yes | No |
+| `0005_high_captain_midlands.sql` | Drops legacy `documents.content` JSONB column | Yes | No |
 
 Schema notes:
 
@@ -289,9 +284,8 @@ Schema notes:
 - `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, friend_requests, and friendships.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
-- `documents.markdown` is the active local editor/viewer/public rendering source for the Markdown pivot.
-- `documents.content` still stores legacy ProseMirror JSONB and remains required during the transition for rollback/fallback.
-- `documents.content` stores legacy ProseMirror-style JSONB and remains required during the transition.
+- `documents.markdown` is the canonical editor/viewer/public rendering source.
+- `documents.content` has been removed from the Drizzle schema and will be dropped by migration `0005_high_captain_midlands.sql`.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `/api/health` uses `select 1` and does not require any application tables.
 ```
@@ -431,8 +425,7 @@ Basic private document CRUD, sharing, and public publishing are implemented.
 Document storage format:
 
 ```txt
-Active local UI: Markdown text in `documents.markdown`
-Transitional fallback: legacy ProseMirror JSONB remains in `documents.content`
+Markdown text in `documents.markdown`
 ```
 
 Important files:
@@ -443,15 +436,12 @@ Important files:
 | `server/documents.ts` | Create, update, archive, list, and fetch document functions |
 | `app/dashboard/page.tsx` | Owned document list and create form |
 | `app/docs/[docId]/page.tsx` | Protected editor/viewer route |
-| `lib/editor-content.ts` | ProseMirror JSON types and validation |
-| `lib/markdown.ts` | Markdown helpers and legacy fallback conversion |
+| `lib/markdown.ts` | Shared Markdown limits |
 
 Current document actions:
 
 ```txt
 createDocumentAction()
-updateDocumentAction()
-saveDocumentDraftAction()
 saveMarkdownDocumentAction()
 archiveDocumentAction()
 shareDocumentAction()
@@ -503,13 +493,7 @@ Known document caveats:
 Current editor status:
 
 ```txt
-Markdown editor implemented locally with CodeMirror, debounced autosave, manual save, toolbar syntax insertion, and source/split/preview modes.
-```
-
-Legacy editor status:
-
-```txt
-The prior Tiptap editor and ProseMirror renderer still exist in `components/editor/` for rollback/reference during the transition. Do not deepen that path without checking `docs/09_MARKDOWN_PIVOT_PLAN.md`.
+Markdown editor implemented with CodeMirror, debounced autosave, manual save, toolbar syntax insertion, source/split/preview modes, and production-confirmed Y.Text collaboration.
 ```
 
 Editor library:
@@ -526,11 +510,7 @@ Important files:
 | `components/markdown/MarkdownEditor.tsx` | Editable Markdown document component |
 | `components/markdown/MarkdownToolbar.tsx` | Markdown syntax toolbar |
 | `components/markdown/MarkdownDocument.tsx` | Read-only renderer for viewer/public pages |
-| `components/editor/VaultEditor.tsx` | Legacy editable Tiptap document component |
-| `components/editor/EditorToolbar.tsx` | Legacy formatting toolbar |
-| `components/editor/ReadOnlyDocument.tsx` | Legacy ProseMirror renderer |
-| `lib/editor-content.ts` | ProseMirror JSON validation/types |
-| `lib/markdown.ts` | Markdown helpers and fallback conversion |
+| `lib/markdown.ts` | Shared Markdown limits |
 
 Supported editor features:
 
@@ -571,7 +551,7 @@ Known editor caveats:
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
 - Document edit pages use a wider responsive workspace (`max-w-[1720px]`) with a collapsible desktop side rail. When the rail is open, the editor shifts left to leave room for visibility/sharing controls; when collapsed, the editor recenters to reduce distractions. On mobile, visibility/sharing controls open in a modal so they do not sit below the editor or affect editor width.
-- Browser UX verification is still needed after the CodeMirror swap.
+- User has confirmed Markdown editing works in production.
 ```
 
 ---
@@ -581,7 +561,7 @@ Known editor caveats:
 Current collaboration status:
 
 ```txt
-Markdown collaboration is wired at code/build level. Owner/editor sessions receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown`. Two-browser manual verification is still required.
+Markdown collaboration is deployed and user-confirmed working. Owner/editor sessions receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown`.
 ```
 
 Important files:
@@ -591,7 +571,6 @@ Important files:
 | `scripts/collab-server.mjs` | Hocuspocus websocket service |
 | `lib/collab-token.ts` | Signed room token helper |
 | `components/markdown/MarkdownEditor.tsx` | Creates Hocuspocus provider and CodeMirror/Yjs binding |
-| `components/editor/VaultEditor.tsx` | Legacy Tiptap collaboration component retained during migration |
 | `Dockerfile.collab` | Production collab service image |
 | `docker-compose.production.yml` | Adds `collab` service on `127.0.0.1:18211` |
 
@@ -601,7 +580,7 @@ Current behavior:
 - Only owner/editor document sessions receive a collaboration token.
 - Token includes document id, user id, role, display identity, expiry, and HMAC signature.
 - Collab service validates the token and re-checks current database edit permission before room access.
-- Hocuspocus loads existing `documents.markdown` into a `Y.Text` named `markdown`; if markdown is still empty, it falls back from legacy ProseMirror JSON during room load.
+- Hocuspocus loads existing `documents.markdown` into a `Y.Text` named `markdown`.
 - Hocuspocus stores collaborative document state back to `documents.markdown`.
 - The Markdown editor starts in normal local-autosave mode and only attaches the CodeMirror/Yjs binding after the Hocuspocus provider reports sync. This prevents a blank editor, lost body saves when `ws://localhost:1234` is unavailable, and duplicate full-document inserts from binding local text into an unsynced empty `Y.Text`.
 - In collaborative mode, CodeMirror state should be updated through the `y-codemirror.next` binding and the editor `onChange` callback. Do not add a separate `Y.Text.observe()` path that calls `setMarkdownValue()`: `@uiw/react-codemirror` treats `value` prop changes as external document replacements, and those replacements can be echoed back into `Y.Text` as local edits.
@@ -613,8 +592,6 @@ Known collaboration caveats:
 
 ```txt
 - If Firefox reports `ws://localhost:1234` connection refused, the local collab server is not running or failed to start. Run `npm run collab` in a separate terminal.
-- Caddy/FRP WebSocket route for `/collab` still needs production verification.
-- Two-browser/two-user live editing still needs manual verification.
 - Title editing is still saved through the normal document autosave path, not collaborative Yjs state.
 - Yjs update-history tables are not implemented; current persistence stores compact Markdown text.
 ```
@@ -812,18 +789,19 @@ Manual checks:
 | Collaboration | `npm run lint` succeeds with collaboration code | Passed | 2026-05-31 |
 | Collaboration | `node --check scripts/collab-server.mjs` succeeds | Passed | 2026-05-31 |
 | Collaboration | `node scripts/collab-server.mjs` starts locally with env values | Passed | 2026-05-31 |
-| Collaboration | Two-browser/two-user live editing | Not tested |  |
+| Collaboration | Two-browser/two-user live editing | Passed, user-reported | 2026-06-04 |
 | Markdown pivot | `documents.markdown` migration applied locally | Passed | 2026-06-01 |
 | Markdown pivot | `npm run lint` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
 | Markdown pivot | `npm run build` succeeds with Markdown editor/renderer | Passed | 2026-06-01 |
-| Markdown pivot | Browser check for create/edit/reopen/source/split/preview | Not tested |  |
+| Markdown pivot | Browser check for create/edit/reopen/source/split/preview | Passed, user-reported | 2026-06-04 |
 | Mobile UI | `npm run lint` and `npm run build` succeed after mobile editor layout pass | Passed | 2026-06-01 |
 | Mobile UI | `npm run lint` and `npm run build` succeed after edge-to-edge editor/gutter pass | Passed | 2026-06-02 |
 | Profile | `users.profile_completed_at` migration applied locally | Passed | 2026-06-01 |
 | Profile | Settings username/nickname update builds and lints | Passed | 2026-06-01 |
 | Markdown collaboration | `node --check scripts/collab-server.mjs` succeeds after Y.Text migration | Passed | 2026-06-01 |
 | Markdown collaboration | `npm run build` succeeds with CodeMirror/Yjs binding | Passed | 2026-06-01 |
-| Markdown collaboration | Two-browser owner/editor live Markdown editing | Not tested |  |
+| Markdown collaboration | Two-browser owner/editor live Markdown editing | Passed, user-reported | 2026-06-04 |
+| Legacy cleanup | `npm run db:migrate` applies `0005_high_captain_midlands.sql` locally | Passed | 2026-06-04 |
 
 ---
 
@@ -869,9 +847,9 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Browser-test two owner/editor sessions editing the same Markdown document with `npm run collab` running.
-2. Confirm reload shows the final collaborative Markdown from `documents.markdown`.
-3. Decide whether to add Yjs update-history tables or keep compact Markdown persistence for this phase.
+1. Deploy/run migration `0005_high_captain_midlands.sql` after a backup to remove `documents.content` in production.
+2. Add document update history/version checkpoints with batched snapshots, not per-keystroke rows.
+3. Decide whether history should store Markdown snapshots only, Yjs update compaction metadata, or both.
 ```
 
 ---
@@ -916,3 +894,4 @@ Use this as a compact implementation log.
 | 2026-06-02 | Added OAuth account connection flow | Settings now lists GitHub/Google connection state and lets signed-in users safely link a missing OAuth provider; login explains `OAuthAccountNotLinked` email clashes |
 | 2026-06-02 | Fixed public dashboard visibility for new users | Public Notes now lists all published documents globally and links to public slugs instead of only showing the current user's own public docs |
 | 2026-06-02 | Reverted multi-line HTML live preview | Multi-line HTML stays as source in live mode due to CodeMirror decoration constraints; Preview/Split remain the rendering path for those blocks |
+| 2026-06-04 | Removed legacy Tiptap/ProseMirror stack | Removed Tiptap packages, legacy editor components, ProseMirror conversion helpers, legacy `documents.content` read/write paths, and generated migration `0005_high_captain_midlands.sql` to drop the column |

@@ -170,7 +170,7 @@ Public page is read-only.
 | [x] | Configure Cloudflare DNS | Domain verified |
 | [x] | Update OAuth callback URLs | Production auth verified |
 | [x] | Verify HTTPS | `vault.ems-place.com` verified |
-| [~] | Verify WebSocket compatibility | Collab service added; Caddy/FRP route and browser test still need verification |
+| [x] | Verify WebSocket compatibility | Markdown collab deployed and user-confirmed working in production |
 | [x] | Add health check monitoring | `/healthz` for liveness; `/api/health` for database readiness |
 | [x] | Add backup script | Bash and PowerShell Postgres dump scripts |
 
@@ -189,15 +189,15 @@ Backup works.
 
 | Status | Task | Notes |
 |---|---|---|
-| [x] | Add Yjs packages | `yjs`, Hocuspocus, Tiptap collaboration |
+| [x] | Add Yjs packages | `yjs`, Hocuspocus, CodeMirror/Y.Text binding |
 | [x] | Create collab service | `scripts/collab-server.mjs` |
 | [x] | Add room authorization | Short-lived signed token plus DB permission re-check |
 | [x] | Connect editor to Yjs | Owner/editor sessions connect when `NEXT_PUBLIC_COLLAB_URL` is set |
 | [x] | Add awareness/presence | Collaboration caret user names/colors |
-| [x] | Persist Yjs updates | Collab server stores ProseMirror JSON back to `documents.content` |
+| [x] | Persist Yjs updates | Collab server stores Markdown text back to `documents.markdown` |
 | [x] | Add collab service to Docker Compose | `vault-collab` container on host port `18211` |
-| [ ] | Route WebSocket through Caddy/FRP | Test production |
-| [ ] | Test two browsers/two users | Core acceptance |
+| [x] | Route WebSocket through Caddy/FRP | Production WebSocket path user-confirmed working |
+| [x] | Test two browsers/two users | Markdown collaboration user-confirmed working |
 
 Exit criteria:
 
@@ -215,11 +215,13 @@ Unauthorized users cannot connect.
 | [x] | Write Markdown pivot plan | `docs/09_MARKDOWN_PIVOT_PLAN.md` |
 | [x] | Add transitional markdown column | `documents.markdown TEXT NOT NULL DEFAULT ''`; migration applied locally |
 | [x] | Make new documents write initial Markdown | Legacy JSON remains active editor/rendering format |
-| [ ] | Deploy latest Markdown schema migration | Held intentionally until local Markdown UX is verified |
-| [~] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML, constrained inline styles, and explicit safe media iframe embeds; needs browser UX verification |
-| [~] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar; mobile and wide-screen layout tightened; live heading marker plus inline/block HTML rendering fixed; autocomplete popup themed; formatting shortcuts added; needs browser UX verification |
-| [~] | Move collaboration to Y.Text | Hocuspocus now loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding wired; needs two-browser verification |
-| [~] | Add live preview | Live mode is now default; Source/Split/Preview remain available; heading marker spans are neutralized and inactive inline/block HTML renders as sanitized preview widgets; needs browser UX verification |
+| [x] | Deploy latest Markdown schema migration | Markdown schema deployed and user-confirmed working |
+| [x] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML, constrained inline styles, and explicit safe media iframe embeds |
+| [x] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar, autosave, live/source/split/preview modes, and mobile layout pass |
+| [x] | Move collaboration to Y.Text | Hocuspocus loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding production-confirmed |
+| [x] | Add live preview | Live mode is default; Source/Split/Preview remain available; multi-line raw HTML stays source in live mode and renders in Preview/Split |
+| [x] | Remove legacy Tiptap/ProseMirror code | Tiptap packages, editor components, ProseMirror helpers, and `documents.content` fallback code removed; migration `0005_high_captain_midlands.sql` drops the legacy column |
+| [ ] | Add document update history | Next feature: batched recovery snapshots/checkpoints without saving every keystroke |
 
 Exit criteria:
 

@@ -17,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { cn } from "@/lib/utils";
-import { normalizeStoredMarkdown } from "@/lib/markdown";
 import {
   createDocumentAction,
   listDocumentsForUser,
@@ -237,10 +236,7 @@ export default async function DashboardPage({
                             {document.visibility === "public" ? "Public" : "Private"}
                           </Badge>
                         }
-                        preview={normalizeStoredMarkdown(
-                          document.markdown,
-                          document.content,
-                        )}
+                        preview={document.markdown}
                       />
                     ))}
                   </div>
@@ -263,10 +259,7 @@ export default async function DashboardPage({
                         meta="Shared workspace"
                         icon={Share2}
                         badge={<Badge variant="secondary">{document.role}</Badge>}
-                        preview={normalizeStoredMarkdown(
-                          document.markdown,
-                          document.content,
-                        )}
+                        preview={document.markdown}
                       />
                     ))}
                   </div>
@@ -293,10 +286,7 @@ export default async function DashboardPage({
                         } - updated ${document.updatedAt.toLocaleDateString()}`}
                         icon={Globe2}
                         badge={<Badge variant="outline">Public</Badge>}
-                        preview={normalizeStoredMarkdown(
-                          document.markdown,
-                          document.content,
-                        )}
+                        preview={document.markdown}
                         action={
                           <Link
                             href={`/public/${document.publicSlug}`}

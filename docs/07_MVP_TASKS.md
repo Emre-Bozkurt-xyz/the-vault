@@ -196,18 +196,18 @@ app/docs/[docId]/page.tsx
 
 ---
 
-## Milestone 4 — Tiptap Editor
+## Milestone 4 — Markdown Editor
 
-### 4.1 Install Tiptap
+### 4.1 Install Markdown editor stack
 
 ```bash
-npm install @tiptap/react @tiptap/starter-kit
+npm install @uiw/react-codemirror @codemirror/lang-markdown
 ```
 
 Optional later:
 
 ```bash
-npm install @tiptap/extension-link @tiptap/extension-placeholder
+npm install @codemirror/search @codemirror/autocomplete
 ```
 
 ### 4.2 Create editor component
@@ -215,21 +215,22 @@ npm install @tiptap/extension-link @tiptap/extension-placeholder
 Create:
 
 ```txt
-components/editor/VaultEditor.tsx
+components/markdown/MarkdownEditor.tsx
+components/markdown/MarkdownToolbar.tsx
 ```
 
-### 4.3 Save JSON content
+### 4.3 Save Markdown content
 
 Store:
 
 ```txt
-editor.getJSON()
+documents.markdown
 ```
 
 Not:
 
 ```txt
-editor.getHTML()
+rendered HTML
 ```
 
 ### 4.4 Add read-only renderer
@@ -237,7 +238,7 @@ editor.getHTML()
 Create:
 
 ```txt
-components/editor/ReadOnlyDocument.tsx
+components/markdown/MarkdownDocument.tsx
 ```
 
 ---
@@ -461,7 +462,7 @@ Built and deployed a self-hosted collaborative document platform with Next.js, T
 Better after Yjs:
 
 ```txt
-Implemented real-time collaborative document editing using Tiptap, ProseMirror, and Yjs CRDTs with server-side room authorization and PostgreSQL persistence.
+Implemented real-time collaborative Markdown editing using CodeMirror, Hocuspocus, and Yjs CRDTs with server-side room authorization and PostgreSQL persistence.
 ```
 
 ---

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { normalizeStoredMarkdown } from "@/lib/markdown";
 import { getPublicDocumentBySlug } from "@/server/documents";
 
 export default async function PublicDocumentPage({
@@ -16,8 +15,6 @@ export default async function PublicDocumentPage({
   if (!document) {
     notFound();
   }
-
-  const markdown = normalizeStoredMarkdown(document.markdown, document.content);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -40,7 +37,7 @@ export default async function PublicDocumentPage({
             Updated {document.updatedAt.toLocaleDateString()}
           </p>
           <div className="mt-8 border-t border-border/60 pt-6">
-            <MarkdownDocument markdown={markdown} />
+            <MarkdownDocument markdown={document.markdown} />
           </div>
         </article>
       </div>

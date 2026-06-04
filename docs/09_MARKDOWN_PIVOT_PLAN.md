@@ -25,31 +25,23 @@ This is a product direction change, not just an editor plugin swap.
 Current implementation:
 
 ```txt
-documents.content JSONB
-  ProseMirror/Tiptap JSON
+documents.markdown TEXT
+  canonical Markdown source
 
-components/editor/VaultEditor.tsx
-  Tiptap editor
-  Tiptap collaboration extension
+components/markdown/MarkdownEditor.tsx
+  CodeMirror Markdown editor
+  Y.Text collaboration binding
   autosave
   toolbar
+  source/live/split/preview modes
 
 scripts/collab-server.mjs
   Hocuspocus/Yjs service
-  loads ProseMirror JSON
-  stores ProseMirror JSON
+  loads Markdown text
+  stores Markdown text
 ```
 
 Current collaboration model:
-
-```txt
-Yjs document room
-  -> Tiptap Collaboration extension
-  -> ProseMirror tree
-  -> documents.content JSONB
-```
-
-Target collaboration model:
 
 ```txt
 Yjs document room
@@ -156,23 +148,7 @@ Raw HTML in Markdown is a security boundary. Treat unsafe rendering as a bug.
 
 ## 5. Target Data Model
 
-Preferred transitional schema:
-
-```txt
-documents
-  id UUID PRIMARY KEY
-  owner_id UUID NOT NULL
-  title TEXT NOT NULL
-  markdown TEXT NOT NULL DEFAULT ''
-  content JSONB NULL              -- legacy during migration only
-  visibility TEXT NOT NULL DEFAULT 'private'
-  public_slug TEXT UNIQUE
-  created_at TIMESTAMP NOT NULL
-  updated_at TIMESTAMP NOT NULL
-  deleted_at TIMESTAMP
-```
-
-Later final schema:
+Final schema:
 
 ```txt
 documents
@@ -187,13 +163,10 @@ documents
   deleted_at TIMESTAMP
 ```
 
-Why keep `content` temporarily:
+Previous transitional note:
 
 ```txt
-- Safer deploys.
-- Rollback remains possible.
-- Existing documents can be backfilled into Markdown.
-- We can compare old rendering vs new rendering during transition.
+`documents.content` was kept during the migration for rollback safety. After Markdown editing and collaboration were production-confirmed, legacy code was removed and migration `0005_high_captain_midlands.sql` was generated to drop the column.
 ```
 
 If existing production documents do not matter, a full wipe is acceptable, but it should still be deliberate and scripted.
@@ -209,20 +182,19 @@ Use this unless there is a strong reason to wipe.
 Phase A - Expand:
 
 ```txt
-1. Add documents.markdown TEXT NOT NULL DEFAULT ''.
-2. Keep documents.content JSONB.
-3. Update createDocumentAction() to write markdown.
-4. Update read paths to prefer markdown when present, fallback to content.
-5. Keep old Tiptap editor operational until Markdown editor is stable.
+1. Add documents.markdown TEXT NOT NULL DEFAULT ''. Done.
+2. Keep documents.content JSONB. Done temporarily during the transition.
+3. Update createDocumentAction() to write markdown. Done.
+4. Update read paths to prefer markdown when present, fallback to content. Done during transition; fallback later removed.
+5. Keep old Tiptap editor operational until Markdown editor is stable. Done during transition; old editor later removed.
 ```
 
 Phase B - Backfill:
 
 ```txt
-1. Add a script to convert existing ProseMirror JSON to Markdown.
-2. Run it locally first.
-3. Run it in production after backup.
-4. Mark converted documents with non-empty markdown.
+Skipped as a dedicated script because production data was not important enough
+to justify a long conversion phase, and Markdown editing/collab were verified
+before the legacy column was removed.
 ```
 
 Phase C - Switch:
@@ -231,15 +203,15 @@ Phase C - Switch:
 1. Replace editor route with Markdown editor.
 2. Replace public/viewer renderer with Markdown renderer.
 3. Replace collab service load/store with Y.Text markdown load/store.
-4. Stop writing ProseMirror JSON.
+4. Stop writing ProseMirror JSON. Done.
 ```
 
 Phase D - Contract:
 
 ```txt
-1. After production has run Markdown-only for a while, remove documents.content.
-2. Remove Tiptap editor/rendering code.
-3. Remove ProseMirror JSON validation helpers.
+1. After production has run Markdown-only for a while, remove documents.content. Done in migration `0005_high_captain_midlands.sql`.
+2. Remove Tiptap editor/rendering code. Done.
+3. Remove ProseMirror JSON validation helpers. Done.
 ```
 
 ### Full Wipe Option
@@ -346,10 +318,10 @@ documents.markdown exists and new documents can be Markdown-backed.
 Current status:
 
 ```txt
-Complete locally. `documents.markdown TEXT NOT NULL DEFAULT ''` has been added
-to the Drizzle schema, migration `0003_slimy_puppet_master.sql` has been
-generated and applied locally, and new documents now write initial Markdown
-while legacy JSON remains the active editor/rendering format.
+Complete. `documents.markdown TEXT NOT NULL DEFAULT ''` was added by migration
+`0003_slimy_puppet_master.sql`; new documents write initial Markdown; the
+legacy JSON column has now been removed from schema/code and will be dropped by
+migration `0005_high_captain_midlands.sql`.
 ```
 
 Tasks:
@@ -359,7 +331,7 @@ Tasks:
 - Update `docs/03_DATA_MODEL.md`.
 - Update `docs/project-knowledge.md`.
 - Update create/list/get document server actions.
-- Keep Tiptap route working using fallback conversion or legacy content.
+- Remove legacy Tiptap fallback after production verification.
 
 Acceptance:
 
@@ -445,7 +417,7 @@ Two authorized editors can collaboratively edit Markdown text with remote cursor
 
 Tasks:
 
-- Change collab room load/store from ProseMirror JSON to `documents.markdown`. Done locally.
+- Change collab room load/store from ProseMirror JSON to `documents.markdown`. Done and production-confirmed.
 - Use `Y.Text` per document. Done locally using the `markdown` shared text field.
 - Wire CodeMirror to Yjs binding. Done locally with `y-codemirror.next`.
 - Keep signed room token auth. Done locally.
@@ -465,10 +437,9 @@ page reload shows latest Markdown
 Current status:
 
 ```txt
-Implemented at code/build level. Needs local two-browser verification with
-`npm run collab` and `NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234`.
-The editor remains in local-autosave mode until the provider reports synced,
-so a stopped websocket should not blank the Markdown body or drop normal saves.
+Implemented and production-confirmed by the user. The editor remains in
+local-autosave mode until the provider reports synced, so a stopped websocket
+should not blank the Markdown body or drop normal saves.
 ```
 
 ### Milestone 5 - Live Preview
@@ -544,11 +515,12 @@ scripts/backfill-markdown.ts
 Likely replacements/removals later:
 
 ```txt
-components/editor/VaultEditor.tsx
-components/editor/ReadOnlyDocument.tsx
-components/editor/editor-extensions.ts
-lib/editor-content.ts
-scripts/collab-server.mjs ProseMirror load/store logic
+components/editor/VaultEditor.tsx - removed
+components/editor/ReadOnlyDocument.tsx - removed
+components/editor/editor-extensions.ts - removed
+lib/editor-content.ts - removed
+scripts/collab-server.mjs ProseMirror load/store logic - removed
+documents.content - removed by migration `0005_high_captain_midlands.sql`
 ```
 
 Schema:
@@ -704,7 +676,7 @@ Allow full wipe only as explicit manual decision.
 
 ## 12. Recommended First Commit
 
-Do not start by deleting Tiptap.
+Historical note: this was intentionally not started by deleting Tiptap.
 
 First commit should only:
 
@@ -742,4 +714,12 @@ Toolbar inserts Markdown syntax.
 Live preview is available.
 Legacy ProseMirror JSON is no longer required.
 Deployment and migration steps are documented and tested.
+```
+
+Current next recovery-oriented follow-up:
+
+```txt
+Add document update history/version checkpoints. Keep it batched and intentional:
+do not snapshot every keystroke; create restore points after meaningful idle
+windows, before destructive operations, or from compacted collaboration sessions.
 ```

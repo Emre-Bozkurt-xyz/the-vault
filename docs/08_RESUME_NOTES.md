@@ -35,7 +35,7 @@ Deployed the application through a Dockerized home-lab stack using Caddy, Cloudf
 ```
 
 ```txt
-Implemented a rich-text document editor using Tiptap/ProseMirror with JSONB persistence in PostgreSQL and secure document access guards.
+Implemented a Markdown-native document editor using CodeMirror with PostgreSQL persistence, live preview modes, safe public rendering, and secure document access guards.
 ```
 
 ---
@@ -43,7 +43,7 @@ Implemented a rich-text document editor using Tiptap/ProseMirror with JSONB pers
 ## 3. Resume Bullets — After Real-Time Collaboration
 
 ```txt
-Implemented real-time collaborative editing with Tiptap, ProseMirror, and Yjs CRDTs, including room-level authorization and live document synchronization.
+Implemented real-time collaborative Markdown editing with CodeMirror, Yjs CRDTs, and Hocuspocus, including room-level authorization, presence, and live document synchronization.
 ```
 
 ```txt
@@ -80,9 +80,9 @@ Recommended README structure:
 Use:
 
 ```txt
-- OAuth login with GitHub.
+- OAuth login with GitHub and Google.
 - Private document dashboard.
-- Rich-text editing with Tiptap.
+- Markdown-native editing with CodeMirror.
 - PostgreSQL-backed document persistence.
 - Friend request system.
 - Role-based sharing with owner/editor/viewer permissions.
@@ -95,7 +95,7 @@ Use:
 After collaboration:
 
 ```txt
-- Real-time collaborative editing with Yjs CRDTs.
+- Real-time collaborative Markdown editing with Yjs CRDTs.
 - WebSocket-based document rooms.
 - Live collaborator presence.
 ```
@@ -205,6 +205,7 @@ Dockerized deployment
 ## 12. Future Roadmap for README
 
 ```txt
+- Batched document version history.
 - Real-time editing with Yjs.
 - Document comments.
 - Document version history.
@@ -224,11 +225,11 @@ Dockerized deployment
 MVP:
 
 ```txt
-A self-hosted collaborative notes platform with OAuth, rich-text editing, public/private publishing, friend-based sharing, and server-enforced permissions.
+A self-hosted collaborative notes platform with OAuth, Markdown-native editing, public/private publishing, friend-based sharing, and server-enforced permissions.
 ```
 
 After collaboration:
 
 ```txt
-A self-hosted Notion-style document platform with OAuth, CRDT-powered real-time collaboration, role-based sharing, and a production home-lab deployment architecture.
+A self-hosted Obsidian-style document platform with OAuth, CRDT-powered real-time Markdown collaboration, role-based sharing, and a production home-lab deployment architecture.
 ```

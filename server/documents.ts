@@ -8,10 +8,6 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { documentPermissions, documents, friendships, users } from "@/db/schema";
 import {
-  emptyDocumentContent,
-  isProseMirrorDoc,
-} from "@/lib/editor-content";
-import {
   canDeleteDocument,
   canEditDocument,
   canShareDocument,
@@ -22,18 +18,6 @@ import { slugify } from "@/lib/slug";
 
 const documentIdSchema = z.string().uuid();
 const initialMarkdownContent = "# Untitled document\n\nStart writing...\n";
-
-const updateDocumentSchema = z.object({
-  documentId: documentIdSchema,
-  title: z.string().trim().min(1, "Title is required").max(200),
-  contentJson: z.string().max(1_000_000),
-});
-
-const saveDocumentDraftSchema = z.object({
-  documentId: documentIdSchema,
-  title: z.string().trim().min(1, "Title is required").max(200),
-  content: z.unknown(),
-});
 
 const saveMarkdownDocumentSchema = z.object({
   documentId: documentIdSchema,
@@ -72,26 +56,6 @@ const updateCollaboratorRoleSchema = collaboratorMutationSchema.extend({
   role: z.enum(["viewer", "editor"]),
 });
 
-function parseDocumentContent(contentJson: string) {
-  const parsed = JSON.parse(contentJson) as unknown;
-
-  if (!isProseMirrorDoc(parsed)) {
-    throw new Error("Invalid document content");
-  }
-
-  return parsed;
-}
-
-function validateDocumentContent(content: unknown) {
-  const contentJson = JSON.stringify(content);
-
-  if (contentJson.length > 1_000_000 || !isProseMirrorDoc(content)) {
-    throw new Error("Invalid document content");
-  }
-
-  return content;
-}
-
 function normalizeFriendPair(userA: string, userB: string) {
   return userA < userB
     ? { userLowId: userA, userHighId: userB }
@@ -112,7 +76,6 @@ export async function createDocumentAction() {
         ownerId: session.user.id,
         title: "Untitled document",
         markdown: initialMarkdownContent,
-        content: emptyDocumentContent,
       })
       .returning({ id: documents.id });
 
@@ -126,92 +89,6 @@ export async function createDocumentAction() {
   });
 
   redirect(`/docs/${document.id}`);
-}
-
-export async function updateDocumentAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  const input = updateDocumentSchema.parse({
-    documentId: formData.get("documentId"),
-    title: formData.get("title"),
-    contentJson: formData.get("contentJson"),
-  });
-
-  const allowed = await canEditDocument(session.user.id, input.documentId);
-
-  if (!allowed) {
-    notFound();
-  }
-
-  await db
-    .update(documents)
-    .set({
-      title: input.title,
-      content: parseDocumentContent(input.contentJson),
-      updatedAt: sql`now()`,
-    })
-    .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)));
-
-  redirect(`/docs/${input.documentId}`);
-}
-
-export async function saveDocumentDraftAction(
-  input: unknown,
-): Promise<
-  | { ok: true; updatedAt: string }
-  | { ok: false; message: string }
-> {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  const parsed = saveDocumentDraftSchema.safeParse(input);
-
-  if (!parsed.success) {
-    return {
-      ok: false,
-      message: "Check the title and try saving again.",
-    };
-  }
-
-  let content;
-
-  try {
-    content = validateDocumentContent(parsed.data.content);
-  } catch {
-    return {
-      ok: false,
-      message: "This document is too large or has invalid content.",
-    };
-  }
-
-  const allowed = await canEditDocument(session.user.id, parsed.data.documentId);
-
-  if (!allowed) {
-    notFound();
-  }
-
-  await db
-    .update(documents)
-    .set({
-      title: parsed.data.title,
-      content,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-    );
-
-  return {
-    ok: true,
-    updatedAt: new Date().toISOString(),
-  };
 }
 
 export async function saveMarkdownDocumentAction(
@@ -588,7 +465,6 @@ export async function listDocumentsForUser(userId: string) {
       id: documents.id,
       title: documents.title,
       markdown: documents.markdown,
-      content: documents.content,
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
     })
@@ -603,7 +479,6 @@ export async function listSharedDocumentsForUser(userId: string) {
       id: documents.id,
       title: documents.title,
       markdown: documents.markdown,
-      content: documents.content,
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
       role: documentPermissions.role,
@@ -626,7 +501,6 @@ export async function listPublicDocuments() {
       id: documents.id,
       title: documents.title,
       markdown: documents.markdown,
-      content: documents.content,
       publicSlug: documents.publicSlug,
       updatedAt: documents.updatedAt,
       ownerName: users.name,
@@ -689,7 +563,6 @@ export async function getDocumentForUser(userId: string, documentId: string) {
       id: documents.id,
       title: documents.title,
       markdown: documents.markdown,
-      content: documents.content,
       visibility: documents.visibility,
       publicSlug: documents.publicSlug,
       updatedAt: documents.updatedAt,
@@ -713,7 +586,6 @@ export async function getPublicDocumentBySlug(slug: string) {
     .select({
       title: documents.title,
       markdown: documents.markdown,
-      content: documents.content,
       updatedAt: documents.updatedAt,
     })
     .from(documents)

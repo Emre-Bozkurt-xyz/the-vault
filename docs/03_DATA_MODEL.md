@@ -98,7 +98,6 @@ documents
 
   title TEXT NOT NULL
   markdown TEXT NOT NULL DEFAULT ''
-  content JSONB NOT NULL
 
   visibility TEXT NOT NULL DEFAULT 'private'
   public_slug TEXT UNIQUE
@@ -128,31 +127,7 @@ Current primary content format:
 documents.markdown TEXT
 ```
 
-Markdown is now the active editor/viewer/public rendering source in local development. It still exists alongside legacy ProseMirror JSON so deploys and rollback remain safer during the pivot.
-
-Legacy content format:
-
-```txt
-Tiptap/ProseMirror JSON
-```
-
-`documents.content` remains required during the transition but is no longer the UI editing backbone once the Markdown editor route is active.
-
-Example:
-
-```json
-{
-  "type": "doc",
-  "content": [
-    {
-      "type": "paragraph",
-      "content": [
-        { "type": "text", "text": "Hello Vault" }
-      ]
-    }
-  ]
-}
-```
+Markdown is the canonical editor/viewer/public rendering source. The legacy Tiptap/ProseMirror `documents.content` JSONB column was removed by migration `0005_high_captain_midlands.sql` after Markdown editing and collaboration were production-confirmed.
 
 ---
 
@@ -279,7 +254,8 @@ document_versions
   document_id UUID REFERENCES documents(id)
   created_by UUID REFERENCES users(id)
   title TEXT
-  content JSONB
+  markdown TEXT
+  reason TEXT
   created_at TIMESTAMP
 ```
 
@@ -290,7 +266,7 @@ Useful for:
 - Safer autosave.
 - Resume bragging rights.
 
-Skip for MVP unless you have extra time.
+Do not snapshot every keystroke. Prefer explicit restore points plus time-bucketed autosave checkpoints, e.g. create a version after a meaningful idle window, before destructive operations, or when a collaborative session is compacted.
 
 ---
 
@@ -391,7 +367,6 @@ export const documents = pgTable("documents", {
   ownerId: uuid("owner_id").notNull().references(() => users.id),
   title: text("title").notNull(),
   markdown: text("markdown").notNull().default(""),
-  content: jsonb("content").notNull(),
   visibility: text("visibility").notNull().default("private"),
   publicSlug: text("public_slug").unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -432,6 +407,7 @@ Useful seed data:
 | [x] | friend_requests table created |
 | [x] | friendships table created |
 | [x] | transitional documents.markdown column generated |
+| [x] | legacy documents.content column removed |
 | [x] | migrations run locally |
-| [~] | latest migration applied locally; pending production deploy |
+| [~] | latest cleanup migration applied locally; pending production deploy |
 | [x] | indexes added |

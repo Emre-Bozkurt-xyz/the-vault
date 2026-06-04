@@ -1,9 +1,9 @@
 # Vault — Editor and Collaboration Plan
 
-Note:
+Current implementation note:
 
 ```txt
-The original implementation used Tiptap/ProseMirror JSON. The active local development direction is the Markdown-native replacement documented in `docs/09_MARKDOWN_PIVOT_PLAN.md`.
+The original implementation used Tiptap/ProseMirror JSON. Vault is now Markdown-native: document bodies live in `documents.markdown`, editable pages use CodeMirror, and live collaboration uses Y.Text through Hocuspocus/Yjs.
 ```
 
 Current Markdown pivot status:
@@ -13,6 +13,7 @@ Editable document pages now use CodeMirror for Markdown source editing.
 Viewer/public pages render `documents.markdown` with sanitized raw HTML support.
 Source/split/preview modes exist locally.
 The Markdown editor is wired to Hocuspocus/Yjs through `Y.Text` when `NEXT_PUBLIC_COLLAB_URL` is set.
+Production collaboration and Markdown editing have been user-confirmed working.
 ```
 
 ---
@@ -22,11 +23,11 @@ The Markdown editor is wired to Hocuspocus/Yjs through `Y.Text` when `NEXT_PUBLI
 Use:
 
 ```txt
-Tiptap
-ProseMirror JSON
+CodeMirror 6
+Markdown text
 ```
 
-Do **not** start with real-time collaboration. First build a stable single-user editor with database persistence and permissions.
+The previous Tiptap/ProseMirror editor has been removed. Keep future editor work Markdown-first unless there is an explicit product decision to change the document backbone again.
 
 MVP editor should support:
 
@@ -45,76 +46,72 @@ MVP editor should support:
 
 ## 2. Content Storage Format
 
-Store editor content as JSONB in Postgres:
+Store editor content as Markdown text in Postgres:
 
 ```txt
-documents.content JSONB
+documents.markdown TEXT
 ```
 
 Example shape:
 
 ```json
-{
-  "type": "doc",
-  "content": [
-    {
-      "type": "heading",
-      "attrs": { "level": 1 },
-      "content": [{ "type": "text", "text": "My First Vault Doc" }]
-    }
-  ]
-}
+# My First Vault Doc
+
+Start writing...
 ```
 
-Avoid storing HTML as the source of truth.
+Avoid storing rendered HTML as the source of truth.
 
 Why:
 
-- ProseMirror JSON is structured.
-- Easier to render safely.
-- Easier to migrate later.
-- Better for collaboration later.
+- Markdown is plain text and matches the intended Obsidian-like writing model.
+- CodeMirror and Y.Text collaborate naturally over text.
+- Public/viewer rendering can sanitize Markdown/HTML at the rendering boundary.
+- Recovery/version history can store compact Markdown snapshots.
 
 ---
 
 ## 3. Editor Component Structure
 
-Recommended files:
+Current files:
 
 ```txt
-components/editor/VaultEditor.tsx
-components/editor/EditorToolbar.tsx
-components/editor/ReadOnlyDocument.tsx
-components/editor/editor-extensions.ts
+components/markdown/MarkdownEditor.tsx
+components/markdown/MarkdownToolbar.tsx
+components/markdown/MarkdownDocument.tsx
 ```
 
-### `VaultEditor.tsx`
+### `MarkdownEditor.tsx`
 
 Responsibilities:
 
-- Initialize Tiptap.
-- Load initial JSON.
+- Initialize CodeMirror.
+- Load initial Markdown.
 - Track dirty state.
 - Trigger save action.
-- Optionally autosave.
+- Autosave.
+- Bind to Y.Text when collaboration is available.
+- Render source/live/split/preview modes.
 
-### `EditorToolbar.tsx`
+### `MarkdownToolbar.tsx`
 
 Responsibilities:
 
-- Bold/italic.
+- Bold/italic/link/code syntax.
 - Heading selector.
 - Lists.
-- Code block.
-- Undo/redo.
+- Task list.
+- Blockquote.
+- Code fence/table/horizontal rule insertion.
 
-### `ReadOnlyDocument.tsx`
+### `MarkdownDocument.tsx`
 
 Responsibilities:
 
 - Render public documents.
 - Render viewer-only documents.
 - No editable controls.
+- Sanitize raw Markdown HTML and allow only explicit safe iframe providers.
 
 ---
 
@@ -179,7 +176,7 @@ Suggested limits:
 
 ```txt
 title max: 200 chars
-content JSON max: 1-2 MB for MVP
+markdown max: 1 MB for current implementation
 ```
 
 ---
@@ -210,7 +207,7 @@ Public route:
 Should use:
 
 ```txt
-ReadOnlyDocument
+MarkdownDocument
 ```
 
 Do not load the full dashboard/editor shell.
@@ -221,13 +218,13 @@ Make it feel like a clean public article page.
 
 ## 8. Collaboration v2
 
-Implemented first collaboration slice with:
+Implemented collaboration slice with:
 
 ```txt
 Yjs
 Hocuspocus server/provider
-Tiptap Collaboration extension
-Tiptap CollaborationCursor extension
+Y.Text
+y-codemirror.next
 ```
 
 Architecture:
@@ -325,12 +322,6 @@ yjs_updates
 
 Periodically compact updates into a snapshot.
 
-### Easier MVP-ish Alternative
-
-Use Yjs for live editing, but periodically serialize current editor JSON back to `documents.content`.
-
-This is less ideal but simpler.
-
 ---
 
 ## 12. Collaboration Deployment
@@ -374,9 +365,9 @@ Subdomain is cleaner.
 
 | Status | Item |
 |---|---|
-| [x] | Install Tiptap |
-| [x] | Create editor component |
-| [x] | Store content as JSONB |
+| [x] | Install CodeMirror Markdown editor |
+| [x] | Create Markdown editor component |
+| [x] | Store content as Markdown text |
 | [x] | Load document into editor |
 | [x] | Save document content |
 | [x] | Save document title |
@@ -398,9 +389,9 @@ Subdomain is cleaner.
 | [x] | Add document room model |
 | [x] | Add room token generation |
 | [x] | Add token validation |
-| [x] | Add Tiptap collaboration extension |
+| [x] | Add CodeMirror/Y.Text binding |
 | [x] | Add cursor/presence |
 | [x] | Add persistence |
 | [x] | Add Docker service |
-| [ ] | Add Caddy/FRP route |
-| [ ] | Test two-user editing |
+| [x] | Add Caddy/FRP route |
+| [x] | Test two-user editing |

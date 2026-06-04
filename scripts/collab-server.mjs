@@ -54,7 +54,7 @@ const server = new Server({
 
   async onLoadDocument({ documentName }) {
     const [document] = await db`
-      select markdown, content
+      select markdown
       from documents
       where id = ${documentName}
         and deleted_at is null
@@ -67,10 +67,7 @@ const server = new Server({
 
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("markdown");
-    ytext.insert(
-      0,
-      normalizeStoredMarkdown(document.markdown, document.content),
-    );
+    ytext.insert(0, document.markdown ?? "");
 
     return ydoc;
   },
@@ -154,109 +151,4 @@ function getSecret() {
   }
 
   return secret;
-}
-
-function normalizeStoredMarkdown(markdown, fallbackContent) {
-  if (typeof markdown === "string" && markdown.trim().length > 0) {
-    return markdown;
-  }
-
-  return proseMirrorToMarkdown(fallbackContent);
-}
-
-function proseMirrorToMarkdown(content) {
-  if (!content || !Array.isArray(content.content)) {
-    return "";
-  }
-
-  return content.content
-    .map((node) => nodeToMarkdown(node))
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-function nodeToMarkdown(node) {
-  const children = inlineChildrenToMarkdown(node.content);
-
-  if (node.type === "heading") {
-    const level = node.attrs?.level === 1 ? 1 : node.attrs?.level === 2 ? 2 : 3;
-    return `${"#".repeat(level)} ${children}`.trim();
-  }
-
-  if (node.type === "bulletList") {
-    return listChildrenToMarkdown(node.content, "-");
-  }
-
-  if (node.type === "orderedList") {
-    return listChildrenToMarkdown(node.content, "1.");
-  }
-
-  if (node.type === "listItem") {
-    return children;
-  }
-
-  if (node.type === "blockquote") {
-    return children
-      .split("\n")
-      .map((line) => `> ${line}`)
-      .join("\n");
-  }
-
-  if (node.type === "codeBlock") {
-    return `\`\`\`txt\n${children}\n\`\`\``;
-  }
-
-  if (node.type === "hardBreak") {
-    return "\n";
-  }
-
-  return children;
-}
-
-function inlineChildrenToMarkdown(children = []) {
-  return children.map((child) => inlineNodeToMarkdown(child)).join("");
-}
-
-function inlineNodeToMarkdown(node) {
-  if (node.type !== "text") {
-    return nodeToMarkdown(node);
-  }
-
-  return applyMarkdownMarks(node.text ?? "", node.marks);
-}
-
-function applyMarkdownMarks(text, marks = []) {
-  return marks.reduce((current, mark) => {
-    if (mark.type === "bold") {
-      return `**${current}**`;
-    }
-
-    if (mark.type === "italic") {
-      return `*${current}*`;
-    }
-
-    if (mark.type === "code") {
-      return `\`${current}\``;
-    }
-
-    if (mark.type === "link") {
-      const href = typeof mark.attrs?.href === "string" ? mark.attrs.href : "";
-      return href ? `[${current}](${href})` : current;
-    }
-
-    return current;
-  }, text);
-}
-
-function listChildrenToMarkdown(children = [], marker) {
-  return children
-    .map((child) => {
-      const text = nodeToMarkdown(child)
-        .split("\n")
-        .map((line, index) => (index === 0 ? line : `  ${line}`))
-        .join("\n");
-
-      return `${marker} ${text}`.trimEnd();
-    })
-    .join("\n");
 }
