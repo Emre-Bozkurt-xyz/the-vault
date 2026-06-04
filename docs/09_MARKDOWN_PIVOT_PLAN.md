@@ -513,7 +513,7 @@ Tasks:
 - Render preview from current editor value without saving first. Done locally.
 - Debounce preview rendering for large docs. Deferred.
 - Keep toolbar available in source and split modes. Done locally.
-- Add first-pass live mode. Done locally with CodeMirror decorations for headings, inline bold/italic/code/link, blockquotes, lists, and code fences. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block.
+- Add first-pass live mode. Done locally with CodeMirror decorations for headings, inline bold/italic/code/link, blockquotes, lists, code fences, inline HTML, and single-line sanitized raw HTML blocks. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block. Multi-line raw HTML intentionally remains source in live mode for now; full Preview/Split render it through the sanitized Markdown pipeline.
 - Add scroll sync later, not required in first slice.
 
 Acceptance:

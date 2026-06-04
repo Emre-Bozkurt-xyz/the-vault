@@ -931,21 +931,24 @@ function buildLivePreviewDecorations(view: EditorView) {
       const line = doc.lineAt(position);
 
       if (!activeLines.has(line.number)) {
-        const htmlBlock = htmlBlockRangeFromStart(doc, line.number);
+        const htmlBlock = codeFenceLines.has(line.number)
+          ? null
+          : htmlBlockRangeFromStart(doc, line.number);
 
-        if (htmlBlock) {
+        if (htmlBlock && htmlBlock.from === htmlBlock.to) {
           const fromLine = doc.line(htmlBlock.from);
-          const toLine = doc.line(htmlBlock.to);
-          const html = doc.sliceString(fromLine.from, toLine.to);
+          const html = doc.sliceString(fromLine.from, fromLine.to);
 
-          ranges.push(
-            Decoration.replace({
-              widget: new HtmlBlockPreviewWidget(html),
-            }).range(fromLine.from, toLine.to),
-          );
+          if (!hasActivePositionInRange(activePositions, fromLine.from, fromLine.to)) {
+            ranges.push(
+              Decoration.replace({
+                widget: new HtmlBlockPreviewWidget(html),
+              }).range(fromLine.from, fromLine.to),
+            );
 
-          position = toLine.to + 1;
-          continue;
+            position = fromLine.to + 1;
+            continue;
+          }
         }
 
         const lineRanges = decorateInactiveMarkdownLine(
@@ -1069,6 +1072,8 @@ function htmlBlockRangeContainingLine(
   doc: EditorView["state"]["doc"],
   lineNumber: number,
 ) {
+  let enclosingRange: { from: number; to: number } | null = null;
+
   for (let candidate = lineNumber; candidate >= 1; candidate -= 1) {
     const candidateText = doc.line(candidate).text;
 
@@ -1079,11 +1084,11 @@ function htmlBlockRangeContainingLine(
     const range = htmlBlockRangeFromStart(doc, candidate);
 
     if (range && lineNumber >= range.from && lineNumber <= range.to) {
-      return range;
+      enclosingRange = range;
     }
   }
 
-  return null;
+  return enclosingRange;
 }
 
 function htmlBlockRangeFromStart(
