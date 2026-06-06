@@ -145,6 +145,7 @@ Users can become friends and share docs with friends.
 | [x] | Add unpublish action | Owner only |
 | [x] | Add public badge | Dashboard/editor |
 | [x] | Add copy public link button | Nice polish |
+| [x] | Credit published-note owners | Public pages show owner nickname/name, username, and avatar without exposing email |
 
 Exit criteria:
 

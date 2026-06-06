@@ -776,8 +776,12 @@ export async function getPublicDocumentBySlug(slug: string) {
       title: documents.title,
       markdown: documents.markdown,
       updatedAt: documents.updatedAt,
+      ownerName: users.name,
+      ownerUsername: users.username,
+      ownerImage: users.image,
     })
     .from(documents)
+    .innerJoin(users, eq(documents.ownerId, users.id))
     .where(
       and(
         eq(documents.publicSlug, slug),

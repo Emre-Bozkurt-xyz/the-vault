@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getPublicDocumentBySlug } from "@/server/documents";
 
 export default async function PublicDocumentPage({
@@ -15,6 +16,10 @@ export default async function PublicDocumentPage({
   if (!document) {
     notFound();
   }
+
+  const ownerName = document.ownerName ?? document.ownerUsername ?? "Vault user";
+  const ownerHandle = document.ownerUsername ? `@${document.ownerUsername}` : null;
+  const ownerInitial = ownerName.trim().charAt(0).toUpperCase() || "V";
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -33,9 +38,21 @@ export default async function PublicDocumentPage({
           <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl vault-display">
             {document.title}
           </h1>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Updated {document.updatedAt.toLocaleDateString()}
-          </p>
+          <div className="mt-5 flex items-center gap-3 text-sm">
+            <Avatar size="lg" className="bg-background/70">
+              {document.ownerImage ? (
+                <AvatarImage src={document.ownerImage} alt="" />
+              ) : null}
+              <AvatarFallback>{ownerInitial}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate font-medium text-foreground">{ownerName}</p>
+              <p className="text-muted-foreground">
+                {ownerHandle ? `${ownerHandle} · ` : ""}
+                Updated {document.updatedAt.toLocaleDateString()}
+              </p>
+            </div>
+          </div>
           <div className="mt-8 border-t border-border/60 pt-6">
             <MarkdownDocument markdown={document.markdown} />
           </div>
