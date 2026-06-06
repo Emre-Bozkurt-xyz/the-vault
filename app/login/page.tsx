@@ -44,8 +44,7 @@ export default async function LoginPage({
               Sign in to Vault
             </h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Sign in with an OAuth provider so Vault can attach every document
-              operation to a server-verified user id.
+              Sign in to continue to your workspace.
             </p>
 
             {accountNotLinked ? (
@@ -97,8 +96,7 @@ export default async function LoginPage({
               <Link href="/terms" className="text-primary underline-offset-4 hover:underline">
                 Terms and Conditions
               </Link>
-              . Local setup requires OAuth provider credentials, `AUTH_SECRET`,
-              and `NEXTAUTH_URL` in `.env.local`.
+              .
             </p>
 
             {showDevLogin ? (

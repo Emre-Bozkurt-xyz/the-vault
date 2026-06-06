@@ -39,9 +39,8 @@ export default function Home() {
               A vault for focused writing, shared on your terms.
             </h1>
             <p className="vault-fade-up vault-delay-2 mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-              Vault is a production-grade document platform: GitHub auth,
-              PostgreSQL persistence, server-side permissions, rich-text editing,
-              public sharing, and a home-lab deployment path.
+              Write in Markdown, collaborate with trusted people, and publish
+              only the pages you choose to share.
             </p>
             <div className="vault-fade-up vault-delay-3 mt-8 flex flex-col gap-3 sm:flex-row">
               <Link

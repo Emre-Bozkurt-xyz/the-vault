@@ -97,6 +97,7 @@ export function MarkdownEditor({
     key: string;
     value: string;
   } | null>(null);
+  const [editorMountMarkdown, setEditorMountMarkdown] = useState(markdown);
   const viewRef = useRef<EditorView | null>(null);
   const titleValueRef = useRef(title);
   const markdownValueRef = useRef(markdown);
@@ -149,6 +150,7 @@ export function MarkdownEditor({
               key: collaborationKey,
               value: syncedMarkdown,
             });
+            setEditorMountMarkdown(syncedMarkdown);
             setCollabReady(true);
           }
         }
@@ -497,6 +499,24 @@ export function MarkdownEditor({
     }
   }, []);
 
+  const changePreviewMode = useCallback(
+    (nextMode: PreviewMode) => {
+      if (previewMode === "preview" && nextMode !== "preview") {
+        const latestMarkdown =
+          isCollaborative && collabSession
+            ? collabSession.ytext.toString()
+            : markdownValueRef.current;
+
+        markdownValueRef.current = latestMarkdown;
+        setMarkdownValue(latestMarkdown);
+        setEditorMountMarkdown(latestMarkdown);
+      }
+
+      setPreviewMode(nextMode);
+    },
+    [collabSession, isCollaborative, previewMode],
+  );
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void saveDocument();
@@ -540,29 +560,25 @@ export function MarkdownEditor({
           <PreviewModeButton
             active={previewMode === "source"}
             label="Source"
-            onClick={() => setPreviewMode("source")}
+            onClick={() => changePreviewMode("source")}
             icon={FileCode2}
           />
           <PreviewModeButton
             active={previewMode === "live"}
             label="Live"
-            onClick={() => setPreviewMode("live")}
+            onClick={() => changePreviewMode("live")}
             icon={Eye}
           />
           <PreviewModeButton
             active={previewMode === "split"}
             label="Split"
-            onClick={() => {
-              setPreviewMode("split");
-            }}
+            onClick={() => changePreviewMode("split")}
             icon={Columns2}
           />
           <PreviewModeButton
             active={previewMode === "preview"}
             label="Preview"
-            onClick={() => {
-              setPreviewMode("preview");
-            }}
+            onClick={() => changePreviewMode("preview")}
             icon={Eye}
           />
         </div>
@@ -606,7 +622,7 @@ export function MarkdownEditor({
                 key={`${collaborationKey}:${isCollaborative ? "collab" : "local"}`}
                 value={
                   isCollaborative
-                    ? (collabInitialMarkdown?.value ?? "")
+                    ? editorMountMarkdown
                     : markdownValue
                 }
                 extensions={extensions}
