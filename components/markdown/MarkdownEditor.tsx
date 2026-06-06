@@ -117,6 +117,7 @@ export function MarkdownEditor({
     }
 
     let mounted = true;
+    let initializedFromSync = false;
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("markdown");
     const undoManager = new Y.UndoManager(ytext);
@@ -140,12 +141,16 @@ export function MarkdownEditor({
         if (mounted && state) {
           const syncedMarkdown = ytext.toString();
           markdownValueRef.current = syncedMarkdown;
-          setCollabInitialMarkdown({
-            key: collaborationKey,
-            value: syncedMarkdown,
-          });
           setMarkdownValue(syncedMarkdown);
-          setCollabReady(true);
+
+          if (!initializedFromSync) {
+            initializedFromSync = true;
+            setCollabInitialMarkdown({
+              key: collaborationKey,
+              value: syncedMarkdown,
+            });
+            setCollabReady(true);
+          }
         }
       },
     });

@@ -76,10 +76,7 @@ const server = new Server({
   },
 
   async onStoreDocument({ document, documentName }) {
-    const markdown = await protectAgainstRepeatedAppend(
-      documentName,
-      document.getText("markdown").toString(),
-    );
+    const markdown = document.getText("markdown").toString();
 
     await maybeCreateAutomaticDocumentVersion(documentName, markdown);
 
@@ -159,58 +156,6 @@ function getSecret() {
   }
 
   return secret;
-}
-
-async function protectAgainstRepeatedAppend(documentId, nextMarkdown) {
-  const [currentDocument] = await db`
-    select markdown
-    from documents
-    where id = ${documentId}
-      and deleted_at is null
-    limit 1
-  `;
-
-  const currentMarkdown = currentDocument?.markdown ?? "";
-
-  if (!isExactRepeatedAppend(currentMarkdown, nextMarkdown)) {
-    return nextMarkdown;
-  }
-
-  console.warn(
-    [
-      "Blocked suspicious collaboration store:",
-      `document=${documentId}`,
-      `currentLength=${currentMarkdown.length}`,
-      `incomingLength=${nextMarkdown.length}`,
-    ].join(" "),
-  );
-
-  return currentMarkdown;
-}
-
-function isExactRepeatedAppend(currentMarkdown, nextMarkdown) {
-  if (
-    !currentMarkdown ||
-    nextMarkdown.length <= currentMarkdown.length ||
-    nextMarkdown.length % currentMarkdown.length !== 0
-  ) {
-    return false;
-  }
-
-  for (
-    let offset = 0;
-    offset < nextMarkdown.length;
-    offset += currentMarkdown.length
-  ) {
-    if (
-      nextMarkdown.slice(offset, offset + currentMarkdown.length) !==
-      currentMarkdown
-    ) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 async function maybeCreateAutomaticDocumentVersion(documentId, nextMarkdown) {
