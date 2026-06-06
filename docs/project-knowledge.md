@@ -725,6 +725,7 @@ Current behavior:
 - Public Notes cards link to `/public/[slug]` and show owner nickname/username only, not owner email.
 - Published note pages credit the owner under the title with nickname/name, username when available, avatar/fallback, and update date.
 - Published note pages emit per-document OpenGraph/Twitter metadata with title, Markdown-derived snippet, owner author metadata, canonical URL, and a generated rendered-document preview image at `/public/[slug]/og`.
+- Published note pages use very tight mobile gutters and a `vault-public-markdown` class with narrower mobile list/callout/blockquote spacing so public docs do not feel squeezed on phones.
 - Public documents show a badge in dashboard/editor views.
 - Published documents expose a copy-link button in the editor.
 ```
@@ -1057,3 +1058,4 @@ Use this as a compact implementation log.
 | 2026-06-06 | Added public note owner credits | Published note pages now show the owner nickname/name, username, avatar/fallback, and update date under the title without exposing email |
 | 2026-06-06 | Added public note share previews | Public note routes now generate per-document OpenGraph/Twitter metadata and a 1200x630 social-card image that mimics a cropped rendered document preview |
 | 2026-06-06 | Fixed callout body links | Preview/public callout rendering now preserves inline Markdown nodes inside callout bodies, and live callout body spacer lines no longer repeat the title icon |
+| 2026-06-06 | Tightened public mobile gutters | Public note pages now use much smaller mobile page/card padding and narrower public Markdown list/callout/blockquote spacing |

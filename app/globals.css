@@ -906,6 +906,21 @@
     height: 0.7rem;
   }
 
+  @media (max-width: 640px) {
+    .vault-public-markdown .vault-md-ul,
+    .vault-public-markdown .vault-md-ol {
+      padding-left: 1.05rem;
+    }
+
+    .vault-public-markdown .callout {
+      padding: 0.85rem 0.9rem;
+    }
+
+    .vault-public-markdown .vault-md-blockquote {
+      padding-left: 0.75rem;
+    }
+  }
+
   .vault-collab-caret {
     position: relative;
     margin-left: -1px;

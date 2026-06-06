@@ -77,16 +77,16 @@ export default async function PublicDocumentPage({
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto min-h-screen w-full max-w-3xl px-6 py-12">
-        <header className="vault-fade-up flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+      <div className="mx-auto min-h-screen w-full max-w-3xl px-1.5 py-8 sm:px-6 sm:py-12">
+        <header className="vault-fade-up flex items-center justify-between px-1 text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground sm:px-0 sm:text-xs sm:tracking-[0.3em]">
           <span>Vault public note</span>
           <Link href="/" className="transition hover:text-foreground">
             Open Vault
           </Link>
         </header>
 
-        <article className="vault-fade-up vault-delay-1 mt-8 rounded-3xl border border-border/60 bg-card/80 p-8 text-card-foreground shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+        <article className="vault-fade-up vault-delay-1 mt-6 rounded-[1.35rem] border border-border/60 bg-card/80 p-3.5 text-card-foreground shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:mt-8 sm:rounded-3xl sm:p-8">
+          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground sm:text-xs sm:tracking-[0.3em]">
             Published with Vault
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl vault-display">
@@ -107,8 +107,11 @@ export default async function PublicDocumentPage({
               </p>
             </div>
           </div>
-          <div className="mt-8 border-t border-border/60 pt-6">
-            <MarkdownDocument markdown={document.markdown} />
+          <div className="mt-7 border-t border-border/60 pt-5 sm:mt-8 sm:pt-6">
+            <MarkdownDocument
+              markdown={document.markdown}
+              className="vault-public-markdown"
+            />
           </div>
         </article>
       </div>
