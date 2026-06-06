@@ -13,6 +13,8 @@ import {
 
 export type DocumentRole = "owner" | "editor" | "viewer";
 export type DocumentVisibility = "private" | "public";
+export type UserRole = "user" | "admin";
+export type OfficialDocStatus = "draft" | "published" | "archived";
 export type FriendRequestStatus =
   | "pending"
   | "accepted"
@@ -28,6 +30,10 @@ export const users = pgTable(
     emailVerified: timestamp("email_verified", { mode: "date" }),
     image: text("image"),
     username: text("username"),
+    role: text("role").$type<UserRole>().notNull().default("user"),
+    bannedAt: timestamp("banned_at", { withTimezone: true }),
+    bannedUntil: timestamp("banned_until", { withTimezone: true }),
+    banReason: text("ban_reason"),
     profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -40,6 +46,8 @@ export const users = pgTable(
     uniqueIndex("users_email_unique").on(table.email),
     uniqueIndex("users_username_unique").on(table.username),
     index("users_name_idx").on(table.name),
+    index("users_role_idx").on(table.role),
+    index("users_banned_until_idx").on(table.bannedUntil),
   ],
 );
 
@@ -280,3 +288,52 @@ export const friendships = pgTable(
     index("friendships_user_high_id_idx").on(table.userHighId),
   ],
 );
+
+export const officialDocs = pgTable(
+  "official_docs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    category: text("category").notNull().default("Guides"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    markdown: text("markdown").notNull().default(""),
+    status: text("status")
+      .$type<OfficialDocStatus>()
+      .notNull()
+      .default("draft"),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("official_docs_slug_unique").on(table.slug),
+    index("official_docs_status_updated_at_idx").on(
+      table.status,
+      table.updatedAt,
+    ),
+    index("official_docs_category_sort_idx").on(table.category, table.sortOrder),
+    index("official_docs_created_by_idx").on(table.createdBy),
+  ],
+);
+
+export const officialDocsRelations = relations(officialDocs, ({ one }) => ({
+  creator: one(users, {
+    fields: [officialDocs.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [officialDocs.updatedBy],
+    references: [users.id],
+  }),
+}));

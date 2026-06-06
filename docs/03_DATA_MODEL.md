@@ -24,6 +24,10 @@ users
   email_verified TIMESTAMP
   image TEXT
   username TEXT UNIQUE
+  role TEXT NOT NULL DEFAULT 'user'
+  banned_at TIMESTAMP
+  banned_until TIMESTAMP
+  ban_reason TEXT
   profile_completed_at TIMESTAMP
   created_at TIMESTAMP
   updated_at TIMESTAMP
@@ -36,6 +40,8 @@ Notes:
 - `name` is currently used as the free-form non-unique nickname.
 - `profile_completed_at` gates first-run onboarding after OAuth/dev login.
 - `username` is searchable and user-editable; relational data must keep using `users.id` as the stable key.
+- `role` currently supports `user` and `admin`.
+- `banned_at`, `banned_until`, and `ban_reason` are moderation fields. A row with `banned_at` and no `banned_until` is a permanent ban.
 - Do not expose raw internal user IDs publicly unless needed.
 
 ---
@@ -216,6 +222,67 @@ user_high_id = lexicographically larger UUID
 ```
 
 This prevents duplicate friendship rows.
+
+---
+
+## 5. Official Documentation
+
+Official documentation has two sources:
+
+```txt
+content/docs/**/*.md
+official_docs
+```
+
+Repo-backed Markdown files are canonical and read-only in the admin UI. Database
+docs are editable from the admin UI and can be used for quick docs, drafts, or
+temporary help content.
+
+### official_docs
+
+Admin-authored public help/documentation pages. These are intentionally separate
+from collaborative user documents: they have manual saves, publish states, and no
+Yjs collaboration room.
+
+```txt
+official_docs
+  id UUID PRIMARY KEY
+  slug TEXT NOT NULL UNIQUE
+  title TEXT NOT NULL
+  category TEXT NOT NULL DEFAULT 'Guides'
+  sort_order INTEGER NOT NULL DEFAULT 0
+  markdown TEXT NOT NULL DEFAULT ''
+  status TEXT NOT NULL DEFAULT 'draft'
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+  created_at TIMESTAMP NOT NULL
+  updated_at TIMESTAMP NOT NULL
+  published_at TIMESTAMP
+```
+
+Allowed statuses:
+
+```txt
+draft
+published
+archived
+```
+
+Public routes only read `published` docs. Admin routes can read and edit all
+statuses.
+
+Docs navigation is grouped by `category` and ordered by `sort_order`, then
+`title`. This keeps the public docs layout editable from the admin docs editor
+instead of hard-coding sidebar sections in React.
+
+Slug collision rule:
+
+```txt
+Repo docs win.
+```
+
+Database docs cannot be saved with a slug that belongs to a repo-backed doc.
+Public routes filter out duplicate DB docs if a repo doc has the same slug.
 
 ---
 

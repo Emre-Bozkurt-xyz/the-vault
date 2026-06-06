@@ -1,12 +1,12 @@
 "use server";
 
 import { and, eq, ne, or, sql } from "drizzle-orm";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { auth } from "@/auth";
 import { db } from "@/db";
 import { accounts, users } from "@/db/schema";
+import { requireActiveUser } from "@/server/authz";
 
 const usernameSchema = z
   .string()
@@ -50,30 +50,7 @@ export type ConnectedAuthProviders = {
 };
 
 export async function getCurrentUserProfile() {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  const [user] = await db
-    .select({
-      id: users.id,
-      nickname: users.name,
-      username: users.username,
-      email: users.email,
-      image: users.image,
-      profileCompletedAt: users.profileCompletedAt,
-    })
-    .from(users)
-    .where(eq(users.id, session.user.id))
-    .limit(1);
-
-  if (!user) {
-    notFound();
-  }
-
-  return user;
+  return requireActiveUser();
 }
 
 export async function requireCompletedProfile() {
@@ -87,16 +64,12 @@ export async function requireCompletedProfile() {
 }
 
 export async function listConnectedAuthProviders(): Promise<ConnectedAuthProviders> {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const linkedAccounts = await db
     .select({ provider: accounts.provider })
     .from(accounts)
-    .where(eq(accounts.userId, session.user.id));
+    .where(eq(accounts.userId, user.id));
 
   const providers = new Set(linkedAccounts.map((account) => account.provider));
 
@@ -107,11 +80,7 @@ export async function listConnectedAuthProviders(): Promise<ConnectedAuthProvide
 }
 
 export async function completeProfileAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = completeProfileSchema.parse({
     username: formData.get("username"),
@@ -121,7 +90,7 @@ export async function completeProfileAction(formData: FormData) {
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.username, input.username), ne(users.id, session.user.id)))
+    .where(and(eq(users.username, input.username), ne(users.id, user.id)))
     .limit(1);
 
   if (existing) {
@@ -137,7 +106,7 @@ export async function completeProfileAction(formData: FormData) {
         profileCompletedAt: sql`now()`,
         updatedAt: sql`now()`,
       })
-      .where(eq(users.id, session.user.id));
+      .where(eq(users.id, user.id));
   } catch (error) {
     if (isUniqueViolation(error)) {
       redirect("/onboarding?error=username-taken");
@@ -150,11 +119,7 @@ export async function completeProfileAction(formData: FormData) {
 }
 
 export async function updateProfileAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = completeProfileSchema.parse({
     username: formData.get("username"),
@@ -163,7 +128,7 @@ export async function updateProfileAction(formData: FormData) {
 
   const availability = await checkUsernameAvailability(
     input.username,
-    session.user.id,
+    user.id,
   );
 
   if (!availability.available) {
@@ -179,7 +144,7 @@ export async function updateProfileAction(formData: FormData) {
         profileCompletedAt: sql`now()`,
         updatedAt: sql`now()`,
       })
-      .where(eq(users.id, session.user.id));
+      .where(eq(users.id, user.id));
   } catch (error) {
     if (isUniqueViolation(error)) {
       redirect("/dashboard/settings?error=username-taken");
@@ -230,11 +195,7 @@ export async function checkUsernameAvailability(
 }
 
 export async function searchUsersForCurrentUser(query: string) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    return [];
-  }
+  const user = await requireActiveUser();
 
   const parsed = userSearchSchema.safeParse(query);
 
@@ -242,7 +203,7 @@ export async function searchUsersForCurrentUser(query: string) {
     return [];
   }
 
-  return searchUsers(parsed.data, session.user.id);
+  return searchUsers(parsed.data, user.id);
 }
 
 export async function searchUsers(query: string, currentUserId: string) {

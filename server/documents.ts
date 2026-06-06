@@ -4,7 +4,6 @@ import { and, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
-import { auth } from "@/auth";
 import { db } from "@/db";
 import {
   documentPermissions,
@@ -21,6 +20,7 @@ import {
 } from "@/lib/permissions";
 import { maxMarkdownLength } from "@/lib/markdown";
 import { slugify } from "@/lib/slug";
+import { requireActiveUser } from "@/server/authz";
 
 const documentIdSchema = z.string().uuid();
 const initialMarkdownContent = "# Untitled document\n\nStart writing...\n";
@@ -84,17 +84,13 @@ function normalizeFriendPair(userA: string, userB: string) {
 }
 
 export async function createDocumentAction() {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const [document] = await db.transaction(async (tx) => {
     const [createdDocument] = await tx
       .insert(documents)
       .values({
-        ownerId: session.user.id,
+        ownerId: user.id,
         title: "Untitled document",
         markdown: initialMarkdownContent,
       })
@@ -102,7 +98,7 @@ export async function createDocumentAction() {
 
     await tx.insert(documentPermissions).values({
       documentId: createdDocument.id,
-      userId: session.user.id,
+      userId: user.id,
       role: "owner",
     });
 
@@ -118,11 +114,7 @@ export async function saveMarkdownDocumentAction(
   | { ok: true; updatedAt: string }
   | { ok: false; message: string }
 > {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const parsed = saveMarkdownDocumentSchema.safeParse(input);
 
@@ -133,7 +125,7 @@ export async function saveMarkdownDocumentAction(
     };
   }
 
-  const allowed = await canEditDocument(session.user.id, parsed.data.documentId);
+  const allowed = await canEditDocument(user.id, parsed.data.documentId);
 
   if (!allowed) {
     notFound();
@@ -158,7 +150,7 @@ export async function saveMarkdownDocumentAction(
 
     await maybeCreateAutomaticDocumentVersion(tx, {
       document: currentDocument,
-      actorId: session.user.id,
+      actorId: user.id,
       reason: "auto",
       nextTitle: parsed.data.title,
       nextMarkdown: parsed.data.markdown,
@@ -188,11 +180,7 @@ export async function saveDocumentTitleAction(
   | { ok: true; updatedAt: string }
   | { ok: false; message: string }
 > {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const parsed = saveDocumentTitleSchema.safeParse(input);
 
@@ -203,7 +191,7 @@ export async function saveDocumentTitleAction(
     };
   }
 
-  const allowed = await canEditDocument(session.user.id, parsed.data.documentId);
+  const allowed = await canEditDocument(user.id, parsed.data.documentId);
 
   if (!allowed) {
     notFound();
@@ -228,7 +216,7 @@ export async function saveDocumentTitleAction(
 
     await maybeCreateAutomaticDocumentVersion(tx, {
       document: currentDocument,
-      actorId: session.user.id,
+      actorId: user.id,
       reason: "auto",
       nextTitle: parsed.data.title,
       nextMarkdown: currentDocument.markdown,
@@ -252,14 +240,10 @@ export async function saveDocumentTitleAction(
 }
 
 export async function createManualDocumentVersionAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const documentId = documentIdSchema.parse(formData.get("documentId"));
-  const allowed = await canEditDocument(session.user.id, documentId);
+  const allowed = await canEditDocument(user.id, documentId);
 
   if (!allowed) {
     notFound();
@@ -282,7 +266,7 @@ export async function createManualDocumentVersionAction(formData: FormData) {
 
     await createDocumentVersion(tx, {
       document,
-      actorId: session.user.id,
+      actorId: user.id,
       reason: "manual",
     });
   });
@@ -291,17 +275,13 @@ export async function createManualDocumentVersionAction(formData: FormData) {
 }
 
 export async function restoreDocumentVersionAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = restoreDocumentVersionSchema.parse({
     documentId: formData.get("documentId"),
     versionId: formData.get("versionId"),
   });
-  const allowed = await canEditDocument(session.user.id, input.documentId);
+  const allowed = await canEditDocument(user.id, input.documentId);
 
   if (!allowed) {
     notFound();
@@ -340,7 +320,7 @@ export async function restoreDocumentVersionAction(formData: FormData) {
 
     await createDocumentVersion(tx, {
       document: currentDocument,
-      actorId: session.user.id,
+      actorId: user.id,
       reason: "before_restore",
     });
 
@@ -360,14 +340,10 @@ export async function restoreDocumentVersionAction(formData: FormData) {
 }
 
 export async function archiveDocumentAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const documentId = documentIdSchema.parse(formData.get("documentId"));
-  const allowed = await canDeleteDocument(session.user.id, documentId);
+  const allowed = await canDeleteDocument(user.id, documentId);
 
   if (!allowed) {
     notFound();
@@ -390,7 +366,7 @@ export async function archiveDocumentAction(formData: FormData) {
 
     await createDocumentVersion(tx, {
       document,
-      actorId: session.user.id,
+      actorId: user.id,
       reason: "before_archive",
     });
 
@@ -407,11 +383,7 @@ export async function archiveDocumentAction(formData: FormData) {
 }
 
 export async function shareDocumentAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = shareDocumentSchema.parse({
     documentId: formData.get("documentId"),
@@ -420,7 +392,7 @@ export async function shareDocumentAction(formData: FormData) {
     role: formData.get("role"),
   });
 
-  const allowed = await canShareDocument(session.user.id, input.documentId);
+  const allowed = await canShareDocument(user.id, input.documentId);
 
   if (!allowed) {
     notFound();
@@ -445,7 +417,7 @@ export async function shareDocumentAction(formData: FormData) {
         )
         .limit(1);
 
-  if (!targetUser || targetUser.id === session.user.id) {
+  if (!targetUser || targetUser.id === user.id) {
     redirect(`/docs/${input.documentId}`);
   }
 
@@ -468,11 +440,7 @@ export async function shareDocumentAction(formData: FormData) {
 }
 
 export async function shareDocumentWithFriendAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = shareFriendDocumentSchema.parse({
     documentId: formData.get("documentId"),
@@ -480,13 +448,13 @@ export async function shareDocumentWithFriendAction(formData: FormData) {
     role: formData.get("role"),
   });
 
-  const allowed = await canShareDocument(session.user.id, input.documentId);
+  const allowed = await canShareDocument(user.id, input.documentId);
 
-  if (!allowed || input.userId === session.user.id) {
+  if (!allowed || input.userId === user.id) {
     notFound();
   }
 
-  const pair = normalizeFriendPair(session.user.id, input.userId);
+  const pair = normalizeFriendPair(user.id, input.userId);
   const [friendship] = await db
     .select({ id: friendships.id })
     .from(friendships)
@@ -521,11 +489,7 @@ export async function shareDocumentWithFriendAction(formData: FormData) {
 }
 
 export async function updateCollaboratorRoleAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = updateCollaboratorRoleSchema.parse({
     documentId: formData.get("documentId"),
@@ -533,9 +497,9 @@ export async function updateCollaboratorRoleAction(formData: FormData) {
     role: formData.get("role"),
   });
 
-  const allowed = await canShareDocument(session.user.id, input.documentId);
+  const allowed = await canShareDocument(user.id, input.documentId);
 
-  if (!allowed || input.userId === session.user.id) {
+  if (!allowed || input.userId === user.id) {
     notFound();
   }
 
@@ -557,20 +521,16 @@ export async function updateCollaboratorRoleAction(formData: FormData) {
 }
 
 export async function removeCollaboratorAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = collaboratorMutationSchema.parse({
     documentId: formData.get("documentId"),
     userId: formData.get("userId"),
   });
 
-  const allowed = await canShareDocument(session.user.id, input.documentId);
+  const allowed = await canShareDocument(user.id, input.documentId);
 
-  if (!allowed || input.userId === session.user.id) {
+  if (!allowed || input.userId === user.id) {
     notFound();
   }
 
@@ -588,17 +548,13 @@ export async function removeCollaboratorAction(formData: FormData) {
 }
 
 export async function publishDocumentAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = publishMutationSchema.parse({
     documentId: formData.get("documentId"),
   });
 
-  const allowed = (await getDocumentAccess(session.user.id, input.documentId))
+  const allowed = (await getDocumentAccess(user.id, input.documentId))
     .canPublish;
 
   if (!allowed) {
@@ -634,17 +590,13 @@ export async function publishDocumentAction(formData: FormData) {
 }
 
 export async function unpublishDocumentAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = publishMutationSchema.parse({
     documentId: formData.get("documentId"),
   });
 
-  const allowed = (await getDocumentAccess(session.user.id, input.documentId))
+  const allowed = (await getDocumentAccess(user.id, input.documentId))
     .canPublish;
 
   if (!allowed) {

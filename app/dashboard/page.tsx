@@ -2,12 +2,14 @@ import type { ComponentType, ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  BookOpen,
   FilePlus2,
   FileText,
   Globe2,
   LockKeyhole,
   Settings,
   Share2,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -156,12 +158,28 @@ export default async function DashboardPage({
                   Friends
                 </Link>
                 <Link
+                  href="/docs"
+                  className="flex items-center gap-2 rounded-2xl px-3 py-2 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+                >
+                  <BookOpen className="size-4" />
+                  Docs
+                </Link>
+                <Link
                   href="/dashboard/settings"
                   className="flex items-center gap-2 rounded-2xl px-3 py-2 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
                 >
                   <Settings className="size-4" />
                   Settings
                 </Link>
+                {profile.role === "admin" ? (
+                  <Link
+                    href="/dashboard/admin"
+                    className="flex items-center gap-2 rounded-2xl px-3 py-2 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+                  >
+                    <ShieldCheck className="size-4" />
+                    Admin
+                  </Link>
+                ) : null}
               </div>
             </div>
 

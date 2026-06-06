@@ -234,6 +234,30 @@ Legacy ProseMirror JSON is no longer required.
 
 ---
 
+## Phase 9 - Admin and Official Docs
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Add account roles | `users.role` supports `user` and `admin` |
+| [x] | Add ban moderation fields | `users.banned_at`, `users.banned_until`, `users.ban_reason` |
+| [x] | Add active-user/admin helpers | `server/authz.ts` gates bans and DB-backed admin role checks |
+| [x] | Add admin user moderation UI | `/dashboard/admin` lists/searches users, sets roles, bans/unbans |
+| [x] | Add official docs schema | `official_docs` stores admin-authored Markdown guides |
+| [x] | Add public docs routes | `/docs` and `/docs/guides/[slug]` render published official docs |
+| [x] | Add admin official docs editor | `/dashboard/admin/docs` and `/dashboard/admin/docs/[docId]`, manual saves, no collaboration |
+| [x] | Add docs categories and sidebar navigation | `category` and `sort_order` drive readthedocs-style public docs grouping |
+| [x] | Add repo-backed canonical docs | `content/docs/**/*.md` merges into the same public/admin docs lists as read-only canonical docs |
+| [x] | Seed first official user docs | Added Markdown basics, callouts, snippets, safe HTML/embeds, and sharing/permissions |
+| [x] | Add terms page and login acceptance copy | `/terms` renders `content/legal/terms.md`; login links terms before OAuth/dev sign-in |
+
+Exit criteria:
+
+```txt
+Admins can moderate accounts and publish official user-facing docs.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |

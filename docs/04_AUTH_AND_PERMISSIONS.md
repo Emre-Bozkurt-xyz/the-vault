@@ -122,6 +122,10 @@ Do not enable global `allowDangerousEmailAccountLinking` without a specific
 security review. The settings-page linking flow is safer because the user has
 already proven control of the existing Vault session.
 
+The login page links to `/terms` and states that signing in means accepting the
+Terms and Conditions. Terms content is repo-backed Markdown at
+`content/legal/terms.md`.
+
 ---
 
 ## 5. Session Shape
@@ -146,7 +150,7 @@ Protected routes:
 ```txt
 /dashboard
 /dashboard/*
-/docs/*
+/docs/[docId]
 /settings
 ```
 
@@ -155,6 +159,9 @@ Public routes:
 ```txt
 /
 /login
+/terms
+/docs
+/docs/guides/*
 /public/*
 /api/health
 /api/auth/*
@@ -163,6 +170,24 @@ Public routes:
 Important:
 
 Do not rely only on middleware. Every server action that touches documents must check permissions.
+
+Ban enforcement:
+
+```txt
+server/authz.ts
+  requireActiveUser()
+    - requires an authenticated database user
+    - blocks active bans by redirecting to /banned
+
+  requireAdmin()
+    - requires an active user
+    - requires users.role = 'admin'
+```
+
+Server actions that mutate documents, friends, profiles, admin state, or official
+docs should use `requireActiveUser()` or `requireAdmin()` rather than reading
+only the Auth.js session. This makes role/ban changes take effect without
+waiting for session refresh.
 
 ---
 
@@ -216,7 +241,44 @@ Cannot:
 
 ---
 
-## 8. Permission Helper Functions
+## 8. Account Roles and Moderation
+
+Vault account roles:
+
+```txt
+user
+admin
+```
+
+Admin accounts can access:
+
+```txt
+/dashboard/admin
+/dashboard/admin/docs
+/dashboard/admin/docs/[docId]
+```
+
+Current admin capabilities:
+
+- List all users.
+- Search users by nickname, username, or email.
+- Promote/demote users between `user` and `admin`.
+- Ban users for 1 day, 7 days, 30 days, or forever.
+- Store a ban reason shown on `/banned`.
+- Remove bans.
+- Manage official documentation pages.
+
+Guardrails:
+
+- Admin checks query `users.role` from the database.
+- Admins cannot ban themselves.
+- Admins cannot demote their own account.
+- User relationships, document ownership, permissions, and collaboration state
+  use stable `users.id`, so username/nickname changes do not affect access.
+
+---
+
+## 9. Permission Helper Functions
 
 Recommended file:
 

@@ -4,9 +4,9 @@ import { and, eq, or, sql } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
-import { auth } from "@/auth";
 import { db } from "@/db";
 import { friendRequests, friendships, users } from "@/db/schema";
+import { requireActiveUser } from "@/server/authz";
 
 const friendTargetSchema = z.object({
   userId: z.string().uuid().optional(),
@@ -22,11 +22,7 @@ function normalizeFriendPair(userA: string, userB: string) {
 }
 
 export async function sendFriendRequestAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const input = friendTargetSchema.parse({
     userId: formData.get("userId") || undefined,
@@ -52,11 +48,11 @@ export async function sendFriendRequestAction(formData: FormData) {
           .limit(1)
       : [];
 
-  if (!recipient || recipient.id === session.user.id) {
+  if (!recipient || recipient.id === user.id) {
     redirect("/dashboard/friends");
   }
 
-  const pair = normalizeFriendPair(session.user.id, recipient.id);
+  const pair = normalizeFriendPair(user.id, recipient.id);
   const [existingFriendship] = await db
     .select({ id: friendships.id })
     .from(friendships)
@@ -78,7 +74,7 @@ export async function sendFriendRequestAction(formData: FormData) {
     .where(
       and(
         eq(friendRequests.requesterId, recipient.id),
-        eq(friendRequests.recipientId, session.user.id),
+        eq(friendRequests.recipientId, user.id),
         eq(friendRequests.status, "pending"),
       ),
     )
@@ -91,7 +87,7 @@ export async function sendFriendRequestAction(formData: FormData) {
   await db
     .insert(friendRequests)
     .values({
-      requesterId: session.user.id,
+      requesterId: user.id,
       recipientId: recipient.id,
       status: "pending",
     })
@@ -107,11 +103,7 @@ export async function sendFriendRequestAction(formData: FormData) {
 }
 
 export async function acceptFriendRequestAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const requestId = requestIdSchema.parse(formData.get("requestId"));
 
@@ -127,7 +119,7 @@ export async function acceptFriendRequestAction(formData: FormData) {
 
   if (
     !request ||
-    request.recipientId !== session.user.id ||
+    request.recipientId !== user.id ||
     request.status !== "pending"
   ) {
     notFound();
@@ -156,11 +148,7 @@ export async function acceptFriendRequestAction(formData: FormData) {
 }
 
 export async function rejectFriendRequestAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const requestId = requestIdSchema.parse(formData.get("requestId"));
 
@@ -175,7 +163,7 @@ export async function rejectFriendRequestAction(formData: FormData) {
 
   if (
     !request ||
-    request.recipientId !== session.user.id ||
+    request.recipientId !== user.id ||
     request.status !== "pending"
   ) {
     notFound();
@@ -193,14 +181,10 @@ export async function rejectFriendRequestAction(formData: FormData) {
 }
 
 export async function removeFriendAction(formData: FormData) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const user = await requireActiveUser();
 
   const friendId = userIdSchema.parse(formData.get("friendId"));
-  const pair = normalizeFriendPair(session.user.id, friendId);
+  const pair = normalizeFriendPair(user.id, friendId);
 
   await db
     .delete(friendships)

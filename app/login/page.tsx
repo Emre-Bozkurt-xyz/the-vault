@@ -93,7 +93,11 @@ export default async function LoginPage({
             </div>
 
             <p className="mt-4 text-xs leading-5 text-muted-foreground">
-              Local setup requires OAuth provider credentials, `AUTH_SECRET`,
+              By signing in, you agree to the{" "}
+              <Link href="/terms" className="text-primary underline-offset-4 hover:underline">
+                Terms and Conditions
+              </Link>
+              . Local setup requires OAuth provider credentials, `AUTH_SECRET`,
               and `NEXTAUTH_URL` in `.env.local`.
             </p>
 

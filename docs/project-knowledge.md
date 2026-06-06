@@ -19,7 +19,7 @@ Last updated:
 Current phase:
 
 ```txt
-Phase 8 - Markdown backbone pivot cleanup
+Phase 9 - Admin moderation and official documentation
 ```
 
 Current deployment status:
@@ -37,13 +37,13 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, document sharing, public publishing, friend requests, server-side permission helpers, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
 ```
 
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is now the active implementation. The next recovery-focused feature is batched document update history/version checkpoints.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The next useful slice is writing the first official docs content for Markdown, snippets, HTML filtering, and safe embeds.
 ```
 
 ---
@@ -114,8 +114,13 @@ vault/
     api/auth/[...nextauth]/
     api/health/
     dashboard/
+      admin/
       friends/
       settings/
+    banned/
+    terms/
+    docs/
+      guides/[slug]/
     docs/[docId]/
     healthz/
     login/
@@ -130,6 +135,7 @@ vault/
   server/
   docs/
   public/
+  content/
   scripts/
   .github/workflows/
 ```
@@ -142,8 +148,15 @@ Add notes as real files appear:
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js route handlers |
 | `app/api/health/route.ts` | App/database health check route |
 | `app/dashboard/page.tsx` | Server-protected dashboard with owned/shared/public document sections |
+| `app/dashboard/admin/page.tsx` | Admin-only user moderation page with user search, role changes, bans, and unbans |
+| `app/dashboard/admin/docs/page.tsx` | Admin-only official docs list/create page |
+| `app/dashboard/admin/docs/[docId]/page.tsx` | Admin-only manual official docs editor |
 | `app/dashboard/friends/page.tsx` | Protected friend request/friend list page |
 | `app/dashboard/settings/page.tsx` | Protected account/settings page |
+| `app/banned/page.tsx` | Logged-in banned-account explanation and sign-out page |
+| `app/terms/page.tsx` | Public Terms and Conditions route rendered from repo Markdown |
+| `app/docs/page.tsx` | Public official documentation index |
+| `app/docs/guides/[slug]/page.tsx` | Public official documentation guide route |
 | `app/onboarding/page.tsx` | First-run profile completion page for username and nickname |
 | `app/docs/[docId]/page.tsx` | Protected document edit/view route |
 | `app/healthz/route.ts` | Lightweight app-only health route |
@@ -158,6 +171,7 @@ Add notes as real files appear:
 | `components/` | Shared UI components |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
+| `components/markdown/OfficialDocEditor.tsx` | Manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist |
 | `components/theme-provider.tsx` | Root client theme provider using `next-themes` |
@@ -173,11 +187,17 @@ Add notes as real files appear:
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
 | `lib/markdown.ts` | Shared Markdown limits |
+| `lib/repo-docs.ts` | Filesystem loader for repo-backed docs and legal Markdown content |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
+| `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
+| `server/authz.ts` | DB-backed active-user and admin guards; active bans redirect to `/banned` |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
+| `server/official-docs.ts` | Official documentation queries and admin save/create actions |
+| `content/docs/` | Repo-backed canonical user documentation rendered with the same docs UI as DB docs |
+| `content/legal/terms.md` | Repo-backed Terms and Conditions copy shown on `/terms` |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
 | `server/profile.ts` | Profile completion, profile gate, and user search helpers |
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
@@ -267,6 +287,7 @@ Current tables:
 | `document_versions` | Yes | Batched Markdown restore checkpoints |
 | `friend_requests` | Yes | Friend request workflow |
 | `friendships` | Yes | Accepted friendships |
+| `official_docs` | Yes | Admin-authored public user documentation |
 
 Current migrations:
 
@@ -279,16 +300,23 @@ Current migrations:
 | `0004_goofy_kylun.sql` | Adds `users.profile_completed_at` and `users_name_idx` | Yes | No |
 | `0005_high_captain_midlands.sql` | Drops legacy `documents.content` JSONB column | Yes | No |
 | `0006_chilly_quasimodo.sql` | Adds `document_versions` restore checkpoint table | Yes | No |
+| `0007_special_morbius.sql` | Adds user role/ban fields and `official_docs` | Generated | No |
+| `0008_overrated_radioactive_man.sql` | Adds `official_docs.category`, `official_docs.sort_order`, and category/order index | Generated | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_versions, friend_requests, and friendships.
-- `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_versions, friend_requests, friendships, and official_docs.
+- `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion; `users.role` supports `user`/`admin`.
+- `users.banned_at`, `users.banned_until`, and `users.ban_reason` store moderation state. `banned_at` with no `banned_until` is treated as permanent.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
 - `documents.markdown` is the canonical editor/viewer/public rendering source.
 - `documents.content` has been removed from the Drizzle schema and will be dropped by migration `0005_high_captain_midlands.sql`.
 - `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
+- `official_docs` stores admin-authored Markdown docs with `draft`, `published`, and `archived` statuses. Public docs routes only read published rows.
+- `official_docs.category` and `official_docs.sort_order` drive the public docs sidebar grouping and order. Published docs sort by category, sort order, then title.
+- `content/docs/**/*.md` stores repo-backed canonical docs with frontmatter (`title`, `slug`, `category`, `order`, `public`). Repo docs are merged with DB docs in the public/admin docs UI.
+- Repo docs own their slugs. DB docs with a slug collision are hidden from public docs and cannot be saved until the slug changes.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `/api/health` uses `select 1` and does not require any application tables.
 ```
@@ -317,7 +345,9 @@ Important files:
 | `auth.ts` | Auth.js config, provider, adapter, session callback |
 | `app/api/auth/[...nextauth]/route.ts` | GET/POST route handlers |
 | `app/login/page.tsx` | Sign-in UI and GitHub/Google sign-in actions |
+| `app/banned/page.tsx` | Active-ban landing page for signed-in banned users |
 | `server/dev-auth.ts` | Dev-only local sign-in action |
+| `server/authz.ts` | Shared active-user/admin gates backed by the current database row |
 | `app/dashboard/page.tsx` | Protected route and sign-out action |
 | `types/next-auth.d.ts` | Adds `session.user.id` to TypeScript session type |
 
@@ -344,6 +374,10 @@ Known auth caveats:
 - In non-production, `/login` shows dev-only database-session login buttons for `dev.owner@vault.local` and `dev.collaborator@vault.local`; set `ENABLE_DEV_LOGIN=false` to hide them.
 - After login, users without `profile_completed_at`, `username`, or nickname are redirected to `/onboarding`.
 - `/dashboard/settings` lets users change nickname and username. Username availability is checked through `/api/users/username-availability`, rechecked by `updateProfileAction()`, and finally enforced by the database unique constraint.
+- `requireActiveUser()` reads the current `users` row and redirects active bans to `/banned`; document, friend, profile, and official-doc mutations use this gate or `requireAdmin()`.
+- `requireAdmin()` reads `users.role` from the database on each request. Admin role changes do not depend on session refresh.
+- Admins cannot ban themselves or demote their own account through the admin UI actions.
+- `/login` states that signing in accepts the Terms and Conditions and links to `/terms`, which renders `content/legal/terms.md`.
 ```
 
 Manual auth tests performed:
@@ -699,7 +733,81 @@ Known public note caveats:
 
 ---
 
-## 13. Deployment Knowledge
+## 13. Admin and Official Docs
+
+Current admin/docs status:
+
+```txt
+Implemented as a first vertical slice with DB-backed admin checks, user moderation, and manual official docs publishing.
+```
+
+Admin routes:
+
+```txt
+/dashboard/admin
+/dashboard/admin/docs
+/dashboard/admin/docs/[docId]
+```
+
+Public official docs routes:
+
+```txt
+/docs
+/docs/guides/[slug]
+```
+
+Important files:
+
+| Path | Purpose |
+|---|---|
+| `server/authz.ts` | `requireActiveUser()`, `requireAdmin()`, active ban detection |
+| `server/admin.ts` | Admin user list/search, role changes, ban/unban actions |
+| `server/official-docs.ts` | Official docs list/read/create/save actions |
+| `app/dashboard/admin/page.tsx` | User moderation UI |
+| `app/dashboard/admin/docs/page.tsx` | Official docs admin list/create UI |
+| `app/dashboard/admin/docs/[docId]/page.tsx` | Official docs manual editor route |
+| `components/markdown/OfficialDocEditor.tsx` | Manual-save Markdown editor for official docs |
+| `app/banned/page.tsx` | Active-ban explanation page |
+| `app/docs/page.tsx` | Public official docs index |
+| `app/docs/guides/[slug]/page.tsx` | Public official guide renderer |
+
+Current moderation behavior:
+
+```txt
+- Admin role lives in `users.role`.
+- Active bans are rows with `banned_at` and either no `banned_until` or a future `banned_until`.
+- `requireActiveUser()` redirects active bans to `/banned`.
+- `requireAdmin()` checks `users.role = 'admin'` from the database.
+- Document, friend, profile, admin, and official-doc mutations use active-user/admin gates.
+- Admins cannot ban themselves or demote themselves.
+```
+
+Current official docs behavior:
+
+```txt
+- Official docs are separate from collaborative user documents.
+- Repo-backed docs live under `content/docs/**/*.md`, are canonical, and appear read-only in `/dashboard/admin/docs`.
+- DB-backed docs live in `official_docs`, are editable from `/dashboard/admin/docs/[docId]`, and are useful for quick admin-authored pages.
+- Admin editor has manual save and source/split/preview modes.
+- Admin editor exposes category and sort order metadata.
+- No Yjs collaboration token or room is created for official docs.
+- Public official docs render repo docs plus DB docs with `status = 'published'`.
+- `/docs` and `/docs/guides/[slug]` use a documentation-site layout with a left sidebar grouped by category.
+- `/docs` and `/docs/guides/[slug]` are dynamic DB-backed routes so production builds do not require the target DB schema to exist at build time.
+- Repo doc slugs win collisions. DB docs that collide with repo slugs are hidden publicly and blocked from saving until their slug changes.
+```
+
+Known admin/docs caveats:
+
+```txt
+- There is no seeded first admin yet; set `users.role = 'admin'` manually for the first trusted account after migration.
+- There is no audit log table yet for moderation actions.
+- Initial repo docs exist for Markdown basics, callouts, CSS snippets, safe HTML/embeds, and sharing/permissions.
+```
+
+---
+
+## 14. Deployment Knowledge
 
 Current deployment status:
 
@@ -772,7 +880,7 @@ Known deployment caveats:
 
 ---
 
-## 14. Testing / Verification
+## 15. Testing / Verification
 
 Current test setup:
 
@@ -831,10 +939,18 @@ Manual checks:
 | Markdown collaboration | Two-browser owner/editor live Markdown editing | Passed, user-reported | 2026-06-04 |
 | Legacy cleanup | `npm run db:migrate` applies `0005_high_captain_midlands.sql` locally | Passed | 2026-06-04 |
 | Document history | `npm run db:migrate` applies `0006_chilly_quasimodo.sql` locally | Passed | 2026-06-04 |
+| Admin/docs schema | `npm run db:generate` creates `0007_special_morbius.sql` | Passed | 2026-06-06 |
+| Admin/docs implementation | `npm run lint` succeeds | Passed | 2026-06-06 |
+| Admin/docs implementation | `npm run build` succeeds | Passed | 2026-06-06 |
+| Official docs metadata | `npm run db:generate` creates `0008_overrated_radioactive_man.sql` | Passed | 2026-06-06 |
+| Official docs layout | `npm run lint` succeeds | Passed | 2026-06-06 |
+| Official docs layout | `npm run build` succeeds | Passed | 2026-06-06 |
+| Hybrid official docs | `npm run lint` succeeds after repo-doc merge and terms route | Passed | 2026-06-06 |
+| Hybrid official docs | `npm run build` succeeds after repo-doc merge and terms route | Passed | 2026-06-06 |
 
 ---
 
-## 15. Known Bugs / Issues
+## 16. Known Bugs / Issues
 
 | Status | Issue | Impact | Notes |
 |---|---|---|---|
@@ -842,7 +958,7 @@ Manual checks:
 
 ---
 
-## 16. Important Decisions Made
+## 17. Important Decisions Made
 
 | Date | Decision | Reason | Files affected |
 |---|---|---|---|
@@ -855,7 +971,7 @@ Manual checks:
 
 ---
 
-## 17. Things Future Agents Should Not Break
+## 18. Things Future Agents Should Not Break
 
 Add invariants here as they emerge.
 
@@ -866,24 +982,27 @@ Current invariants:
 - Private documents must not be exposed through public routes.
 - Real-time collaboration should not be added before core auth/document permissions are stable.
 - Secrets must not be committed.
+- Admin-only routes/actions must use `requireAdmin()` and must not rely on client-hidden UI controls.
+- Active bans must be enforced server-side through `requireActiveUser()` or stronger guards on protected mutations.
 - New UI should use theme tokens (`background`, `foreground`, `card`, `border`, `muted`) rather than hard-coded one-off colors unless there is a deliberate design reason.
 ```
 
 ---
 
-## 18. Next Best Tasks
+## 19. Next Best Tasks
 
 Keep this short and current.
 
 ```txt
-1. Deploy/run migration `0006_chilly_quasimodo.sql` after a backup to add document history in production.
-2. Browser-test manual restore point creation and restore on a disposable document.
-3. Decide whether to add a dedicated full history page with diff/preview later.
+1. Run migrations through `0008_overrated_radioactive_man.sql` and promote the first trusted account with `update users set role = 'admin' where email = '<email>';`.
+2. Browser-test `/dashboard/admin`, ban/unban behavior, and `/banned` with disposable accounts.
+3. Browser-test `/docs`, `/docs/guides/markdown-basics`, `/terms`, and `/dashboard/admin/docs` after deployment.
+4. Consider adding moderation audit logs before expanding admin tools further.
 ```
 
 ---
 
-## 19. Changelog
+## 20. Changelog
 
 Use this as a compact implementation log.
 
@@ -927,3 +1046,6 @@ Use this as a compact implementation log.
 | 2026-06-04 | Added document update history | Added `document_versions`, batched automatic checkpoints, collaboration checkpoints, manual restore points, restore action, archive safety snapshots, and the document History panel |
 | 2026-06-06 | Tightened live callout rendering | Live-mode callouts now preserve source lines while styling them as one continuous callout block, active callout blocks reveal source, callout backgrounds are stronger, and inline code spans are protected from nested bold/italic/link preview styling |
 | 2026-06-06 | Hardened collaboration duplication path | Collaborative CodeMirror uses a one-time initial value instead of binding `value` to `Y.Text.toString()` across renders or reconnect sync events; removed unsafe server-side repeated-body rewriting |
+| 2026-06-06 | Added admin moderation and official docs | Added user roles/bans, DB-backed active/admin gates, `/dashboard/admin`, `/banned`, `official_docs`, public `/docs` routes, and a manual official docs editor |
+| 2026-06-06 | Reworked public official docs layout | Added category/order metadata for official docs and changed `/docs` plus `/docs/guides/[slug]` to a sidebar-based documentation layout |
+| 2026-06-06 | Added hybrid repo and database docs | Repo-backed `content/docs/**/*.md` docs now merge with DB docs, repo slugs win collisions, admin docs show repo entries as read-only, and `/terms` renders repo-backed terms linked from login |

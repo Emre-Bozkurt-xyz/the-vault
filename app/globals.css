@@ -663,12 +663,17 @@
 
   .vault-md-pre {
     overflow-x: auto;
+    overflow-wrap: normal;
+    white-space: pre;
+    word-break: normal;
     border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
     background: color-mix(in oklab, var(--muted) 70%, transparent);
     padding: 1rem;
     font-family: var(--font-mono);
     font-size: 0.9rem;
     line-height: 1.6;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
     border-radius: 0.65rem;
   }
 
@@ -682,9 +687,17 @@
   }
 
   .vault-md-pre .vault-md-code {
+    display: block;
     border: 0;
     background: transparent;
     padding: 0;
+    font-size: inherit;
+    line-height: inherit;
+    overflow-wrap: normal;
+    white-space: pre;
+    word-break: normal;
+    text-decoration: none;
+    text-decoration-line: none;
     border-radius: 0;
   }
 
