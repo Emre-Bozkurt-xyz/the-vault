@@ -13,7 +13,13 @@ import {
   Pencil,
   XCircle,
 } from "lucide-react";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
@@ -640,7 +646,10 @@ function parseCalloutChildren(children: ReactNode) {
   }
 
   const firstParagraphChildren = getElementChildren(firstChild);
-  const firstParagraphText = reactNodeToText(firstParagraphChildren).trimStart();
+  const rawFirstParagraphText = reactNodeToText(firstParagraphChildren);
+  const markerOffset =
+    rawFirstParagraphText.length - rawFirstParagraphText.trimStart().length;
+  const firstParagraphText = rawFirstParagraphText.slice(markerOffset);
   const [markerLine = "", ...sameParagraphBodyLines] =
     firstParagraphText.split(/\r?\n/);
   const match = markerLine.match(/^\[!([^\]\s]+)\]([+-])?\s*(.*)$/i);
@@ -656,6 +665,12 @@ function parseCalloutChildren(children: ReactNode) {
     calloutDefinitions[canonicalType as keyof typeof calloutDefinitions] ??
     calloutDefinitions.note;
   const title = match[3]?.trim() || definition.title;
+  const sameParagraphBody = trimLeadingWhitespaceFromNodes(
+    extractReactNodesAfterTextOffset(
+      firstParagraphChildren,
+      markerOffset + markerLine.length,
+    ),
+  );
 
   return {
     inputType,
@@ -663,13 +678,27 @@ function parseCalloutChildren(children: ReactNode) {
     metadata,
     title,
     body: [
-      ...createCalloutBodyFromMarkerParagraph(sameParagraphBodyLines),
+      ...createCalloutBodyFromMarkerParagraph(
+        sameParagraphBodyLines,
+        sameParagraphBody,
+      ),
       ...restChildren,
     ],
   };
 }
 
-function createCalloutBodyFromMarkerParagraph(bodyLines: string[]) {
+function createCalloutBodyFromMarkerParagraph(
+  bodyLines: string[],
+  preservedBodyChildren: ReactNode[],
+) {
+  if (preservedBodyChildren.length > 0) {
+    return [
+      <p key="callout-body" className="vault-md-p">
+        {preservedBodyChildren}
+      </p>,
+    ];
+  }
+
   const bodyText = bodyLines.join("\n").trim();
 
   if (!bodyText) {
@@ -681,6 +710,115 @@ function createCalloutBodyFromMarkerParagraph(bodyLines: string[]) {
 
 function getElementChildren(element: ReactElement) {
   return (element.props as { children?: ReactNode }).children;
+}
+
+function extractReactNodesAfterTextOffset(node: ReactNode, offset: number) {
+  const extracted: ReactNode[] = [];
+  let consumed = 0;
+
+  const visit = (child: ReactNode) => {
+    if (child === null || child === undefined || typeof child === "boolean") {
+      return;
+    }
+
+    if (typeof child === "string" || typeof child === "number") {
+      const text = String(child);
+      const nextConsumed = consumed + text.length;
+
+      if (nextConsumed > offset) {
+        extracted.push(consumed < offset ? text.slice(offset - consumed) : child);
+      }
+
+      consumed = nextConsumed;
+      return;
+    }
+
+    if (Array.isArray(child)) {
+      child.forEach(visit);
+      return;
+    }
+
+    if (isValidElement(child)) {
+      const childText = reactNodeToText(getElementChildren(child));
+      const nextConsumed = consumed + childText.length;
+
+      if (nextConsumed <= offset) {
+        consumed = nextConsumed;
+        return;
+      }
+
+      if (consumed >= offset) {
+        extracted.push(child);
+        consumed = nextConsumed;
+        return;
+      }
+
+      const nestedChildren = extractReactNodesAfterTextOffset(
+        getElementChildren(child),
+        offset - consumed,
+      );
+      extracted.push(
+        cloneElement(
+          child as ReactElement<{ children?: ReactNode }>,
+          undefined,
+          ...nestedChildren,
+        ),
+      );
+      consumed = nextConsumed;
+    }
+  };
+
+  Children.toArray(node).forEach(visit);
+
+  return extracted;
+}
+
+function trimLeadingWhitespaceFromNodes(nodes: ReactNode[]) {
+  let foundContent = false;
+  const trimmed: ReactNode[] = [];
+
+  for (const node of nodes) {
+    if (foundContent) {
+      trimmed.push(node);
+      continue;
+    }
+
+    if (typeof node === "string" || typeof node === "number") {
+      const value = String(node).replace(/^\s+/, "");
+
+      if (value) {
+        foundContent = true;
+        trimmed.push(value);
+      }
+
+      continue;
+    }
+
+    if (isValidElement(node)) {
+      const children = getElementChildren(node);
+      const trimmedChildren = trimLeadingWhitespaceFromNodes(
+        Children.toArray(children),
+      );
+
+      if (trimmedChildren.length > 0) {
+        foundContent = true;
+        trimmed.push(
+          cloneElement(
+            node as ReactElement<{ children?: ReactNode }>,
+            undefined,
+            ...trimmedChildren,
+          ),
+        );
+      }
+
+      continue;
+    }
+
+    trimmed.push(node);
+    foundContent = true;
+  }
+
+  return trimmed;
 }
 
 function reactNodeToText(node: ReactNode): string {

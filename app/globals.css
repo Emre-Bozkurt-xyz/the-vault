@@ -661,6 +661,10 @@
     content: "\"";
   }
 
+  .vault-cm-callout-marker.vault-cm-callout-spacer::before {
+    content: "" !important;
+  }
+
   .vault-md-pre {
     overflow-x: auto;
     overflow-wrap: normal;

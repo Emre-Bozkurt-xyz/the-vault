@@ -602,6 +602,7 @@ Known editor caveats:
 - Iframes are allowed only for explicit HTTPS embed sources in `MarkdownDocument`: YouTube/YouTube nocookie, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp. The renderer normalizes iframe `sandbox`, `allow`, `allowFullScreen`, `loading`, and `referrerPolicy` attributes instead of trusting arbitrary author-provided iframe permissions. Self-closing iframe syntax is normalized to a closing-tag iframe before Markdown HTML parsing.
 - `MarkdownDocument` renders Obsidian-style blockquote callouts from `> [!type] Title` or tight `>[!type] Title` syntax. Supported default types/aliases follow Obsidian's documented set: note, abstract/summary/tldr, info, todo, tip/hint/important, success/check/done, question/help/faq, warning/caution/attention, failure/fail/missing, danger/error, bug, example, quote/cite. Fold markers `+` and `-` render as open/collapsed details.
 - Rendered callouts expose `.callout`, `.callout-title`, `.callout-icon`, `.callout-content`, `data-callout`, `data-callout-resolved`, and CSS variables such as `--callout-color` and `--callout-icon` so future snippet support can override default styles.
+- Rendered callouts preserve normal Markdown inline rendering in the body, including links, bold, italic, and code, even when the body starts in the same blockquote paragraph as the `[!type] Title` marker.
 - Live callouts intentionally stay source-preserving instead of replacing multi-line source with a rendered widget. Inactive callout lines are styled as one continuous block, the callout marker becomes an icon on the title line, body lines receive an equal-width spacer so title/body text align, trailing quote-only continuation lines are excluded from the rendered callout block, and the full source is revealed when the cursor enters the callout block.
 - Live callout lines also expose `.callout`, `data-callout`, `data-callout-resolved`, and `data-callout-fold` when present, so callout CSS variables from future snippets can affect Preview and Live mode. Live mode uses a stronger CodeMirror translation layer plus classes such as `.vault-cm-callout-first`, `.vault-cm-callout-body-line`, and `.vault-cm-callout-marker` so generic `.callout` snippet/card styling does not turn each editor line into a separate card.
 - Live preview allows the same iframe block tags and applies the same source allowlist plus normalized iframe permissions before rendering the inactive block preview.
@@ -723,7 +724,7 @@ Current behavior:
 - The dashboard Public Notes tab lists all published documents globally, not only the current user's own published documents.
 - Public Notes cards link to `/public/[slug]` and show owner nickname/username only, not owner email.
 - Published note pages credit the owner under the title with nickname/name, username when available, avatar/fallback, and update date.
-- Published note pages emit per-document OpenGraph/Twitter metadata with title, Markdown-derived snippet, owner author metadata, canonical URL, and a generated image at `/public/[slug]/og`.
+- Published note pages emit per-document OpenGraph/Twitter metadata with title, Markdown-derived snippet, owner author metadata, canonical URL, and a generated rendered-document preview image at `/public/[slug]/og`.
 - Public documents show a badge in dashboard/editor views.
 - Published documents expose a copy-link button in the editor.
 ```
@@ -1054,4 +1055,5 @@ Use this as a compact implementation log.
 | 2026-06-06 | Added hybrid repo and database docs | Repo-backed `content/docs/**/*.md` docs now merge with DB docs, repo slugs win collisions, admin docs show repo entries as read-only, and `/terms` renders repo-backed terms linked from login |
 | 2026-06-06 | Fixed collaborative preview-to-live remount state | Returning from full Preview now remounts CodeMirror from the current Y.Text/current Markdown snapshot instead of the initial collaboration sync snapshot |
 | 2026-06-06 | Added public note owner credits | Published note pages now show the owner nickname/name, username, avatar/fallback, and update date under the title without exposing email |
-| 2026-06-06 | Added public note share previews | Public note routes now generate per-document OpenGraph/Twitter metadata and a 1200x630 social-card image from the title, owner, update date, and Markdown excerpt |
+| 2026-06-06 | Added public note share previews | Public note routes now generate per-document OpenGraph/Twitter metadata and a 1200x630 social-card image that mimics a cropped rendered document preview |
+| 2026-06-06 | Fixed callout body links | Preview/public callout rendering now preserves inline Markdown nodes inside callout bodies, and live callout body spacer lines no longer repeat the title icon |
