@@ -217,11 +217,12 @@ Unauthorized users cannot connect.
 | [x] | Make new documents write initial Markdown | Legacy JSON remains active editor/rendering format |
 | [x] | Deploy latest Markdown schema migration | Markdown schema deployed and user-confirmed working |
 | [x] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML, constrained inline styles, and explicit safe media iframe embeds |
+| [x] | Add Obsidian-style callouts | `> [!type] Title` callouts render with default Obsidian types/aliases and snippet-ready `.callout[data-callout="..."]` hooks |
 | [x] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar, autosave, live/source/split/preview modes, and mobile layout pass |
 | [x] | Move collaboration to Y.Text | Hocuspocus loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding production-confirmed |
 | [x] | Add live preview | Live mode is default; Source/Split/Preview remain available; multi-line raw HTML stays source in live mode and renders in Preview/Split |
 | [x] | Remove legacy Tiptap/ProseMirror code | Tiptap packages, editor components, ProseMirror helpers, and `documents.content` fallback code removed; migration `0005_high_captain_midlands.sql` drops the legacy column |
-| [ ] | Add document update history | Next feature: batched recovery snapshots/checkpoints without saving every keystroke |
+| [x] | Add document update history | `document_versions` stores batched Markdown checkpoints, manual restore points, and before-restore/before-archive safety snapshots |
 
 Exit criteria:
 

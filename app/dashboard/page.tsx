@@ -393,7 +393,7 @@ function DocCard({
   return (
     <article className="vault-doc-card group">
       <Link href={href} className="vault-doc-link">
-        {preview ? (
+        {preview !== undefined ? (
           <div className="vault-doc-preview">
             <div className="vault-doc-preview-sheet">
               <span className="vault-doc-preview-edge" aria-hidden="true" />

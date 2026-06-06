@@ -6,7 +6,13 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { documentPermissions, documents, friendships, users } from "@/db/schema";
+import {
+  documentPermissions,
+  documentVersions,
+  documents,
+  friendships,
+  users,
+} from "@/db/schema";
 import {
   canDeleteDocument,
   canEditDocument,
@@ -18,6 +24,9 @@ import { slugify } from "@/lib/slug";
 
 const documentIdSchema = z.string().uuid();
 const initialMarkdownContent = "# Untitled document\n\nStart writing...\n";
+const automaticVersionIntervalMs = 10 * 60 * 1000;
+const significantVersionAbsoluteDiff = 2_000;
+const significantVersionRelativeDiff = 0.25;
 
 const saveMarkdownDocumentSchema = z.object({
   documentId: documentIdSchema,
@@ -52,9 +61,21 @@ const publishMutationSchema = z.object({
   documentId: documentIdSchema,
 });
 
+const restoreDocumentVersionSchema = z.object({
+  documentId: documentIdSchema,
+  versionId: z.string().uuid(),
+});
+
 const updateCollaboratorRoleSchema = collaboratorMutationSchema.extend({
   role: z.enum(["viewer", "editor"]),
 });
+
+type VersionableDocument = {
+  id: string;
+  title: string;
+  markdown: string;
+};
+type DocumentVersionExecutor = Pick<typeof db, "select" | "insert">;
 
 function normalizeFriendPair(userA: string, userB: string) {
   return userA < userB
@@ -118,16 +139,42 @@ export async function saveMarkdownDocumentAction(
     notFound();
   }
 
-  await db
-    .update(documents)
-    .set({
-      title: parsed.data.title,
-      markdown: parsed.data.markdown,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-    );
+  await db.transaction(async (tx) => {
+    const [currentDocument] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(
+        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+      )
+      .limit(1);
+
+    if (!currentDocument) {
+      notFound();
+    }
+
+    await maybeCreateAutomaticDocumentVersion(tx, {
+      document: currentDocument,
+      actorId: session.user.id,
+      reason: "auto",
+      nextTitle: parsed.data.title,
+      nextMarkdown: parsed.data.markdown,
+    });
+
+    await tx
+      .update(documents)
+      .set({
+        title: parsed.data.title,
+        markdown: parsed.data.markdown,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+      );
+  });
 
   return {
     ok: true,
@@ -162,20 +209,154 @@ export async function saveDocumentTitleAction(
     notFound();
   }
 
-  await db
-    .update(documents)
-    .set({
-      title: parsed.data.title,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-    );
+  await db.transaction(async (tx) => {
+    const [currentDocument] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(
+        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+      )
+      .limit(1);
+
+    if (!currentDocument) {
+      notFound();
+    }
+
+    await maybeCreateAutomaticDocumentVersion(tx, {
+      document: currentDocument,
+      actorId: session.user.id,
+      reason: "auto",
+      nextTitle: parsed.data.title,
+      nextMarkdown: currentDocument.markdown,
+    });
+
+    await tx
+      .update(documents)
+      .set({
+        title: parsed.data.title,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
+      );
+  });
 
   return {
     ok: true,
     updatedAt: new Date().toISOString(),
   };
+}
+
+export async function createManualDocumentVersionAction(formData: FormData) {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const documentId = documentIdSchema.parse(formData.get("documentId"));
+  const allowed = await canEditDocument(session.user.id, documentId);
+
+  if (!allowed) {
+    notFound();
+  }
+
+  await db.transaction(async (tx) => {
+    const [document] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+      .limit(1);
+
+    if (!document) {
+      notFound();
+    }
+
+    await createDocumentVersion(tx, {
+      document,
+      actorId: session.user.id,
+      reason: "manual",
+    });
+  });
+
+  redirect(`/docs/${documentId}`);
+}
+
+export async function restoreDocumentVersionAction(formData: FormData) {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const input = restoreDocumentVersionSchema.parse({
+    documentId: formData.get("documentId"),
+    versionId: formData.get("versionId"),
+  });
+  const allowed = await canEditDocument(session.user.id, input.documentId);
+
+  if (!allowed) {
+    notFound();
+  }
+
+  await db.transaction(async (tx) => {
+    const [version] = await tx
+      .select({
+        id: documentVersions.id,
+        documentId: documentVersions.documentId,
+        title: documentVersions.title,
+        markdown: documentVersions.markdown,
+      })
+      .from(documentVersions)
+      .where(
+        and(
+          eq(documentVersions.id, input.versionId),
+          eq(documentVersions.documentId, input.documentId),
+        ),
+      )
+      .limit(1);
+
+    const [currentDocument] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)))
+      .limit(1);
+
+    if (!version || !currentDocument) {
+      notFound();
+    }
+
+    await createDocumentVersion(tx, {
+      document: currentDocument,
+      actorId: session.user.id,
+      reason: "before_restore",
+    });
+
+    await tx
+      .update(documents)
+      .set({
+        title: version.title,
+        markdown: version.markdown,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(eq(documents.id, input.documentId), isNull(documents.deletedAt)),
+      );
+  });
+
+  redirect(`/docs/${input.documentId}`);
 }
 
 export async function archiveDocumentAction(formData: FormData) {
@@ -192,13 +373,35 @@ export async function archiveDocumentAction(formData: FormData) {
     notFound();
   }
 
-  await db
-    .update(documents)
-    .set({
-      deletedAt: sql`now()`,
-      updatedAt: sql`now()`,
-    })
-    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
+  await db.transaction(async (tx) => {
+    const [document] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+      .limit(1);
+
+    if (!document) {
+      notFound();
+    }
+
+    await createDocumentVersion(tx, {
+      document,
+      actorId: session.user.id,
+      reason: "before_archive",
+    });
+
+    await tx
+      .update(documents)
+      .set({
+        deletedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
+  });
 
   redirect("/dashboard");
 }
@@ -545,6 +748,40 @@ export async function listDocumentCollaborators(documentId: string, userId: stri
     .orderBy(documentPermissions.role, users.email);
 }
 
+export async function listDocumentVersionsForUser(
+  documentId: string,
+  userId: string,
+) {
+  const parsedDocumentId = documentIdSchema.safeParse(documentId);
+
+  if (!parsedDocumentId.success) {
+    return [];
+  }
+
+  const allowed = await canEditDocument(userId, parsedDocumentId.data);
+
+  if (!allowed) {
+    return [];
+  }
+
+  return db
+    .select({
+      id: documentVersions.id,
+      title: documentVersions.title,
+      markdownPreview: sql<string>`left(${documentVersions.markdown}, 240)`,
+      markdownLength: sql<number>`char_length(${documentVersions.markdown})`,
+      reason: documentVersions.reason,
+      createdAt: documentVersions.createdAt,
+      createdByName: users.name,
+      createdByEmail: users.email,
+    })
+    .from(documentVersions)
+    .leftJoin(users, eq(documentVersions.createdBy, users.id))
+    .where(eq(documentVersions.documentId, parsedDocumentId.data))
+    .orderBy(desc(documentVersions.createdAt))
+    .limit(12);
+}
+
 export async function getDocumentForUser(userId: string, documentId: string) {
   const parsedDocumentId = documentIdSchema.safeParse(documentId);
 
@@ -622,4 +859,87 @@ async function createUniquePublicSlug(title: string) {
   }
 
   return `${baseSlug}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+async function maybeCreateAutomaticDocumentVersion(
+  tx: DocumentVersionExecutor,
+  {
+    document,
+    actorId,
+    reason,
+    nextTitle,
+    nextMarkdown,
+  }: {
+    document: VersionableDocument;
+    actorId: string | null;
+    reason: string;
+    nextTitle: string;
+    nextMarkdown: string;
+  },
+) {
+  if (document.title === nextTitle && document.markdown === nextMarkdown) {
+    return;
+  }
+
+  const [latestVersion] = await tx
+    .select({
+      createdAt: documentVersions.createdAt,
+      title: documentVersions.title,
+      markdown: documentVersions.markdown,
+    })
+    .from(documentVersions)
+    .where(eq(documentVersions.documentId, document.id))
+    .orderBy(desc(documentVersions.createdAt))
+    .limit(1);
+
+  if (
+    latestVersion &&
+    latestVersion.title === document.title &&
+    latestVersion.markdown === document.markdown
+  ) {
+    return;
+  }
+
+  const latestAgeMs = latestVersion
+    ? Date.now() - latestVersion.createdAt.getTime()
+    : Number.POSITIVE_INFINITY;
+  const diffSize = Math.abs(document.markdown.length - nextMarkdown.length);
+  const relativeDiff =
+    diffSize / Math.max(document.markdown.length, nextMarkdown.length, 1);
+  const shouldSnapshot =
+    !latestVersion ||
+    latestAgeMs >= automaticVersionIntervalMs ||
+    diffSize >= significantVersionAbsoluteDiff ||
+    relativeDiff >= significantVersionRelativeDiff;
+
+  if (!shouldSnapshot) {
+    return;
+  }
+
+  await createDocumentVersion(tx, {
+    document,
+    actorId,
+    reason,
+  });
+}
+
+async function createDocumentVersion(
+  tx: DocumentVersionExecutor,
+  {
+    document,
+    actorId,
+    reason,
+  }: {
+    document: VersionableDocument;
+    actorId: string | null;
+    reason: string;
+  },
+) {
+  await tx.insert(documentVersions).values({
+    documentId: document.id,
+    createdBy: actorId,
+    title: document.title,
+    markdown: document.markdown,
+    reason,
+  });
 }

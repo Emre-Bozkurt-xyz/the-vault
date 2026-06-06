@@ -168,12 +168,39 @@ export const documentPermissions = pgTable(
   ],
 );
 
+export const documentVersions = pgTable(
+  "document_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    markdown: text("markdown").notNull(),
+    reason: text("reason").notNull().default("auto"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("document_versions_document_created_at_idx").on(
+      table.documentId,
+      table.createdAt,
+    ),
+    index("document_versions_created_by_idx").on(table.createdBy),
+  ],
+);
+
 export const documentsRelations = relations(documents, ({ one, many }) => ({
   owner: one(users, {
     fields: [documents.ownerId],
     references: [users.id],
   }),
   permissions: many(documentPermissions),
+  versions: many(documentVersions),
 }));
 
 export const documentPermissionsRelations = relations(
@@ -185,6 +212,20 @@ export const documentPermissionsRelations = relations(
     }),
     user: one(users, {
       fields: [documentPermissions.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const documentVersionsRelations = relations(
+  documentVersions,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentVersions.documentId],
+      references: [documents.id],
+    }),
+    author: one(users, {
+      fields: [documentVersions.createdBy],
       references: [users.id],
     }),
   }),

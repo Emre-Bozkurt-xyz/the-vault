@@ -13,7 +13,7 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-04
+2026-06-06
 ```
 
 Current phase:
@@ -264,6 +264,7 @@ Current tables:
 | `verification_tokens` | Yes | Email login tokens |
 | `documents` | Yes | Documents/notes |
 | `document_permissions` | Yes | Per-document access |
+| `document_versions` | Yes | Batched Markdown restore checkpoints |
 | `friend_requests` | Yes | Friend request workflow |
 | `friendships` | Yes | Accepted friendships |
 
@@ -277,15 +278,17 @@ Current migrations:
 | `0003_slimy_puppet_master.sql` | Adds transitional `documents.markdown` column | Yes | No |
 | `0004_goofy_kylun.sql` | Adds `users.profile_completed_at` and `users_name_idx` | Yes | No |
 | `0005_high_captain_midlands.sql` | Drops legacy `documents.content` JSONB column | Yes | No |
+| `0006_chilly_quasimodo.sql` | Adds `document_versions` restore checkpoint table | Yes | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, friend_requests, and friendships.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_versions, friend_requests, and friendships.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
 - `documents.markdown` is the canonical editor/viewer/public rendering source.
 - `documents.content` has been removed from the Drizzle schema and will be dropped by migration `0005_high_captain_midlands.sql`.
+- `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `/api/health` uses `select 1` and does not require any application tables.
 ```
@@ -433,7 +436,7 @@ Important files:
 | Path | Purpose |
 |---|---|
 | `db/schema.ts` | `documents` and `document_permissions` tables |
-| `server/documents.ts` | Create, update, archive, list, and fetch document functions |
+| `server/documents.ts` | Create, update, archive, history, sharing, list, and fetch document functions |
 | `app/dashboard/page.tsx` | Owned document list and create form |
 | `app/docs/[docId]/page.tsx` | Protected editor/viewer route |
 | `lib/markdown.ts` | Shared Markdown limits |
@@ -443,6 +446,9 @@ Current document actions:
 ```txt
 createDocumentAction()
 saveMarkdownDocumentAction()
+saveDocumentTitleAction()
+createManualDocumentVersionAction()
+restoreDocumentVersionAction()
 archiveDocumentAction()
 shareDocumentAction()
 shareDocumentWithFriendAction()
@@ -453,8 +459,21 @@ unpublishDocumentAction()
 listDocumentsForUser()
 listSharedDocumentsForUser()
 listPublicDocuments()
+listDocumentVersionsForUser()
 getDocumentForUser()
 getPublicDocumentBySlug()
+```
+
+History behavior:
+
+```txt
+- Automatic history stores the previous document state before an overwrite.
+- Normal saves and title saves create batched `reason = auto` checkpoints.
+- Collaboration persistence creates batched `reason = collab` checkpoints.
+- Users with edit access can create manual restore points from the document action panel.
+- Restoring a version creates `reason = before_restore` first, then writes the selected title/Markdown back to `documents`.
+- Archiving creates `reason = before_archive` before soft delete.
+- The document page lists only recent checkpoint metadata/previews; restore loads the full Markdown server-side by version id.
 ```
 
 Sharing behavior:
@@ -525,6 +544,7 @@ Supported editor features:
 | Code block | Yes |
 | Blockquote | Yes |
 | Link | Partial |
+| Obsidian-style callouts | Yes |
 | Read-only mode | Yes |
 | Save status | Saved/saving/unsaved/error status |
 | Autosave | Yes |
@@ -542,9 +562,14 @@ Known editor caveats:
 - CodeMirror owns common formatting shortcuts in the Markdown editor: `Mod-B` bold, `Mod-I` italic, `Mod-E` inline code, `Mod-K` link, `Mod-Alt-1/2/3` headings, `Mod-Shift-8` bullet list, `Mod-Shift-7` ordered list, `Mod-Shift-9` blockquote, and `Mod-Alt-C` code fence. Toolbar button `title` text includes the matching shortcut when one exists.
 - CodeMirror autocomplete is a direct dependency. `Tab` accepts the active autocomplete option before falling back to indentation behavior.
 - Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block. Hidden Markdown markers use CodeMirror replacement decorations, inactive inline/block HTML renders as sanitized preview widgets, and live-mode syntax-highlight spans are neutralized so heading hash markers do not resize or overlap while typing. Inline live HTML currently covers `a`, `abbr`, `b`, `cite`, `code`, `data`, `del`, `em`, `i`, `ins`, `kbd`, `mark`, `q`, `s`, `samp`, `small`, `span`, `strong`, `sub`, `sup`, `time`, `u`, and `var`.
+- Live mode protects inline code spans before applying bold/italic/link decorations, so Markdown inside backticks stays code instead of receiving nested preview styling. Code fence lines are also excluded from inline styling.
 - CodeMirror autocomplete/tooltips are styled with Vault theme tokens in both the editor theme and global editor CSS so HTML completion popups match the dark-first UI.
 - Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, forms, unsafe URL protocols, and unsafe CSS values are not allowed; a constrained inline `style` allowlist supports common presentation styles. HTML inside fenced code blocks still displays as code.
 - Iframes are allowed only for explicit HTTPS embed sources in `MarkdownDocument`: YouTube/YouTube nocookie, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp. The renderer normalizes iframe `sandbox`, `allow`, `allowFullScreen`, `loading`, and `referrerPolicy` attributes instead of trusting arbitrary author-provided iframe permissions. Self-closing iframe syntax is normalized to a closing-tag iframe before Markdown HTML parsing.
+- `MarkdownDocument` renders Obsidian-style blockquote callouts from `> [!type] Title` or tight `>[!type] Title` syntax. Supported default types/aliases follow Obsidian's documented set: note, abstract/summary/tldr, info, todo, tip/hint/important, success/check/done, question/help/faq, warning/caution/attention, failure/fail/missing, danger/error, bug, example, quote/cite. Fold markers `+` and `-` render as open/collapsed details.
+- Rendered callouts expose `.callout`, `.callout-title`, `.callout-icon`, `.callout-content`, `data-callout`, `data-callout-resolved`, and CSS variables such as `--callout-color` and `--callout-icon` so future snippet support can override default styles.
+- Live callouts intentionally stay source-preserving instead of replacing multi-line source with a rendered widget. Inactive callout lines are styled as one continuous block, the callout marker becomes an icon on the title line, body lines receive an equal-width spacer so title/body text align, trailing quote-only continuation lines are excluded from the rendered callout block, and the full source is revealed when the cursor enters the callout block.
+- Live callout lines also expose `.callout`, `data-callout`, `data-callout-resolved`, and `data-callout-fold` when present, so callout CSS variables from future snippets can affect Preview and Live mode. Live mode uses a stronger CodeMirror translation layer plus classes such as `.vault-cm-callout-first`, `.vault-cm-callout-body-line`, and `.vault-cm-callout-marker` so generic `.callout` snippet/card styling does not turn each editor line into a separate card.
 - Live preview allows the same iframe block tags and applies the same source allowlist plus normalized iframe permissions before rendering the inactive block preview.
 - Live preview renders inline HTML and single-line sanitized raw HTML blocks. Multi-line raw HTML intentionally remains source in live mode for now because CodeMirror plugin decorations cannot cleanly replace/collapse multi-line blocks; full Preview/Split still render multi-line HTML through the sanitized Markdown pipeline. Code fences remain source/code preview, not rendered HTML.
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode replaces inactive `- [ ]` / `- [x]` markers with the same styled checkbox widget.
@@ -582,8 +607,11 @@ Current behavior:
 - Collab service validates the token and re-checks current database edit permission before room access.
 - Hocuspocus loads existing `documents.markdown` into a `Y.Text` named `markdown`.
 - Hocuspocus stores collaborative document state back to `documents.markdown`.
+- Before collaborative persistence overwrites Markdown, the collab service uses the same batched checkpoint policy and writes `document_versions.reason = 'collab'` when a checkpoint is due.
 - The Markdown editor starts in normal local-autosave mode and only attaches the CodeMirror/Yjs binding after the Hocuspocus provider reports sync. This prevents a blank editor, lost body saves when `ws://localhost:1234` is unavailable, and duplicate full-document inserts from binding local text into an unsynced empty `Y.Text`.
 - In collaborative mode, CodeMirror state should be updated through the `y-codemirror.next` binding and the editor `onChange` callback. Do not add a separate `Y.Text.observe()` path that calls `setMarkdownValue()`: `@uiw/react-codemirror` treats `value` prop changes as external document replacements, and those replacements can be echoed back into `Y.Text` as local edits.
+- In collaborative mode, CodeMirror receives a one-time initial Markdown value after provider sync, then Yjs owns further document updates. Do not bind the `value` prop directly to `Y.Text.toString()` across renders; that can re-present full-document text to CodeMirror while `yCollab` is also applying Yjs updates.
+- The collaboration server refuses to persist an incoming Markdown body that is exactly the current stored body repeated multiple times. This is a defensive guard against the observed full-document append/duplication failure mode.
 - After collaboration is synced, the normal server action saves title changes only so it does not overwrite the live Yjs body.
 - Viewer/public routes remain read-only and do not connect to the collaboration service.
 ```
@@ -802,6 +830,7 @@ Manual checks:
 | Markdown collaboration | `npm run build` succeeds with CodeMirror/Yjs binding | Passed | 2026-06-01 |
 | Markdown collaboration | Two-browser owner/editor live Markdown editing | Passed, user-reported | 2026-06-04 |
 | Legacy cleanup | `npm run db:migrate` applies `0005_high_captain_midlands.sql` locally | Passed | 2026-06-04 |
+| Document history | `npm run db:migrate` applies `0006_chilly_quasimodo.sql` locally | Passed | 2026-06-04 |
 
 ---
 
@@ -847,9 +876,9 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Deploy/run migration `0005_high_captain_midlands.sql` after a backup to remove `documents.content` in production.
-2. Add document update history/version checkpoints with batched snapshots, not per-keystroke rows.
-3. Decide whether history should store Markdown snapshots only, Yjs update compaction metadata, or both.
+1. Deploy/run migration `0006_chilly_quasimodo.sql` after a backup to add document history in production.
+2. Browser-test manual restore point creation and restore on a disposable document.
+3. Decide whether to add a dedicated full history page with diff/preview later.
 ```
 
 ---
@@ -895,3 +924,6 @@ Use this as a compact implementation log.
 | 2026-06-02 | Fixed public dashboard visibility for new users | Public Notes now lists all published documents globally and links to public slugs instead of only showing the current user's own public docs |
 | 2026-06-02 | Reverted multi-line HTML live preview | Multi-line HTML stays as source in live mode due to CodeMirror decoration constraints; Preview/Split remain the rendering path for those blocks |
 | 2026-06-04 | Removed legacy Tiptap/ProseMirror stack | Removed Tiptap packages, legacy editor components, ProseMirror conversion helpers, legacy `documents.content` read/write paths, and generated migration `0005_high_captain_midlands.sql` to drop the column |
+| 2026-06-04 | Added document update history | Added `document_versions`, batched automatic checkpoints, collaboration checkpoints, manual restore points, restore action, archive safety snapshots, and the document History panel |
+| 2026-06-06 | Tightened live callout rendering | Live-mode callouts now preserve source lines while styling them as one continuous callout block, active callout blocks reveal source, callout backgrounds are stronger, and inline code spans are protected from nested bold/italic/link preview styling |
+| 2026-06-06 | Hardened collaboration duplication path | Collaborative CodeMirror uses a one-time initial value instead of binding `value` to `Y.Text.toString()` across renders, and the collab server blocks exact repeated-body append stores |

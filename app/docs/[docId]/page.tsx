@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, History, RotateCcw, Save, Trash2 } from "lucide-react";
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
@@ -15,10 +15,13 @@ import { createCollabToken } from "@/lib/collab-token";
 import { cn } from "@/lib/utils";
 import {
   archiveDocumentAction,
+  createManualDocumentVersionAction,
   getDocumentForUser,
   listDocumentCollaborators,
+  listDocumentVersionsForUser,
   publishDocumentAction,
   removeCollaboratorAction,
+  restoreDocumentVersionAction,
   shareDocumentAction,
   shareDocumentWithFriendAction,
   unpublishDocumentAction,
@@ -52,7 +55,11 @@ export default async function DocumentPage({
   const friends = document.access.canShare
     ? await listFriendsForUser(session.user.id)
     : [];
-  const showSidePanel = document.access.canDelete || document.access.canShare;
+  const versions = document.access.canEdit
+    ? await listDocumentVersionsForUser(document.id, session.user.id)
+    : [];
+  const showSidePanel =
+    document.access.canEdit || document.access.canDelete || document.access.canShare;
   const markdown = document.markdown;
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
   const collabRole =
@@ -139,6 +146,94 @@ export default async function DocumentPage({
           sidePanel={
             showSidePanel ? (
               <>
+              {document.access.canEdit ? (
+                <section className="vault-fade-up rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                        History
+                      </h2>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Restore points are batched, not saved for every keystroke.
+                      </p>
+                    </div>
+                    <History className="mt-1 size-4 text-muted-foreground" />
+                  </div>
+
+                  <form action={createManualDocumentVersionAction} className="mt-4">
+                    <input type="hidden" name="documentId" value={document.id} />
+                    <Button type="submit" variant="outline" className="w-full gap-2">
+                      <Save className="size-4" />
+                      Create restore point
+                    </Button>
+                  </form>
+
+                  <details className="group mt-4 rounded-2xl border border-border/60 bg-background/50">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                      <span>
+                        Restore points
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          {versions.length}
+                        </span>
+                      </span>
+                      <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                    </summary>
+
+                    <div className="grid gap-3 border-t border-border/60 p-3">
+                      {versions.length > 0 ? (
+                        versions.map((version) => (
+                          <div
+                            key={version.id}
+                            className="rounded-2xl border border-border/60 bg-background/60 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">
+                                  {version.title}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {version.createdAt.toLocaleString()} -{" "}
+                                  {formatVersionReason(version.reason)}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {version.createdByName ??
+                                    version.createdByEmail ??
+                                    "Vault"}
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
+                                {version.markdownLength.toLocaleString()} chars
+                              </span>
+                            </div>
+                            <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
+                              {version.markdownPreview.trim() || "Empty document"}
+                            </p>
+                            <form action={restoreDocumentVersionAction} className="mt-3">
+                              <input type="hidden" name="documentId" value={document.id} />
+                              <input type="hidden" name="versionId" value={version.id} />
+                              <Button
+                                type="submit"
+                                size="sm"
+                                variant="outline"
+                                className="w-full gap-2"
+                              >
+                                <RotateCcw className="size-3.5" />
+                                Restore this point
+                              </Button>
+                            </form>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-border/70 bg-background/50 p-4 text-sm text-muted-foreground">
+                          No restore points yet. Create one manually, or keep editing and
+                          Vault will create batched checkpoints.
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </section>
+              ) : null}
+
               {document.access.canDelete ? (
                 <div className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
@@ -360,4 +455,19 @@ export default async function DocumentPage({
       </div>
     </main>
   );
+}
+
+function formatVersionReason(reason: string) {
+  switch (reason) {
+    case "manual":
+      return "manual restore point";
+    case "collab":
+      return "collaboration checkpoint";
+    case "before_restore":
+      return "before restore";
+    case "before_archive":
+      return "before archive";
+    default:
+      return "automatic checkpoint";
+  }
 }

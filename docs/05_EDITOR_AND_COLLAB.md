@@ -112,6 +112,7 @@ Responsibilities:
 - Render viewer-only documents.
 - No editable controls.
 - Sanitize raw Markdown HTML and allow only explicit safe iframe providers.
+- Render Obsidian-style callouts from blockquote syntax with snippet-ready CSS hooks.
 
 ---
 
@@ -310,7 +311,27 @@ Read-only Yjs clients can be tricky. Simpler:
 
 Current Markdown pivot slice serializes the collaborative Y.Doc text back to `documents.markdown` through `onStoreDocument`.
 
-Later, use Yjs updates stored in database.
+Current recovery layer stores batched Markdown checkpoints in `document_versions`.
+It does not store every Yjs update or every keystroke.
+
+Checkpoint rules:
+
+```txt
+normal save:
+  create a previous-state checkpoint before overwrite when the latest checkpoint
+  is older than 10 minutes, missing, or the change is large
+
+collab save:
+  same batching policy from the Hocuspocus store hook, reason = collab
+
+manual:
+  user can create a restore point from the document History panel
+
+restore/archive:
+  create a protective checkpoint before restoring or archiving
+```
+
+Later, if lower-level replay is needed, use Yjs updates stored in database.
 
 ```txt
 yjs_updates

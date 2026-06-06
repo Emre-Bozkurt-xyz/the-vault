@@ -43,6 +43,13 @@
       "when": 1780592937493,
       "tag": "0005_high_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780593938934,
+      "tag": "0006_chilly_quasimodo",
+      "breakpoints": true
     }
   ]
 }

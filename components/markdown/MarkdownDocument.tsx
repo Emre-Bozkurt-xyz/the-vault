@@ -1,3 +1,19 @@
+import {
+  AlertTriangle,
+  Bug,
+  Check,
+  CheckCircle2,
+  Flame,
+  HelpCircle,
+  Info,
+  Lightbulb,
+  ListTodo,
+  Quote,
+  type LucideIcon,
+  Pencil,
+  XCircle,
+} from "lucide-react";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
@@ -55,6 +71,111 @@ const allowedIframeProviders = [
     path: /^\/EmbeddedPlayer\//,
   },
 ] as const;
+
+type CalloutDefinition = {
+  type: string;
+  title: string;
+  icon: LucideIcon;
+  iconName: string;
+};
+
+const calloutDefinitions = {
+  note: {
+    type: "note",
+    title: "Note",
+    icon: Pencil,
+    iconName: "lucide-pencil",
+  },
+  abstract: {
+    type: "abstract",
+    title: "Abstract",
+    icon: ListTodo,
+    iconName: "lucide-list",
+  },
+  info: {
+    type: "info",
+    title: "Info",
+    icon: Info,
+    iconName: "lucide-info",
+  },
+  todo: {
+    type: "todo",
+    title: "Todo",
+    icon: CheckCircle2,
+    iconName: "lucide-check-circle-2",
+  },
+  tip: {
+    type: "tip",
+    title: "Tip",
+    icon: Lightbulb,
+    iconName: "lucide-lightbulb",
+  },
+  success: {
+    type: "success",
+    title: "Success",
+    icon: Check,
+    iconName: "lucide-check",
+  },
+  question: {
+    type: "question",
+    title: "Question",
+    icon: HelpCircle,
+    iconName: "lucide-help-circle",
+  },
+  warning: {
+    type: "warning",
+    title: "Warning",
+    icon: AlertTriangle,
+    iconName: "lucide-alert-triangle",
+  },
+  failure: {
+    type: "failure",
+    title: "Failure",
+    icon: XCircle,
+    iconName: "lucide-x-circle",
+  },
+  danger: {
+    type: "danger",
+    title: "Danger",
+    icon: Flame,
+    iconName: "lucide-flame",
+  },
+  bug: {
+    type: "bug",
+    title: "Bug",
+    icon: Bug,
+    iconName: "lucide-bug",
+  },
+  example: {
+    type: "example",
+    title: "Example",
+    icon: ListTodo,
+    iconName: "lucide-list",
+  },
+  quote: {
+    type: "quote",
+    title: "Quote",
+    icon: Quote,
+    iconName: "lucide-quote",
+  },
+} satisfies Record<string, CalloutDefinition>;
+
+const calloutAliases = new Map<string, keyof typeof calloutDefinitions>([
+  ["summary", "abstract"],
+  ["tldr", "abstract"],
+  ["hint", "tip"],
+  ["important", "tip"],
+  ["check", "success"],
+  ["done", "success"],
+  ["help", "question"],
+  ["faq", "question"],
+  ["caution", "warning"],
+  ["attention", "warning"],
+  ["fail", "failure"],
+  ["missing", "failure"],
+  ["error", "danger"],
+  ["cite", "quote"],
+]);
 
 const safeHtmlSchema: Schema = {
   ...defaultSchema,
@@ -387,6 +508,12 @@ function createMarkdownComponents(disableLinks: boolean): Components {
     return <li {...styledProps("vault-md-li", className, style)}>{children}</li>;
   },
   blockquote({ children, className, style }) {
+    const callout = parseCalloutChildren(children);
+
+    if (callout) {
+      return <Callout {...callout} />;
+    }
+
     return <blockquote {...styledProps("vault-md-blockquote", className, style)}>{children}</blockquote>;
   },
   hr() {
@@ -443,6 +570,137 @@ function createMarkdownComponents(disableLinks: boolean): Components {
     return <input {...props} className="vault-md-checkbox" disabled />;
   },
   };
+}
+
+function Callout({
+  inputType,
+  canonicalType,
+  metadata,
+  title,
+  body,
+}: {
+  inputType: string;
+  canonicalType: string;
+  metadata: string;
+  title: string;
+  body: ReactNode[];
+}) {
+  const definition =
+    calloutDefinitions[canonicalType as keyof typeof calloutDefinitions] ??
+    calloutDefinitions.note;
+  const Icon = definition.icon;
+  const header = (
+    <div className="callout-title">
+      <span
+        className="callout-icon"
+        data-callout-icon={definition.iconName}
+        aria-hidden="true"
+      >
+        <Icon className="size-5" />
+      </span>
+      <span className="callout-title-inner">{title || definition.title}</span>
+    </div>
+  );
+
+  if (metadata === "+" || metadata === "-") {
+    return (
+      <details
+        className="callout"
+        data-callout={inputType}
+        data-callout-fold={metadata}
+        data-callout-resolved={definition.type}
+        open={metadata === "+"}
+      >
+        <summary className="callout-summary">{header}</summary>
+        {body.length > 0 ? <div className="callout-content">{body}</div> : null}
+      </details>
+    );
+  }
+
+  return (
+    <div
+      className="callout"
+      data-callout={inputType}
+      data-callout-resolved={definition.type}
+    >
+      {header}
+      {body.length > 0 ? <div className="callout-content">{body}</div> : null}
+    </div>
+  );
+}
+
+function parseCalloutChildren(children: ReactNode) {
+  const childArray = Children.toArray(children);
+  const firstElementIndex = childArray.findIndex((child) => isValidElement(child));
+  const firstChild = childArray[firstElementIndex];
+  const restChildren = childArray.slice(firstElementIndex + 1);
+
+  if (!isValidElement(firstChild)) {
+    return null;
+  }
+
+  const firstParagraphChildren = getElementChildren(firstChild);
+  const firstParagraphText = reactNodeToText(firstParagraphChildren).trimStart();
+  const [markerLine = "", ...sameParagraphBodyLines] =
+    firstParagraphText.split(/\r?\n/);
+  const match = markerLine.match(/^\[!([^\]\s]+)\]([+-])?\s*(.*)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const inputType = normalizeCalloutType(match[1]);
+  const metadata = match[2] ?? "";
+  const canonicalType = calloutAliases.get(inputType) ?? inputType;
+  const definition =
+    calloutDefinitions[canonicalType as keyof typeof calloutDefinitions] ??
+    calloutDefinitions.note;
+  const title = match[3]?.trim() || definition.title;
+
+  return {
+    inputType,
+    canonicalType,
+    metadata,
+    title,
+    body: [
+      ...createCalloutBodyFromMarkerParagraph(sameParagraphBodyLines),
+      ...restChildren,
+    ],
+  };
+}
+
+function createCalloutBodyFromMarkerParagraph(bodyLines: string[]) {
+  const bodyText = bodyLines.join("\n").trim();
+
+  if (!bodyText) {
+    return [];
+  }
+
+  return [<p key="callout-body" className="vault-md-p">{bodyText}</p>];
+}
+
+function getElementChildren(element: ReactElement) {
+  return (element.props as { children?: ReactNode }).children;
+}
+
+function reactNodeToText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(reactNodeToText).join("");
+  }
+
+  if (isValidElement(node)) {
+    return reactNodeToText(getElementChildren(node));
+  }
+
+  return "";
+}
+
+function normalizeCalloutType(type: string) {
+  return type.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-");
 }
 
 export function MarkdownDocument({

@@ -251,12 +251,12 @@ Not MVP, but useful later.
 ```txt
 document_versions
   id UUID PRIMARY KEY
-  document_id UUID REFERENCES documents(id)
-  created_by UUID REFERENCES users(id)
-  title TEXT
-  markdown TEXT
-  reason TEXT
-  created_at TIMESTAMP
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+  title TEXT NOT NULL
+  markdown TEXT NOT NULL
+  reason TEXT NOT NULL DEFAULT 'auto'
+  created_at TIMESTAMP NOT NULL DEFAULT now()
 ```
 
 Useful for:
@@ -266,7 +266,15 @@ Useful for:
 - Safer autosave.
 - Resume bragging rights.
 
-Do not snapshot every keystroke. Prefer explicit restore points plus time-bucketed autosave checkpoints, e.g. create a version after a meaningful idle window, before destructive operations, or when a collaborative session is compacted.
+Current implementation:
+
+- Automatic checkpoints store the previous document state before a new save overwrites it.
+- Automatic checkpoints are batched to at most one every 10 minutes per document unless the incoming change is large.
+- Large changes force an early checkpoint when the body size differs by at least 2,000 characters or 25%.
+- Manual restore points can be created from the document history panel.
+- Restoring a checkpoint first creates a `before_restore` checkpoint of the current state.
+- Archiving creates a `before_archive` checkpoint.
+- Collaboration persistence uses the same batching policy and records `reason = 'collab'`.
 
 ---
 
@@ -312,6 +320,9 @@ documents.updated_at
 document_permissions.user_id
 document_permissions.document_id
 document_permissions.document_id + document_permissions.user_id
+
+document_versions.document_id + document_versions.created_at
+document_versions.created_by
 
 friend_requests.recipient_id
 friend_requests.requester_id
@@ -408,6 +419,7 @@ Useful seed data:
 | [x] | friendships table created |
 | [x] | transitional documents.markdown column generated |
 | [x] | legacy documents.content column removed |
+| [x] | document_versions history table generated |
 | [x] | migrations run locally |
-| [~] | latest cleanup migration applied locally; pending production deploy |
+| [~] | latest history migration applied locally; pending production deploy |
 | [x] | indexes added |

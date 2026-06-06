@@ -551,6 +551,7 @@ Markdown editor should support:
 - Bullet and ordered lists.
 - Task lists with checkboxes.
 - Blockquotes.
+- Obsidian-style callouts using `> [!type] Title`, including fold markers.
 - Inline code.
 - Fenced code blocks with language names.
 - Tables.
@@ -604,6 +605,19 @@ components/markdown/MarkdownDocument.tsx renders stable classes:
   .vault-md-code
   .vault-md-table
   .vault-md-link
+  .callout
+  .callout-title
+  .callout-icon
+  .callout-content
+```
+
+Callouts also expose snippet-friendly attributes and variables:
+
+```css
+.callout[data-callout="custom-id"] {
+  --callout-color: 105, 115, 215;
+  --callout-icon: lucide-book-open;
+}
 ```
 
 Future settings model:
@@ -716,10 +730,12 @@ Legacy ProseMirror JSON is no longer required.
 Deployment and migration steps are documented and tested.
 ```
 
-Current next recovery-oriented follow-up:
+Recovery-oriented follow-up implemented:
 
 ```txt
-Add document update history/version checkpoints. Keep it batched and intentional:
-do not snapshot every keystroke; create restore points after meaningful idle
-windows, before destructive operations, or from compacted collaboration sessions.
+Document update history now uses `document_versions` for batched Markdown
+checkpoints. It does not snapshot every keystroke: automatic checkpoints are
+time-bucketed, large changes can force an early checkpoint, collaboration uses
+the same policy from the Hocuspocus store hook, and manual restore points plus
+before-restore/before-archive safety checkpoints exist.
 ```

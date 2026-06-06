@@ -93,14 +93,23 @@ export function MarkdownEditor({
   );
   const [collabReady, setCollabReady] = useState(false);
   const [collabSession, setCollabSession] = useState<CollabSession | null>(null);
+  const [collabInitialMarkdown, setCollabInitialMarkdown] = useState<{
+    key: string;
+    value: string;
+  } | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const titleValueRef = useRef(title);
   const markdownValueRef = useRef(markdown);
   const savingRef = useRef(false);
-  const isCollaborative = Boolean(collaboration && collabSession && collabReady);
   const collaborationKey = collaboration
     ? `${documentId}:${collaboration.url}:${collaboration.token}`
     : "local";
+  const isCollaborative = Boolean(
+    collaboration &&
+      collabSession &&
+      collabReady &&
+      collabInitialMarkdown?.key === collaborationKey,
+  );
 
   useEffect(() => {
     if (!collaboration) {
@@ -131,6 +140,10 @@ export function MarkdownEditor({
         if (mounted && state) {
           const syncedMarkdown = ytext.toString();
           markdownValueRef.current = syncedMarkdown;
+          setCollabInitialMarkdown({
+            key: collaborationKey,
+            value: syncedMarkdown,
+          });
           setMarkdownValue(syncedMarkdown);
           setCollabReady(true);
         }
@@ -152,7 +165,7 @@ export function MarkdownEditor({
       provider.destroy();
       ydoc.destroy();
     };
-  }, [collaboration, documentId]);
+  }, [collaboration, collaborationKey, documentId]);
 
   const saveDocument = useCallback(async () => {
     if (savingRef.current) {
@@ -588,7 +601,7 @@ export function MarkdownEditor({
                 key={`${collaborationKey}:${isCollaborative ? "collab" : "local"}`}
                 value={
                   isCollaborative
-                    ? collabSession?.ytext.toString() ?? markdownValue
+                    ? (collabInitialMarkdown?.value ?? "")
                     : markdownValue
                 }
                 extensions={extensions}
@@ -711,6 +724,39 @@ const previewHeading6 = Decoration.line({ class: "vault-cm-preview-heading-6" })
 const previewQuote = Decoration.line({ class: "vault-cm-preview-quote" });
 const previewCodeBlock = Decoration.line({ class: "vault-cm-preview-codeblock" });
 const previewList = Decoration.line({ class: "vault-cm-preview-list" });
+
+const calloutAliases = new Map<string, string>([
+  ["summary", "abstract"],
+  ["tldr", "abstract"],
+  ["hint", "tip"],
+  ["important", "tip"],
+  ["check", "success"],
+  ["done", "success"],
+  ["help", "question"],
+  ["faq", "question"],
+  ["caution", "warning"],
+  ["attention", "warning"],
+  ["fail", "failure"],
+  ["missing", "failure"],
+  ["error", "danger"],
+  ["cite", "quote"],
+]);
+
+const calloutTypes = new Set([
+  "note",
+  "abstract",
+  "info",
+  "todo",
+  "tip",
+  "success",
+  "question",
+  "warning",
+  "failure",
+  "danger",
+  "bug",
+  "example",
+  "quote",
+]);
 const htmlVoidTags = new Set([
   "area",
   "base",
@@ -893,6 +939,36 @@ class TaskCheckboxWidget extends WidgetType {
   }
 }
 
+class CalloutMarkerWidget extends WidgetType {
+  constructor(
+    private readonly inputType: string,
+    private readonly resolvedType: string,
+    private readonly spacerOnly = false,
+  ) {
+    super();
+  }
+
+  eq(widget: CalloutMarkerWidget) {
+    return (
+      widget.inputType === this.inputType &&
+      widget.resolvedType === this.resolvedType &&
+      widget.spacerOnly === this.spacerOnly
+    );
+  }
+
+  toDOM() {
+    const marker = document.createElement("span");
+    marker.className = this.spacerOnly
+      ? "callout-icon vault-cm-callout-marker vault-cm-callout-spacer"
+      : "callout-icon vault-cm-callout-marker";
+    marker.dataset.callout = this.inputType;
+    marker.dataset.calloutResolved = this.resolvedType;
+    marker.setAttribute("aria-hidden", "true");
+
+    return marker;
+  }
+}
+
 const markdownLivePreviewExtension = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -952,6 +1028,8 @@ function buildLivePreviewDecorations(view: EditorView) {
         }
 
         const lineRanges = decorateInactiveMarkdownLine(
+          doc,
+          line.number,
           line.from,
           line.text,
           codeFenceLines.has(line.number),
@@ -1012,7 +1090,16 @@ function getActiveMarkdownBlockRange(
     return { from: fromLineNumber, to: toLineNumber };
   }
 
-  if (/^(>\s+)/.test(startLine.text)) {
+  if (/^(>\s?)/.test(startLine.text)) {
+    const calloutBlock = calloutBlockRangeContainingLine(doc, fromLineNumber);
+
+    if (calloutBlock) {
+      return {
+        from: calloutBlock.from,
+        to: Math.max(calloutBlock.to, toLineNumber),
+      };
+    }
+
     return { from: fromLineNumber, to: toLineNumber };
   }
 
@@ -1091,6 +1178,43 @@ function htmlBlockRangeContainingLine(
   return enclosingRange;
 }
 
+function calloutBlockRangeContainingLine(
+  doc: EditorView["state"]["doc"],
+  lineNumber: number,
+) {
+  let from = lineNumber;
+
+  while (from > 1 && /^>\s?/.test(doc.line(from - 1).text)) {
+    from -= 1;
+  }
+
+  const start = parseCalloutLine(doc.line(from).text);
+
+  if (!start) {
+    return null;
+  }
+
+  let to = from;
+
+  while (to < doc.lines && /^>\s?/.test(doc.line(to + 1).text)) {
+    to += 1;
+  }
+
+  while (to > from && isQuoteOnlyLine(doc.line(to).text)) {
+    to -= 1;
+  }
+
+  if (lineNumber > to) {
+    return null;
+  }
+
+  return { from, to, callout: start };
+}
+
+function isQuoteOnlyLine(text: string) {
+  return /^>\s*$/.test(text);
+}
+
 function htmlBlockRangeFromStart(
   doc: EditorView["state"]["doc"],
   lineNumber: number,
@@ -1151,12 +1275,14 @@ function getCodeFenceLines(view: EditorView) {
 }
 
 function decorateInactiveMarkdownLine(
+  doc: EditorView["state"]["doc"],
+  lineNumber: number,
   lineFrom: number,
   text: string,
   inCodeFence: boolean,
   activePositions: number[],
 ) {
-  const ranges = [];
+  const ranges: RangeLike[] = [];
 
   if (inCodeFence) {
     ranges.push(previewCodeBlock.range(lineFrom));
@@ -1166,6 +1292,19 @@ function decorateInactiveMarkdownLine(
     }
 
     return ranges;
+  }
+
+  const calloutBlock = calloutBlockRangeContainingLine(doc, lineNumber);
+
+  if (calloutBlock) {
+    return decorateInactiveCalloutLine(
+      ranges,
+      lineNumber,
+      lineFrom,
+      text,
+      calloutBlock,
+      activePositions,
+    );
   }
 
   const heading = text.match(/^(#{1,6})(\s+)/);
@@ -1182,7 +1321,7 @@ function decorateInactiveMarkdownLine(
     }
   }
 
-  const quote = text.match(/^(>\s+)/);
+  const quote = text.match(/^(>\s*)/);
 
   if (quote) {
     ranges.push(previewQuote.range(lineFrom));
@@ -1210,6 +1349,103 @@ function decorateInactiveMarkdownLine(
   addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
 
   return ranges;
+}
+
+function decorateInactiveCalloutLine(
+  ranges: RangeLike[],
+  lineNumber: number,
+  lineFrom: number,
+  text: string,
+  calloutBlock: NonNullable<ReturnType<typeof calloutBlockRangeContainingLine>>,
+  activePositions: number[],
+) {
+  const isFirst = lineNumber === calloutBlock.from;
+  const isLast = lineNumber === calloutBlock.to;
+  const blockPositionClass =
+    isFirst && isLast
+      ? "vault-cm-callout-single"
+      : isFirst
+        ? "vault-cm-callout-first"
+        : isLast
+          ? "vault-cm-callout-last"
+          : "vault-cm-callout-middle";
+  const lineRoleClass = isFirst
+    ? "vault-cm-callout-title-line"
+    : "vault-cm-callout-body-line";
+
+  ranges.push(
+    Decoration.line({
+      class: [
+        "callout",
+        "vault-cm-callout",
+        `vault-cm-callout-type-${calloutBlock.callout.resolvedType}`,
+        blockPositionClass,
+        lineRoleClass,
+      ].join(" "),
+      attributes: {
+        "data-callout": calloutBlock.callout.inputType,
+        "data-callout-resolved": calloutBlock.callout.resolvedType,
+        ...(calloutBlock.callout.metadata
+          ? { "data-callout-fold": calloutBlock.callout.metadata }
+          : {}),
+      },
+    }).range(lineFrom),
+  );
+
+  if (isFirst) {
+    ranges.push(
+      Decoration.replace({
+        widget: new CalloutMarkerWidget(
+          calloutBlock.callout.inputType,
+          calloutBlock.callout.resolvedType,
+        ),
+      }).range(lineFrom, lineFrom + calloutBlock.callout.markerLength),
+    );
+    addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+
+    return ranges;
+  }
+
+  const quote = text.match(/^(>\s*)/);
+
+  if (quote) {
+    ranges.push(
+      Decoration.replace({
+        widget: new CalloutMarkerWidget(
+          calloutBlock.callout.inputType,
+          calloutBlock.callout.resolvedType,
+          true,
+        ),
+      }).range(lineFrom, lineFrom + quote[0].length),
+    );
+  }
+
+  addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+
+  return ranges;
+}
+
+function parseCalloutLine(text: string) {
+  const match = text.match(/^(>\s*)\[!([^\]\s]+)\]([+-])?\s*/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const inputType = normalizeCalloutType(match[2]);
+  const aliasResolved = calloutAliases.get(inputType) ?? inputType;
+  const resolvedType = calloutTypes.has(aliasResolved) ? aliasResolved : "note";
+
+  return {
+    inputType,
+    resolvedType,
+    metadata: match[3] ?? "",
+    markerLength: match[0].length,
+  };
+}
+
+function normalizeCalloutType(type: string) {
+  return type.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-");
 }
 
 function headingDecorationForLevel(level: number) {
@@ -1242,31 +1478,12 @@ function addInlinePreviewDecorations(
   text: string,
   activePositions: number[],
 ) {
+  const inlineCodeRanges = getInlineCodeRanges(text).map(({ from, to }) => ({
+    from: lineFrom + from,
+    to: lineFrom + to,
+  }));
+
   addInlineHtmlDecorations(ranges, lineFrom, text, activePositions);
-  addRegexDecorations(
-    ranges,
-    lineFrom,
-    text,
-    /\*\*([^*\n]+)\*\*/g,
-    previewBold,
-    [
-      [0, 2],
-      [-2, 0],
-    ],
-    activePositions,
-  );
-  addRegexDecorations(
-    ranges,
-    lineFrom,
-    text,
-    /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
-    previewItalic,
-    [
-      [0, 1],
-      [-1, 0],
-    ],
-    activePositions,
-  );
   addRegexDecorations(
     ranges,
     lineFrom,
@@ -1279,7 +1496,50 @@ function addInlinePreviewDecorations(
     ],
     activePositions,
   );
-  addLinkDecorations(ranges, lineFrom, text, activePositions);
+  addRegexDecorations(
+    ranges,
+    lineFrom,
+    text,
+    /\*\*([^*\n]+)\*\*/g,
+    previewBold,
+    [
+      [0, 2],
+      [-2, 0],
+    ],
+    activePositions,
+    inlineCodeRanges,
+  );
+  addRegexDecorations(
+    ranges,
+    lineFrom,
+    text,
+    /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
+    previewItalic,
+    [
+      [0, 1],
+      [-1, 0],
+    ],
+    activePositions,
+    inlineCodeRanges,
+  );
+  addLinkDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
+}
+
+function getInlineCodeRanges(text: string) {
+  const ranges: Array<{ from: number; to: number }> = [];
+
+  for (const match of text.matchAll(/`([^`\n]+)`/g)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    ranges.push({
+      from: match.index,
+      to: match.index + match[0].length,
+    });
+  }
+
+  return ranges;
 }
 
 function addInlineHtmlDecorations(
@@ -1319,6 +1579,7 @@ function addRegexDecorations(
   contentDecoration: Decoration,
   markerOffsets: Array<[number, number]>,
   activePositions: number[],
+  protectedRanges: Array<{ from: number; to: number }> = [],
 ) {
   for (const match of text.matchAll(regex)) {
     if (match.index === undefined) {
@@ -1328,7 +1589,10 @@ function addRegexDecorations(
     const from = lineFrom + match.index;
     const to = from + match[0].length;
 
-    if (hasActivePositionInRange(activePositions, from, to)) {
+    if (
+      hasActivePositionInRange(activePositions, from, to) ||
+      overlapsAnyRange(from, to, protectedRanges)
+    ) {
       continue;
     }
 
@@ -1347,6 +1611,7 @@ function addLinkDecorations(
   lineFrom: number,
   text: string,
   activePositions: number[],
+  protectedRanges: Array<{ from: number; to: number }> = [],
 ) {
   for (const match of text.matchAll(/\[([^\]\n]+)]\(([^)\n]+)\)/g)) {
     if (match.index === undefined) {
@@ -1358,7 +1623,10 @@ function addLinkDecorations(
     const labelEnd = labelStart + match[1].length;
     const to = from + match[0].length;
 
-    if (hasActivePositionInRange(activePositions, from, to)) {
+    if (
+      hasActivePositionInRange(activePositions, from, to) ||
+      overlapsAnyRange(from, to, protectedRanges)
+    ) {
       continue;
     }
 
@@ -1366,6 +1634,14 @@ function addLinkDecorations(
     ranges.push(hiddenMarkdown.range(from, labelStart));
     ranges.push(hiddenMarkdown.range(labelEnd, to));
   }
+}
+
+function overlapsAnyRange(
+  from: number,
+  to: number,
+  ranges: Array<{ from: number; to: number }>,
+) {
+  return ranges.some((range) => from < range.to && to > range.from);
 }
 
 function hasActivePositionInRange(

@@ -9,6 +9,9 @@ nextEnv.loadEnvConfig(process.cwd());
 
 const port = Number(process.env.COLLAB_PORT ?? 1234);
 const databaseUrl = process.env.DATABASE_URL;
+const automaticVersionIntervalMs = 10 * 60 * 1000;
+const significantVersionAbsoluteDiff = 2_000;
+const significantVersionRelativeDiff = 0.25;
 
 if (!databaseUrl) {
   throw new Error("DATABASE_URL is required for the collaboration server");
@@ -73,7 +76,12 @@ const server = new Server({
   },
 
   async onStoreDocument({ document, documentName }) {
-    const markdown = document.getText("markdown").toString();
+    const markdown = await protectAgainstRepeatedAppend(
+      documentName,
+      document.getText("markdown").toString(),
+    );
+
+    await maybeCreateAutomaticDocumentVersion(documentName, markdown);
 
     await db`
       update documents
@@ -151,4 +159,112 @@ function getSecret() {
   }
 
   return secret;
+}
+
+async function protectAgainstRepeatedAppend(documentId, nextMarkdown) {
+  const [currentDocument] = await db`
+    select markdown
+    from documents
+    where id = ${documentId}
+      and deleted_at is null
+    limit 1
+  `;
+
+  const currentMarkdown = currentDocument?.markdown ?? "";
+
+  if (!isExactRepeatedAppend(currentMarkdown, nextMarkdown)) {
+    return nextMarkdown;
+  }
+
+  console.warn(
+    [
+      "Blocked suspicious collaboration store:",
+      `document=${documentId}`,
+      `currentLength=${currentMarkdown.length}`,
+      `incomingLength=${nextMarkdown.length}`,
+    ].join(" "),
+  );
+
+  return currentMarkdown;
+}
+
+function isExactRepeatedAppend(currentMarkdown, nextMarkdown) {
+  if (
+    !currentMarkdown ||
+    nextMarkdown.length <= currentMarkdown.length ||
+    nextMarkdown.length % currentMarkdown.length !== 0
+  ) {
+    return false;
+  }
+
+  for (
+    let offset = 0;
+    offset < nextMarkdown.length;
+    offset += currentMarkdown.length
+  ) {
+    if (
+      nextMarkdown.slice(offset, offset + currentMarkdown.length) !==
+      currentMarkdown
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function maybeCreateAutomaticDocumentVersion(documentId, nextMarkdown) {
+  const [currentDocument] = await db`
+    select id, title, markdown
+    from documents
+    where id = ${documentId}
+      and deleted_at is null
+    limit 1
+  `;
+
+  if (!currentDocument || currentDocument.markdown === nextMarkdown) {
+    return;
+  }
+
+  const [latestVersion] = await db`
+    select title, markdown, created_at
+    from document_versions
+    where document_id = ${documentId}
+    order by created_at desc
+    limit 1
+  `;
+
+  if (
+    latestVersion &&
+    latestVersion.title === currentDocument.title &&
+    latestVersion.markdown === currentDocument.markdown
+  ) {
+    return;
+  }
+
+  const latestAgeMs = latestVersion
+    ? Date.now() - new Date(latestVersion.created_at).getTime()
+    : Number.POSITIVE_INFINITY;
+  const diffSize = Math.abs(currentDocument.markdown.length - nextMarkdown.length);
+  const relativeDiff =
+    diffSize / Math.max(currentDocument.markdown.length, nextMarkdown.length, 1);
+  const shouldSnapshot =
+    !latestVersion ||
+    latestAgeMs >= automaticVersionIntervalMs ||
+    diffSize >= significantVersionAbsoluteDiff ||
+    relativeDiff >= significantVersionRelativeDiff;
+
+  if (!shouldSnapshot) {
+    return;
+  }
+
+  await db`
+    insert into document_versions (document_id, title, markdown, reason)
+    values (
+      ${documentId},
+      ${currentDocument.title},
+      ${currentDocument.markdown},
+      'collab'
+    )
+  `;
 }

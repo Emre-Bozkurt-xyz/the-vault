@@ -370,6 +370,297 @@
     padding-left: 1rem;
   }
 
+  .callout {
+    --callout-color: 83, 112, 255;
+    --callout-icon: lucide-pencil;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(var(--callout-color), 0.32);
+    border-radius: 0.75rem;
+    background-color: rgba(var(--callout-color), 0.16);
+    background:
+      linear-gradient(
+        90deg,
+        rgba(var(--callout-color), 0.28),
+        rgba(var(--callout-color), 0.16)
+      ),
+      color-mix(in oklab, var(--card) 82%, transparent);
+    box-shadow:
+      inset 0 0 0 999px rgba(var(--callout-color), 0.055),
+      inset 3px 0 0 rgba(var(--callout-color), 0.85);
+    padding: 1rem 1.15rem;
+    color: var(--foreground);
+  }
+
+  .callout[data-callout-resolved="abstract"] {
+    --callout-color: 86, 148, 159;
+    --callout-icon: lucide-list;
+  }
+
+  .callout[data-callout-resolved="info"] {
+    --callout-color: 8, 109, 221;
+    --callout-icon: lucide-info;
+  }
+
+  .callout[data-callout-resolved="todo"] {
+    --callout-color: 8, 109, 221;
+    --callout-icon: lucide-check-circle-2;
+  }
+
+  .callout[data-callout-resolved="tip"] {
+    --callout-color: 0, 191, 188;
+    --callout-icon: lucide-lightbulb;
+  }
+
+  .callout[data-callout-resolved="success"] {
+    --callout-color: 8, 185, 78;
+    --callout-icon: lucide-check;
+  }
+
+  .callout[data-callout-resolved="question"] {
+    --callout-color: 236, 117, 0;
+    --callout-icon: lucide-help-circle;
+  }
+
+  .callout[data-callout-resolved="warning"] {
+    --callout-color: 236, 117, 0;
+    --callout-icon: lucide-alert-triangle;
+  }
+
+  .callout[data-callout-resolved="failure"] {
+    --callout-color: 233, 49, 71;
+    --callout-icon: lucide-x-circle;
+  }
+
+  .callout[data-callout-resolved="danger"] {
+    --callout-color: 233, 49, 71;
+    --callout-icon: lucide-flame;
+  }
+
+  .callout[data-callout-resolved="bug"] {
+    --callout-color: 233, 49, 71;
+    --callout-icon: lucide-bug;
+  }
+
+  .callout[data-callout-resolved="example"] {
+    --callout-color: 120, 82, 238;
+    --callout-icon: lucide-list;
+  }
+
+  .callout[data-callout-resolved="quote"] {
+    --callout-color: 158, 158, 158;
+    --callout-icon: lucide-quote;
+  }
+
+  .callout-title,
+  .callout-summary {
+    color: rgb(var(--callout-color));
+  }
+
+  .callout-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .callout-icon {
+    display: inline-flex;
+    color: rgb(var(--callout-color));
+  }
+
+  .callout-title-inner {
+    min-width: 0;
+  }
+
+  .callout-content {
+    margin-top: 0.85rem;
+    color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground));
+  }
+
+  .callout-content > * + * {
+    margin-top: 0.85rem;
+  }
+
+  .callout-summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .callout-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details.callout:not([open]) {
+    padding-bottom: 1rem;
+  }
+
+  details.callout[open] .callout-summary {
+    border-bottom: 1px solid rgba(var(--callout-color), 0.22);
+    padding-bottom: 0.8rem;
+  }
+
+  details.callout[open] .callout-content {
+    margin-top: 0.9rem;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout,
+  .cm-line.callout.vault-cm-callout {
+    --callout-color: 83, 112, 255;
+    position: relative;
+    display: block !important;
+    width: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    min-height: 1.9em;
+    padding-left: clamp(1rem, 2vw, 1.5rem) !important;
+    padding-right: clamp(1rem, 2vw, 1.5rem) !important;
+    background:
+      linear-gradient(
+        90deg,
+        rgba(var(--callout-color), 0.28),
+        rgba(var(--callout-color), 0.16)
+      ),
+      color-mix(in oklab, var(--card) 82%, transparent);
+    border-left: 1px solid rgba(var(--callout-color), 0.32);
+    border-right: 1px solid rgba(var(--callout-color), 0.32);
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    border-radius: 0 !important;
+    color: var(--foreground);
+    box-shadow: inset 3px 0 0 rgba(var(--callout-color), 0.85);
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-title-line,
+  .cm-line.vault-cm-callout-title-line {
+    color: rgb(var(--callout-color));
+    font-weight: 700;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-first,
+  .cm-line.vault-cm-callout-first {
+    border-top: 1px solid rgba(var(--callout-color), 0.32) !important;
+    border-radius: 0.75rem 0.75rem 0 0 !important;
+    padding-top: 0.9rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-middle,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-body-line,
+  .cm-line.vault-cm-callout-middle,
+  .cm-line.vault-cm-callout-body-line {
+    padding-top: 0.18rem !important;
+    padding-bottom: 0.18rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-last,
+  .cm-line.vault-cm-callout-last {
+    border-bottom: 1px solid rgba(var(--callout-color), 0.32) !important;
+    border-radius: 0 0 0.75rem 0.75rem !important;
+    padding-bottom: 0.9rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-single,
+  .cm-line.vault-cm-callout-single {
+    border-radius: 0.75rem !important;
+    padding-top: 0.9rem !important;
+    padding-bottom: 0.9rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-abstract {
+    --callout-color: 86, 148, 159;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-info,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-todo {
+    --callout-color: 8, 109, 221;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-tip {
+    --callout-color: 0, 191, 188;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-success {
+    --callout-color: 8, 185, 78;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-question,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-warning {
+    --callout-color: 236, 117, 0;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-failure,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-danger,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-bug {
+    --callout-color: 233, 49, 71;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-example {
+    --callout-color: 120, 82, 238;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-quote {
+    --callout-color: 158, 158, 158;
+  }
+
+  .vault-cm-callout-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    margin-right: 0.45rem;
+    color: rgb(var(--callout-color));
+    font-family: var(--font-sans);
+    font-weight: 700;
+  }
+
+  .vault-cm-callout-marker::before {
+    content: "i";
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
+  .vault-cm-callout-spacer::before {
+    content: "";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="abstract"]::before {
+    content: "=";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="info"]::before,
+  .vault-cm-callout-marker[data-callout-resolved="todo"]::before,
+  .vault-cm-callout-marker[data-callout-resolved="success"]::before {
+    content: "v";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="tip"]::before {
+    content: "*";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="question"]::before {
+    content: "?";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="warning"]::before {
+    content: "!";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="failure"]::before,
+  .vault-cm-callout-marker[data-callout-resolved="danger"]::before {
+    content: "x";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="bug"]::before {
+    content: "#";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="quote"]::before {
+    content: "\"";
+  }
+
   .vault-md-pre {
     overflow-x: auto;
     border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
@@ -578,8 +869,24 @@
   }
 
   .vault-markdown-compact .vault-md-pre,
-  .vault-markdown-compact .vault-md-table-wrap {
+  .vault-markdown-compact .vault-md-table-wrap,
+  .vault-markdown-compact .callout-content {
     display: none;
+  }
+
+  .vault-markdown-compact .callout {
+    border-radius: 0.35rem;
+    padding: 0.35rem 0.45rem;
+  }
+
+  .vault-markdown-compact .callout-title {
+    gap: 0.25rem;
+    font-size: 0.62rem;
+  }
+
+  .vault-markdown-compact .callout-icon svg {
+    width: 0.7rem;
+    height: 0.7rem;
   }
 
   .vault-collab-caret {
