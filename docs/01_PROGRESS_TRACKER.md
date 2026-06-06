@@ -146,6 +146,7 @@ Users can become friends and share docs with friends.
 | [x] | Add public badge | Dashboard/editor |
 | [x] | Add copy public link button | Nice polish |
 | [x] | Credit published-note owners | Public pages show owner nickname/name, username, and avatar without exposing email |
+| [x] | Add public share previews | `/public/[slug]` emits per-document OpenGraph/Twitter metadata and a generated social-card image |
 
 Exit criteria:
 

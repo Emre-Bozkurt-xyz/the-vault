@@ -1,15 +1,69 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { createMarkdownExcerpt } from "@/lib/markdown";
 import { getPublicDocumentBySlug } from "@/server/documents";
+
+type PublicDocumentPageProps = {
+  params: Promise<{ slug: string }>;
+};
+
+export async function generateMetadata({
+  params,
+}: PublicDocumentPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const document = await getPublicDocumentBySlug(slug);
+
+  if (!document) {
+    return {
+      title: "Public note not found · Vault",
+    };
+  }
+
+  const ownerName = document.ownerName ?? document.ownerUsername ?? "Vault user";
+  const ownerHandle = document.ownerUsername ? `@${document.ownerUsername}` : null;
+  const title = `${document.title} · Vault`;
+  const description = createMarkdownExcerpt(document.markdown);
+  const byline = ownerHandle ? `${ownerName} (${ownerHandle})` : ownerName;
+  const imageUrl = `/public/${encodeURIComponent(slug)}/og`;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `/public/${slug}`,
+    },
+    authors: [{ name: byline }],
+    openGraph: {
+      title: document.title,
+      description,
+      type: "article",
+      url: `/public/${slug}`,
+      siteName: "Vault",
+      images: [
+        {
+          url: imageUrl,
+          width: 1200,
+          height: 630,
+          alt: `${document.title} by ${byline}`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: document.title,
+      description,
+      images: [imageUrl],
+    },
+  };
+}
 
 export default async function PublicDocumentPage({
   params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+}: PublicDocumentPageProps) {
   const { slug } = await params;
   const document = await getPublicDocumentBySlug(slug);
 

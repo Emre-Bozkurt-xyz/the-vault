@@ -723,6 +723,7 @@ Current behavior:
 - The dashboard Public Notes tab lists all published documents globally, not only the current user's own published documents.
 - Public Notes cards link to `/public/[slug]` and show owner nickname/username only, not owner email.
 - Published note pages credit the owner under the title with nickname/name, username when available, avatar/fallback, and update date.
+- Published note pages emit per-document OpenGraph/Twitter metadata with title, Markdown-derived snippet, owner author metadata, canonical URL, and a generated image at `/public/[slug]/og`.
 - Public documents show a badge in dashboard/editor views.
 - Published documents expose a copy-link button in the editor.
 ```
@@ -1053,3 +1054,4 @@ Use this as a compact implementation log.
 | 2026-06-06 | Added hybrid repo and database docs | Repo-backed `content/docs/**/*.md` docs now merge with DB docs, repo slugs win collisions, admin docs show repo entries as read-only, and `/terms` renders repo-backed terms linked from login |
 | 2026-06-06 | Fixed collaborative preview-to-live remount state | Returning from full Preview now remounts CodeMirror from the current Y.Text/current Markdown snapshot instead of the initial collaboration sync snapshot |
 | 2026-06-06 | Added public note owner credits | Published note pages now show the owner nickname/name, username, avatar/fallback, and update date under the title without exposing email |
+| 2026-06-06 | Added public note share previews | Public note routes now generate per-document OpenGraph/Twitter metadata and a 1200x630 social-card image from the title, owner, update date, and Markdown excerpt |

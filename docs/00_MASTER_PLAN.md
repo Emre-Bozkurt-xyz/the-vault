@@ -322,7 +322,7 @@ Tasks:
 - Add public slug.
 - Add public read-only route.
 - Add publish/unpublish toggle.
-- Add OpenGraph metadata later.
+- Add OpenGraph metadata.
 
 Done when:
 

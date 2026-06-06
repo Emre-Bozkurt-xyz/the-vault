@@ -25,9 +25,24 @@ const monoFont = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = new URL(process.env.NEXTAUTH_URL ?? "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: siteUrl,
   title: "Vault",
   description: "A self-hosted collaborative document platform.",
+  openGraph: {
+    title: "Vault",
+    description: "A self-hosted collaborative document platform.",
+    url: siteUrl,
+    siteName: "Vault",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Vault",
+    description: "A self-hosted collaborative document platform.",
+  },
 };
 
 export default function RootLayout({
