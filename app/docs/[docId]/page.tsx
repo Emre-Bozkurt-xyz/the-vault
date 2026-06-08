@@ -19,6 +19,7 @@ import {
   getDocumentForUser,
   listDocumentCollaborators,
   listDocumentVersionsForUser,
+  listWikiLinkResolutionsForUser,
   publishDocumentAction,
   removeCollaboratorAction,
   restoreDocumentVersionAction,
@@ -52,6 +53,7 @@ export default async function DocumentPage({
   const collaborators = document.access.canShare
     ? await listDocumentCollaborators(document.id, session.user.id)
     : [];
+  const wikiLinks = await listWikiLinkResolutionsForUser(session.user.id);
   const friends = document.access.canShare
     ? await listFriendsForUser(session.user.id)
     : [];
@@ -107,6 +109,7 @@ export default async function DocumentPage({
                   documentId={document.id}
                   title={document.title}
                   markdown={markdown}
+                  wikiLinks={wikiLinks}
                   collaboration={
                     collabToken && collabUrl
                       ? {
@@ -137,7 +140,7 @@ export default async function DocumentPage({
                     </p>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-background/70 p-4 sm:rounded-3xl sm:p-6">
-                    <MarkdownDocument markdown={markdown} />
+                    <MarkdownDocument markdown={markdown} wikiLinks={wikiLinks} />
                   </div>
                 </article>
               )}

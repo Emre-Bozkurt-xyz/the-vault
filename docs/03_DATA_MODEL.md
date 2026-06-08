@@ -135,6 +135,11 @@ documents.markdown TEXT
 
 Markdown is the canonical editor/viewer/public rendering source. The legacy Tiptap/ProseMirror `documents.content` JSONB column was removed by migration `0005_high_captain_midlands.sql` after Markdown editing and collaboration were production-confirmed.
 
+Document titles are intentionally not unique. Document identity stays on
+`documents.id`; public URL identity stays on `documents.public_slug`. Wiki links
+should use stable document IDs internally when possible, while title-only wiki
+links are a convenience layer that may become ambiguous.
+
 ---
 
 ## 3. Document Permissions
@@ -342,6 +347,36 @@ Current implementation:
 - Restoring a checkpoint first creates a `before_restore` checkpoint of the current state.
 - Archiving creates a `before_archive` checkpoint.
 - Collaboration persistence uses the same batching policy and records `reason = 'collab'`.
+
+---
+
+## 6.1 Future Document Assets
+
+Image/file uploads are not implemented yet.
+
+If added, prefer private-by-default document assets rather than public file URLs:
+
+```txt
+document_assets
+  id UUID PRIMARY KEY
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL
+  filename TEXT NOT NULL
+  mime_type TEXT NOT NULL
+  size_bytes INTEGER NOT NULL
+  storage_key TEXT NOT NULL
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+```
+
+Serve assets through a route that checks document read permission, such as:
+
+```txt
+/api/docs/:docId/assets/:assetId
+```
+
+Public documents may expose their assets publicly through the same route only
+because `canReadDocument(null, docId)` allows public documents. Private document
+assets must not be exposed via raw public storage URLs.
 
 ---
 

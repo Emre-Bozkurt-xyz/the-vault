@@ -370,6 +370,74 @@
     padding-left: 1rem;
   }
 
+  .vault-md-document-embed {
+    position: relative;
+    width: 100%;
+    margin-block: 1.15rem;
+    padding: 0.25rem 0 0.25rem 1.25rem;
+    border-left: 2px solid color-mix(in oklab, var(--primary) 54%, var(--border));
+  }
+
+  .vault-md-document-embed-header {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.55rem;
+    color: color-mix(in oklab, var(--foreground) 88%, var(--primary));
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .vault-md-document-embed-icon {
+    display: inline-grid;
+    place-items: center;
+    color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+  }
+
+  .vault-md-document-embed-title {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .vault-md-document-embed-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+  }
+
+  .vault-md-document-embed-body {
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  .vault-md-document-embed-body > * + * {
+    margin-top: 0.7rem;
+  }
+
+  .vault-md-document-embed-body .vault-md-h1 {
+    font-size: 1.45rem;
+  }
+
+  .vault-md-document-embed-body .vault-md-h2 {
+    font-size: 1.25rem;
+  }
+
+  .vault-md-document-embed-body .vault-md-h3 {
+    font-size: 1.08rem;
+  }
+
+  .vault-md-document-embed-message {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .vault-md-document-embed-unavailable {
+    border-left-color: color-mix(in oklab, var(--muted-foreground) 48%, var(--border));
+  }
+
   .callout {
     --callout-color: 83, 112, 255;
     --callout-icon: lucide-pencil;
@@ -741,6 +809,25 @@
     font-weight: 500;
   }
 
+  .vault-md-wiki-link {
+    border-radius: 0.35rem;
+    padding: 0.05rem 0.25rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  .vault-md-wiki-link-ambiguous {
+    border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-md-wiki-link-private {
+    border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+    color: color-mix(in oklab, var(--destructive) 82%, var(--foreground));
+  }
+
   .vault-md-strong {
     font-weight: 700;
   }
@@ -836,11 +923,110 @@
     color: var(--muted-foreground);
   }
 
-  .vault-md-img {
-    max-width: 100%;
-    height: auto;
+  .vault-md-image-frame {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: min(100%, 48rem);
+    min-height: clamp(12rem, 42vw, 26rem);
+    overflow: hidden;
     border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
     border-radius: 0.65rem;
+  }
+
+  .vault-md-img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: inherit;
+    object-fit: contain;
+    background: color-mix(in oklab, var(--background) 80%, var(--card) 20%);
+  }
+
+  .vault-md-image-fallback {
+    position: absolute;
+    inset: 0;
+    display: none;
+    place-items: center;
+    padding: 1rem;
+    color: var(--muted-foreground);
+    text-align: center;
+    background:
+      linear-gradient(135deg, transparent 48%, color-mix(in oklab, var(--border) 80%, transparent) 49%, color-mix(in oklab, var(--border) 80%, transparent) 51%, transparent 52%),
+      color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  .vault-md-img:not([src]),
+  .vault-md-img[src=""] {
+    display: none;
+  }
+
+  .vault-md-img:not([src]) + .vault-md-image-fallback,
+  .vault-md-img[src=""] + .vault-md-image-fallback,
+  .vault-md-image-frame[data-image-state="error"] .vault-md-image-fallback {
+    display: grid;
+  }
+
+  .vault-md-image-frame[data-image-state="error"] .vault-md-img {
+    visibility: hidden;
+  }
+
+  .vault-cm-wiki-image-preview {
+    margin-block: 0.35rem;
+    white-space: normal;
+  }
+
+  .vault-cm-document-embed-preview {
+    display: block;
+    width: 100%;
+    margin-block: 0.35rem;
+    white-space: normal;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line {
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line .cm-widgetBuffer {
+    display: none;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line .cm-widget {
+    display: block;
+    width: 100%;
+  }
+
+  .vault-cm-document-embed-markdown {
+    width: 100%;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .vault-cm-document-embed-preview > .vault-markdown.vault-cm-document-embed-markdown {
+    max-width: none !important;
+    margin-inline: 0 !important;
+  }
+
+  .vault-cm-document-embed-preview .vault-markdown,
+  .vault-cm-document-embed-preview .vault-markdown * {
+    font-family: var(--font-sans);
+    white-space: normal;
+  }
+
+  .vault-cm-document-embed-preview .vault-md-document-embed {
+    margin-inline: 0;
+  }
+
+  .vault-cm-document-embed-preview .vault-md-code,
+  .vault-cm-document-embed-preview .vault-md-pre,
+  .vault-cm-document-embed-preview .vault-md-pre * {
+    font-family: var(--font-mono);
   }
 
   .vault-md-iframe {

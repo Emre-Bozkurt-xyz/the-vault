@@ -20,6 +20,12 @@ import {
 } from "@/lib/permissions";
 import { maxMarkdownLength } from "@/lib/markdown";
 import { slugify } from "@/lib/slug";
+import {
+  type WikiLinkResolution,
+  type WikiLinkResolutionMap,
+  wikiDocKey,
+  wikiTitleKey,
+} from "@/lib/wiki-links";
 import { requireActiveUser } from "@/server/authz";
 
 const documentIdSchema = z.string().uuid();
@@ -673,6 +679,69 @@ export async function listPublicDocuments() {
     .orderBy(desc(documents.updatedAt));
 }
 
+export async function listWikiLinkResolutionsForUser(
+  userId: string,
+  options: { includeEmbeds?: boolean } = {},
+) {
+  const rows = await db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      markdown: documents.markdown,
+      visibility: documents.visibility,
+      publicSlug: documents.publicSlug,
+    })
+    .from(documents)
+    .leftJoin(
+      documentPermissions,
+      and(
+        eq(documents.id, documentPermissions.documentId),
+        eq(documentPermissions.userId, userId),
+      ),
+    )
+    .where(
+      and(
+        isNull(documents.deletedAt),
+        or(
+          eq(documents.ownerId, userId),
+          eq(documentPermissions.userId, userId),
+          eq(documents.visibility, "public"),
+        ),
+      ),
+    )
+    .orderBy(documents.title);
+
+  return buildWikiLinkResolutionMap(
+    rows,
+    (document) => `/docs/${document.id}`,
+    options.includeEmbeds ?? true,
+  );
+}
+
+export async function listPublicWikiLinkResolutions() {
+  const rows = await db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      markdown: documents.markdown,
+      visibility: documents.visibility,
+      publicSlug: documents.publicSlug,
+    })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.visibility, "public"),
+        isNotNull(documents.publicSlug),
+        isNull(documents.deletedAt),
+      ),
+    )
+    .orderBy(documents.title);
+
+  return buildWikiLinkResolutionMap(rows, (document) =>
+    document.publicSlug ? `/public/${document.publicSlug}` : null,
+  );
+}
+
 export async function listDocumentCollaborators(documentId: string, userId: string) {
   const parsedDocumentId = documentIdSchema.safeParse(documentId);
 
@@ -815,6 +884,71 @@ async function createUniquePublicSlug(title: string) {
   }
 
   return `${baseSlug}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function buildWikiLinkResolutionMap<
+  TDocument extends {
+    id: string;
+    title: string;
+    markdown?: string;
+    visibility: string;
+    publicSlug: string | null;
+  },
+>(
+  documentsToLink: TDocument[],
+  hrefForDocument: (document: TDocument) => string | null,
+  includeEmbeds = true,
+) {
+  const resolutions: WikiLinkResolutionMap = {};
+  const byTitle = new Map<string, TDocument[]>();
+
+  for (const document of documentsToLink) {
+    const href = hrefForDocument(document);
+    const resolution: WikiLinkResolution = href
+      ? {
+        status: "resolved",
+        documentId: document.id,
+        label: document.title,
+        href,
+        embedMarkdown: includeEmbeds ? document.markdown : undefined,
+      }
+      : {
+          status: "private",
+          label: document.title,
+        };
+
+    resolutions[wikiDocKey(document.id)] = resolution;
+
+    const titleKey = wikiTitleKey(document.title);
+    byTitle.set(titleKey, [...(byTitle.get(titleKey) ?? []), document]);
+  }
+
+  for (const [titleKey, matches] of byTitle) {
+    if (matches.length !== 1) {
+      resolutions[titleKey] = {
+        status: "ambiguous",
+        label: matches[0]?.title,
+      };
+      continue;
+    }
+
+    const match = matches[0];
+    const href = hrefForDocument(match);
+    resolutions[titleKey] = href
+      ? {
+          status: "resolved",
+          documentId: match.id,
+          label: match.title,
+          href,
+          embedMarkdown: includeEmbeds ? match.markdown : undefined,
+        }
+      : {
+          status: "private",
+          label: match.title,
+        };
+  }
+
+  return resolutions;
 }
 
 async function maybeCreateAutomaticDocumentVersion(

@@ -171,7 +171,7 @@ Add notes as real files appear:
 | `components/` | Shared UI components |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
-| `components/markdown/OfficialDocEditor.tsx` | Manual-save Markdown editor for official docs; no collaboration |
+| `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist |
 | `components/theme-provider.tsx` | Root client theme provider using `next-themes` |
@@ -564,6 +564,7 @@ Important files:
 | `components/markdown/MarkdownToolbar.tsx` | Markdown syntax toolbar |
 | `components/markdown/MarkdownDocument.tsx` | Read-only renderer for viewer/public pages |
 | `lib/markdown.ts` | Shared Markdown limits |
+| `lib/wiki-links.ts` | Obsidian-style wiki-link parsing/rendering helpers |
 
 Supported editor features:
 
@@ -578,6 +579,8 @@ Supported editor features:
 | Code block | Yes |
 | Blockquote | Yes |
 | Link | Partial |
+| Wiki document links | Preview/view/public rendering slice |
+| External image wiki embeds | Yes, `![[https://...]]` in renderer |
 | Obsidian-style callouts | Yes |
 | Read-only mode | Yes |
 | Save status | Saved/saving/unsaved/error status |
@@ -597,7 +600,13 @@ Known editor caveats:
 - CodeMirror autocomplete is a direct dependency. `Tab` accepts the active autocomplete option before falling back to indentation behavior.
 - Live mode keeps CodeMirror active and uses decorations to hide/style inactive Markdown syntax. Inline marks reveal source when the cursor is inside that object; structural blocks reveal the relevant line/block. Hidden Markdown markers use CodeMirror replacement decorations, inactive inline/block HTML renders as sanitized preview widgets, and live-mode syntax-highlight spans are neutralized so heading hash markers do not resize or overlap while typing. Inline live HTML currently covers `a`, `abbr`, `b`, `cite`, `code`, `data`, `del`, `em`, `i`, `ins`, `kbd`, `mark`, `q`, `s`, `samp`, `small`, `span`, `strong`, `sub`, `sup`, `time`, `u`, and `var`.
 - Live mode protects inline code spans before applying bold/italic/link decorations, so Markdown inside backticks stays code instead of receiving nested preview styling. Code fence lines are also excluded from inline styling.
-- CodeMirror autocomplete/tooltips are styled with Vault theme tokens in both the editor theme and global editor CSS so HTML completion popups match the dark-first UI.
+- CodeMirror autocomplete/tooltips are styled with Vault theme tokens in both the editor theme and global editor CSS so HTML completion popups match the dark-first UI. HTML tag completion is explicitly registered alongside Vault's custom wiki-link completion so it works in editable Source, Split, and Live modes.
+- Preview/view/public Markdown rendering supports Obsidian-style wiki links through server-provided resolution maps. Canonical links use `[[doc:<uuid>|Label]]`; convenience title links like `[[Title]]` resolve only when exactly one readable document has that title. Ambiguous/private/unresolved links render as non-clickable styled spans. Public rendering only resolves links to `/public/[slug]` and does not expose private document IDs/routes.
+- CodeMirror wiki autocomplete fetches the current readable document map from `/api/documents/wiki-links` when completion starts in either `[[...]]` links or `![[...]]` document embeds, and inserts canonical `doc:id|title` targets. Arrow keys navigate suggestions, Tab/Enter accept, Escape closes the popup, and mouse selection applies the completion. The completion is bracket-aware and fills inside an existing auto-paired `[[|]]` field without adding duplicate closing brackets. Live mode hides inactive wiki-link markers and styles the visible label; placing the cursor inside the link reveals source.
+- External image wiki embeds use `![[https://...]]`; Preview/view/public translate them to standard Markdown image rendering before the sanitized Markdown pipeline, and live mode renders inactive embeds as stable image preview frames.
+- Standalone document transclusions use `![[doc:id|label]]` or unambiguous `![[Title]]` syntax. Preview/view/public split those lines into recursive `MarkdownDocument` embeds styled with `.vault-md-document-embed`; Live mode replaces the single source line with a React-backed CodeMirror widget that reuses `MarkdownDocument`. Embeds are permission-aware, public pages only include public document Markdown, and recursive embeds are capped.
+- Markdown image rendering uses a stable responsive frame so slow or broken image loads do not repeatedly change document layout height.
+- Document titles are intentionally not unique; document identity remains `documents.id`, and public route identity remains `public_slug`.
 - Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, forms, unsafe URL protocols, and unsafe CSS values are not allowed; a constrained inline `style` allowlist supports common presentation styles. HTML inside fenced code blocks still displays as code.
 - Iframes are allowed only for explicit HTTPS embed sources in `MarkdownDocument`: YouTube/YouTube nocookie, Spotify, TIDAL, Vimeo, SoundCloud, Apple Music, and Bandcamp. The renderer normalizes iframe `sandbox`, `allow`, `allowFullScreen`, `loading`, and `referrerPolicy` attributes instead of trusting arbitrary author-provided iframe permissions. Self-closing iframe syntax is normalized to a closing-tag iframe before Markdown HTML parsing.
 - `MarkdownDocument` renders Obsidian-style blockquote callouts from `> [!type] Title` or tight `>[!type] Title` syntax. Supported default types/aliases follow Obsidian's documented set: note, abstract/summary/tldr, info, todo, tip/hint/important, success/check/done, question/help/faq, warning/caution/attention, failure/fail/missing, danger/error, bug, example, quote/cite. Fold markers `+` and `-` render as open/collapsed details.
@@ -612,6 +621,7 @@ Known editor caveats:
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
 - Document edit pages use a wider responsive workspace (`max-w-[1720px]`) with a collapsible desktop side rail. When the rail is open, the editor shifts left to leave room for visibility/sharing controls; when collapsed, the editor recenters to reduce distractions. On mobile, visibility/sharing controls open in a modal so they do not sit below the editor or affect editor width.
 - User has confirmed Markdown editing works in production.
+- Uploaded document assets are not implemented yet. Future uploaded assets should use document-owned metadata and permission-checked serving, not raw public storage URLs.
 ```
 
 ---
@@ -793,7 +803,7 @@ Current official docs behavior:
 - Official docs are separate from collaborative user documents.
 - Repo-backed docs live under `content/docs/**/*.md`, are canonical, and appear read-only in `/dashboard/admin/docs`.
 - DB-backed docs live in `official_docs`, are editable from `/dashboard/admin/docs/[docId]`, and are useful for quick admin-authored pages.
-- Admin editor has manual save and source/split/preview modes.
+- Admin editor uses CodeMirror with manual save, source/split/preview modes, and HTML tag autocomplete.
 - Admin editor exposes category and sort order metadata.
 - No Yjs collaboration token or room is created for official docs.
 - Public official docs render repo docs plus DB docs with `status = 'published'`.
@@ -807,7 +817,7 @@ Known admin/docs caveats:
 ```txt
 - There is no seeded first admin yet; set `users.role = 'admin'` manually for the first trusted account after migration.
 - There is no audit log table yet for moderation actions.
-- Initial repo docs exist for Markdown basics, callouts, CSS snippets, safe HTML/embeds, and sharing/permissions.
+- Initial repo docs exist for Markdown basics, wiki links/embeds, callouts, CSS snippets, safe HTML/embeds, and sharing/permissions.
 ```
 
 ---
@@ -1059,3 +1069,7 @@ Use this as a compact implementation log.
 | 2026-06-06 | Added public note share previews | Public note routes now generate per-document OpenGraph/Twitter metadata and a 1200x630 social-card image that mimics a cropped rendered document preview |
 | 2026-06-06 | Fixed callout body links | Preview/public callout rendering now preserves inline Markdown nodes inside callout bodies, and live callout body spacer lines no longer repeat the title icon |
 | 2026-06-06 | Tightened public mobile gutters | Public note pages now use much smaller mobile page/card padding and narrower public Markdown list/callout/blockquote spacing |
+| 2026-06-06 | Added wiki-link rendering slice | Added permission-aware Preview/view/public rendering for `[[doc:id|label]]`, unambiguous `[[Title]]`, unresolved/private/ambiguous states, and external `![[https://...]]` image embeds |
+| 2026-06-06 | Added live external wiki image previews | Live mode now renders inactive `![[https://...]]` image embeds in stable frames, and Markdown images use stable responsive frames to avoid broken-image layout jitter |
+| 2026-06-07 | Added wiki-link editor integration | CodeMirror now autocompletes readable documents after `[[` into canonical `[[doc:id|title]]` links, refreshes suggestions through `/api/documents/wiki-links`, and live mode styles inactive wiki links |
+| 2026-06-08 | Added document transclusion embeds | Standalone `![[doc]]` wiki embeds now render permission-aware document previews in Preview/view/public and Live mode with recursion guards |

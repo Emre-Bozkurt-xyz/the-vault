@@ -10,10 +10,16 @@ import {
 } from "react";
 import {
   acceptCompletion,
+  autocompletion,
+  closeCompletion,
+  type Completion,
+  type CompletionContext,
   completionStatus,
+  moveCompletionSelection,
 } from "@codemirror/autocomplete";
+import { html, htmlCompletionSource } from "@codemirror/lang-html";
 import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
-import { EditorSelection, Prec } from "@codemirror/state";
+import { EditorSelection, type EditorState, Prec } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -26,6 +32,7 @@ import {
 } from "@codemirror/view";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import CodeMirror from "@uiw/react-codemirror";
+import { createRoot, type Root } from "react-dom/client";
 import {
   AlertCircle,
   CheckCircle2,
@@ -47,6 +54,11 @@ import { Button } from "@/components/ui/button";
 import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
+  escapeWikiLinkLabel,
+  getWikiDocumentEmbed,
+  type WikiLinkResolutionMap,
+} from "@/lib/wiki-links";
+import {
   saveDocumentTitleAction,
   saveMarkdownDocumentAction,
 } from "@/server/documents";
@@ -63,6 +75,7 @@ type MarkdownEditorProps = {
       email: string | null;
     };
   } | null;
+  wikiLinks?: WikiLinkResolutionMap;
 };
 
 type PreviewMode = "source" | "live" | "split" | "preview";
@@ -74,12 +87,32 @@ type CollabSession = {
   undoManager: Y.UndoManager;
   provider: HocuspocusProvider;
 };
+type WikiCompletionRegion = {
+  markerFrom: number;
+  markerTo: number;
+  contentTo: number;
+  hasClosingMarker: boolean;
+  query: string;
+};
+type WikiCompletionDismissal = {
+  markerFrom: number;
+};
+type WikiCompletionDismissalStore = {
+  get: () => WikiCompletionDismissal | null;
+  set: (dismissal: WikiCompletionDismissal) => void;
+  clear: () => void;
+};
+type WikiLinkMapStore = {
+  get: () => WikiLinkResolutionMap;
+  set: (wikiLinks: WikiLinkResolutionMap) => void;
+};
 
 export function MarkdownEditor({
   documentId,
   title,
   markdown,
   collaboration = null,
+  wikiLinks,
 }: MarkdownEditorProps) {
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
@@ -88,6 +121,7 @@ export function MarkdownEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("live");
+  const [wikiLinkMap] = useState<WikiLinkResolutionMap>(wikiLinks ?? {});
   const [collabStatus, setCollabStatus] = useState<CollabStatus>(
     collaboration ? "connecting" : "off",
   );
@@ -99,6 +133,14 @@ export function MarkdownEditor({
   } | null>(null);
   const [editorMountMarkdown, setEditorMountMarkdown] = useState(markdown);
   const viewRef = useRef<EditorView | null>(null);
+  const wikiCompletionDismissal = useMemo(
+    () => createWikiCompletionDismissalStore(),
+    [],
+  );
+  const wikiLinkMapStore = useMemo(
+    () => createWikiLinkMapStore(wikiLinks ?? {}),
+    [wikiLinks],
+  );
   const titleValueRef = useRef(title);
   const markdownValueRef = useRef(markdown);
   const savingRef = useRef(false);
@@ -216,9 +258,31 @@ export function MarkdownEditor({
   const extensions = useMemo(
     () => {
       const baseExtensions = [
-      markdownLanguage(),
+      markdownLanguage({
+        htmlTagLanguage: html({
+          matchClosingTags: false,
+          selfClosingTags: true,
+        }),
+      }),
       EditorView.lineWrapping,
-      Prec.highest(keymap.of(createMarkdownShortcutKeymap())),
+      Prec.highest(keymap.of(createMarkdownShortcutKeymap(wikiCompletionDismissal))),
+      EditorView.updateListener.of((update) => {
+        const dismissal = wikiCompletionDismissal.get();
+
+        if (!dismissal || !update.selectionSet) {
+          return;
+        }
+
+        if (
+          !isInsideDismissedWikiCompletionRegion(
+            update.state,
+            update.state.selection.main.head,
+            dismissal,
+          )
+        ) {
+          wikiCompletionDismissal.clear();
+        }
+      }),
       EditorView.theme({
         "&": {
           backgroundColor: "transparent",
@@ -381,6 +445,15 @@ export function MarkdownEditor({
           textDecoration: "underline",
           textUnderlineOffset: "0.2rem",
         },
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-wiki-link": {
+          borderRadius: "0.35rem",
+          color: "var(--foreground)",
+          fontWeight: "500",
+          textDecoration: "underline",
+          textDecorationColor:
+            "color-mix(in oklab, var(--primary) 70%, transparent)",
+          textUnderlineOffset: "0.2rem",
+        },
         ".vault-cm-preview-quote": {
           borderLeft: "3px solid var(--border)",
           color: "var(--muted-foreground)",
@@ -400,8 +473,20 @@ export function MarkdownEditor({
     ];
 
       if (previewMode === "live") {
-        baseExtensions.push(markdownLivePreviewExtension);
+        baseExtensions.push(createMarkdownLivePreviewExtension(wikiLinkMap));
       }
+
+      baseExtensions.push(
+        autocompletion({
+          override: [
+            htmlCompletionSource,
+            createWikiLinkCompletionSource(
+              wikiLinkMapStore,
+              wikiCompletionDismissal,
+            ),
+          ],
+        }),
+      );
 
       if (isCollaborative && collabSession) {
         return [
@@ -414,7 +499,14 @@ export function MarkdownEditor({
 
       return baseExtensions;
     },
-    [collabSession, isCollaborative, previewMode],
+    [
+      collabSession,
+      isCollaborative,
+      previewMode,
+      wikiCompletionDismissal,
+      wikiLinkMap,
+      wikiLinkMapStore,
+    ],
   );
 
   useEffect(() => {
@@ -649,7 +741,7 @@ export function MarkdownEditor({
           {previewMode !== "source" &&
           previewMode !== "live" ? (
             <div className="min-h-[calc(100svh-17rem)] bg-background/45 px-4 py-5 sm:min-h-[520px] sm:px-8 sm:py-6">
-              <MarkdownDocument markdown={markdownValue} />
+              <MarkdownDocument markdown={markdownValue} wikiLinks={wikiLinkMap} />
             </div>
           ) : null}
         </div>
@@ -685,13 +777,96 @@ function colorFromString(value: string) {
   return colors[hash];
 }
 
-function createMarkdownShortcutKeymap(): KeyBinding[] {
+function createWikiCompletionDismissalStore(): WikiCompletionDismissalStore {
+  let dismissal: WikiCompletionDismissal | null = null;
+
+  return {
+    get: () => dismissal,
+    set: (nextDismissal) => {
+      dismissal = nextDismissal;
+    },
+    clear: () => {
+      dismissal = null;
+    },
+  };
+}
+
+function createWikiLinkMapStore(initialWikiLinks: WikiLinkResolutionMap): WikiLinkMapStore {
+  let currentWikiLinks = initialWikiLinks;
+
+  return {
+    get: () => currentWikiLinks,
+    set: (nextWikiLinks) => {
+      currentWikiLinks = nextWikiLinks;
+    },
+  };
+}
+
+function createMarkdownShortcutKeymap(
+  wikiCompletionDismissal?: WikiCompletionDismissalStore,
+): KeyBinding[] {
   const run = (command: (view: EditorView) => void) => (view: EditorView) => {
     command(view);
     return true;
   };
 
   return [
+    {
+      key: "ArrowDown",
+      run: (view) =>
+        completionStatus(view.state) === "active"
+          ? moveCompletionSelection(true)(view)
+          : false,
+    },
+    {
+      key: "ArrowUp",
+      run: (view) =>
+        completionStatus(view.state) === "active"
+          ? moveCompletionSelection(false)(view)
+          : false,
+    },
+    {
+      key: "PageDown",
+      run: (view) =>
+        completionStatus(view.state) === "active"
+          ? moveCompletionSelection(true, "page")(view)
+          : false,
+    },
+    {
+      key: "PageUp",
+      run: (view) =>
+        completionStatus(view.state) === "active"
+          ? moveCompletionSelection(false, "page")(view)
+          : false,
+    },
+    {
+      key: "Escape",
+      run: (view) => {
+        if (completionStatus(view.state) !== "active") {
+          return false;
+        }
+
+        const region = getOpenWikiLinkCompletionRegion(
+          view.state,
+          view.state.selection.main.head,
+        );
+
+        if (region && wikiCompletionDismissal) {
+          wikiCompletionDismissal.set({
+            markerFrom: region.markerFrom,
+          });
+        }
+
+        return closeCompletion(view);
+      },
+    },
+    {
+      key: "Enter",
+      run: (view) =>
+        completionStatus(view.state) === "active"
+          ? acceptCompletion(view)
+          : false,
+    },
     {
       key: "Tab",
       run: (view) =>
@@ -736,6 +911,10 @@ const previewBold = Decoration.mark({ class: "vault-cm-preview-bold" });
 const previewItalic = Decoration.mark({ class: "vault-cm-preview-italic" });
 const previewCode = Decoration.mark({ class: "vault-cm-preview-code" });
 const previewLink = Decoration.mark({ class: "vault-cm-preview-link" });
+const previewWikiLink = Decoration.mark({ class: "vault-cm-preview-wiki-link" });
+const previewWikiDocumentEmbedLine = Decoration.line({
+  class: "vault-cm-document-embed-line",
+});
 const previewHeading1 = Decoration.line({ class: "vault-cm-preview-heading-1" });
 const previewHeading2 = Decoration.line({ class: "vault-cm-preview-heading-2" });
 const previewHeading3 = Decoration.line({ class: "vault-cm-preview-heading-3" });
@@ -941,6 +1120,87 @@ class InlineHtmlPreviewWidget extends WidgetType {
   }
 }
 
+class WikiImagePreviewWidget extends WidgetType {
+  constructor(
+    private readonly src: string,
+    private readonly alt: string,
+  ) {
+    super();
+  }
+
+  eq(widget: WikiImagePreviewWidget) {
+    return widget.src === this.src && widget.alt === this.alt;
+  }
+
+  toDOM() {
+    const figure = document.createElement("figure");
+    figure.className = "vault-cm-wiki-image-preview vault-md-image-frame";
+
+    const image = document.createElement("img");
+    image.className = "vault-md-img";
+    image.src = this.src;
+    image.alt = this.alt;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.addEventListener(
+      "error",
+      () => {
+        figure.dataset.imageState = "error";
+      },
+      { once: true },
+    );
+
+    const fallback = document.createElement("figcaption");
+    fallback.className = "vault-md-image-fallback";
+    fallback.textContent = "Image unavailable";
+
+    figure.append(image, fallback);
+
+    return figure;
+  }
+}
+
+class WikiDocumentEmbedPreviewWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly source: string,
+    private readonly wikiLinks: WikiLinkResolutionMap,
+  ) {
+    super();
+  }
+
+  eq(widget: WikiDocumentEmbedPreviewWidget) {
+    return widget.source === this.source && widget.wikiLinks === this.wikiLinks;
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "vault-cm-document-embed-preview";
+
+    this.root = createRoot(container);
+    this.root.render(
+      <MarkdownDocument
+        markdown={this.source}
+        wikiLinks={this.wikiLinks}
+        contained={false}
+        className="vault-cm-document-embed-markdown"
+      />,
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+
+    if (root) {
+      window.setTimeout(() => root.unmount(), 0);
+    }
+  }
+}
+
 class TaskCheckboxWidget extends WidgetType {
   constructor(private readonly checked: boolean) {
     super();
@@ -990,31 +1250,36 @@ class CalloutMarkerWidget extends WidgetType {
   }
 }
 
-const markdownLivePreviewExtension = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
+function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
 
-    constructor(view: EditorView) {
-      this.decorations = buildLivePreviewDecorations(view);
-    }
-
-    update(update: ViewUpdate) {
-      if (
-        update.docChanged ||
-        update.selectionSet ||
-        update.viewportChanged ||
-        update.focusChanged
-      ) {
-        this.decorations = buildLivePreviewDecorations(update.view);
+      constructor(view: EditorView) {
+        this.decorations = buildLivePreviewDecorations(view, wikiLinks);
       }
-    }
-  },
-  {
-    decorations: (value) => value.decorations,
-  },
-);
 
-function buildLivePreviewDecorations(view: EditorView) {
+      update(update: ViewUpdate) {
+        if (
+          update.docChanged ||
+          update.selectionSet ||
+          update.viewportChanged ||
+          update.focusChanged
+        ) {
+          this.decorations = buildLivePreviewDecorations(update.view, wikiLinks);
+        }
+      }
+    },
+    {
+      decorations: (value) => value.decorations,
+    },
+  );
+}
+
+function buildLivePreviewDecorations(
+  view: EditorView,
+  wikiLinks: WikiLinkResolutionMap,
+) {
   const ranges = [];
   const activeLines = getActiveStructuralLines(view);
   const activePositions = view.state.selection.ranges.map((range) => range.head);
@@ -1046,6 +1311,26 @@ function buildLivePreviewDecorations(view: EditorView) {
             position = fromLine.to + 1;
             continue;
           }
+        }
+
+        const wikiEmbed = getWikiDocumentEmbed(line.text, wikiLinks);
+
+        if (
+          wikiEmbed &&
+          !hasActivePositionInRange(activePositions, line.from, line.to)
+        ) {
+          ranges.push(previewWikiDocumentEmbedLine.range(line.from));
+          ranges.push(
+            Decoration.replace({
+              widget: new WikiDocumentEmbedPreviewWidget(
+                line.text.trim(),
+                wikiLinks,
+              ),
+            }).range(line.from, line.to),
+          );
+
+          position = line.to + 1;
+          continue;
         }
 
         const lineRanges = decorateInactiveMarkdownLine(
@@ -1505,6 +1790,7 @@ function addInlinePreviewDecorations(
   }));
 
   addInlineHtmlDecorations(ranges, lineFrom, text, activePositions);
+  addWikiImageDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
   addRegexDecorations(
     ranges,
     lineFrom,
@@ -1544,6 +1830,7 @@ function addInlinePreviewDecorations(
     inlineCodeRanges,
   );
   addLinkDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
+  addWikiLinkDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
 }
 
 function getInlineCodeRanges(text: string) {
@@ -1561,6 +1848,226 @@ function getInlineCodeRanges(text: string) {
   }
 
   return ranges;
+}
+
+function addWikiImageDecorations(
+  ranges: RangeLike[],
+  lineFrom: number,
+  text: string,
+  activePositions: number[],
+  protectedRanges: Array<{ from: number; to: number }> = [],
+) {
+  for (const match of text.matchAll(/!\[\[([^\]\n]+)\]\]/g)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const parts = match[1].split("|", 2);
+    const target = parts[0]?.trim() ?? "";
+    const alt = parts[1]?.trim() || target;
+    const safeSrc = safeExternalImageSrc(target);
+    const from = lineFrom + match.index;
+    const to = from + match[0].length;
+
+    if (
+      !safeSrc ||
+      hasActivePositionInRange(activePositions, from, to) ||
+      overlapsAnyRange(from, to, protectedRanges)
+    ) {
+      continue;
+    }
+
+    ranges.push(
+      Decoration.replace({
+        widget: new WikiImagePreviewWidget(safeSrc, alt),
+      }).range(from, to),
+    );
+  }
+}
+
+function addWikiLinkDecorations(
+  ranges: RangeLike[],
+  lineFrom: number,
+  text: string,
+  activePositions: number[],
+  protectedRanges: Array<{ from: number; to: number }> = [],
+) {
+  for (const match of text.matchAll(/(?<!!)\[\[([^\]\n]+)\]\]/g)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const from = lineFrom + match.index;
+    const to = from + match[0].length;
+
+    if (
+      hasActivePositionInRange(activePositions, from, to) ||
+      overlapsAnyRange(from, to, protectedRanges)
+    ) {
+      continue;
+    }
+
+    const [target = "", label = ""] = match[1].split("|", 2);
+    const visibleText = label.trim() || target.trim();
+    const visibleStartInMatch = match[0].indexOf(visibleText);
+
+    if (!visibleText || visibleStartInMatch < 0) {
+      continue;
+    }
+
+    const visibleFrom = from + visibleStartInMatch;
+    const visibleTo = visibleFrom + visibleText.length;
+
+    ranges.push(previewWikiLink.range(visibleFrom, visibleTo));
+    ranges.push(hiddenMarkdown.range(from, visibleFrom));
+    ranges.push(hiddenMarkdown.range(visibleTo, to));
+  }
+}
+
+function safeExternalImageSrc(target: string) {
+  let url: URL;
+
+  try {
+    url = new URL(target);
+  } catch {
+    return null;
+  }
+
+  return url.protocol === "https:" || url.protocol === "http:"
+    ? url.toString()
+    : null;
+}
+
+function createWikiLinkCompletionSource(
+  wikiLinkMapStore: WikiLinkMapStore,
+  wikiCompletionDismissal: WikiCompletionDismissalStore,
+) {
+  return async (context: CompletionContext) => {
+    const region = getOpenWikiLinkCompletionRegion(context.state, context.pos);
+
+    if (!region) {
+      return null;
+    }
+
+    if (
+      wikiCompletionDismissal.get()?.markerFrom === region.markerFrom &&
+      !context.explicit
+    ) {
+      return null;
+    }
+
+    const freshWikiLinks = await fetchWikiLinkCompletionMap(wikiLinkMapStore.get());
+    wikiLinkMapStore.set(freshWikiLinks);
+
+    return {
+      from: region.markerTo,
+      to: region.contentTo,
+      options: createWikiLinkCompletionOptions(
+        freshWikiLinks,
+        region.hasClosingMarker,
+      ),
+      validFor: /^[^\[\]\n]*$/,
+    };
+  };
+}
+
+function getOpenWikiLinkCompletionRegion(
+  state: EditorState,
+  pos: number,
+): WikiCompletionRegion | null {
+  const line = state.doc.lineAt(pos);
+  const beforeCursor = state.sliceDoc(line.from, pos);
+  const markerIndex = beforeCursor.lastIndexOf("[[");
+
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const query = beforeCursor.slice(markerIndex + 2);
+
+  if (query.includes("[") || query.includes("]") || query.includes("\n")) {
+    return null;
+  }
+
+  const markerFrom = line.from + markerIndex;
+  const afterCursor = state.sliceDoc(pos, line.to);
+  const hasClosingMarker = afterCursor.startsWith("]]");
+
+  return {
+    markerFrom,
+    markerTo: markerFrom + 2,
+    contentTo: pos,
+    hasClosingMarker,
+    query,
+  };
+}
+
+function isInsideDismissedWikiCompletionRegion(
+  state: EditorState,
+  pos: number,
+  dismissal: WikiCompletionDismissal,
+) {
+  const region = getOpenWikiLinkCompletionRegion(state, pos);
+
+  return region?.markerFrom === dismissal.markerFrom;
+}
+
+async function fetchWikiLinkCompletionMap(fallback: WikiLinkResolutionMap) {
+  try {
+    const response = await fetch("/api/documents/wiki-links", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+
+    if (!response.ok) {
+      return fallback;
+    }
+
+    const payload: unknown = await response.json();
+
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "wikiLinks" in payload &&
+      typeof payload.wikiLinks === "object" &&
+      payload.wikiLinks !== null
+    ) {
+      return payload.wikiLinks as WikiLinkResolutionMap;
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
+}
+
+function createWikiLinkCompletionOptions(
+  wikiLinks?: WikiLinkResolutionMap,
+  hasClosingMarker = false,
+): Completion[] {
+  const options: Completion[] = [];
+
+  for (const [key, resolution] of Object.entries(wikiLinks ?? {})) {
+    if (!key.startsWith("doc:") || resolution.status !== "resolved") {
+      continue;
+    }
+
+    const documentId = key.slice(4);
+    const title = resolution.label?.trim() || "Untitled document";
+    const insertText = `doc:${documentId}|${escapeWikiLinkLabel(title)}${
+      hasClosingMarker ? "" : "]]"
+    }`;
+
+    options.push({
+      label: title,
+      detail: "document",
+      type: "text",
+      apply: insertText,
+      info: "Insert a stable Vault document link",
+    });
+  }
+
+  return options.sort((first, second) => first.label.localeCompare(second.label));
 }
 
 function addInlineHtmlDecorations(

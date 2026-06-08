@@ -225,6 +225,12 @@ Unauthorized users cannot connect.
 | [x] | Add live preview | Live mode is default; Source/Split/Preview remain available; multi-line raw HTML stays source in live mode and renders in Preview/Split |
 | [x] | Remove legacy Tiptap/ProseMirror code | Tiptap packages, editor components, ProseMirror helpers, and `documents.content` fallback code removed; migration `0005_high_captain_midlands.sql` drops the legacy column |
 | [x] | Add document update history | `document_versions` stores batched Markdown checkpoints, manual restore points, and before-restore/before-archive safety snapshots |
+| [x] | Add wiki-link rendering slice | Preview/view/public render `[[doc:id|label]]`, unambiguous `[[Title]]`, unresolved states, and external image `![[https://...]]` syntax |
+| [x] | Add wiki-link autocomplete | CodeMirror autocomplete refreshes readable documents from `/api/documents/wiki-links` for `[[...]]` links and `![[...]]` embeds |
+| [x] | Add source-mode HTML autocomplete | Markdown CodeMirror keeps HTML tag completion available in source/split/live modes alongside wiki-link completion |
+| [x] | Add live wiki-link styling | Live mode hides inactive wiki-link markers and styles the visible label |
+| [x] | Add document transclusion embeds | Standalone `![[doc]]` embeds render permission-aware document previews in Preview/view/public and Live mode |
+| [ ] | Add uploaded document assets | Future `![[asset:id]]` support with private-by-default storage and permission-checked serving |
 
 Exit criteria:
 
@@ -246,10 +252,10 @@ Legacy ProseMirror JSON is no longer required.
 | [x] | Add admin user moderation UI | `/dashboard/admin` lists/searches users, sets roles, bans/unbans |
 | [x] | Add official docs schema | `official_docs` stores admin-authored Markdown guides |
 | [x] | Add public docs routes | `/docs` and `/docs/guides/[slug]` render published official docs |
-| [x] | Add admin official docs editor | `/dashboard/admin/docs` and `/dashboard/admin/docs/[docId]`, manual saves, no collaboration |
+| [x] | Add admin official docs editor | `/dashboard/admin/docs` and `/dashboard/admin/docs/[docId]`, CodeMirror source/split/preview editing, manual saves, no collaboration |
 | [x] | Add docs categories and sidebar navigation | `category` and `sort_order` drive readthedocs-style public docs grouping |
 | [x] | Add repo-backed canonical docs | `content/docs/**/*.md` merges into the same public/admin docs lists as read-only canonical docs |
-| [x] | Seed first official user docs | Added Markdown basics, callouts, snippets, safe HTML/embeds, and sharing/permissions |
+| [x] | Seed first official user docs | Added Markdown basics, wiki links/embeds, callouts, snippets, safe HTML/embeds, and sharing/permissions |
 | [x] | Add terms page and login acceptance copy | `/terms` renders `content/legal/terms.md`; login links terms before OAuth/dev sign-in |
 
 Exit criteria:

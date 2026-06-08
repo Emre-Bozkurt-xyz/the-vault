@@ -5,7 +5,10 @@ import { notFound } from "next/navigation";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createMarkdownExcerpt } from "@/lib/markdown";
-import { getPublicDocumentBySlug } from "@/server/documents";
+import {
+  getPublicDocumentBySlug,
+  listPublicWikiLinkResolutions,
+} from "@/server/documents";
 
 type PublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -71,6 +74,7 @@ export default async function PublicDocumentPage({
     notFound();
   }
 
+  const wikiLinks = await listPublicWikiLinkResolutions();
   const ownerName = document.ownerName ?? document.ownerUsername ?? "Vault user";
   const ownerHandle = document.ownerUsername ? `@${document.ownerUsername}` : null;
   const ownerInitial = ownerName.trim().charAt(0).toUpperCase() || "V";
@@ -111,6 +115,7 @@ export default async function PublicDocumentPage({
             <MarkdownDocument
               markdown={document.markdown}
               className="vault-public-markdown"
+              wikiLinks={wikiLinks}
             />
           </div>
         </article>

@@ -71,6 +71,83 @@ Why:
 
 ---
 
+## 2.1 Wiki Links and Attachments
+
+Document titles are display labels, not stable identifiers. Do not add a global
+or per-user uniqueness constraint to private document titles just to support
+wiki links; repeated titles such as "Meeting notes" or "Draft" should remain
+valid user behavior.
+
+Canonical internal document links should use stable IDs:
+
+```txt
+[[doc:<document-id>|Readable label]]
+```
+
+Convenience title links are allowed:
+
+```txt
+[[Readable title]]
+[[Readable title|Custom label]]
+```
+
+Resolution rules:
+
+- `[[doc:id|label]]` resolves by document ID when the current viewer can read
+  the target.
+- `[[Title]]` resolves only when exactly one readable document has that title.
+- Ambiguous title links render as unresolved/ambiguous and should be fixed by
+  selecting a specific document from future autocomplete.
+- Public rendering resolves links only to public document routes.
+- Public rendering must never expose private document IDs or private app routes;
+  private or inaccessible links render as non-clickable text.
+- Publishing should eventually warn when the document contains private or
+  unresolved wiki links, but publishing should not be blocked solely because
+  the author included private references.
+
+Current first slice:
+
+- Preview/view/public Markdown rendering supports `[[...]]` document links
+  using server-provided permission-aware resolution maps.
+- External image embeds support Obsidian-like `![[https://...]]` syntax by
+  translating it to standard Markdown image rendering; live mode renders
+  inactive external image embeds as stable preview frames.
+- Standalone document embeds support `![[doc:id|label]]` and unambiguous
+  `![[Title]]` syntax. They render as inline transclusions with a subtle left
+  rail in Preview/view/public and Live mode. Embeds use the same permission-aware
+  wiki map as normal wiki links; public pages only embed public documents.
+  Recursive embeds are capped.
+
+Future slices:
+
+- `![[asset:id]]` uploaded document assets served through permission-checked
+  routes.
+
+Current editor behavior:
+
+- CodeMirror wiki autocomplete fetches the current readable document map from
+  `/api/documents/wiki-links` when completion starts in either `[[...]]` links
+  or `![[...]]` document embeds, then inserts canonical `doc:id|title` targets.
+  Arrow keys navigate suggestions, Tab/Enter accept the selected suggestion,
+  Escape closes the popup, and mouse selection applies the completion.
+  Completion is bracket-aware: if CodeMirror has already paired `[[|]]`, the
+  suggestion fills the inside and leaves the existing closing marker instead of
+  adding another `]]`.
+- HTML tag autocomplete is available in editable Source, Split, and Live modes.
+  Vault's custom wiki-link completion is registered alongside CodeMirror's HTML
+  completion instead of replacing it.
+- Live mode hides inactive wiki-link markers and styles the visible label; moving
+  the cursor into the link reveals the source.
+- Live mode renders standalone document embeds as a single-line source widget,
+  so the `![[...]]` line can expand visually without needing multi-line
+  CodeMirror block replacement.
+
+Uploaded assets should be private-by-default document attachments, not public
+opaque URLs. Store metadata in a future `document_assets` table and serve files
+through routes that check `canReadDocument()` before returning the object.
+
+---
+
 ## 3. Editor Component Structure
 
 Current files:

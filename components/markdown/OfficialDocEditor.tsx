@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { autocompletion } from "@codemirror/autocomplete";
+import { html, htmlCompletionSource } from "@codemirror/lang-html";
+import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
+import { EditorSelection } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import CodeMirror from "@uiw/react-codemirror";
 import { AlertCircle, CheckCircle2, Columns2, Eye, FileCode2, Loader2, Save } from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
@@ -10,7 +16,6 @@ import {
 } from "@/components/markdown/MarkdownToolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { saveOfficialDocAction } from "@/server/official-docs";
 
@@ -45,7 +50,95 @@ export function OfficialDocEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+  const editorExtensions = useMemo(
+    () => [
+      markdownLanguage({
+        htmlTagLanguage: html({
+          matchClosingTags: false,
+          selfClosingTags: true,
+        }),
+      }),
+      EditorView.lineWrapping,
+      autocompletion({
+        override: [htmlCompletionSource],
+      }),
+      EditorView.theme({
+        "&": {
+          backgroundColor: "transparent",
+          color: "var(--foreground)",
+          fontSize: "1rem",
+        },
+        ".cm-content": {
+          minHeight: "620px",
+          padding: "1.25rem",
+          caretColor: "var(--foreground)",
+          fontFamily: "var(--font-mono)",
+        },
+        ".cm-line": {
+          lineHeight: "1.75",
+        },
+        ".cm-cursor, .cm-dropCursor": {
+          borderLeftColor: "var(--foreground)",
+        },
+        ".cm-gutters": {
+          backgroundColor: "transparent",
+          borderRight: "1px solid var(--border)",
+          color: "var(--muted-foreground)",
+        },
+        ".cm-activeLine, .cm-activeLineGutter": {
+          backgroundColor:
+            "color-mix(in oklab, var(--muted) 45%, transparent)",
+        },
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+          backgroundColor:
+            "color-mix(in oklab, var(--primary) 24%, transparent)",
+        },
+        ".cm-tooltip": {
+          border: "1px solid var(--border)",
+          borderRadius: "0.75rem",
+          backgroundColor: "color-mix(in oklab, var(--card) 96%, black 4%)",
+          color: "var(--card-foreground)",
+          boxShadow: "0 24px 80px -45px rgba(0, 0, 0, 0.85)",
+          overflow: "hidden",
+        },
+        ".cm-tooltip-autocomplete": {
+          minWidth: "14rem",
+          padding: "0.35rem",
+          fontFamily: "var(--font-sans)",
+        },
+        ".cm-tooltip-autocomplete > ul": {
+          maxHeight: "15rem",
+          padding: "0",
+        },
+        ".cm-tooltip-autocomplete ul li": {
+          minHeight: "2rem",
+          borderRadius: "0.5rem",
+          padding: "0.35rem 0.55rem",
+          color: "var(--muted-foreground)",
+          lineHeight: "1.25",
+        },
+        ".cm-tooltip-autocomplete ul li[aria-selected]": {
+          backgroundColor:
+            "color-mix(in oklab, var(--primary) 18%, transparent)",
+          color: "var(--foreground)",
+        },
+        ".cm-tooltip-autocomplete .cm-completionLabel": {
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.82rem",
+        },
+        ".cm-tooltip-autocomplete .cm-completionDetail": {
+          color: "var(--muted-foreground)",
+          fontSize: "0.75rem",
+          marginLeft: "0.75rem",
+        },
+        "&.cm-focused": {
+          outline: "none",
+        },
+      }),
+    ],
+    [],
+  );
 
   function save() {
     setError(null);
@@ -71,24 +164,29 @@ export function OfficialDocEditor({
   }
 
   function applyFormat(format: MarkdownFormat) {
-    const textarea = textareaRef.current;
+    const view = editorViewRef.current;
 
-    if (!textarea) {
+    if (!view) {
       return;
     }
 
+    const selection = view.state.selection.main;
     const next = formatTextareaValue(
-      markdownValue,
-      textarea.selectionStart,
-      textarea.selectionEnd,
+      view.state.doc.toString(),
+      selection.from,
+      selection.to,
       format,
     );
 
-    setMarkdownValue(next.value);
-    requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.setSelectionRange(next.selectionStart, next.selectionEnd);
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: next.value,
+      },
+      selection: EditorSelection.range(next.selectionStart, next.selectionEnd),
     });
+    view.focus();
   }
 
   return (
@@ -187,12 +285,20 @@ export function OfficialDocEditor({
         )}
       >
         {mode !== "preview" ? (
-          <Textarea
-            ref={textareaRef}
+          <CodeMirror
             value={markdownValue}
-            onChange={(event) => setMarkdownValue(event.target.value)}
-            spellCheck={false}
-            className="min-h-[620px] resize-y rounded-none border-0 border-r border-border/60 bg-background/70 p-5 font-mono text-base leading-7 focus-visible:ring-0"
+            extensions={editorExtensions}
+            onCreateEditor={(view) => {
+              editorViewRef.current = view;
+            }}
+            onChange={(value) => setMarkdownValue(value)}
+            basicSetup={{
+              foldGutter: true,
+              lineNumbers: true,
+              highlightActiveLine: true,
+              highlightActiveLineGutter: true,
+            }}
+            className="min-h-[620px] overflow-hidden border-r border-border/60 bg-background/70"
           />
         ) : null}
         {mode !== "source" ? (

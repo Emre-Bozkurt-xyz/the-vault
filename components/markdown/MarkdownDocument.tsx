@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle2,
   Flame,
+  FileText,
   HelpCircle,
   Info,
   Lightbulb,
@@ -28,13 +29,25 @@ import remarkGfm from "remark-gfm";
 
 import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
+import {
+  splitWikiDocumentEmbeds,
+  transformWikiLinks,
+  type WikiDocumentEmbedBlock,
+  type WikiLinkResolutionMap,
+} from "@/lib/wiki-links";
 
 type MarkdownDocumentProps = {
   markdown: string;
   className?: string;
   compact?: boolean;
+  contained?: boolean;
   disableLinks?: boolean;
+  wikiLinks?: WikiLinkResolutionMap;
+  embedDepth?: number;
+  embedTrail?: string[];
 };
+
+const maxWikiEmbedDepth = 2;
 
 const allowedLinkProtocol = /^(https?:|mailto:|\/|#)/i;
 const allowedImageProtocol = /^(https?:|\/)/i;
@@ -469,14 +482,20 @@ function createMarkdownComponents(disableLinks: boolean): Components {
     }
 
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={safeSrc}
-        alt={alt ?? ""}
-        title={title}
-        loading="lazy"
-        {...styledProps("vault-md-img", className, style)}
-      />
+      <span className="vault-md-image-frame">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={safeSrc}
+          alt={alt ?? ""}
+          title={title}
+          loading="lazy"
+          decoding="async"
+          {...styledProps("vault-md-img", className, style)}
+        />
+        <span className="vault-md-image-fallback">
+          Image unavailable
+        </span>
+      </span>
     );
   },
   iframe({ src, title, width, height, className, style }) {
@@ -845,27 +864,139 @@ export function MarkdownDocument({
   markdown,
   className,
   compact = false,
+  contained = true,
   disableLinks = false,
+  wikiLinks,
+  embedDepth = 0,
+  embedTrail = [],
 }: MarkdownDocumentProps) {
+  const sourceMarkdown = normalizeSelfClosingIframes(markdown || "_No content yet._");
+  const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);
+
   return (
     <div
       className={cn(
-        "vault-markdown mx-auto max-w-3xl",
+        "vault-markdown",
+        contained ? "mx-auto max-w-3xl" : null,
         compact ? "vault-markdown-compact" : null,
         className,
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[
-          rehypeRaw,
-          [rehypeSanitize, safeHtmlSchema],
-          rehypeSanitizeInlineStyles,
-        ]}
-        components={createMarkdownComponents(disableLinks)}
-      >
-        {normalizeSelfClosingIframes(markdown || "_No content yet._")}
-      </ReactMarkdown>
+      {blocks.map((block, index) =>
+        block.type === "markdown" ? (
+          <MarkdownSegment
+            key={`markdown-${index}`}
+            markdown={block.markdown}
+            disableLinks={disableLinks}
+            wikiLinks={wikiLinks}
+          />
+        ) : (
+          <WikiDocumentEmbed
+            key={`embed-${index}-${block.target}`}
+            block={block}
+            disableLinks={disableLinks}
+            wikiLinks={wikiLinks}
+            embedDepth={embedDepth}
+            embedTrail={embedTrail}
+          />
+        ),
+      )}
     </div>
+  );
+}
+
+function MarkdownSegment({
+  markdown,
+  disableLinks,
+  wikiLinks,
+}: {
+  markdown: string;
+  disableLinks: boolean;
+  wikiLinks?: WikiLinkResolutionMap;
+}) {
+  const renderedMarkdown = transformWikiLinks(markdown, wikiLinks);
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[
+        rehypeRaw,
+        [rehypeSanitize, safeHtmlSchema],
+        rehypeSanitizeInlineStyles,
+      ]}
+      components={createMarkdownComponents(disableLinks)}
+    >
+      {renderedMarkdown}
+    </ReactMarkdown>
+  );
+}
+
+function WikiDocumentEmbed({
+  block,
+  disableLinks,
+  wikiLinks,
+  embedDepth,
+  embedTrail,
+}: {
+  block: Extract<WikiDocumentEmbedBlock, { type: "embed" }>;
+  disableLinks: boolean;
+  wikiLinks?: WikiLinkResolutionMap;
+  embedDepth: number;
+  embedTrail: string[];
+}) {
+  const resolution = block.resolution;
+  const title = resolution?.label || block.label || block.target;
+  const documentId = resolution?.documentId;
+  const isRecursive = Boolean(documentId && embedTrail.includes(documentId));
+  const canRender =
+    resolution?.status === "resolved" &&
+    typeof resolution.embedMarkdown === "string" &&
+    !isRecursive &&
+    embedDepth < maxWikiEmbedDepth;
+
+  return (
+    <section
+      className={cn(
+        "vault-md-document-embed",
+        canRender ? null : "vault-md-document-embed-unavailable",
+      )}
+      data-embed-status={resolution?.status ?? "unresolved"}
+    >
+      <div className="vault-md-document-embed-header">
+        <span className="vault-md-document-embed-icon" aria-hidden="true">
+          <FileText className="size-4" />
+        </span>
+        {resolution?.href && !disableLinks ? (
+          <a className="vault-md-document-embed-title" href={resolution.href}>
+            {title}
+          </a>
+        ) : (
+          <span className="vault-md-document-embed-title">{title}</span>
+        )}
+      </div>
+      {canRender ? (
+        <MarkdownDocument
+          markdown={resolution.embedMarkdown ?? ""}
+          wikiLinks={wikiLinks}
+          disableLinks={disableLinks}
+          embedDepth={embedDepth + 1}
+          embedTrail={documentId ? [...embedTrail, documentId] : embedTrail}
+          contained={false}
+          className="vault-md-document-embed-body"
+        />
+      ) : (
+        <p className="vault-md-document-embed-message">
+          {isRecursive
+            ? "Recursive embed skipped."
+            : embedDepth >= maxWikiEmbedDepth
+              ? "Embed depth limit reached."
+              : resolution?.status === "private"
+                ? "Document is private or unavailable here."
+                : resolution?.status === "ambiguous"
+                  ? "Ambiguous document embed."
+                  : "Document embed could not be resolved."}
+        </p>
+      )}
+    </section>
   );
 }
