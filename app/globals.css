@@ -438,6 +438,62 @@
     border-left-color: color-mix(in oklab, var(--muted-foreground) 48%, var(--border));
   }
 
+  .vault-md-region {
+    margin-block: 1.15rem;
+    scroll-margin-top: 6rem;
+  }
+
+  .vault-md-region-foldable {
+    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in oklab, var(--card) 84%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in oklab, var(--primary) 70%, var(--border));
+    overflow: hidden;
+  }
+
+  .vault-md-region-summary {
+    display: flex;
+    cursor: pointer;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.85rem 1rem;
+    color: var(--foreground);
+    font-weight: 700;
+    list-style: none;
+  }
+
+  .vault-md-region-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .vault-md-region-caret {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    opacity: 0.68;
+    transform: rotate(-45deg);
+    transition: transform 140ms ease;
+  }
+
+  .vault-md-region-foldable[open] .vault-md-region-caret {
+    transform: rotate(45deg) translateY(-0.12rem);
+  }
+
+  .vault-md-region-foldable[open] .vault-md-region-summary {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  }
+
+  .vault-md-region-body {
+    max-width: none;
+    margin-inline: 0;
+    padding: 1rem;
+  }
+
+  .vault-md-region-static > .vault-md-region-body {
+    padding: 0;
+  }
+
   .callout {
     --callout-color: 83, 112, 255;
     --callout-icon: lucide-pencil;
@@ -828,6 +884,13 @@
     color: color-mix(in oklab, var(--destructive) 82%, var(--foreground));
   }
 
+  .vault-md-hidden-anchor {
+    display: block;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
   .vault-md-strong {
     font-weight: 700;
   }
@@ -983,6 +1046,14 @@
     width: 100%;
     margin-block: 0.35rem;
     white-space: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-document-embed-preview,
+  .vault-markdown-editor-live .vault-cm-wiki-image-preview,
+  .vault-markdown-editor-live .vault-cm-html-preview,
+  .vault-markdown-editor-live .vault-cm-html-inline-preview {
+    pointer-events: none;
+    user-select: none;
   }
 
   .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line {
@@ -1169,6 +1240,12 @@
     font-weight: 500;
     text-decoration: underline;
     text-underline-offset: 0.2rem;
+  }
+
+  .vault-markdown-editor .cm-content .vault-cm-preview-block-anchor {
+    color: color-mix(in oklab, var(--muted-foreground) 78%, var(--foreground));
+    font-size: 0.9em;
+    opacity: 0.82;
   }
 
   .vault-markdown-editor-live .cm-content .vault-cm-html-preview {

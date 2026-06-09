@@ -60,6 +60,184 @@ If a published document links to a private or inaccessible document, Vault does 
 
 This means you can keep private planning notes linked inside your own documents without accidentally leaking them on a public page.
 
+## Linking to headings
+
+Add `#heading text` at the end of a wiki link to point to a specific heading inside the target document:
+
+```md
+[[Project plan#Milestones]]
+[[Project plan#Milestones|Milestone notes]]
+```
+
+For stable links, use the canonical document form:
+
+```md
+[[doc:document-id|Project plan#Milestones]]
+[[doc:document-id#milestones|Project plan]]
+```
+
+When rendered, the link points to the matching heading on the target document page.
+
+Heading matching uses the same generated heading IDs that Vault adds to rendered Markdown headings. For example:
+
+```md
+## Milestones
+```
+
+becomes a heading target like:
+
+```txt
+#milestones
+```
+
+If the same heading text appears more than once, later headings get a numeric suffix:
+
+```txt
+#milestones
+#milestones-1
+#milestones-2
+```
+
+## Embedding a heading section
+
+Heading fragments also work with document embeds:
+
+```md
+![[Project plan#Milestones]]
+![[doc:document-id|Project plan#Milestones]]
+```
+
+When an embed points to a heading, Vault embeds only the section owned by that heading. The section starts at the selected heading and continues until the next heading of the same or higher level.
+
+For example, if the target document contains:
+
+```md
+# Project plan
+
+Intro text.
+
+## Milestones
+
+Owned by Milestones.
+
+### Detail
+
+Also owned by Milestones.
+
+## Risks
+
+Not owned by Milestones.
+```
+
+then this embed:
+
+```md
+![[Project plan#Milestones]]
+```
+
+renders the `## Milestones` section, its body, and its nested `### Detail` section, but stops before `## Risks`.
+
+## Heading autocomplete
+
+After typing `#` inside a wiki field, Vault can suggest headings from the matching document.
+
+Examples:
+
+```md
+[[Project plan#
+![[Project plan#
+[[doc:document-id|Project plan#
+```
+
+Document-title autocomplete still works before the `#`. Heading autocomplete works best after choosing a canonical `doc:...` suggestion or typing enough of the document title for Vault to identify the intended document.
+
+## Block anchors
+
+Vault also supports Obsidian-style block anchors for linking to one specific block of text.
+
+Add a block ID at the end of a paragraph or list item:
+
+```md
+This paragraph can be linked directly. ^requirements
+```
+
+Or put the block ID on its own line immediately after a block:
+
+```md
+This paragraph can be linked directly.
+^requirements
+```
+
+The `^requirements` marker is hidden in Preview and public rendering, but it becomes a wiki-link target:
+
+```md
+[[Project plan#^requirements]]
+![[Project plan#^requirements]]
+```
+
+Normal links jump to that block. Embeds render only that block.
+
+Block IDs may use letters, numbers, underscores, and hyphens. Vault normalizes IDs to lowercase.
+
+Vault only treats `^block-id` as a block anchor when it is the last thing on the line, or when it sits alone on the line after a block. Text such as `paragraph ^maybe more words` stays normal text.
+
+## Vault regions
+
+Vault regions are hidden named ranges for embedding or jumping to a larger hand-picked section of a document.
+
+Use hidden HTML comments:
+
+```md
+<!-- vault-region id="requirements" title="Requirements" -->
+## Requirements
+
+This whole section is part of the region.
+
+- Lists work.
+- Markdown works.
+<!-- /vault-region -->
+```
+
+The region comments do not render in Preview or public documents. They only define the target.
+
+Link or embed a region with `#@region-id`:
+
+```md
+[[Project plan#@requirements]]
+![[Project plan#@requirements]]
+```
+
+Normal links jump to the top of the region. Embeds render only the Markdown between the region markers.
+
+Regions can also include future-facing flags:
+
+```md
+<!-- vault-region id="requirements" title="Requirements" foldable collapsed -->
+...
+<!-- /vault-region -->
+```
+
+`foldable` renders the region as a collapsible block in Preview, public pages, and embedded documents. Add `collapsed` when the region should start closed.
+
+To insert a region without typing the comments by hand, use the Region toolbar button or press `Ctrl/Cmd + Alt + R`. If text is selected, Vault wraps that text in a foldable collapsed region scaffold. If nothing is selected, Vault inserts a ready-to-edit scaffold and places the cursor on `region-id`.
+
+## Fragment autocomplete
+
+After choosing or typing a document, type `#` to search all known targets inside it:
+
+```md
+[[Project plan#
+![[doc:document-id|Project plan#
+```
+
+Suggestions can include:
+
+- Headings such as `Milestones`
+- Block anchors such as `^requirements`
+- Regions such as `@requirements`
+
+Autocomplete inserts the stable target ID after `#`.
+
 ## Document embeds
 
 A document embed uses an exclamation mark before the wiki link:

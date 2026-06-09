@@ -21,6 +21,8 @@ import {
 import { maxMarkdownLength } from "@/lib/markdown";
 import { slugify } from "@/lib/slug";
 import {
+  extractMarkdownAnchorOptions,
+  extractMarkdownHeadingOptions,
   type WikiLinkResolution,
   type WikiLinkResolutionMap,
   wikiDocKey,
@@ -911,6 +913,8 @@ function buildWikiLinkResolutionMap<
         label: document.title,
         href,
         embedMarkdown: includeEmbeds ? document.markdown : undefined,
+        headings: extractMarkdownHeadingOptions(document.markdown ?? ""),
+        anchors: extractMarkdownAnchorOptions(document.markdown ?? ""),
       }
       : {
           status: "private",
@@ -941,6 +945,8 @@ function buildWikiLinkResolutionMap<
           label: match.title,
           href,
           embedMarkdown: includeEmbeds ? match.markdown : undefined,
+          headings: extractMarkdownHeadingOptions(match.markdown ?? ""),
+          anchors: extractMarkdownAnchorOptions(match.markdown ?? ""),
         }
       : {
           status: "private",

@@ -416,6 +416,16 @@ function replacementForFormat(format: MarkdownFormat, selected: string) {
         cursorStart: 2,
         cursorEnd: 8,
       };
+    case "region": {
+      const text = `<!-- vault-region id="region-id" title="Region title" foldable collapsed -->\n${content}\n<!-- /vault-region -->`;
+      const cursorStart = text.indexOf("region-id");
+
+      return {
+        text,
+        cursorStart,
+        cursorEnd: cursorStart + "region-id".length,
+      };
+    }
     case "horizontalRule":
       return { text: "\n---\n", cursorStart: 5, cursorEnd: 5 };
   }
@@ -447,6 +457,10 @@ function sampleTextForFormat(format: MarkdownFormat) {
 
   if (format === "table") {
     return "";
+  }
+
+  if (format === "region") {
+    return "Region content";
   }
 
   return "text";

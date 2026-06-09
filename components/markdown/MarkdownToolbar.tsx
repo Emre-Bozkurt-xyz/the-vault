@@ -3,6 +3,7 @@
 import type { ComponentType, ReactNode } from "react";
 import {
   Bold,
+  Braces,
   CheckSquare,
   Code,
   Heading1,
@@ -37,6 +38,7 @@ export type MarkdownFormat =
   | "inlineCode"
   | "codeFence"
   | "table"
+  | "region"
   | "horizontalRule";
 
 export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
@@ -62,6 +64,7 @@ export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
       <ToolbarGroup>
         <ToolbarButton label="Code fence" shortcut="Ctrl+Alt+C" icon={Code} onClick={() => onFormat("codeFence")} />
         <ToolbarButton label="Table" icon={Table2} onClick={() => onFormat("table")} />
+        <ToolbarButton label="Vault region" shortcut="Ctrl+Alt+R" icon={Braces} onClick={() => onFormat("region")} />
         <ToolbarButton label="Horizontal rule" icon={Minus} onClick={() => onFormat("horizontalRule")} />
       </ToolbarGroup>
     </div>

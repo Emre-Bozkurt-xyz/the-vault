@@ -16,6 +16,8 @@ import {
   type CompletionContext,
   completionStatus,
   moveCompletionSelection,
+  pickedCompletion,
+  startCompletion,
 } from "@codemirror/autocomplete";
 import { html, htmlCompletionSource } from "@codemirror/lang-html";
 import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
@@ -56,6 +58,7 @@ import { cn } from "@/lib/utils";
 import {
   escapeWikiLinkLabel,
   getWikiDocumentEmbed,
+  type WikiLinkAnchor,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
 import {
@@ -93,6 +96,7 @@ type WikiCompletionRegion = {
   contentTo: number;
   hasClosingMarker: boolean;
   query: string;
+  headingFrom: number | null;
 };
 type WikiCompletionDismissal = {
   markerFrom: number;
@@ -266,6 +270,7 @@ export function MarkdownEditor({
       }),
       EditorView.lineWrapping,
       Prec.highest(keymap.of(createMarkdownShortcutKeymap(wikiCompletionDismissal))),
+      createBlockAnchorMarkerExtension(),
       EditorView.updateListener.of((update) => {
         const dismissal = wikiCompletionDismissal.get();
 
@@ -558,6 +563,11 @@ export function MarkdownEditor({
       return;
     }
 
+    if (format === "region") {
+      insertVaultRegion(view);
+      return;
+    }
+
     if (format === "horizontalRule") {
       insertBlock(view, "---", null);
       return;
@@ -577,6 +587,7 @@ export function MarkdownEditor({
       inlineCode: null,
       codeFence: null,
       table: null,
+      region: null,
       horizontalRule: null,
     };
     const prefix = linePrefix[format];
@@ -874,6 +885,28 @@ function createMarkdownShortcutKeymap(
           ? acceptCompletion(view)
           : false,
     },
+    {
+      key: "#",
+      run: (view) => {
+        const selection = view.state.selection.main;
+
+        if (!selection.empty) {
+          return false;
+        }
+
+        const region = getOpenWikiLinkCompletionRegion(
+          view.state,
+          selection.head,
+        );
+
+        if (!region) {
+          return false;
+        }
+
+        view.dispatch(view.state.replaceSelection("#"));
+        return startCompletion(view);
+      },
+    },
     { key: "Mod-b", run: run((view) => toggleInlineFormat(view, "bold")) },
     { key: "Mod-i", run: run((view) => toggleInlineFormat(view, "italic")) },
     { key: "Mod-e", run: run((view) => toggleInlineFormat(view, "code")) },
@@ -903,6 +936,7 @@ function createMarkdownShortcutKeymap(
       run: run((view) => toggleLinePrefix(view, "> ", "blockquote")),
     },
     { key: "Mod-Alt-c", run: run(toggleCodeFence) },
+    { key: "Mod-Alt-r", run: run(insertVaultRegion) },
   ];
 }
 
@@ -912,6 +946,7 @@ const previewItalic = Decoration.mark({ class: "vault-cm-preview-italic" });
 const previewCode = Decoration.mark({ class: "vault-cm-preview-code" });
 const previewLink = Decoration.mark({ class: "vault-cm-preview-link" });
 const previewWikiLink = Decoration.mark({ class: "vault-cm-preview-wiki-link" });
+const previewBlockAnchor = Decoration.mark({ class: "vault-cm-preview-block-anchor" });
 const previewWikiDocumentEmbedLine = Decoration.line({
   class: "vault-cm-document-embed-line",
 });
@@ -1254,9 +1289,10 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
+      isMouseSelecting = false;
 
       constructor(view: EditorView) {
-        this.decorations = buildLivePreviewDecorations(view, wikiLinks);
+        this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
       }
 
       update(update: ViewUpdate) {
@@ -1266,7 +1302,72 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           update.viewportChanged ||
           update.focusChanged
         ) {
-          this.decorations = buildLivePreviewDecorations(update.view, wikiLinks);
+          this.decorations = buildLivePreviewDecorations(
+            update.view,
+            wikiLinks,
+            this.isMouseSelecting,
+          );
+        }
+      }
+    },
+    {
+      decorations: (value) => value.decorations,
+      eventHandlers: {
+        mousedown(event, view) {
+          if (event.button !== 0) {
+            return;
+          }
+
+          this.isMouseSelecting = true;
+          this.decorations = buildLivePreviewDecorations(view, wikiLinks, true);
+        },
+        mouseup(_event, view) {
+          if (!this.isMouseSelecting) {
+            return;
+          }
+
+          this.isMouseSelecting = false;
+          this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+          view.dispatch({});
+        },
+        mouseleave(event, view) {
+          if (
+            event.buttons !== 0 ||
+            !this.isMouseSelecting
+          ) {
+            return;
+          }
+
+          this.isMouseSelecting = false;
+          this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+          view.dispatch({});
+        },
+        mousemove(event, view) {
+          if (event.buttons !== 0 || !this.isMouseSelecting) {
+            return;
+          }
+
+          this.isMouseSelecting = false;
+          this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+          view.dispatch({});
+        },
+      },
+    },
+  );
+}
+
+function createBlockAnchorMarkerExtension() {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+
+      constructor(view: EditorView) {
+        this.decorations = buildBlockAnchorMarkerDecorations(view);
+      }
+
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+          this.decorations = buildBlockAnchorMarkerDecorations(update.view);
         }
       }
     },
@@ -1276,13 +1377,53 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
   );
 }
 
+function buildBlockAnchorMarkerDecorations(view: EditorView) {
+  const ranges: RangeLike[] = [];
+  const codeFenceLines = getCodeFenceLines(view);
+  const activePositions = view.state.selection.ranges.map((range) => range.head);
+
+  for (const visibleRange of view.visibleRanges) {
+    let position = visibleRange.from;
+
+    while (position <= visibleRange.to) {
+      const line = view.state.doc.lineAt(position);
+
+      if (!codeFenceLines.has(line.number)) {
+        const marker = trailingBlockAnchorMatch(line.text);
+
+        if (marker) {
+          const markerFrom = line.from + marker.index;
+          const markerTo = markerFrom + marker.text.length;
+
+          if (!hasActivePositionInRange(activePositions, markerFrom, markerTo)) {
+            ranges.push(previewBlockAnchor.range(markerFrom, markerTo));
+          }
+        }
+      }
+
+      if (line.to >= visibleRange.to) {
+        break;
+      }
+
+      position = line.to + 1;
+    }
+  }
+
+  return Decoration.set(ranges, true);
+}
+
 function buildLivePreviewDecorations(
   view: EditorView,
   wikiLinks: WikiLinkResolutionMap,
+  suppressSourceReveal: boolean,
 ) {
   const ranges = [];
-  const activeLines = getActiveStructuralLines(view);
-  const activePositions = view.state.selection.ranges.map((range) => range.head);
+  const activeLines = suppressSourceReveal
+    ? new Set<number>()
+    : getActiveStructuralLines(view);
+  const activePositions = suppressSourceReveal
+    ? []
+    : view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
   const doc = view.state.doc;
 
@@ -1960,13 +2101,16 @@ function createWikiLinkCompletionSource(
     wikiLinkMapStore.set(freshWikiLinks);
 
     return {
-      from: region.markerTo,
+      from: region.headingFrom ?? region.markerTo,
       to: region.contentTo,
       options: createWikiLinkCompletionOptions(
         freshWikiLinks,
         region.hasClosingMarker,
+        region.query,
       ),
-      validFor: /^[^\[\]\n]*$/,
+      validFor: (text: string) =>
+        /^[^\[\]\n]*$/.test(text) &&
+        text.includes("#") === region.query.includes("#"),
     };
   };
 }
@@ -1999,6 +2143,10 @@ function getOpenWikiLinkCompletionRegion(
     contentTo: pos,
     hasClosingMarker,
     query,
+    headingFrom:
+      query.lastIndexOf("#") >= 0
+        ? markerFrom + 2 + query.lastIndexOf("#") + 1
+        : null,
   };
 }
 
@@ -2044,8 +2192,18 @@ async function fetchWikiLinkCompletionMap(fallback: WikiLinkResolutionMap) {
 function createWikiLinkCompletionOptions(
   wikiLinks?: WikiLinkResolutionMap,
   hasClosingMarker = false,
+  query = "",
 ): Completion[] {
   const options: Completion[] = [];
+  const targetOptions = createWikiTargetCompletionOptions(
+    wikiLinks,
+    hasClosingMarker,
+    query,
+  );
+
+  if (targetOptions) {
+    return targetOptions;
+  }
 
   for (const [key, resolution] of Object.entries(wikiLinks ?? {})) {
     if (!key.startsWith("doc:") || resolution.status !== "resolved") {
@@ -2054,20 +2212,150 @@ function createWikiLinkCompletionOptions(
 
     const documentId = key.slice(4);
     const title = resolution.label?.trim() || "Untitled document";
-    const insertText = `doc:${documentId}|${escapeWikiLinkLabel(title)}${
-      hasClosingMarker ? "" : "]]"
-    }`;
+    const insertText = `doc:${documentId}|${escapeWikiLinkLabel(title)}`;
 
     options.push({
       label: title,
       detail: "document",
       type: "text",
-      apply: insertText,
+      apply: createWikiCompletionApply(insertText, hasClosingMarker),
       info: "Insert a stable Vault document link",
     });
   }
 
   return options.sort((first, second) => first.label.localeCompare(second.label));
+}
+
+function createWikiTargetCompletionOptions(
+  wikiLinks: WikiLinkResolutionMap | undefined,
+  hasClosingMarker: boolean,
+  query: string,
+): Completion[] | null {
+  const hashIndex = query.lastIndexOf("#");
+
+  if (hashIndex < 0) {
+    return null;
+  }
+
+  const documentQuery = query.slice(0, hashIndex).trim();
+  const targetQuery = query.slice(hashIndex + 1).trim().toLowerCase();
+  const docs = Object.entries(wikiLinks ?? {}).filter(
+    ([key, resolution]) =>
+      key.startsWith("doc:") &&
+      resolution.status === "resolved" &&
+      matchesWikiDocumentCompletionQuery(key.slice(4), resolution.label, documentQuery),
+  );
+  const options: Completion[] = [];
+
+  for (const [, resolution] of docs) {
+    const title = resolution.label?.trim() || "Untitled document";
+
+    for (const anchor of wikiCompletionAnchorsForResolution(resolution)) {
+      if (!matchesWikiTargetQuery(anchor, targetQuery)) {
+        continue;
+      }
+
+      options.push({
+        label: `${title} # ${wikiCompletionAnchorLabel(anchor)}`,
+        detail: wikiCompletionAnchorDetail(anchor),
+        type: "text",
+        apply: createWikiCompletionApply(
+          escapeWikiLinkLabel(anchor.id),
+          hasClosingMarker,
+        ),
+        info: wikiCompletionAnchorInfo(anchor),
+      });
+    }
+  }
+
+  return options.sort((first, second) => first.label.localeCompare(second.label));
+}
+
+function wikiCompletionAnchorsForResolution(
+  resolution: WikiLinkResolutionMap[string],
+): WikiLinkAnchor[] {
+  if (resolution.anchors?.length) {
+    return resolution.anchors;
+  }
+
+  return (resolution.headings ?? []).map((heading) => ({
+    type: "heading" as const,
+    id: heading.slug,
+    label: heading.text,
+    level: heading.level,
+  }));
+}
+
+function matchesWikiTargetQuery(anchor: WikiLinkAnchor, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  return (
+    anchor.id.toLowerCase().includes(query) ||
+    anchor.label.toLowerCase().includes(query)
+  );
+}
+
+function wikiCompletionAnchorLabel(anchor: WikiLinkAnchor) {
+  if (anchor.type === "heading") {
+    return anchor.label;
+  }
+
+  return `${anchor.id} ${anchor.label}`;
+}
+
+function wikiCompletionAnchorDetail(anchor: WikiLinkAnchor) {
+  if (anchor.type === "heading") {
+    return `H${anchor.level}`;
+  }
+
+  return anchor.type === "region" ? "region" : "block";
+}
+
+function wikiCompletionAnchorInfo(anchor: WikiLinkAnchor) {
+  if (anchor.type === "heading") {
+    return "Link to a heading inside this document";
+  }
+
+  if (anchor.type === "region") {
+    return "Link to a hidden Vault region inside this document";
+  }
+
+  return "Link to an Obsidian-style block anchor inside this document";
+}
+
+function createWikiCompletionApply(insertText: string, hasClosingMarker: boolean) {
+  return (view: EditorView, completion: Completion, from: number, to: number) => {
+    const text = hasClosingMarker ? insertText : `${insertText}]]`;
+    const cursor = from + insertText.length;
+
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: EditorSelection.cursor(cursor),
+      annotations: pickedCompletion.of(completion),
+    });
+  };
+}
+
+function matchesWikiDocumentCompletionQuery(
+  documentId: string,
+  title: string | undefined,
+  query: string,
+) {
+  if (!query) {
+    return true;
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  const normalizedTitle = (title ?? "").toLowerCase();
+
+  if (normalizedQuery.startsWith("doc:")) {
+    const target = normalizedQuery.slice(4).split("|", 1)[0]?.trim();
+    return Boolean(target && documentId.toLowerCase().startsWith(target));
+  }
+
+  return normalizedTitle.includes(normalizedQuery);
 }
 
 function addInlineHtmlDecorations(
@@ -2266,6 +2554,21 @@ function escapeRegExp(value: string) {
 
 function isCodeFenceLine(text: string) {
   return /^```/.test(text.trim());
+}
+
+function trailingBlockAnchorMatch(text: string) {
+  const match = text.match(/(?:^|\s)(\^[A-Za-z0-9_-]+)\s*$/);
+
+  if (!match || match.index === undefined) {
+    return null;
+  }
+
+  const markerOffset = match[0].indexOf(match[1]);
+
+  return {
+    index: match.index + markerOffset,
+    text: match[1],
+  };
 }
 
 function isListContinuation(text: string) {
@@ -2668,6 +2971,17 @@ function insertBlock(view: EditorView, text: string, cursorOffset: number | null
     scrollIntoView: true,
   });
   view.focus();
+}
+
+function insertVaultRegion(view: EditorView) {
+  const selection = view.state.selection.main;
+  const selectedText = view.state.sliceDoc(selection.from, selection.to);
+  const body = selectedText || "Region content";
+  const text = `<!-- vault-region id="region-id" title="Region title" foldable collapsed -->\n${body}\n<!-- /vault-region -->`;
+  const idOffset = text.indexOf("region-id");
+  const cursorOffset = idOffset >= 0 ? idOffset : null;
+
+  insertBlock(view, text, cursorOffset);
 }
 
 function toggleLinePrefix(

@@ -30,7 +30,10 @@ import remarkGfm from "remark-gfm";
 import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
+  extractMarkdownTarget,
+  normalizeWikiFragmentForHref,
   splitWikiDocumentEmbeds,
+  slugifyMarkdownHeading,
   transformWikiLinks,
   type WikiDocumentEmbedBlock,
   type WikiLinkResolutionMap,
@@ -386,25 +389,44 @@ function normalizeSelfClosingIframes(markdown: string) {
   return markdown.replace(/<iframe\b([^>]*)\/>/gi, "<iframe$1></iframe>");
 }
 
-function createMarkdownComponents(disableLinks: boolean): Components {
+function createMarkdownComponents(
+  disableLinks: boolean,
+  headingIds: Map<string, number>,
+): Components {
+  const headingProps = (
+    children: ReactNode,
+    baseClassName: string,
+    className?: string,
+    style?: unknown,
+  ) => {
+    const baseSlug = slugifyMarkdownHeading(reactNodeToText(children));
+    const count = headingIds.get(baseSlug) ?? 0;
+    headingIds.set(baseSlug, count + 1);
+
+    return {
+      id: count === 0 ? baseSlug : `${baseSlug}-${count}`,
+      ...styledProps(baseClassName, className, style),
+    };
+  };
+
   return {
   h1({ children, className, style }) {
-    return <h1 {...styledProps("vault-md-h1", className, style)}>{children}</h1>;
+    return <h1 {...headingProps(children, "vault-md-h1", className, style)}>{children}</h1>;
   },
   h2({ children, className, style }) {
-    return <h2 {...styledProps("vault-md-h2", className, style)}>{children}</h2>;
+    return <h2 {...headingProps(children, "vault-md-h2", className, style)}>{children}</h2>;
   },
   h3({ children, className, style }) {
-    return <h3 {...styledProps("vault-md-h3", className, style)}>{children}</h3>;
+    return <h3 {...headingProps(children, "vault-md-h3", className, style)}>{children}</h3>;
   },
   h4({ children, className, style }) {
-    return <h4 {...styledProps("vault-md-h4", className, style)}>{children}</h4>;
+    return <h4 {...headingProps(children, "vault-md-h4", className, style)}>{children}</h4>;
   },
   h5({ children, className, style }) {
-    return <h5 {...styledProps("vault-md-h5", className, style)}>{children}</h5>;
+    return <h5 {...headingProps(children, "vault-md-h5", className, style)}>{children}</h5>;
   },
   h6({ children, className, style }) {
-    return <h6 {...styledProps("vault-md-h6", className, style)}>{children}</h6>;
+    return <h6 {...headingProps(children, "vault-md-h6", className, style)}>{children}</h6>;
   },
   p({ children, className, style }) {
     return <p {...styledProps("vault-md-p", className, style)}>{children}</p>;
@@ -872,6 +894,7 @@ export function MarkdownDocument({
 }: MarkdownDocumentProps) {
   const sourceMarkdown = normalizeSelfClosingIframes(markdown || "_No content yet._");
   const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);
+  const headingIds = new Map<string, number>();
 
   return (
     <div
@@ -889,6 +912,16 @@ export function MarkdownDocument({
             markdown={block.markdown}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
+            headingIds={headingIds}
+          />
+        ) : block.type === "region" ? (
+          <VaultRegion
+            key={`region-${index}-${block.id}`}
+            block={block}
+            disableLinks={disableLinks}
+            wikiLinks={wikiLinks}
+            embedDepth={embedDepth}
+            embedTrail={embedTrail}
           />
         ) : (
           <WikiDocumentEmbed
@@ -905,14 +938,69 @@ export function MarkdownDocument({
   );
 }
 
+function VaultRegion({
+  block,
+  disableLinks,
+  wikiLinks,
+  embedDepth,
+  embedTrail,
+}: {
+  block: Extract<WikiDocumentEmbedBlock, { type: "region" }>;
+  disableLinks: boolean;
+  wikiLinks?: WikiLinkResolutionMap;
+  embedDepth: number;
+  embedTrail: string[];
+}) {
+  const body = block.markdown ? (
+    <MarkdownDocument
+      markdown={block.markdown}
+      wikiLinks={wikiLinks}
+      disableLinks={disableLinks}
+      embedDepth={embedDepth}
+      embedTrail={embedTrail}
+      contained={false}
+      className="vault-md-region-body"
+    />
+  ) : null;
+
+  if (block.foldable) {
+    return (
+      <details
+        id={block.id}
+        className="vault-md-region vault-md-region-foldable"
+        data-region-id={block.id}
+        open={!block.collapsed}
+      >
+        <summary className="vault-md-region-summary">
+          <span className="vault-md-region-caret" aria-hidden="true" />
+          <span className="vault-md-region-title">{block.title}</span>
+        </summary>
+        {body}
+      </details>
+    );
+  }
+
+  return (
+    <section
+      id={block.id}
+      className="vault-md-region vault-md-region-static"
+      data-region-id={block.id}
+    >
+      {body}
+    </section>
+  );
+}
+
 function MarkdownSegment({
   markdown,
   disableLinks,
   wikiLinks,
+  headingIds,
 }: {
   markdown: string;
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
+  headingIds: Map<string, number>;
 }) {
   const renderedMarkdown = transformWikiLinks(markdown, wikiLinks);
 
@@ -924,7 +1012,7 @@ function MarkdownSegment({
         [rehypeSanitize, safeHtmlSchema],
         rehypeSanitizeInlineStyles,
       ]}
-      components={createMarkdownComponents(disableLinks)}
+      components={createMarkdownComponents(disableLinks, headingIds)}
     >
       {renderedMarkdown}
     </ReactMarkdown>
@@ -947,6 +1035,10 @@ function WikiDocumentEmbed({
   const resolution = block.resolution;
   const title = resolution?.label || block.label || block.target;
   const documentId = resolution?.documentId;
+  const href =
+    resolution?.href && block.fragment
+      ? `${resolution.href}#${encodeURIComponent(normalizeWikiFragmentForHref(block.fragment))}`
+      : resolution?.href;
   const isRecursive = Boolean(documentId && embedTrail.includes(documentId));
   const canRender =
     resolution?.status === "resolved" &&
@@ -966,8 +1058,8 @@ function WikiDocumentEmbed({
         <span className="vault-md-document-embed-icon" aria-hidden="true">
           <FileText className="size-4" />
         </span>
-        {resolution?.href && !disableLinks ? (
-          <a className="vault-md-document-embed-title" href={resolution.href}>
+        {href && !disableLinks ? (
+          <a className="vault-md-document-embed-title" href={href}>
             {title}
           </a>
         ) : (
@@ -976,7 +1068,10 @@ function WikiDocumentEmbed({
       </div>
       {canRender ? (
         <MarkdownDocument
-          markdown={resolution.embedMarkdown ?? ""}
+          markdown={extractMarkdownTarget(
+            resolution.embedMarkdown ?? "",
+            block.fragment,
+          )}
           wikiLinks={wikiLinks}
           disableLinks={disableLinks}
           embedDepth={embedDepth + 1}

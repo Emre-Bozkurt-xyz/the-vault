@@ -96,6 +96,27 @@ Resolution rules:
 - `[[doc:id|label]]` resolves by document ID when the current viewer can read
   the target.
 - `[[Title]]` resolves only when exactly one readable document has that title.
+- `[[doc:id#heading|label]]`, `[[doc:id|label#heading]]`, and
+  `[[Title#heading]]` link to heading anchors inside the resolved document.
+  Title-based heading links use the last `#` as the heading separator; canonical
+  `doc:id` links are the robust form when a title itself contains `#`.
+- `[[doc:id#^block-id|label]]` links to an Obsidian-style block anchor. A block
+  anchor can be written inline at the end of a block or on its own line after a
+  block; preview/public rendering hides the `^block-id` marker. Embeds with the
+  same fragment render only that block.
+- `[[doc:id#@region-id|label]]` links to a Vault region declared with hidden
+  HTML comments:
+
+```md
+<!-- vault-region id="region-id" title="Region title" foldable collapsed -->
+...
+<!-- /vault-region -->
+```
+
+  Region markers are hidden in preview/public rendering. Embeds with the same
+  fragment render only the Markdown between the markers. `foldable` renders the
+  region as a collapsible disclosure block, and `collapsed` makes it initially
+  closed.
 - Ambiguous title links render as unresolved/ambiguous and should be fixed by
   selecting a specific document from future autocomplete.
 - Public rendering resolves links only to public document routes.
@@ -116,7 +137,10 @@ Current first slice:
   `![[Title]]` syntax. They render as inline transclusions with a subtle left
   rail in Preview/view/public and Live mode. Embeds use the same permission-aware
   wiki map as normal wiki links; public pages only embed public documents.
-  Recursive embeds are capped.
+  Recursive embeds are capped. Heading fragments on embeds render only the
+  selected heading's owned section, from that heading until the next heading of
+  equal or higher level. Block fragments render only the selected block. Region
+  fragments render only the Markdown inside the hidden region markers.
 
 Future slices:
 
@@ -132,10 +156,16 @@ Current editor behavior:
   Escape closes the popup, and mouse selection applies the completion.
   Completion is bracket-aware: if CodeMirror has already paired `[[|]]`, the
   suggestion fills the inside and leaves the existing closing marker instead of
-  adding another `]]`.
+  adding another `]]`; if completion has to insert `]]`, it leaves the cursor
+  before the closing marker so the user can keep typing. Typing `#` inside a
+  wiki field explicitly starts fragment completion, including after accepting a
+  canonical `doc:id|title` completion. Fragment completion can suggest headings,
+  `^block-id` block anchors, and `@region-id` Vault regions.
 - HTML tag autocomplete is available in editable Source, Split, and Live modes.
   Vault's custom wiki-link completion is registered alongside CodeMirror's HTML
   completion instead of replacing it.
+- The Region toolbar button and `Ctrl/Cmd+Alt+R` insert a foldable collapsed
+  Vault region scaffold. If text is selected, the scaffold wraps the selection.
 - Live mode hides inactive wiki-link markers and styles the visible label; moving
   the cursor into the link reveals the source.
 - Live mode renders standalone document embeds as a single-line source widget,
