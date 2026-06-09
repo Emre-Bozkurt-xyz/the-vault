@@ -5,29 +5,26 @@ import { ArrowLeft, ChevronDown, History, RotateCcw, Save, Trash2 } from "lucide
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
 import { DocumentWorkspace } from "@/components/document-workspace";
+import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { UserSearchField } from "@/components/user-search-field";
 import { createCollabToken } from "@/lib/collab-token";
 import { cn } from "@/lib/utils";
 import {
   archiveDocumentAction,
   createManualDocumentVersionAction,
-  getDocumentForUser,
+  getActiveDocumentShareLinkForUser,
+  getDocumentForUserWithOptionalShareLink,
   listDocumentCollaborators,
   listDocumentVersionsForUser,
   listPublicWikiLinkResolutions,
   listWikiLinkResolutionsForUser,
   publishDocumentAction,
-  removeCollaboratorAction,
   restoreDocumentVersionAction,
-  shareDocumentAction,
-  shareDocumentWithFriendAction,
   unpublishDocumentAction,
-  updateCollaboratorRoleAction,
 } from "@/server/documents";
 import { listFriendsForUser } from "@/server/friends";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
@@ -35,8 +32,10 @@ import { requireCompletedProfile } from "@/server/profile";
 
 export default async function DocumentPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ docId: string }>;
+  searchParams: Promise<{ share?: string }>;
 }) {
   const session = await auth();
 
@@ -46,7 +45,12 @@ export default async function DocumentPage({
 
   const profile = await requireCompletedProfile();
   const { docId } = await params;
-  const document = await getDocumentForUser(session.user.id, docId);
+  const { share: shareLinkId } = await searchParams;
+  const document = await getDocumentForUserWithOptionalShareLink(
+    session.user.id,
+    docId,
+    shareLinkId,
+  );
 
   if (!document) {
     notFound();
@@ -55,6 +59,9 @@ export default async function DocumentPage({
   const collaborators = document.access.canShare
     ? await listDocumentCollaborators(document.id, session.user.id)
     : [];
+  const activeShareLink = document.access.canShare
+    ? await getActiveDocumentShareLinkForUser(document.id, session.user.id)
+    : null;
   const [readableWikiLinks, guideWikiLinks, publicWikiLinks] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -107,9 +114,17 @@ export default async function DocumentPage({
             {document.visibility === "public" ? (
               <Badge variant="outline">Public</Badge>
             ) : (
-              <Badge variant="outline">Private</Badge>
+            <Badge variant="outline">Private</Badge>
             )}
             <Badge variant="secondary">{document.access.role ?? "viewer"}</Badge>
+            {document.access.canShare ? (
+              <DocumentShareDialog
+                documentId={document.id}
+                collaborators={collaborators}
+                friends={friends}
+                activeShareLink={activeShareLink}
+              />
+            ) : null}
           </div>
         </header>
 
@@ -121,9 +136,10 @@ export default async function DocumentPage({
                   documentId={document.id}
                   title={document.title}
                   markdown={markdown}
+                  shareLinkId={shareLinkId}
                   wikiLinks={wikiLinks}
                   collaboration={
-                    collabToken && collabUrl
+                    collabToken && collabUrl && !shareLinkId
                       ? {
                           url: collabUrl,
                           token: collabToken,
@@ -306,162 +322,6 @@ export default async function DocumentPage({
                     </form>
                   </div>
                 </div>
-              ) : null}
-
-              {document.access.canShare ? (
-                <section className="vault-fade-up vault-delay-2 rounded-lg border border-border/60 bg-card/70 p-5 text-card-foreground shadow-[0_18px_60px_-55px_rgba(0,0,0,0.55)] backdrop-blur">
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                    Sharing
-                  </h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Add registered users by nickname, username, or email.
-                    Viewer can read; editor can read and save changes.
-                  </p>
-
-                  <div className="mt-4 space-y-5">
-                    <div className="rounded-md border border-border/60 bg-background/60 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                        Share with a user
-                      </p>
-                      <form
-                        action={shareDocumentAction}
-                        className="mt-3 grid gap-3"
-                      >
-                        <input type="hidden" name="documentId" value={document.id} />
-                        <UserSearchField
-                          placeholder="Nickname, username, or email"
-                          required
-                        />
-                        <select
-                          name="role"
-                          className="h-9 w-full rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                          defaultValue="viewer"
-                        >
-                          <option value="viewer">Viewer</option>
-                          <option value="editor">Editor</option>
-                        </select>
-                        <Button type="submit">Share</Button>
-                      </form>
-                    </div>
-
-                    {friends.length > 0 ? (
-                      <div className="rounded-md border border-border/60 bg-background/60 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                          Share with a friend
-                        </p>
-                        <form
-                          action={shareDocumentWithFriendAction}
-                          className="mt-3 grid gap-3"
-                        >
-                          <input type="hidden" name="documentId" value={document.id} />
-                          <select
-                            name="userId"
-                            className="h-9 w-full rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                            required
-                          >
-                            {friends.map((friend) => (
-                              <option key={friend.id} value={friend.id}>
-                                {friend.name ?? friend.email ?? "Unnamed user"}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            name="role"
-                            className="h-9 w-full rounded-lg border border-border/70 bg-background/70 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                            defaultValue="viewer"
-                          >
-                            <option value="viewer">Viewer</option>
-                            <option value="editor">Editor</option>
-                          </select>
-                          <Button type="submit" variant="outline">
-                            Share friend
-                          </Button>
-                        </form>
-                      </div>
-                    ) : null}
-
-                    <div className="rounded-md border border-border/60 bg-background/60 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                        Collaborators
-                      </p>
-                      <div className="mt-3 grid gap-3">
-                        {collaborators.map((collaborator) => (
-                          <div
-                            key={collaborator.userId}
-                            className="rounded-md border border-border/60 bg-background/70 p-4"
-                          >
-                            <div>
-                              <p className="font-medium">
-                                {collaborator.name ??
-                                  collaborator.email ??
-                                  "Unnamed user"}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {collaborator.email} - {collaborator.role}
-                              </p>
-                            </div>
-
-                            {collaborator.role !== "owner" ? (
-                              <div className="mt-3 grid gap-2">
-                                <form
-                                  action={updateCollaboratorRoleAction}
-                                  className="grid gap-2"
-                                >
-                                  <input
-                                    type="hidden"
-                                    name="documentId"
-                                    value={document.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="userId"
-                                    value={collaborator.userId}
-                                  />
-                                  <select
-                                    name="role"
-                                    className="h-8 w-full rounded-lg border border-border/70 bg-background/70 px-2 text-sm"
-                                    defaultValue={collaborator.role}
-                                  >
-                                    <option value="viewer">Viewer</option>
-                                    <option value="editor">Editor</option>
-                                  </select>
-                                  <Button
-                                    type="submit"
-                                    size="sm"
-                                    variant="outline"
-                                    className="w-full"
-                                  >
-                                    Update role
-                                  </Button>
-                                </form>
-                                <form action={removeCollaboratorAction}>
-                                  <input
-                                    type="hidden"
-                                    name="documentId"
-                                    value={document.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="userId"
-                                    value={collaborator.userId}
-                                  />
-                                  <Button
-                                    type="submit"
-                                    size="sm"
-                                    variant="destructive"
-                                    className="w-full"
-                                  >
-                                    Remove collaborator
-                                  </Button>
-                                </form>
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </section>
               ) : null}
               </>
             ) : undefined

@@ -6,7 +6,9 @@ import { z } from "zod";
 
 import { db } from "@/db";
 import {
+  documentCollabStates,
   documentPermissions,
+  documentShareLinks,
   documentVersions,
   documents,
   friendships,
@@ -16,6 +18,7 @@ import {
   canDeleteDocument,
   canEditDocument,
   canShareDocument,
+  type DocumentAccess,
   getDocumentAccess,
 } from "@/lib/permissions";
 import { maxMarkdownLength } from "@/lib/markdown";
@@ -41,11 +44,13 @@ const saveMarkdownDocumentSchema = z.object({
   documentId: documentIdSchema,
   title: z.string().trim().min(1, "Title is required").max(200),
   markdown: z.string().max(maxMarkdownLength),
+  shareLinkId: z.string().uuid().optional().nullable(),
 });
 
 const saveDocumentTitleSchema = z.object({
   documentId: documentIdSchema,
   title: z.string().trim().min(1, "Title is required").max(200),
+  shareLinkId: z.string().uuid().optional().nullable(),
 });
 
 const shareDocumentSchema = z.object({
@@ -78,6 +83,11 @@ const restoreDocumentVersionSchema = z.object({
 const updateCollaboratorRoleSchema = collaboratorMutationSchema.extend({
   role: z.enum(["viewer", "editor"]),
 });
+const updateShareLinkSchema = z.object({
+  documentId: documentIdSchema,
+  mode: z.enum(["off", "anyone-viewer", "members-viewer", "members-editor"]),
+});
+const shareLinkIdSchema = z.string().uuid();
 
 type VersionableDocument = {
   id: string;
@@ -134,7 +144,11 @@ export async function saveMarkdownDocumentAction(
     };
   }
 
-  const allowed = await canEditDocument(user.id, parsed.data.documentId);
+  const allowed = await canEditDocumentWithOptionalShareLink(
+    user.id,
+    parsed.data.documentId,
+    parsed.data.shareLinkId,
+  );
 
   if (!allowed) {
     notFound();
@@ -175,6 +189,10 @@ export async function saveMarkdownDocumentAction(
       .where(
         and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
       );
+
+    await tx
+      .delete(documentCollabStates)
+      .where(eq(documentCollabStates.documentId, parsed.data.documentId));
   });
 
   return {
@@ -200,7 +218,11 @@ export async function saveDocumentTitleAction(
     };
   }
 
-  const allowed = await canEditDocument(user.id, parsed.data.documentId);
+  const allowed = await canEditDocumentWithOptionalShareLink(
+    user.id,
+    parsed.data.documentId,
+    parsed.data.shareLinkId,
+  );
 
   if (!allowed) {
     notFound();
@@ -343,6 +365,10 @@ export async function restoreDocumentVersionAction(formData: FormData) {
       .where(
         and(eq(documents.id, input.documentId), isNull(documents.deletedAt)),
       );
+
+    await tx
+      .delete(documentCollabStates)
+      .where(eq(documentCollabStates.documentId, input.documentId));
   });
 
   redirect(`/docs/${input.documentId}`);
@@ -552,6 +578,43 @@ export async function removeCollaboratorAction(formData: FormData) {
         ne(documentPermissions.role, "owner"),
       ),
     );
+
+  redirect(`/docs/${input.documentId}`);
+}
+
+export async function updateDocumentShareLinkAction(formData: FormData) {
+  const user = await requireActiveUser();
+  const input = updateShareLinkSchema.parse({
+    documentId: formData.get("documentId"),
+    mode: formData.get("mode"),
+  });
+
+  const allowed = await canShareDocument(user.id, input.documentId);
+
+  if (!allowed) {
+    notFound();
+  }
+
+  await db
+    .update(documentShareLinks)
+    .set({
+      enabled: 0,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(documentShareLinks.documentId, input.documentId));
+
+  if (input.mode !== "off") {
+    const mode = shareLinkModeToValues(input.mode);
+
+    await db.insert(documentShareLinks).values({
+      documentId: input.documentId,
+      tokenHash: crypto.randomUUID(),
+      scope: mode.scope,
+      role: mode.role,
+      enabled: 1,
+      createdBy: user.id,
+    });
+  }
 
   redirect(`/docs/${input.documentId}`);
 }
@@ -802,6 +865,146 @@ export async function listDocumentCollaborators(documentId: string, userId: stri
     .orderBy(documentPermissions.role, users.email);
 }
 
+export async function getActiveDocumentShareLinkForUser(
+  documentId: string,
+  userId: string,
+) {
+  const parsedDocumentId = documentIdSchema.safeParse(documentId);
+
+  if (!parsedDocumentId.success) {
+    return null;
+  }
+
+  const allowed = await canShareDocument(userId, parsedDocumentId.data);
+
+  if (!allowed) {
+    return null;
+  }
+
+  const [link] = await db
+    .select({
+      id: documentShareLinks.id,
+      scope: documentShareLinks.scope,
+      role: documentShareLinks.role,
+      expiresAt: documentShareLinks.expiresAt,
+      createdAt: documentShareLinks.createdAt,
+    })
+    .from(documentShareLinks)
+    .where(
+      and(
+        eq(documentShareLinks.documentId, parsedDocumentId.data),
+        eq(documentShareLinks.enabled, 1),
+        or(
+          isNull(documentShareLinks.expiresAt),
+          sql`${documentShareLinks.expiresAt} > now()`,
+        ),
+      ),
+    )
+    .orderBy(desc(documentShareLinks.createdAt))
+    .limit(1);
+
+  return link ?? null;
+}
+
+export async function getDocumentByShareLink(
+  linkId: string,
+  userId: string | null,
+) {
+  const parsedLinkId = shareLinkIdSchema.safeParse(linkId);
+
+  if (!parsedLinkId.success) {
+    return null;
+  }
+
+  const [row] = await db
+    .select({
+      linkId: documentShareLinks.id,
+      scope: documentShareLinks.scope,
+      linkRole: documentShareLinks.role,
+      documentId: documents.id,
+      ownerId: documents.ownerId,
+      title: documents.title,
+      markdown: documents.markdown,
+      visibility: documents.visibility,
+      publicSlug: documents.publicSlug,
+      updatedAt: documents.updatedAt,
+    })
+    .from(documentShareLinks)
+    .innerJoin(documents, eq(documentShareLinks.documentId, documents.id))
+    .where(
+      and(
+        eq(documentShareLinks.id, parsedLinkId.data),
+        eq(documentShareLinks.enabled, 1),
+        isNull(documents.deletedAt),
+        or(
+          isNull(documentShareLinks.expiresAt),
+          sql`${documentShareLinks.expiresAt} > now()`,
+        ),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  const regularAccess = userId
+    ? await getDocumentAccess(userId, row.documentId)
+    : await getDocumentAccess(null, row.documentId);
+  const linkAllowsMember = Boolean(userId) && row.scope === "members";
+  const linkAllowsAnonymousRead =
+    (row.scope === "anyone" && row.linkRole === "viewer") ||
+    row.linkRole === "editor";
+  const linkCanRead =
+    linkAllowsAnonymousRead || linkAllowsMember || regularAccess.canRead;
+  const linkCanEdit =
+    row.linkRole === "editor" && linkAllowsMember && Boolean(userId);
+
+  if (!linkCanRead) {
+    return {
+      requiresSignIn: row.scope === "members",
+      document: null,
+    } as const;
+  }
+
+  const access = mergeShareLinkAccess(regularAccess, {
+    canRead: linkCanRead,
+    canEdit: linkCanEdit,
+  });
+
+  return {
+    requiresSignIn: false,
+    document: {
+      id: row.documentId,
+      title: row.title,
+      markdown: row.markdown,
+      visibility: row.visibility,
+      publicSlug: row.publicSlug,
+      updatedAt: row.updatedAt,
+      access,
+    },
+  } as const;
+}
+
+async function canEditDocumentWithOptionalShareLink(
+  userId: string,
+  documentId: string,
+  shareLinkId?: string | null,
+) {
+  if (await canEditDocument(userId, documentId)) {
+    return true;
+  }
+
+  if (!shareLinkId) {
+    return false;
+  }
+
+  const shared = await getDocumentByShareLink(shareLinkId, userId);
+  return Boolean(
+    shared?.document?.id === documentId && shared.document.access.canEdit,
+  );
+}
+
 export async function listDocumentVersionsForUser(
   documentId: string,
   userId: string,
@@ -919,6 +1122,32 @@ async function createUniquePublicSlug(title: string) {
   return `${baseSlug}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+export async function getDocumentForUserWithOptionalShareLink(
+  userId: string,
+  documentId: string,
+  shareLinkId?: string | null,
+) {
+  const document = await getDocumentForUser(userId, documentId);
+
+  if (!shareLinkId) {
+    return document;
+  }
+
+  const shared = await getDocumentByShareLink(shareLinkId, userId);
+
+  if (!shared?.document) {
+    return document;
+  }
+
+  if (!document) {
+    return shared.document;
+  }
+
+  return shared.document.access.canEdit && !document.access.canEdit
+    ? shared.document
+    : document;
+}
+
 function buildWikiLinkResolutionMap<
   TDocument extends {
     id: string;
@@ -1026,6 +1255,41 @@ function buildWikiLinkResolutionMap<
   }
 
   return resolutions;
+}
+
+function shareLinkModeToValues(
+  mode: z.infer<typeof updateShareLinkSchema>["mode"],
+) {
+  switch (mode) {
+    case "anyone-viewer":
+      return { scope: "anyone" as const, role: "viewer" as const };
+    case "members-editor":
+      return { scope: "members" as const, role: "editor" as const };
+    case "members-viewer":
+    default:
+      return { scope: "members" as const, role: "viewer" as const };
+  }
+}
+
+function mergeShareLinkAccess(
+  regularAccess: DocumentAccess,
+  linkAccess: { canRead: boolean; canEdit: boolean },
+): DocumentAccess {
+  if (regularAccess.role === "owner") {
+    return regularAccess;
+  }
+
+  const canEdit = regularAccess.canEdit || linkAccess.canEdit;
+  const canRead = regularAccess.canRead || linkAccess.canRead || canEdit;
+
+  return {
+    canRead,
+    canEdit,
+    canShare: regularAccess.canShare,
+    canDelete: regularAccess.canDelete,
+    canPublish: regularAccess.canPublish,
+    role: regularAccess.role ?? (canEdit ? "editor" : canRead ? "viewer" : null),
+  };
 }
 
 async function maybeCreateAutomaticDocumentVersion(

@@ -422,7 +422,20 @@ Read-only Yjs clients can be tricky. Simpler:
 
 ### Simple Post-MVP
 
-Current Markdown pivot slice serializes the collaborative Y.Doc text back to `documents.markdown` through `onStoreDocument`.
+Current Markdown pivot slice serializes the collaborative Y.Doc text back to
+`documents.markdown` through `onStoreDocument`.
+
+The collab service also stores `Y.encodeStateAsUpdate(document)` in
+`document_collab_states.yjs_state` and loads that binary state before falling
+back to Markdown seeding. This is required for reconnect safety: re-creating a
+Y.Doc from plain text on every room load gives the same visible characters new
+CRDT identities, and a browser reconnecting with older Yjs state can merge both
+copies into duplicated document content.
+
+If no `document_collab_states` row exists, the collab service seeds a Y.Doc from
+`documents.markdown` once and immediately stores the seeded binary state. Normal
+non-collab Markdown overwrites and restores delete the collab state so the next
+room load starts from the latest Markdown instead of stale CRDT data.
 
 Current recovery layer stores batched Markdown checkpoints in `document_versions`.
 It does not store every Yjs update or every keystroke.
@@ -444,7 +457,8 @@ restore/archive:
   create a protective checkpoint before restoring or archiving
 ```
 
-Later, if lower-level replay is needed, use Yjs updates stored in database.
+Later, if lower-level replay is needed, add append-only Yjs updates in addition
+to the compact snapshot.
 
 ```txt
 yjs_updates

@@ -64,6 +64,20 @@
       "when": 1780726950711,
       "tag": "0008_overrated_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781026925210,
+      "tag": "0009_simple_korvac",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781028761768,
+      "tag": "0010_fast_phantom_reporter",
+      "breakpoints": true
     }
   ]
 }

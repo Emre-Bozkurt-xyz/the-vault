@@ -1,6 +1,7 @@
 import type { AdapterAccountType } from "@auth/core/adapters";
 import { relations, sql } from "drizzle-orm";
 import {
+  customType,
   index,
   integer,
   primaryKey,
@@ -13,6 +14,8 @@ import {
 
 export type DocumentRole = "owner" | "editor" | "viewer";
 export type DocumentVisibility = "private" | "public";
+export type DocumentShareLinkScope = "anyone" | "members";
+export type DocumentShareLinkRole = "viewer" | "editor";
 export type UserRole = "user" | "admin";
 export type OfficialDocStatus = "draft" | "published" | "archived";
 export type FriendRequestStatus =
@@ -20,6 +23,12 @@ export type FriendRequestStatus =
   | "accepted"
   | "rejected"
   | "cancelled";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const users = pgTable(
   "users",
@@ -202,13 +211,67 @@ export const documentVersions = pgTable(
   ],
 );
 
+export const documentShareLinks = pgTable(
+  "document_share_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    scope: text("scope")
+      .$type<DocumentShareLinkScope>()
+      .notNull()
+      .default("members"),
+    role: text("role")
+      .$type<DocumentShareLinkRole>()
+      .notNull()
+      .default("viewer"),
+    enabled: integer("enabled").notNull().default(1),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("document_share_links_token_hash_unique").on(table.tokenHash),
+    index("document_share_links_document_id_idx").on(table.documentId),
+    index("document_share_links_enabled_idx").on(table.enabled),
+    index("document_share_links_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const documentCollabStates = pgTable("document_collab_states", {
+  documentId: uuid("document_id")
+    .primaryKey()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  yjsState: bytea("yjs_state").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
 export const documentsRelations = relations(documents, ({ one, many }) => ({
   owner: one(users, {
     fields: [documents.ownerId],
     references: [users.id],
   }),
+  collabState: one(documentCollabStates, {
+    fields: [documents.id],
+    references: [documentCollabStates.documentId],
+  }),
   permissions: many(documentPermissions),
   versions: many(documentVersions),
+  shareLinks: many(documentShareLinks),
 }));
 
 export const documentPermissionsRelations = relations(
@@ -235,6 +298,30 @@ export const documentVersionsRelations = relations(
     author: one(users, {
       fields: [documentVersions.createdBy],
       references: [users.id],
+    }),
+  }),
+);
+
+export const documentShareLinksRelations = relations(
+  documentShareLinks,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentShareLinks.documentId],
+      references: [documents.id],
+    }),
+    creator: one(users, {
+      fields: [documentShareLinks.createdBy],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const documentCollabStatesRelations = relations(
+  documentCollabStates,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentCollabStates.documentId],
+      references: [documents.id],
     }),
   }),
 );

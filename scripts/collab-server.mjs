@@ -57,10 +57,12 @@ const server = new Server({
 
   async onLoadDocument({ documentName }) {
     const [document] = await db`
-      select markdown
-      from documents
-      where id = ${documentName}
-        and deleted_at is null
+      select d.markdown, dcs.yjs_state
+      from documents d
+      left join document_collab_states dcs
+        on dcs.document_id = d.id
+      where d.id = ${documentName}
+        and d.deleted_at is null
       limit 1
     `;
 
@@ -68,25 +70,49 @@ const server = new Server({
       throw new Error("Document not found");
     }
 
+    if (document.yjs_state) {
+      return document.yjs_state;
+    }
+
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("markdown");
     ytext.insert(0, document.markdown ?? "");
+    const seededState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
+
+    await db`
+      insert into document_collab_states (document_id, yjs_state)
+      values (${documentName}, ${seededState})
+      on conflict (document_id) do update
+      set yjs_state = excluded.yjs_state,
+          updated_at = now()
+    `;
 
     return ydoc;
   },
 
   async onStoreDocument({ document, documentName }) {
     const markdown = document.getText("markdown").toString();
+    const yjsState = Buffer.from(Y.encodeStateAsUpdate(document));
 
     await maybeCreateAutomaticDocumentVersion(documentName, markdown);
 
-    await db`
-      update documents
-      set markdown = ${markdown},
-          updated_at = now()
-      where id = ${documentName}
-        and deleted_at is null
-    `;
+    await db.begin(async (tx) => {
+      await tx`
+        update documents
+        set markdown = ${markdown},
+            updated_at = now()
+        where id = ${documentName}
+          and deleted_at is null
+      `;
+
+      await tx`
+        insert into document_collab_states (document_id, yjs_state)
+        values (${documentName}, ${yjsState})
+        on conflict (document_id) do update
+        set yjs_state = excluded.yjs_state,
+            updated_at = now()
+      `;
+    });
   },
 });
 

@@ -13,7 +13,7 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-06
+2026-06-09
 ```
 
 Current phase:
@@ -37,13 +37,13 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
 ```
 
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The next useful slice is writing the first official docs content for Markdown, snippets, HTML filtering, and safe embeds.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. Current follow-up work is mostly editor UX polish, knowledge graph features, sharing/access UX, and production hardening.
 ```
 
 ---
@@ -125,6 +125,7 @@ vault/
     healthz/
     login/
     public/[slug]/
+    share/[token]/
   components/
     markdown/
     theme-provider.tsx
@@ -162,6 +163,7 @@ Add notes as real files appear:
 | `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub/Google OAuth sign-in page |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
+| `app/share/[token]/page.tsx` | Copyable document share-link route with read-only anonymous access and signed-in member edit handoff |
 | `app/api/users/search/route.ts` | Authenticated user search API for friend/profile lookup |
 | `app/api/users/username-availability/route.ts` | Authenticated username validation/uniqueness API for settings |
 | `.github/workflows/deploy.yml` | Production deploy workflow for the self-hosted mini-PC runner |
@@ -170,6 +172,7 @@ Add notes as real files appear:
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
+| `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
@@ -284,6 +287,8 @@ Current tables:
 | `verification_tokens` | Yes | Email login tokens |
 | `documents` | Yes | Documents/notes |
 | `document_permissions` | Yes | Per-document access |
+| `document_share_links` | Yes | Revocable copyable document share links |
+| `document_collab_states` | Yes | Durable Yjs CRDT snapshots for collaboration room reload/reconnect safety |
 | `document_versions` | Yes | Batched Markdown restore checkpoints |
 | `friend_requests` | Yes | Friend request workflow |
 | `friendships` | Yes | Accepted friendships |
@@ -302,22 +307,27 @@ Current migrations:
 | `0006_chilly_quasimodo.sql` | Adds `document_versions` restore checkpoint table | Yes | No |
 | `0007_special_morbius.sql` | Adds user role/ban fields and `official_docs` | Generated | No |
 | `0008_overrated_radioactive_man.sql` | Adds `official_docs.category`, `official_docs.sort_order`, and category/order index | Generated | No |
+| `0009_simple_korvac.sql` | Adds `document_share_links` for copyable document access links | Generated | No |
+| `0010_fast_phantom_reporter.sql` | Adds `document_collab_states` for durable Yjs room state | Generated | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_versions, friend_requests, friendships, and official_docs.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_versions, friend_requests, friendships, and official_docs.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion; `users.role` supports `user`/`admin`.
 - `users.banned_at`, `users.banned_until`, and `users.ban_reason` store moderation state. `banned_at` with no `banned_until` is treated as permanent.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
 - `documents.markdown` is the canonical editor/viewer/public rendering source.
 - `documents.content` has been removed from the Drizzle schema and will be dropped by migration `0005_high_captain_midlands.sql`.
+- `document_collab_states.yjs_state` stores compact binary Yjs state for collaboration rooms. The collab service loads this before falling back to `documents.markdown`, which prevents reconnects from merging identical plain text as separate CRDT items and duplicating the document.
+- Non-collab Markdown overwrites and restores delete the corresponding `document_collab_states` row so future collab sessions reseed from the latest Markdown instead of stale Yjs state.
 - `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
 - `official_docs` stores admin-authored Markdown docs with `draft`, `published`, and `archived` statuses. Public docs routes only read published rows.
 - `official_docs.category` and `official_docs.sort_order` drive the public docs sidebar grouping and order. Published docs sort by category, sort order, then title.
 - `content/docs/**/*.md` stores repo-backed canonical docs with frontmatter (`title`, `slug`, `category`, `order`, `public`). Repo docs are merged with DB docs in the public/admin docs UI.
 - Repo docs own their slugs. DB docs with a slug collision are hidden from public docs and cannot be saved until the slug changes.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
+- `document_share_links` stores one active revocable share link at a time per document. Link access is dynamic and does not create a `document_permissions` row. `anyone` links are read-only; `members` links may be viewer or editor, but editor access requires a signed-in Vault account and does not grant sharing/publishing/deleting rights.
 - `/api/health` uses `select 1` and does not require any application tables.
 - Wiki-link metadata is derived from document Markdown at read time. Resolved wiki maps include headings, Obsidian-style block anchors (`^block-id`), and hidden Vault regions (`<!-- vault-region id="..." -->`), so links and embeds can target a specific heading, block, or region without schema changes. Vault regions marked `foldable` render as collapsible disclosure blocks; `collapsed` makes them initially closed.
 - Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
@@ -437,12 +447,13 @@ Rules currently enforced:
 | Viewer can only read shared document | Yes | `lib/permissions.ts`, document route renders read-only |
 | Unauthorized users cannot read private docs | Yes | `getDocumentForUser()` returns null and route calls `notFound()` |
 | Only owner can share | Yes | `shareDocumentAction()`, role update/remove actions |
+| Share links grant dynamic read/edit access | Yes | `getDocumentByShareLink()`, `/share/[token]`, optional `shareLinkId` save checks |
 | Only owner can publish | Yes | `publishDocumentAction()`, `unpublishDocumentAction()` |
 
 Known permission caveats:
 
 ```txt
--
+- Share-link editor sessions are non-collaborative for now. Hocuspocus still authorizes rooms through durable owner/editor document_permissions, so temporary edit links use normal document saves without joining the Yjs room.
 ```
 
 Manual permission tests performed:
@@ -490,6 +501,7 @@ shareDocumentAction()
 shareDocumentWithFriendAction()
 updateCollaboratorRoleAction()
 removeCollaboratorAction()
+updateDocumentShareLinkAction()
 publishDocumentAction()
 unpublishDocumentAction()
 listDocumentsForUser()
@@ -497,6 +509,8 @@ listSharedDocumentsForUser()
 listPublicDocuments()
 listDocumentVersionsForUser()
 getDocumentForUser()
+getDocumentForUserWithOptionalShareLink()
+getDocumentByShareLink()
 getPublicDocumentBySlug()
 ```
 
@@ -515,9 +529,13 @@ History behavior:
 Sharing behavior:
 
 ```txt
+- Sharing now opens from a modal on the document page instead of the older right-side share panel.
 - `shareDocumentAction()` accepts the reusable smart user search field: selected suggestions submit `users.id`, while manual entry falls back to exact username or email lookup.
+- The share user picker can prioritize existing friends while still searching all registered users.
 - Sharing still checks `canShareDocument()` server-side and stores collaborator relationships by `users.id`, not username/email.
-- The document page action rail is collapsible on desktop editable/viewable document pages. When collapsed on desktop, the editor workspace recenters and a compact reopen button remains available. On mobile, the same actions render in a modal dialog opened from the top of the editor area instead of appearing below the editor.
+- Collaborators are displayed as compact thin access rows in the share modal. Owner rows cannot be removed or downgraded.
+- `updateDocumentShareLinkAction()` lets owners enable/rotate/disable one active copyable link. Modes are off, anyone-viewer, members-viewer, and members-editor.
+- `/share/[token]` renders read-only access for anonymous visitors when allowed. Signed-in Vault members opening a members-editor link are redirected into `/docs/[docId]?share=...`, where saves are authorized by the share link instead of a permanent permission row.
 ```
 
 Current routes:
@@ -534,6 +552,7 @@ Current routes:
 | `/dashboard/settings` | Implemented | Account/settings page |
 | `/docs/[docId]` | Implemented | Protected document editor/viewer |
 | `/public/[slug]` | Implemented | Public read-only document page |
+| `/share/[token]` | Implemented | Copyable document share-link route |
 
 Known document caveats:
 
@@ -634,7 +653,7 @@ Known editor caveats:
 Current collaboration status:
 
 ```txt
-Markdown collaboration is deployed and user-confirmed working. Owner/editor sessions receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown`.
+Markdown collaboration is deployed and user-confirmed working. Owner/editor sessions receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown` plus binary Yjs state to `document_collab_states`.
 ```
 
 Important files:
@@ -653,8 +672,10 @@ Current behavior:
 - Only owner/editor document sessions receive a collaboration token.
 - Token includes document id, user id, role, display identity, expiry, and HMAC signature.
 - Collab service validates the token and re-checks current database edit permission before room access.
-- Hocuspocus loads existing `documents.markdown` into a `Y.Text` named `markdown`.
-- Hocuspocus stores collaborative document state back to `documents.markdown`.
+- Hocuspocus loads `document_collab_states.yjs_state` first. If no row exists, it seeds a Y.Doc from `documents.markdown` once and immediately stores that seeded Yjs state.
+- Hocuspocus stores collaborative document text back to `documents.markdown` and the compact Yjs CRDT snapshot back to `document_collab_states`.
+- Persisting Yjs state is required for reconnect safety. Reloading every room from plain Markdown creates new CRDT item identities for the same visible characters; a browser reconnecting with older Yjs state can merge both copies and duplicate the full document.
+- Non-collab full Markdown writes and restores delete the `document_collab_states` row so the next collab session reseeds from the newest Markdown.
 - Before collaborative persistence overwrites Markdown, the collab service uses the same batched checkpoint policy and writes `document_versions.reason = 'collab'` when a checkpoint is due.
 - The Markdown editor starts in normal local-autosave mode and only attaches the CodeMirror/Yjs binding after the Hocuspocus provider reports sync. This prevents a blank editor, lost body saves when `ws://localhost:1234` is unavailable, and duplicate full-document inserts from binding local text into an unsynced empty `Y.Text`.
 - In collaborative mode, CodeMirror state should be updated through the `y-codemirror.next` binding and the editor `onChange` callback. Do not add a separate `Y.Text.observe()` path that calls `setMarkdownValue()`: `@uiw/react-codemirror` treats `value` prop changes as external document replacements, and those replacements can be echoed back into `Y.Text` as local edits.
@@ -670,7 +691,7 @@ Known collaboration caveats:
 ```txt
 - If Firefox reports `ws://localhost:1234` connection refused, the local collab server is not running or failed to start. Run `npm run collab` in a separate terminal.
 - Title editing is still saved through the normal document autosave path, not collaborative Yjs state.
-- Yjs update-history tables are not implemented; current persistence stores compact Markdown text.
+- Append-only Yjs update-history tables are not implemented; current collaboration persistence stores the latest compact Yjs state snapshot plus Markdown text.
 ```
 
 ---
@@ -1012,7 +1033,7 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Run migrations through `0008_overrated_radioactive_man.sql` and promote the first trusted account with `update users set role = 'admin' where email = '<email>';`.
+1. Run migrations through `0010_fast_phantom_reporter.sql` and promote the first trusted account with `update users set role = 'admin' where email = '<email>';`.
 2. Browser-test `/dashboard/admin`, ban/unban behavior, and `/banned` with disposable accounts.
 3. Browser-test `/docs`, `/docs/guides/markdown-basics`, `/terms`, and `/dashboard/admin/docs` after deployment.
 4. Consider adding moderation audit logs before expanding admin tools further.
@@ -1082,3 +1103,5 @@ Use this as a compact implementation log.
 | 2026-06-09 | Added guide/public wiki namespaces | Wiki links now resolve `guide:<slug>` official docs and `public:<slug>` published documents; autocomplete shows publisher usernames for public docs |
 | 2026-06-09 | Fixed namespace wiki resolution in editor | Document editor pages now preload guide/public wiki maps, and namespace targets are slug-normalized so typed titles such as `public:Course Options` resolve to public slugs |
 | 2026-06-09 | Flattened writing and reading surfaces | Live mode hides CodeMirror line/fold gutters and uses a transparent centered writing surface; editor Preview and public note pages no longer sit inside a large rounded card |
+| 2026-06-09 | Revamped document sharing | Sharing moved into a modal with friend-prioritized user autocomplete, thinner access rows, and revocable copyable share links for anyone-viewer, members-viewer, and members-editor access |
+| 2026-06-09 | Persisted Yjs collaboration state | Added `document_collab_states` and changed the collab server to load/store binary Yjs snapshots so room unload/reconnect cycles do not recreate Markdown as new CRDT text and duplicate content |

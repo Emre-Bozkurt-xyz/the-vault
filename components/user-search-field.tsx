@@ -11,6 +11,7 @@ type UserSearchResult = {
   username: string | null;
   email: string | null;
   image: string | null;
+  priorityLabel?: string;
 };
 
 type UserSearchFieldProps = {
@@ -18,6 +19,7 @@ type UserSearchFieldProps = {
   userIdName?: string;
   placeholder?: string;
   required?: boolean;
+  priorityUsers?: UserSearchResult[];
 };
 
 export function UserSearchField({
@@ -25,6 +27,7 @@ export function UserSearchField({
   userIdName = "userId",
   placeholder = "Nickname, username, or email",
   required = false,
+  priorityUsers = [],
 }: UserSearchFieldProps) {
   const [query, setQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
@@ -59,13 +62,25 @@ export function UserSearchField({
   }, [debouncedQuery, selectedUser]);
 
   const selectedUserId = selectedUser?.id ?? "";
-  const displayResults = useMemo(
-    () =>
-      open && !selectedUser && query.trim().length >= 2 && results.length > 0
-        ? results
-        : [],
-    [open, query, results, selectedUser],
-  );
+  const displayResults = useMemo(() => {
+    if (!open || selectedUser) {
+      return [];
+    }
+
+    const normalizedQuery = query.trim().toLowerCase().replace(/^@/, "");
+    const matchingPriorityUsers = priorityUsers
+      .filter((user) => matchesUserSearch(user, normalizedQuery))
+      .map((user) => ({ ...user, priorityLabel: user.priorityLabel ?? "Friend" }));
+    const priorityIds = new Set(matchingPriorityUsers.map((user) => user.id));
+    const mergedResults = [
+      ...matchingPriorityUsers,
+      ...results.filter((user) => !priorityIds.has(user.id)),
+    ];
+
+    return normalizedQuery.length >= 2 || matchingPriorityUsers.length > 0
+      ? mergedResults
+      : [];
+  }, [open, priorityUsers, query, results, selectedUser]);
 
   return (
     <div className="relative">
@@ -123,6 +138,9 @@ export function UserSearchField({
                 </span>
                 <span className="block truncate text-xs text-muted-foreground">
                   {user.email}
+                  {user.priorityLabel ? (
+                    <span className="ml-2 text-primary">{user.priorityLabel}</span>
+                  ) : null}
                 </span>
               </span>
             </button>
@@ -131,6 +149,16 @@ export function UserSearchField({
       ) : null}
     </div>
   );
+}
+
+function matchesUserSearch(user: UserSearchResult, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  return [user.nickname, user.username, user.email]
+    .filter(Boolean)
+    .some((value) => value?.toLowerCase().includes(query));
 }
 
 function useDebouncedValue(value: string, delay: number) {

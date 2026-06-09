@@ -407,6 +407,42 @@ For MVP:
 - Allow sharing with any registered user.
 - Prefer showing friends first.
 
+### Share by link
+
+Document owners can enable one active copyable share link per document.
+
+```txt
+Owner opens share modal
+  |
+Chooses link mode
+  |
+Server checks owner permission
+  |
+Disable previous active links for the document
+  |
+Create a fresh document_share_links row
+```
+
+Supported link modes:
+
+| Mode | Signed-out access | Signed-in Vault member access |
+|---|---|---|
+| Off | None | None |
+| Anyone with link can view | Viewer | Viewer |
+| Vault members with link can view | None | Viewer |
+| Vault members with link can edit | Viewer only | Editor while using the link |
+
+Important:
+
+- Link access is dynamic. It does not create a `document_permissions` row.
+- Disabling or rotating the link removes future access through the old URL.
+- Edit links require a signed-in user for editing. Signed-out visitors can only
+  view the document through an edit-enabled link.
+- Link access does not grant share, delete, or publish permissions.
+- Link-edit sessions are intentionally separate from durable collaborator
+  access. Permanent collaborators should still be added through the people
+  sharing form.
+
 ---
 
 ## 13. Friend Request Security

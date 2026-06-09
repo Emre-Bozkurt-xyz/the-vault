@@ -178,9 +178,80 @@ My recommendation:
 
 This makes permission queries easier and consistent.
 
+### document_share_links
+
+Document share links grant temporary access through a copyable URL. They are
+separate from `document_permissions`: using a link does not create a permanent
+collaborator row.
+
+```txt
+document_share_links
+  id UUID PRIMARY KEY
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE
+  token_hash TEXT NOT NULL
+  scope TEXT NOT NULL DEFAULT 'members'
+  role TEXT NOT NULL DEFAULT 'viewer'
+  enabled INTEGER NOT NULL DEFAULT 1
+  expires_at TIMESTAMP
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+  created_at TIMESTAMP NOT NULL
+  updated_at TIMESTAMP NOT NULL
+```
+
+Allowed scopes:
+
+```txt
+anyone
+members
+```
+
+Allowed roles:
+
+```txt
+viewer
+editor
+```
+
+V1 keeps one active share link per document. Saving link settings disables old
+links and creates a fresh active link. `anyone` links are read-only. `members`
+links can be viewer or editor; editor links only grant edit access to signed-in
+Vault users while the link is enabled.
+
 ---
 
-## 4. Friend System
+## 4. Document Collaboration State
+
+### document_collab_states
+
+Collaboration needs to persist Yjs CRDT state, not only rendered Markdown text.
+If the Hocuspocus room reloads from plain Markdown every time, existing browser
+clients can reconnect with older Yjs item identities and Yjs will merge both
+copies of the same visible text. That is the root cause class behind repeated
+full-document duplication.
+
+```txt
+document_collab_states
+  document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE
+  yjs_state BYTEA NOT NULL
+  created_at TIMESTAMP NOT NULL
+  updated_at TIMESTAMP NOT NULL
+```
+
+Rules:
+
+- `documents.markdown` remains the canonical readable/exportable document body.
+- `document_collab_states.yjs_state` is the durable CRDT snapshot used only by
+  the collaboration service.
+- The collab service loads `yjs_state` first. If no state exists yet, it seeds a
+  Y.Doc from `documents.markdown` and immediately stores that first state.
+- Collab stores update both `documents.markdown` and `document_collab_states`.
+- Non-collab full Markdown writes, such as normal autosave without collab or
+  restoring a checkpoint, delete the collab state so the next room load reseeds
+  from the latest Markdown.
+
+---
+
+## 5. Friend System
 
 ### friend_requests
 
@@ -230,7 +301,7 @@ This prevents duplicate friendship rows.
 
 ---
 
-## 5. Official Documentation
+## 6. Official Documentation
 
 Official documentation has two sources:
 
@@ -291,32 +362,22 @@ Public routes filter out duplicate DB docs if a repo doc has the same slug.
 
 ---
 
-## 5. Public Shares
+## 7. Public Notes and Share Links
 
-MVP can use fields directly on `documents`:
+Public notes use fields directly on `documents`:
 
 ```txt
 documents.visibility
 documents.public_slug
 ```
 
-Later, if you want multiple share links:
-
-```txt
-public_share_links
-  id UUID PRIMARY KEY
-  document_id UUID REFERENCES documents(id)
-  slug TEXT UNIQUE
-  enabled BOOLEAN
-  expires_at TIMESTAMP
-  created_at TIMESTAMP
-```
-
-Not needed for MVP.
+Document share links use `document_share_links` and are private-link access,
+not public publishing. Public publishing is indexed/discoverable inside Vault;
+share links are copyable URL grants controlled by the document owner.
 
 ---
 
-## 6. Document Versions
+## 8. Document Versions
 
 Not MVP, but useful later.
 
@@ -350,7 +411,7 @@ Current implementation:
 
 ---
 
-## 6.1 Future Document Assets
+## 9. Future Document Assets
 
 Image/file uploads are not implemented yet.
 
@@ -380,7 +441,7 @@ assets must not be exposed via raw public storage URLs.
 
 ---
 
-## 7. Audit Logs
+## 10. Audit Logs
 
 Not MVP, but good later.
 
@@ -409,7 +470,7 @@ friend.accepted
 
 ---
 
-## 8. Important Indexes
+## 11. Important Indexes
 
 Add indexes for common access patterns.
 
@@ -436,7 +497,7 @@ friendships.user_high_id
 
 ---
 
-## 9. Permission Query Patterns
+## 12. Permission Query Patterns
 
 ### Can read document?
 

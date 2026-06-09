@@ -70,6 +70,7 @@ type MarkdownEditorProps = {
   documentId: string;
   title: string;
   markdown: string;
+  shareLinkId?: string | null;
   collaboration?: {
     url: string;
     token: string;
@@ -115,6 +116,7 @@ export function MarkdownEditor({
   documentId,
   title,
   markdown,
+  shareLinkId = null,
   collaboration = null,
   wikiLinks,
 }: MarkdownEditorProps) {
@@ -236,11 +238,13 @@ export function MarkdownEditor({
       ? await saveDocumentTitleAction({
           documentId,
           title: titleAtSave,
+          shareLinkId,
         })
       : await saveMarkdownDocumentAction({
           documentId,
           title: titleAtSave,
           markdown: markdownAtSave,
+          shareLinkId,
         });
 
     savingRef.current = false;
@@ -257,7 +261,7 @@ export function MarkdownEditor({
       titleValueRef.current !== titleAtSave ||
         (!isCollaborative && markdownValueRef.current !== markdownAtSave),
     );
-  }, [documentId, isCollaborative]);
+  }, [documentId, isCollaborative, shareLinkId]);
 
   const extensions = useMemo(
     () => {
