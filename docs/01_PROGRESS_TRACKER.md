@@ -232,6 +232,7 @@ Unauthorized users cannot connect.
 | [x] | Add document transclusion embeds | Standalone `![[doc]]` embeds render permission-aware document previews in Preview/view/public and Live mode |
 | [x] | Add heading-scoped wiki links | `[[doc#heading]]` links navigate to rendered heading anchors; `![[doc#heading]]` embeds only the selected heading section |
 | [x] | Add block and region-scoped wiki links | `[[doc#^block-id]]` targets hidden Obsidian-style block anchors; `[[doc#@region-id]]` targets hidden Vault regions; embeds render only the selected block/region |
+| [x] | Add guide/public wiki namespaces | `guide:<slug>` links official docs; `public:<slug>` links published user docs and autocomplete shows publisher usernames |
 | [ ] | Add uploaded document assets | Future `![[asset:id]]` support with private-by-default storage and permission-checked serving |
 
 Exit criteria:

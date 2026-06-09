@@ -2103,6 +2103,7 @@ function createWikiLinkCompletionSource(
     return {
       from: region.headingFrom ?? region.markerTo,
       to: region.contentTo,
+      filter: false,
       options: createWikiLinkCompletionOptions(
         freshWikiLinks,
         region.hasClosingMarker,
@@ -2206,20 +2207,23 @@ function createWikiLinkCompletionOptions(
   }
 
   for (const [key, resolution] of Object.entries(wikiLinks ?? {})) {
-    if (!key.startsWith("doc:") || resolution.status !== "resolved") {
+    if (
+      !isWikiCompletionDocumentKey(key) ||
+      resolution.status !== "resolved" ||
+      !matchesWikiResolutionCompletionQuery(key, resolution, query)
+    ) {
       continue;
     }
 
-    const documentId = key.slice(4);
     const title = resolution.label?.trim() || "Untitled document";
-    const insertText = `doc:${documentId}|${escapeWikiLinkLabel(title)}`;
+    const insertText = `${key}|${escapeWikiLinkLabel(title)}`;
 
     options.push({
       label: title,
-      detail: "document",
+      detail: wikiCompletionDocumentDetail(key, resolution),
       type: "text",
       apply: createWikiCompletionApply(insertText, hasClosingMarker),
-      info: "Insert a stable Vault document link",
+      info: wikiCompletionDocumentInfo(key),
     });
   }
 
@@ -2241,9 +2245,11 @@ function createWikiTargetCompletionOptions(
   const targetQuery = query.slice(hashIndex + 1).trim().toLowerCase();
   const docs = Object.entries(wikiLinks ?? {}).filter(
     ([key, resolution]) =>
-      key.startsWith("doc:") &&
+      isWikiCompletionDocumentKey(key) &&
       resolution.status === "resolved" &&
-      matchesWikiDocumentCompletionQuery(key.slice(4), resolution.label, documentQuery),
+      matchesWikiResolutionCompletionQuery(key, resolution, documentQuery, {
+        allowPublicWithoutNamespace: true,
+      }),
   );
   const options: Completion[] = [];
 
@@ -2338,21 +2344,100 @@ function createWikiCompletionApply(insertText: string, hasClosingMarker: boolean
   };
 }
 
-function matchesWikiDocumentCompletionQuery(
-  documentId: string,
-  title: string | undefined,
-  query: string,
+function isWikiCompletionDocumentKey(key: string) {
+  return (
+    key.startsWith("doc:") ||
+    key.startsWith("guide:") ||
+    key.startsWith("public:")
+  );
+}
+
+function wikiCompletionDocumentDetail(
+  key: string,
+  resolution: WikiLinkResolutionMap[string],
 ) {
+  if (key.startsWith("guide:")) {
+    return "guide";
+  }
+
+  if (key.startsWith("public:")) {
+    return resolution.ownerUsername
+      ? `public · @${resolution.ownerUsername}`
+      : "public";
+  }
+
+  return resolution.source === "public" && resolution.ownerUsername
+    ? `public · @${resolution.ownerUsername}`
+    : "document";
+}
+
+function wikiCompletionDocumentInfo(key: string) {
+  if (key.startsWith("guide:")) {
+    return "Insert a stable link to an official Vault guide";
+  }
+
+  if (key.startsWith("public:")) {
+    return "Insert a stable link to a published Vault document";
+  }
+
+  return "Insert a stable Vault document link";
+}
+
+function matchesWikiResolutionCompletionQuery(
+  key: string,
+  resolution: WikiLinkResolutionMap[string],
+  query: string,
+  options: { allowPublicWithoutNamespace?: boolean } = {},
+) {
+  const isImplicitPublicDocument =
+    key.startsWith("doc:") && resolution.source === "public";
+
   if (!query) {
-    return true;
+    return (
+      (key.startsWith("doc:") && !isImplicitPublicDocument) ||
+      key.startsWith("guide:")
+    );
   }
 
   const normalizedQuery = query.toLowerCase();
-  const normalizedTitle = (title ?? "").toLowerCase();
+  const normalizedTitle = (resolution.label ?? "").toLowerCase();
+  const ownerUsername = (resolution.ownerUsername ?? "").toLowerCase();
+
+  if (normalizedQuery.startsWith("guide:")) {
+    const target = normalizedQuery.slice(6).split("|", 1)[0]?.trim();
+
+    return (
+      key.startsWith("guide:") &&
+      (!target ||
+        key.slice(6).includes(target) ||
+        normalizedTitle.includes(target))
+    );
+  }
+
+  if (normalizedQuery.startsWith("public:")) {
+    const target = normalizedQuery.slice(7).split("|", 1)[0]?.trim();
+
+    return (
+      key.startsWith("public:") &&
+      (!target ||
+        key.slice(7).includes(target) ||
+        normalizedTitle.includes(target) ||
+        ownerUsername.includes(target.replace(/^@/, "")))
+    );
+  }
 
   if (normalizedQuery.startsWith("doc:")) {
     const target = normalizedQuery.slice(4).split("|", 1)[0]?.trim();
-    return Boolean(target && documentId.toLowerCase().startsWith(target));
+    return Boolean(
+      target && key.startsWith("doc:") && key.slice(4).startsWith(target),
+    );
+  }
+
+  if (
+    (key.startsWith("public:") || isImplicitPublicDocument) &&
+    !options.allowPublicWithoutNamespace
+  ) {
+    return false;
   }
 
   return normalizedTitle.includes(normalizedQuery);

@@ -26,6 +26,7 @@ import {
   type WikiLinkResolution,
   type WikiLinkResolutionMap,
   wikiDocKey,
+  wikiPublicKey,
   wikiTitleKey,
 } from "@/lib/wiki-links";
 import { requireActiveUser } from "@/server/authz";
@@ -692,8 +693,12 @@ export async function listWikiLinkResolutionsForUser(
       markdown: documents.markdown,
       visibility: documents.visibility,
       publicSlug: documents.publicSlug,
+      ownerId: documents.ownerId,
+      sharedUserId: documentPermissions.userId,
+      ownerUsername: users.username,
     })
     .from(documents)
+    .innerJoin(users, eq(documents.ownerId, users.id))
     .leftJoin(
       documentPermissions,
       and(
@@ -716,11 +721,27 @@ export async function listWikiLinkResolutionsForUser(
   return buildWikiLinkResolutionMap(
     rows,
     (document) => `/docs/${document.id}`,
-    options.includeEmbeds ?? true,
+    {
+      includeEmbeds: options.includeEmbeds ?? true,
+      includePublicKeys: true,
+      sourceForDocument: (document) =>
+        document.ownerId === userId || document.sharedUserId === userId
+          ? "document"
+          : document.visibility === "public"
+            ? "public"
+            : "document",
+    },
   );
 }
 
-export async function listPublicWikiLinkResolutions() {
+export async function listPublicWikiLinkResolutions(
+  options: {
+    includeEmbeds?: boolean;
+    includeDocKeys?: boolean;
+    includeTitleKeys?: boolean;
+    includePublicKeys?: boolean;
+  } = {},
+) {
   const rows = await db
     .select({
       id: documents.id,
@@ -728,8 +749,10 @@ export async function listPublicWikiLinkResolutions() {
       markdown: documents.markdown,
       visibility: documents.visibility,
       publicSlug: documents.publicSlug,
+      ownerUsername: users.username,
     })
     .from(documents)
+    .innerJoin(users, eq(documents.ownerId, users.id))
     .where(
       and(
         eq(documents.visibility, "public"),
@@ -739,8 +762,16 @@ export async function listPublicWikiLinkResolutions() {
     )
     .orderBy(documents.title);
 
-  return buildWikiLinkResolutionMap(rows, (document) =>
-    document.publicSlug ? `/public/${document.publicSlug}` : null,
+  return buildWikiLinkResolutionMap(
+    rows,
+    (document) => (document.publicSlug ? `/public/${document.publicSlug}` : null),
+    {
+      includeEmbeds: options.includeEmbeds ?? true,
+      includeDocKeys: options.includeDocKeys ?? true,
+      includeTitleKeys: options.includeTitleKeys ?? true,
+      includePublicKeys: options.includePublicKeys ?? true,
+      sourceForDocument: () => "public",
+    },
   );
 }
 
@@ -895,36 +926,71 @@ function buildWikiLinkResolutionMap<
     markdown?: string;
     visibility: string;
     publicSlug: string | null;
+    ownerUsername?: string | null;
   },
 >(
   documentsToLink: TDocument[],
   hrefForDocument: (document: TDocument) => string | null,
-  includeEmbeds = true,
+  options:
+    | boolean
+    | {
+        includeEmbeds?: boolean;
+        includeDocKeys?: boolean;
+        includeTitleKeys?: boolean;
+        includePublicKeys?: boolean;
+        sourceForDocument?: (
+          document: TDocument,
+        ) => WikiLinkResolution["source"];
+      } = true,
 ) {
+  const normalizedOptions =
+    typeof options === "boolean" ? { includeEmbeds: options } : options;
+  const includeEmbeds = normalizedOptions.includeEmbeds ?? true;
+  const includeDocKeys = normalizedOptions.includeDocKeys ?? true;
+  const includeTitleKeys = normalizedOptions.includeTitleKeys ?? true;
+  const includePublicKeys = normalizedOptions.includePublicKeys ?? true;
   const resolutions: WikiLinkResolutionMap = {};
   const byTitle = new Map<string, TDocument[]>();
 
   for (const document of documentsToLink) {
     const href = hrefForDocument(document);
+    const source = normalizedOptions.sourceForDocument?.(document) ?? "document";
     const resolution: WikiLinkResolution = href
       ? {
         status: "resolved",
+        source,
         documentId: document.id,
         label: document.title,
         href,
         embedMarkdown: includeEmbeds ? document.markdown : undefined,
+        ownerUsername: document.ownerUsername,
         headings: extractMarkdownHeadingOptions(document.markdown ?? ""),
         anchors: extractMarkdownAnchorOptions(document.markdown ?? ""),
       }
       : {
           status: "private",
+          source,
           label: document.title,
+          ownerUsername: document.ownerUsername,
         };
 
-    resolutions[wikiDocKey(document.id)] = resolution;
+    if (includeDocKeys) {
+      resolutions[wikiDocKey(document.id)] = resolution;
+    }
+
+    if (includePublicKeys && document.publicSlug) {
+      resolutions[wikiPublicKey(document.publicSlug)] = {
+        ...resolution,
+        source: "public",
+      };
+    }
 
     const titleKey = wikiTitleKey(document.title);
     byTitle.set(titleKey, [...(byTitle.get(titleKey) ?? []), document]);
+  }
+
+  if (!includeTitleKeys) {
+    return resolutions;
   }
 
   for (const [titleKey, matches] of byTitle) {
@@ -938,19 +1004,24 @@ function buildWikiLinkResolutionMap<
 
     const match = matches[0];
     const href = hrefForDocument(match);
+    const source = normalizedOptions.sourceForDocument?.(match) ?? "document";
     resolutions[titleKey] = href
       ? {
           status: "resolved",
+          source,
           documentId: match.id,
           label: match.title,
           href,
           embedMarkdown: includeEmbeds ? match.markdown : undefined,
+          ownerUsername: match.ownerUsername,
           headings: extractMarkdownHeadingOptions(match.markdown ?? ""),
           anchors: extractMarkdownAnchorOptions(match.markdown ?? ""),
         }
       : {
           status: "private",
+          source,
           label: match.title,
+          ownerUsername: match.ownerUsername,
         };
   }
 

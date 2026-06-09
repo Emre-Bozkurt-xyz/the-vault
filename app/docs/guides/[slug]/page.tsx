@@ -7,8 +7,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { listPublicWikiLinkResolutions } from "@/server/documents";
 import {
   getPublishedOfficialDocBySlug,
+  listOfficialDocWikiLinkResolutions,
   listPublishedOfficialDocs,
 } from "@/server/official-docs";
 
@@ -24,10 +26,16 @@ export default async function OfficialDocPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [doc, docs] = await Promise.all([
+  const [doc, docs, guideWikiLinks, publicWikiLinks] = await Promise.all([
     getPublishedOfficialDocBySlug(slug),
     listPublishedOfficialDocs(),
+    listOfficialDocWikiLinkResolutions(),
+    listPublicWikiLinkResolutions(),
   ]);
+  const wikiLinks = {
+    ...publicWikiLinks,
+    ...guideWikiLinks,
+  };
 
   if (!doc) {
     notFound();
@@ -57,7 +65,11 @@ export default async function OfficialDocPage({
             </header>
 
             <div className="mt-10">
-              <MarkdownDocument markdown={doc.markdown} className="max-w-4xl" />
+              <MarkdownDocument
+                markdown={doc.markdown}
+                className="max-w-4xl"
+                wikiLinks={wikiLinks}
+              />
             </div>
           </article>
         </section>

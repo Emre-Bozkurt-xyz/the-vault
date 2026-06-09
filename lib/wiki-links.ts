@@ -6,10 +6,12 @@ export type WikiLinkResolutionStatus =
 
 export type WikiLinkResolution = {
   status: WikiLinkResolutionStatus;
+  source?: "document" | "public" | "guide";
   documentId?: string;
   label?: string;
   href?: string;
   embedMarkdown?: string;
+  ownerUsername?: string | null;
   headings?: Array<{
     level: number;
     text: string;
@@ -76,6 +78,14 @@ export function wikiDocKey(documentId: string) {
   return `doc:${documentId.trim().toLowerCase()}`;
 }
 
+export function wikiGuideKey(slug: string) {
+  return `guide:${normalizeWikiSlug(slug)}`;
+}
+
+export function wikiPublicKey(slug: string) {
+  return `public:${normalizeWikiSlug(slug)}`;
+}
+
 export function wikiTitleKey(title: string) {
   return `title:${normalizeWikiText(title)}`;
 }
@@ -83,9 +93,19 @@ export function wikiTitleKey(title: string) {
 export function wikiKeyForTarget(target: string) {
   const { target: normalizedTarget } = splitWikiTargetFragment(target);
   const docId = parseWikiDocTarget(normalizedTarget);
+  const guideSlug = parseWikiGuideTarget(normalizedTarget);
+  const publicSlug = parseWikiPublicTarget(normalizedTarget);
 
   if (docId) {
     return wikiDocKey(docId);
+  }
+
+  if (guideSlug) {
+    return wikiGuideKey(guideSlug);
+  }
+
+  if (publicSlug) {
+    return wikiPublicKey(publicSlug);
   }
 
   return wikiTitleKey(normalizedTarget);
@@ -102,6 +122,14 @@ export function parseWikiDocTarget(target: string) {
   return uuidPattern.test(normalizedTarget)
     ? normalizedTarget.toLowerCase()
     : null;
+}
+
+export function parseWikiGuideTarget(target: string) {
+  return parseWikiSlugTarget(target, "guide:");
+}
+
+export function parseWikiPublicTarget(target: string) {
+  return parseWikiSlugTarget(target, "public:");
 }
 
 export function escapeWikiLinkLabel(value: string) {
@@ -530,6 +558,26 @@ function transformOutsideInlineCode(
 
 function normalizeWikiText(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeWikiSlug(value: string) {
+  return value
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function parseWikiSlugTarget(target: string, prefix: "guide:" | "public:") {
+  const { target: normalizedTarget } = splitWikiTargetFragment(target);
+
+  if (!normalizedTarget.toLowerCase().startsWith(prefix)) {
+    return null;
+  }
+
+  const slug = normalizeWikiSlug(normalizedTarget.slice(prefix.length));
+  return slug || null;
 }
 
 function splitWikiTargetFragment(value: string) {

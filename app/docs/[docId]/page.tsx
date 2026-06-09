@@ -19,6 +19,7 @@ import {
   getDocumentForUser,
   listDocumentCollaborators,
   listDocumentVersionsForUser,
+  listPublicWikiLinkResolutions,
   listWikiLinkResolutionsForUser,
   publishDocumentAction,
   removeCollaboratorAction,
@@ -29,6 +30,7 @@ import {
   updateCollaboratorRoleAction,
 } from "@/server/documents";
 import { listFriendsForUser } from "@/server/friends";
+import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
 
 export default async function DocumentPage({
@@ -53,7 +55,17 @@ export default async function DocumentPage({
   const collaborators = document.access.canShare
     ? await listDocumentCollaborators(document.id, session.user.id)
     : [];
-  const wikiLinks = await listWikiLinkResolutionsForUser(session.user.id);
+  const [readableWikiLinks, guideWikiLinks, publicWikiLinks] =
+    await Promise.all([
+      listWikiLinkResolutionsForUser(session.user.id),
+      listOfficialDocWikiLinkResolutions(),
+      listPublicWikiLinkResolutions(),
+    ]);
+  const wikiLinks = {
+    ...readableWikiLinks,
+    ...publicWikiLinks,
+    ...guideWikiLinks,
+  };
   const friends = document.access.canShare
     ? await listFriendsForUser(session.user.id)
     : [];

@@ -122,6 +122,9 @@ Resolution rules:
 - Public rendering resolves links only to public document routes.
 - Public rendering must never expose private document IDs or private app routes;
   private or inaccessible links render as non-clickable text.
+- Official guide pages resolve through explicit `guide:<slug>` wiki targets and
+  published user documents resolve through explicit `public:<slug>` targets.
+  These namespaces avoid title collisions with a user's private notes.
 - Publishing should eventually warn when the document contains private or
   unresolved wiki links, but publishing should not be blocked solely because
   the author included private references.
@@ -152,6 +155,9 @@ Current editor behavior:
 - CodeMirror wiki autocomplete fetches the current readable document map from
   `/api/documents/wiki-links` when completion starts in either `[[...]]` links
   or `![[...]]` document embeds, then inserts canonical `doc:id|title` targets.
+  `guide:` completions insert official documentation targets, and `public:`
+  completions insert published user-document targets with the publisher username
+  shown in the suggestion detail.
   Arrow keys navigate suggestions, Tab/Enter accept the selected suggestion,
   Escape closes the popup, and mouse selection applies the completion.
   Completion is bracket-aware: if CodeMirror has already paired `[[|]]`, the

@@ -60,6 +60,30 @@ If a published document links to a private or inaccessible document, Vault does 
 
 This means you can keep private planning notes linked inside your own documents without accidentally leaking them on a public page.
 
+Published user documents can also be linked explicitly by public slug:
+
+```md
+[[public:course-options|Course Options]]
+![[public:course-options|Course Options]]
+```
+
+Type `public:` inside a wiki field to search published documents. The suggestion list shows the publisher's username next to the document title so similarly named public documents are easier to tell apart.
+
+Public wiki links use the public route, so they keep working for logged-out readers.
+Namespace targets are slug-normalized, so `public:Course Options` and `public:course-options` point to the same public slug when that slug exists.
+
+## Official guides
+
+Official Vault documentation has its own wiki namespace:
+
+```md
+[[guide:wiki-links-and-embeds|Wiki links and embeds]]
+![[guide:wiki-links-and-embeds|Wiki links and embeds]]
+```
+
+Type `guide:` inside a wiki field to search official guide pages. Guide links resolve on public pages and can be embedded just like normal documents.
+Guide targets are also slug-normalized, so `guide:Wiki links and embeds` resolves the same way as `guide:wiki-links-and-embeds`.
+
 ## Linking to headings
 
 Add `#heading text` at the end of a wiki link to point to a specific heading inside the target document:

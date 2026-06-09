@@ -15,6 +15,12 @@ import {
   type RepoDoc,
 } from "@/lib/repo-docs";
 import { slugify } from "@/lib/slug";
+import {
+  extractMarkdownAnchorOptions,
+  extractMarkdownHeadingOptions,
+  type WikiLinkResolutionMap,
+  wikiGuideKey,
+} from "@/lib/wiki-links";
 import { requireAdmin } from "@/server/authz";
 
 const officialDocIdSchema = z.string().uuid();
@@ -100,6 +106,29 @@ export async function getPublishedOfficialDocBySlug(slug: string) {
     .limit(1);
 
   return doc ? toDatabaseListItem(doc) : null;
+}
+
+export async function listOfficialDocWikiLinkResolutions(
+  options: { includeEmbeds?: boolean } = {},
+) {
+  const docs = await listPublishedOfficialDocs();
+  const includeEmbeds = options.includeEmbeds ?? true;
+  const resolutions: WikiLinkResolutionMap = {};
+
+  for (const doc of docs) {
+    resolutions[wikiGuideKey(doc.slug)] = {
+      status: "resolved",
+      source: "guide",
+      documentId: doc.id,
+      label: doc.title,
+      href: `/docs/guides/${doc.slug}`,
+      embedMarkdown: includeEmbeds ? doc.markdown : undefined,
+      headings: extractMarkdownHeadingOptions(doc.markdown),
+      anchors: extractMarkdownAnchorOptions(doc.markdown),
+    };
+  }
+
+  return resolutions;
 }
 
 export async function listOfficialDocsForAdmin() {

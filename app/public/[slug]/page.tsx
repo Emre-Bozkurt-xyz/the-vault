@@ -9,6 +9,7 @@ import {
   getPublicDocumentBySlug,
   listPublicWikiLinkResolutions,
 } from "@/server/documents";
+import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 
 type PublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -74,7 +75,14 @@ export default async function PublicDocumentPage({
     notFound();
   }
 
-  const wikiLinks = await listPublicWikiLinkResolutions();
+  const [publicWikiLinks, guideWikiLinks] = await Promise.all([
+    listPublicWikiLinkResolutions(),
+    listOfficialDocWikiLinkResolutions(),
+  ]);
+  const wikiLinks = {
+    ...publicWikiLinks,
+    ...guideWikiLinks,
+  };
   const ownerName = document.ownerName ?? document.ownerUsername ?? "Vault user";
   const ownerHandle = document.ownerUsername ? `@${document.ownerUsername}` : null;
   const ownerInitial = ownerName.trim().charAt(0).toUpperCase() || "V";

@@ -320,6 +320,7 @@ Schema notes:
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `/api/health` uses `select 1` and does not require any application tables.
 - Wiki-link metadata is derived from document Markdown at read time. Resolved wiki maps include headings, Obsidian-style block anchors (`^block-id`), and hidden Vault regions (`<!-- vault-region id="..." -->`), so links and embeds can target a specific heading, block, or region without schema changes. Vault regions marked `foldable` render as collapsible disclosure blocks; `collapsed` makes them initially closed.
+- Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
 ```
 
 ---
@@ -1078,3 +1079,5 @@ Use this as a compact implementation log.
 | 2026-06-08 | Added block and region wiki targets | Wiki links and document embeds can now target hidden `^block-id` anchors and hidden `@region-id` Vault regions; autocomplete suggests headings, blocks, and regions after `#` |
 | 2026-06-09 | Added foldable region rendering and insertion | `foldable` Vault regions now render as collapsible blocks with `collapsed` initial state; the editor toolbar and `Ctrl/Cmd+Alt+R` insert a region scaffold |
 | 2026-06-09 | Styled block anchor markers | End-of-line `^block-id` markers are slightly smaller and muted in editable modes; inline `^text` with trailing content remains normal text |
+| 2026-06-09 | Added guide/public wiki namespaces | Wiki links now resolve `guide:<slug>` official docs and `public:<slug>` published documents; autocomplete shows publisher usernames for public docs |
+| 2026-06-09 | Fixed namespace wiki resolution in editor | Document editor pages now preload guide/public wiki maps, and namespace targets are slug-normalized so typed titles such as `public:Course Options` resolve to public slugs |
