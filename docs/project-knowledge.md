@@ -1081,3 +1081,4 @@ Use this as a compact implementation log.
 | 2026-06-09 | Styled block anchor markers | End-of-line `^block-id` markers are slightly smaller and muted in editable modes; inline `^text` with trailing content remains normal text |
 | 2026-06-09 | Added guide/public wiki namespaces | Wiki links now resolve `guide:<slug>` official docs and `public:<slug>` published documents; autocomplete shows publisher usernames for public docs |
 | 2026-06-09 | Fixed namespace wiki resolution in editor | Document editor pages now preload guide/public wiki maps, and namespace targets are slug-normalized so typed titles such as `public:Course Options` resolve to public slugs |
+| 2026-06-09 | Flattened writing and reading surfaces | Live mode hides CodeMirror line/fold gutters and uses a transparent centered writing surface; editor Preview and public note pages no longer sit inside a large rounded card |

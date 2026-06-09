@@ -115,7 +115,7 @@ export default async function DocumentPage({
 
         <DocumentWorkspace
           editor={
-            <div className="vault-fade-up border-y border-border/60 bg-card/70 p-0 shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:border sm:p-6">
+            <div className="vault-fade-up px-0 sm:px-2">
               {document.access.canEdit ? (
                 <MarkdownEditor
                   documentId={document.id}
@@ -151,7 +151,7 @@ export default async function DocumentPage({
                       Updated {document.updatedAt.toLocaleDateString()}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-border/60 bg-background/70 p-4 sm:rounded-3xl sm:p-6">
+                  <div className="border-y border-border/50 py-5 sm:border-y-0 sm:py-6">
                     <MarkdownDocument markdown={markdown} wikiLinks={wikiLinks} />
                   </div>
                 </article>
@@ -162,7 +162,7 @@ export default async function DocumentPage({
             showSidePanel ? (
               <>
               {document.access.canEdit ? (
-                <section className="vault-fade-up rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+                <section className="vault-fade-up rounded-lg border border-border/60 bg-card/70 p-5 text-card-foreground shadow-[0_18px_60px_-55px_rgba(0,0,0,0.55)] backdrop-blur">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
@@ -183,7 +183,7 @@ export default async function DocumentPage({
                     </Button>
                   </form>
 
-                  <details className="group mt-4 rounded-2xl border border-border/60 bg-background/50">
+                  <details className="group mt-4 rounded-md border border-border/60 bg-background/50">
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
                       <span>
                         Restore points
@@ -199,7 +199,7 @@ export default async function DocumentPage({
                         versions.map((version) => (
                           <div
                             key={version.id}
-                            className="rounded-2xl border border-border/60 bg-background/60 p-4"
+                            className="rounded-md border border-border/60 bg-background/60 p-4"
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -239,7 +239,7 @@ export default async function DocumentPage({
                           </div>
                         ))
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-border/70 bg-background/50 p-4 text-sm text-muted-foreground">
+                        <div className="rounded-md border border-dashed border-border/70 bg-background/50 p-4 text-sm text-muted-foreground">
                           No restore points yet. Create one manually, or keep editing and
                           Vault will create batched checkpoints.
                         </div>
@@ -250,7 +250,7 @@ export default async function DocumentPage({
               ) : null}
 
               {document.access.canDelete ? (
-                <div className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+                <div className="vault-fade-up vault-delay-1 rounded-lg border border-border/60 bg-card/70 p-5 text-card-foreground shadow-[0_18px_60px_-55px_rgba(0,0,0,0.55)] backdrop-blur">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                     Visibility
                   </h2>
@@ -309,7 +309,7 @@ export default async function DocumentPage({
               ) : null}
 
               {document.access.canShare ? (
-                <section className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+                <section className="vault-fade-up vault-delay-2 rounded-lg border border-border/60 bg-card/70 p-5 text-card-foreground shadow-[0_18px_60px_-55px_rgba(0,0,0,0.55)] backdrop-blur">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                     Sharing
                   </h2>
@@ -319,7 +319,7 @@ export default async function DocumentPage({
                   </p>
 
                   <div className="mt-4 space-y-5">
-                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                    <div className="rounded-md border border-border/60 bg-background/60 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                         Share with a user
                       </p>
@@ -345,7 +345,7 @@ export default async function DocumentPage({
                     </div>
 
                     {friends.length > 0 ? (
-                      <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <div className="rounded-md border border-border/60 bg-background/60 p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                           Share with a friend
                         </p>
@@ -380,7 +380,7 @@ export default async function DocumentPage({
                       </div>
                     ) : null}
 
-                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                    <div className="rounded-md border border-border/60 bg-background/60 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                         Collaborators
                       </p>
@@ -388,7 +388,7 @@ export default async function DocumentPage({
                         {collaborators.map((collaborator) => (
                           <div
                             key={collaborator.userId}
-                            className="rounded-2xl border border-border/60 bg-background/70 p-4"
+                            className="rounded-md border border-border/60 bg-background/70 p-4"
                           >
                             <div>
                               <p className="font-medium">

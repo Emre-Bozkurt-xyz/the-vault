@@ -72,7 +72,7 @@
   --chart-3: oklch(0.5 0 0);
   --chart-4: oklch(0.38 0 0);
   --chart-5: oklch(0.28 0 0);
-  --radius: 0.9rem;
+  --radius: 0.55rem;
   --sidebar: oklch(0.98 0 0);
   --sidebar-foreground: oklch(0.18 0 0);
   --sidebar-primary: oklch(0.2 0 0);
@@ -1221,6 +1221,61 @@
   .vault-markdown-editor-live .cm-content {
     font-variant-ligatures: none;
     font-feature-settings: "liga" 0, "calt" 0;
+  }
+
+  .vault-markdown-editor-live,
+  .vault-markdown-editor-preview {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .vault-markdown-editor-live .cm-editor,
+  .vault-markdown-editor-preview .cm-editor {
+    background: transparent;
+  }
+
+  .vault-markdown-editor-live .cm-scroller {
+    background: transparent;
+    overflow-x: hidden;
+  }
+
+  .vault-markdown-editor-live .cm-content {
+    max-width: min(100%, 56rem);
+    min-height: calc(100svh - 17rem);
+    margin-inline: auto;
+    padding: clamp(1rem, 3vw, 2rem) clamp(0.75rem, 2vw, 1.5rem) 6rem;
+  }
+
+  .vault-markdown-editor-live .cm-line {
+    padding-inline: 0;
+  }
+
+  .vault-markdown-editor-live .cm-gutters {
+    display: none;
+  }
+
+  .vault-markdown-editor-live .cm-activeLine {
+    background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  }
+
+  .vault-markdown-editor-live .cm-selectionBackground,
+  .vault-markdown-editor-live .cm-focused .cm-selectionBackground {
+    background: color-mix(in oklab, var(--primary) 28%, transparent) !important;
+  }
+
+  .vault-markdown-editor-preview-pane {
+    background: transparent;
+  }
+
+  .vault-markdown-editor-preview-pane > .vault-markdown {
+    max-width: min(100%, 56rem);
+    margin-inline: auto;
+  }
+
+  .vault-public-markdown {
+    max-width: min(100%, 56rem);
   }
 
   .vault-markdown-editor-live .cm-content .vault-cm-preview-bold {

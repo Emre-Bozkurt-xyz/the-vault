@@ -730,10 +730,10 @@ export function MarkdownEditor({
                 }
                 extensions={extensions}
                 basicSetup={{
-                  foldGutter: true,
+                  foldGutter: previewMode !== "live",
                   highlightActiveLine: true,
                   highlightSelectionMatches: true,
-                  lineNumbers: true,
+                  lineNumbers: previewMode !== "live",
                 }}
                 onCreateEditor={(view) => {
                   viewRef.current = view;
@@ -751,7 +751,7 @@ export function MarkdownEditor({
           ) : null}
           {previewMode !== "source" &&
           previewMode !== "live" ? (
-            <div className="min-h-[calc(100svh-17rem)] bg-background/45 px-4 py-5 sm:min-h-[520px] sm:px-8 sm:py-6">
+            <div className="vault-markdown-editor-preview-pane min-h-[calc(100svh-17rem)] px-4 py-5 sm:min-h-[520px] sm:px-8 sm:py-8">
               <MarkdownDocument markdown={markdownValue} wikiLinks={wikiLinkMap} />
             </div>
           ) : null}
@@ -2103,7 +2103,6 @@ function createWikiLinkCompletionSource(
     return {
       from: region.headingFrom ?? region.markerTo,
       to: region.contentTo,
-      filter: false,
       options: createWikiLinkCompletionOptions(
         freshWikiLinks,
         region.hasClosingMarker,
@@ -2219,7 +2218,8 @@ function createWikiLinkCompletionOptions(
     const insertText = `${key}|${escapeWikiLinkLabel(title)}`;
 
     options.push({
-      label: title,
+      label: wikiCompletionDocumentSearchLabel(key, resolution),
+      displayLabel: title,
       detail: wikiCompletionDocumentDetail(key, resolution),
       type: "text",
       apply: createWikiCompletionApply(insertText, hasClosingMarker),
@@ -2253,7 +2253,7 @@ function createWikiTargetCompletionOptions(
   );
   const options: Completion[] = [];
 
-  for (const [, resolution] of docs) {
+  for (const [key, resolution] of docs) {
     const title = resolution.label?.trim() || "Untitled document";
 
     for (const anchor of wikiCompletionAnchorsForResolution(resolution)) {
@@ -2262,7 +2262,8 @@ function createWikiTargetCompletionOptions(
       }
 
       options.push({
-        label: `${title} # ${wikiCompletionAnchorLabel(anchor)}`,
+        label: `${key}#${anchor.id} ${title} ${anchor.label}`,
+        displayLabel: `${title} # ${wikiCompletionAnchorLabel(anchor)}`,
         detail: wikiCompletionAnchorDetail(anchor),
         type: "text",
         apply: createWikiCompletionApply(
@@ -2381,6 +2382,19 @@ function wikiCompletionDocumentInfo(key: string) {
   }
 
   return "Insert a stable Vault document link";
+}
+
+function wikiCompletionDocumentSearchLabel(
+  key: string,
+  resolution: WikiLinkResolutionMap[string],
+) {
+  return [
+    key,
+    resolution.label ?? "",
+    resolution.ownerUsername ? `@${resolution.ownerUsername}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function matchesWikiResolutionCompletionQuery(
