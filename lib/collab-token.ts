@@ -11,6 +11,8 @@ export type CollabTokenPayload = {
   role: Extract<DocumentRole, "owner" | "editor">;
   name: string | null;
   email: string | null;
+  image: string | null;
+  shareLinkId: string | null;
   expiresAt: number;
 };
 
@@ -25,6 +27,8 @@ export function createCollabToken(input: CreateCollabTokenInput) {
     role: input.role,
     name: input.name,
     email: input.email,
+    image: input.image,
+    shareLinkId: input.shareLinkId,
     expiresAt: Math.floor(Date.now() / 1000) + (input.ttlSeconds ?? defaultTtlSeconds),
   };
 

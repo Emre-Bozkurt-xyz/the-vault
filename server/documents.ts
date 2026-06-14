@@ -1,6 +1,7 @@
 "use server";
 
 import { and, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -616,7 +617,7 @@ export async function updateDocumentShareLinkAction(formData: FormData) {
     });
   }
 
-  redirect(`/docs/${input.documentId}`);
+  revalidatePath(`/docs/${input.documentId}`);
 }
 
 export async function publishDocumentAction(formData: FormData) {
@@ -1288,7 +1289,7 @@ function mergeShareLinkAccess(
     canShare: regularAccess.canShare,
     canDelete: regularAccess.canDelete,
     canPublish: regularAccess.canPublish,
-    role: regularAccess.role ?? (canEdit ? "editor" : canRead ? "viewer" : null),
+    role: canEdit ? "editor" : regularAccess.role ?? (canRead ? "viewer" : null),
   };
 }
 

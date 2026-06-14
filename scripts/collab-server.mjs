@@ -39,11 +39,24 @@ const server = new Server({
       left join document_permissions dp
         on dp.document_id = d.id
        and dp.user_id = ${payload.userId}
+      left join document_share_links dsl
+        on dsl.id = ${payload.shareLinkId ?? null}
+       and dsl.document_id = d.id
       where d.id = ${documentName}
         and d.deleted_at is null
         and (
           d.owner_id = ${payload.userId}
           or dp.role in ('owner', 'editor')
+          or (
+            dsl.id is not null
+            and dsl.enabled = 1
+            and dsl.scope = 'members'
+            and dsl.role = 'editor'
+            and (
+              dsl.expires_at is null
+              or dsl.expires_at > now()
+            )
+          )
         )
       limit 1
     `;

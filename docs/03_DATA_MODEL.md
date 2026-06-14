@@ -215,7 +215,9 @@ editor
 V1 keeps one active share link per document. Saving link settings disables old
 links and creates a fresh active link. `anyone` links are read-only. `members`
 links can be viewer or editor; editor links only grant edit access to signed-in
-Vault users while the link is enabled.
+Vault users while the link is enabled. Signed-in users with an active
+members-editor link may also join the normal Yjs collaboration room, but this is
+still dynamic link access and does not create a `document_permissions` row.
 
 ---
 

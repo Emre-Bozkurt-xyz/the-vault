@@ -33,10 +33,11 @@ export function UserSearchField({
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
   const [results, setResults] = useState<UserSearchResult[]>([]);
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const debouncedQuery = useDebouncedValue(query, 180);
 
   useEffect(() => {
-    if (debouncedQuery.trim().length < 2 || selectedUser) {
+    if (!focused || debouncedQuery.trim().length < 2 || selectedUser) {
       return;
     }
 
@@ -45,7 +46,7 @@ export function UserSearchField({
     fetch(`/api/users/search?q=${encodeURIComponent(debouncedQuery)}`)
       .then((response) => (response.ok ? response.json() : { users: [] }))
       .then((data: { users?: UserSearchResult[] }) => {
-        if (!cancelled) {
+        if (!cancelled && focused) {
           setResults(data.users ?? []);
           setOpen(true);
         }
@@ -59,11 +60,11 @@ export function UserSearchField({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, selectedUser]);
+  }, [debouncedQuery, focused, selectedUser]);
 
   const selectedUserId = selectedUser?.id ?? "";
   const displayResults = useMemo(() => {
-    if (!open || selectedUser) {
+    if (!focused || !open || selectedUser) {
       return [];
     }
 
@@ -80,7 +81,7 @@ export function UserSearchField({
     return normalizedQuery.length >= 2 || matchingPriorityUsers.length > 0
       ? mergedResults
       : [];
-  }, [open, priorityUsers, query, results, selectedUser]);
+  }, [focused, open, priorityUsers, query, results, selectedUser]);
 
   return (
     <div className="relative">
@@ -100,7 +101,14 @@ export function UserSearchField({
           setSelectedUser(null);
           setQuery(event.target.value);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setFocused(true);
+          setOpen(true);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          setOpen(false);
+        }}
       />
       {displayResults.length > 0 ? (
         <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-20 overflow-hidden rounded-2xl border border-border/70 bg-popover text-popover-foreground shadow-xl">

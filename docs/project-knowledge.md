@@ -453,7 +453,7 @@ Rules currently enforced:
 Known permission caveats:
 
 ```txt
-- Share-link editor sessions are non-collaborative for now. Hocuspocus still authorizes rooms through durable owner/editor document_permissions, so temporary edit links use normal document saves without joining the Yjs room.
+- No current share-link permission caveat. Temporary members-editor link access is dynamic and works for both normal saves and Yjs collaboration while the link is active.
 ```
 
 Manual permission tests performed:
@@ -532,10 +532,12 @@ Sharing behavior:
 - Sharing now opens from a modal on the document page instead of the older right-side share panel.
 - `shareDocumentAction()` accepts the reusable smart user search field: selected suggestions submit `users.id`, while manual entry falls back to exact username or email lookup.
 - The share user picker can prioritize existing friends while still searching all registered users.
+- Reusable user-search suggestions only render while the input is focused, so stale suggestion popovers do not cover the share modal after focus moves elsewhere.
 - Sharing still checks `canShareDocument()` server-side and stores collaborator relationships by `users.id`, not username/email.
 - Collaborators are displayed as compact thin access rows in the share modal. Owner rows cannot be removed or downgraded.
 - `updateDocumentShareLinkAction()` lets owners enable/rotate/disable one active copyable link. Modes are off, anyone-viewer, members-viewer, and members-editor.
-- `/share/[token]` renders read-only access for anonymous visitors when allowed. Signed-in Vault members opening a members-editor link are redirected into `/docs/[docId]?share=...`, where saves are authorized by the share link instead of a permanent permission row.
+- Link setting updates revalidate the document route without redirecting, so the share modal can stay open after saving link settings.
+- `/share/[token]` renders read-only access for anonymous visitors when allowed. Signed-in Vault members opening a members-editor link are redirected into `/docs/[docId]?share=...`, where saves and collaboration room access are authorized by the share link instead of a permanent permission row.
 ```
 
 Current routes:
@@ -653,7 +655,7 @@ Known editor caveats:
 Current collaboration status:
 
 ```txt
-Markdown collaboration is deployed and user-confirmed working. Owner/editor sessions receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown` plus binary Yjs state to `document_collab_states`.
+Markdown collaboration is deployed and user-confirmed working. Owner/editor sessions and signed-in members using active members-editor share links receive signed Hocuspocus room tokens, CodeMirror binds to `Y.Text`, and the collab service persists text to `documents.markdown` plus binary Yjs state to `document_collab_states`.
 ```
 
 Important files:
@@ -669,9 +671,11 @@ Important files:
 Current behavior:
 
 ```txt
-- Only owner/editor document sessions receive a collaboration token.
-- Token includes document id, user id, role, display identity, expiry, and HMAC signature.
-- Collab service validates the token and re-checks current database edit permission before room access.
+- Owner/editor document sessions receive a collaboration token. Signed-in users with an active members-editor share link also receive a token while using `/docs/[docId]?share=...`.
+- Token includes document id, user id, role, display identity, optional avatar URL, optional share link id, expiry, and HMAC signature.
+- Collab service validates the token and re-checks current database edit permission before room access. If a token was granted by a share link, the service also re-checks that the link is enabled, unexpired, scoped to members, and configured for editor access on the same document.
+- Link-editor collaboration does not create a `document_permissions` row and does not grant share, delete, or publish rights.
+- The editor header shows current Yjs awareness users as compact collaborator avatars with cursor-color rings and hover identity cards.
 - Hocuspocus loads `document_collab_states.yjs_state` first. If no row exists, it seeds a Y.Doc from `documents.markdown` once and immediately stores that seeded Yjs state.
 - Hocuspocus stores collaborative document text back to `documents.markdown` and the compact Yjs CRDT snapshot back to `document_collab_states`.
 - Persisting Yjs state is required for reconnect safety. Reloading every room from plain Markdown creates new CRDT item identities for the same visible characters; a browser reconnecting with older Yjs state can merge both copies and duplicate the full document.
@@ -1105,3 +1109,4 @@ Use this as a compact implementation log.
 | 2026-06-09 | Flattened writing and reading surfaces | Live mode hides CodeMirror line/fold gutters and uses a transparent centered writing surface; editor Preview and public note pages no longer sit inside a large rounded card |
 | 2026-06-09 | Revamped document sharing | Sharing moved into a modal with friend-prioritized user autocomplete, thinner access rows, and revocable copyable share links for anyone-viewer, members-viewer, and members-editor access |
 | 2026-06-09 | Persisted Yjs collaboration state | Added `document_collab_states` and changed the collab server to load/store binary Yjs snapshots so room unload/reconnect cycles do not recreate Markdown as new CRDT text and duplicate content |
+| 2026-06-12 | Added share-link collaboration presence | Active members-editor links now authorize normal Yjs collaboration without permanent permission rows, and the editor header shows live collaborator avatars with cursor-color rings |

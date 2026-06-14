@@ -352,6 +352,7 @@ vault-collab service
   |
   +-- authorization check
   +-- Yjs document room
+  +-- awareness/presence state
   +-- persistence
 ```
 
@@ -389,9 +390,16 @@ Room token includes:
 document_id
 user_id
 role
+optional share_link_id
+display name/email/avatar for awareness
 expires_at
 signature
 ```
+
+When `share_link_id` is present, the token still does not grant access by
+itself. The collab service validates the signature and then re-checks that the
+link is enabled, unexpired, scoped to Vault members, and configured for editor
+access on the same document.
 
 ---
 
@@ -403,6 +411,9 @@ For Yjs:
 owner/editor:
   can connect read-write
 
+signed-in members with active members-editor link:
+  can connect read-write while using that link
+
 viewer:
   read-only, or no collab connection for MVP
 
@@ -413,6 +424,8 @@ anonymous public user:
 Read-only Yjs clients can be tricky. Simpler:
 
 - Only editors connect to Yjs.
+- Temporary link editors count as editors only while their members-editor link
+  is active and present in the room token.
 - Viewers receive normal rendered content.
 - Public users receive static rendered content.
 

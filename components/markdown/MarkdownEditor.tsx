@@ -77,6 +77,7 @@ type MarkdownEditorProps = {
     user: {
       name: string;
       email: string | null;
+      image: string | null;
     };
   } | null;
   wikiLinks?: WikiLinkResolutionMap;
@@ -90,6 +91,14 @@ type CollabSession = {
   ytext: Y.Text;
   undoManager: Y.UndoManager;
   provider: HocuspocusProvider;
+};
+type CollabPresenceUser = {
+  clientId: number;
+  name: string;
+  email: string | null;
+  image: string | null;
+  color: string;
+  colorLight: string;
 };
 type WikiCompletionRegion = {
   markerFrom: number;
@@ -137,6 +146,7 @@ export function MarkdownEditor({
     key: string;
     value: string;
   } | null>(null);
+  const [presenceUsers, setPresenceUsers] = useState<CollabPresenceUser[]>([]);
   const [editorMountMarkdown, setEditorMountMarkdown] = useState(markdown);
   const viewRef = useRef<EditorView | null>(null);
   const wikiCompletionDismissal = useMemo(
@@ -207,16 +217,53 @@ export function MarkdownEditor({
     const color = colorFromString(
       collaboration.user.email ?? collaboration.user.name,
     );
+    const awareness = provider.awareness;
 
-    provider.awareness?.setLocalStateField("user", {
+    awareness?.setLocalStateField("user", {
       name: collaboration.user.name,
+      email: collaboration.user.email,
+      image: collaboration.user.image,
       color,
       colorLight: `${color}33`,
     });
+
+    const updatePresenceUsers = () => {
+      if (!mounted || !awareness) {
+        return;
+      }
+
+      const users = Array.from(awareness.getStates().entries())
+        .map(([clientId, state]) => {
+          const user = (state as { user?: Partial<CollabPresenceUser> }).user;
+
+          if (!user?.name) {
+            return null;
+          }
+
+          return {
+            clientId,
+            name: user.name,
+            email: user.email ?? null,
+            image: user.image ?? null,
+            color: user.color ?? colorFromString(user.email ?? user.name),
+            colorLight:
+              user.colorLight ??
+              `${colorFromString(user.email ?? user.name)}33`,
+          };
+        })
+        .filter((user): user is CollabPresenceUser => Boolean(user))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setPresenceUsers(users);
+    };
+
+    awareness?.on("change", updatePresenceUsers);
+    updatePresenceUsers();
     setCollabSession({ ydoc, ytext, undoManager, provider });
 
     return () => {
       mounted = false;
+      awareness?.off("change", updatePresenceUsers);
       provider.destroy();
       ydoc.destroy();
     };
@@ -688,6 +735,12 @@ export function MarkdownEditor({
             onClick={() => changePreviewMode("preview")}
             icon={Eye}
           />
+          {collaboration ? (
+            <CollaborationPresence
+              users={presenceUsers}
+              status={collabStatus}
+            />
+          ) : null}
         </div>
       </div>
       <input
@@ -2702,6 +2755,82 @@ function PreviewModeButton({
       {label}
     </Button>
   );
+}
+
+function CollaborationPresence({
+  users,
+  status,
+}: {
+  users: CollabPresenceUser[];
+  status: CollabStatus;
+}) {
+  const label =
+    status === "connected"
+      ? `${users.length || 1} in document`
+      : status === "connecting"
+        ? "Joining..."
+        : "Offline";
+
+  return (
+    <div className="ml-1 flex shrink-0 items-center gap-2 rounded-full border border-border/70 bg-background/65 px-2 py-1 normal-case tracking-normal shadow-sm">
+      <div className="flex -space-x-2">
+        {users.length > 0 ? (
+          users.slice(0, 6).map((user) => (
+            <div
+              key={user.clientId}
+              className="group relative"
+              title={user.email ? `${user.name} (${user.email})` : user.name}
+            >
+              <span
+                className="flex size-7 items-center justify-center overflow-hidden rounded-full border-2 bg-card text-[0.68rem] font-semibold text-card-foreground shadow-sm"
+                style={{ borderColor: user.color }}
+              >
+                {user.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.image}
+                    alt=""
+                    className="size-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  getInitials(user.name)
+                )}
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-max max-w-56 -translate-x-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs normal-case tracking-normal text-popover-foreground shadow-xl group-hover:block">
+                <span className="block font-medium">{user.name}</span>
+                {user.email ? (
+                  <span className="mt-0.5 block text-muted-foreground">
+                    {user.email}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          ))
+        ) : (
+          <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-border bg-muted text-[0.68rem] text-muted-foreground">
+            ...
+          </span>
+        )}
+      </div>
+      <span className="hidden text-xs text-muted-foreground sm:inline">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return "V";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 }
 
 type InlineFormat = "bold" | "italic" | "code";

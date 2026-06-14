@@ -198,6 +198,7 @@ Backup works.
 | [x] | Connect editor to Yjs | Owner/editor sessions connect when `NEXT_PUBLIC_COLLAB_URL` is set |
 | [x] | Add awareness/presence | Collaboration caret user names/colors |
 | [x] | Persist Yjs updates | Collab server stores Markdown text back to `documents.markdown` and persists binary Yjs state in `document_collab_states` |
+| [x] | Allow link editors into collaboration | Active members-editor share links can join the normal Yjs room without creating permanent collaborator rows; editor header shows live collaborator avatars |
 | [x] | Add collab service to Docker Compose | `vault-collab` container on host port `18211` |
 | [x] | Route WebSocket through Caddy/FRP | Production WebSocket path user-confirmed working |
 | [x] | Test two browsers/two users | Markdown collaboration user-confirmed working |

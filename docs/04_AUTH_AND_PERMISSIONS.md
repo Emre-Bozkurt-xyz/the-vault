@@ -442,6 +442,10 @@ Important:
 - Link-edit sessions are intentionally separate from durable collaborator
   access. Permanent collaborators should still be added through the people
   sharing form.
+- Signed-in members using an active members-editor link may join the normal
+  Yjs collaboration room while the link remains enabled. The collaboration
+  server re-checks the share link at websocket connection time, so disabled,
+  expired, viewer-only, or anonymous links do not grant collaborative editing.
 
 ---
 

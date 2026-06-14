@@ -83,10 +83,11 @@ export default async function DocumentPage({
     document.access.canEdit || document.access.canDelete || document.access.canShare;
   const markdown = document.markdown;
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
-  const collabRole =
-    document.access.role === "owner" || document.access.role === "editor"
-      ? document.access.role
-      : null;
+  const collabRole = document.access.canEdit
+    ? document.access.role === "owner"
+      ? "owner"
+      : "editor"
+    : null;
   const collabToken =
     document.access.canEdit && collabRole && collabUrl
       ? createCollabToken({
@@ -95,6 +96,8 @@ export default async function DocumentPage({
           role: collabRole,
           name: profile.nickname ?? null,
           email: profile.email ?? null,
+          image: session.user.image ?? null,
+          shareLinkId: shareLinkId ?? null,
         })
       : null;
 
@@ -139,7 +142,7 @@ export default async function DocumentPage({
                   shareLinkId={shareLinkId}
                   wikiLinks={wikiLinks}
                   collaboration={
-                    collabToken && collabUrl && !shareLinkId
+                    collabToken && collabUrl
                       ? {
                           url: collabUrl,
                           token: collabToken,
@@ -149,6 +152,7 @@ export default async function DocumentPage({
                               profile.email ??
                               "Vault user",
                             email: profile.email ?? null,
+                            image: session.user.image ?? null,
                           },
                         }
                       : null
