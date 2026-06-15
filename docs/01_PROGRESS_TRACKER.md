@@ -288,6 +288,7 @@ Reference plan: `docs/10_WORKSPACE_UI_REVAMP_PLAN.md`
 | [x] | Add resizable persistent panels | Left navigation and right context panel widths/collapse state are stored in localStorage and can be changed by dragging panel edges |
 | [x] | Add shared protected workspace layout | Protected workspace routes under `/workspace`, `/docs/[docId]`, `/gallery`, and `/dashboard/*` now share `app/(workspace)/layout.tsx` so tab/panel chrome persists across those route changes |
 | [x] | Add real search and gallery side panels | Workspace search quick-opens owned, shared, public, and guide pages; the gallery side panel filters public docs inline and links to the full gallery |
+| [x] | Add workspace public reader | Signed-in gallery/search public-document opens now route to `/workspace/public/[slug]`, a read-only workspace-native view; `/public/[slug]` remains the canonical external public page |
 | [~] | Final workspace visual pass | Document editor route now uses a centered Obsidian-like editor column with Read/Live/Source modes, a compact hover/focus icon stack for mode switching, and live-mode typography/list/callout styling closer to Read mode; new tab is a raw greeting/search/recent surface; workspace shell has independent scroll domains for center/side panels and hydration-safe persisted chrome state; gallery uses rendered document preview cards; mobile tabs scroll with minimum widths and mobile drawer controls expose left/right panels; remaining routes need a final consistency pass |
 
 Exit criteria:

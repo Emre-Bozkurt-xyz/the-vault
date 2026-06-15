@@ -68,7 +68,7 @@ export default async function GalleryPage({
             publicDocuments.map((document) => (
               <WorkspaceDocumentPreviewCard
                 key={document.id}
-                href={document.publicSlug ? `/public/${document.publicSlug}` : "/gallery"}
+                href={document.href}
                 title={document.title}
                 markdown={document.markdown}
                 meta={`@${document.ownerUsername ?? "unknown"} - ${document.updatedAt.toLocaleDateString()}`}

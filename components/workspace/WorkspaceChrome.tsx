@@ -151,11 +151,22 @@ function inferWorkspacePage(
   const document = [...workspace.owned, ...workspace.shared].find(
     (item) => item.href === pathname,
   );
+  const publicDocument = workspace.publicDocuments.find(
+    (item) => item.href === pathname,
+  );
 
   if (document) {
     return {
       type: "document",
       title: document.title,
+      href,
+    };
+  }
+
+  if (publicDocument) {
+    return {
+      type: "public",
+      title: publicDocument.title,
       href,
     };
   }
@@ -203,6 +214,10 @@ function defaultPanelModeForHref(href: string) {
   }
 
   if (pathname === "/gallery") {
+    return "gallery";
+  }
+
+  if (pathname.startsWith("/workspace/public/")) {
     return "gallery";
   }
 

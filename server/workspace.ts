@@ -58,7 +58,9 @@ export async function getWorkspaceData() {
       id: document.id,
       title: document.title,
       markdown: document.markdown,
-      href: document.publicSlug ? `/public/${document.publicSlug}` : "/gallery",
+      href: document.publicSlug
+        ? `/workspace/public/${document.publicSlug}`
+        : "/gallery",
       publicSlug: document.publicSlug,
       updatedAt: document.updatedAt,
       ownerName: document.ownerName,

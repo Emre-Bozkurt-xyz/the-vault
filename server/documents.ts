@@ -804,6 +804,7 @@ export async function listPublicWikiLinkResolutions(
     includeDocKeys?: boolean;
     includeTitleKeys?: boolean;
     includePublicKeys?: boolean;
+    workspaceHrefs?: boolean;
   } = {},
 ) {
   const rows = await db
@@ -828,7 +829,10 @@ export async function listPublicWikiLinkResolutions(
 
   return buildWikiLinkResolutionMap(
     rows,
-    (document) => (document.publicSlug ? `/public/${document.publicSlug}` : null),
+    (document) =>
+      document.publicSlug
+        ? `${options.workspaceHrefs ? "/workspace/public" : "/public"}/${document.publicSlug}`
+        : null,
     {
       includeEmbeds: options.includeEmbeds ?? true,
       includeDocKeys: options.includeDocKeys ?? true,

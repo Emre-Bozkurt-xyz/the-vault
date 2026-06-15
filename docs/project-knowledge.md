@@ -177,6 +177,7 @@ Add notes as real files appear:
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
 | `app/share/[token]/page.tsx` | Copyable document share-link route with read-only anonymous access and signed-in member edit handoff |
 | `app/workspace/page.tsx` | Protected Obsidian-like workspace new-tab route with persistent tabs and file browser |
+| `app/workspace/public/[slug]/page.tsx` | Protected workspace-native read-only view for published user documents opened from signed-in gallery/search surfaces |
 | `app/api/users/search/route.ts` | Authenticated user search API for friend/profile lookup |
 | `app/api/users/username-availability/route.ts` | Authenticated username validation/uniqueness API for settings |
 | `.github/workflows/deploy.yml` | Production deploy workflow for the self-hosted mini-PC runner |
@@ -925,6 +926,7 @@ Current workspace behavior:
 - The workspace search panel filters owned docs, shared docs, public docs, and official guides client-side and opens the matching route in the current tab stack.
 - The workspace gallery panel filters public docs inline by title, owner display name, username, and public slug, with a link into the full `/gallery?q=...` route for the complete gallery view.
 - The full `/gallery` workspace page uses a grid of rendered document preview cards via `WorkspaceDocumentPreviewCard`, reusing the `.vault-doc-preview-*` visual language from the old dashboard previews.
+- Signed-in public-document browsing stays inside the workspace: gallery/search public document links route to `/workspace/public/[slug]`, which renders a read-only workspace-native page and context panel. The canonical anonymous/share route remains `/public/[slug]`.
 - `/docs/[docId]` is the most complete editor-first route: the document canvas only contains toolbar, live presence, title, editor/preview surface, and fallback save state. Share, visibility, history, and archive controls live in the right context panel.
 - Settings, friends, admin users, admin docs list, admin official-doc editor, gallery, and signed-in official docs routes now render inside the workspace shell with flatter workspace-native surfaces.
 - `app/dashboard/admin/docs/[docId]/page.tsx` moved to `app/(workspace)/dashboard/admin/docs/[docId]/page.tsx`; it now registers its right context panel and uses a flatter `OfficialDocEditor` surface.
@@ -1096,6 +1098,7 @@ Manual checks:
 | Editor mode switch polish | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after compacting the mode switch into a hover/focus icon stack and deferring workspace localStorage hydration | Passed | 2026-06-15 |
 | Live mode typography polish | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after aligning live-mode body typography, list markers, and callout wrapping closer to read mode | Passed | 2026-06-15 |
 | Callout render and selection polish | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after preserving callout body line breaks and keeping active callout source stable during mouse-drag selection | Passed | 2026-06-15 |
+| Workspace public reader | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after adding `/workspace/public/[slug]` and routing signed-in gallery/search public docs there | Passed | 2026-06-15 |
 
 ---
 
@@ -1245,4 +1248,5 @@ Use this as a compact implementation log.
 | 2026-06-15 | Polished editor mode switch and hydration | The Read/Live/Source control is now a compact icon stack that expands on hover/focus; workspace panel/tab state restores after hydration; the root theme provider no longer renders the `next-themes` script |
 | 2026-06-15 | Polished live-mode rendering | Live mode now uses read-mode-style body typography, inactive rendered list markers, and callout hanging indents so wrapped callout paragraphs stay aligned with their content |
 | 2026-06-15 | Fixed callout line breaks and drag selection | Read mode now preserves callout body line breaks as separate paragraphs, and live mode keeps an active callout in source while dragging a selection from inside it |
+| 2026-06-15 | Added workspace public reader | Signed-in gallery/search public-document links now open `/workspace/public/[slug]`, preserving workspace chrome while keeping `/public/[slug]` as the canonical external share page |
 | 2026-06-15 | Planned private asset storage and library | Added `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`, changed storage env examples away from public R2 URLs, hardened `lib/storage/r2.ts`, and recorded that document publishing must not automatically publish embedded assets |
