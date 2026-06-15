@@ -43,7 +43,7 @@ export type MarkdownFormat =
 
 export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border/70 bg-muted/40 px-2 py-2 sm:flex-wrap sm:gap-2 sm:px-3">
+    <div className="vault-editor-toolbar -mx-1 flex w-full items-center gap-1.5 overflow-x-auto px-1 py-1 sm:flex-wrap sm:gap-2">
       <ToolbarGroup>
         <ToolbarButton label="Heading 1" shortcut="Ctrl+Alt+1" icon={Heading1} onClick={() => onFormat("heading1")} />
         <ToolbarButton label="Heading 2" shortcut="Ctrl+Alt+2" icon={Heading2} onClick={() => onFormat("heading2")} />
@@ -75,7 +75,7 @@ function ToolbarGroup({ children }: { children: ReactNode }) {
   return (
     <div
       data-slot="button-group"
-      className="flex shrink-0 items-center rounded-full border border-border/70 bg-background/70 p-0.5 shadow-sm sm:p-1"
+      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
     >
       {children}
     </div>
@@ -103,7 +103,7 @@ function ToolbarButton({
       title={title}
       aria-label={label}
       onClick={onClick}
-      className="size-8 text-muted-foreground transition hover:text-foreground sm:size-9"
+      className="size-8 rounded text-muted-foreground transition hover:text-foreground sm:size-9"
     >
       <Icon className="size-4" />
     </Button>

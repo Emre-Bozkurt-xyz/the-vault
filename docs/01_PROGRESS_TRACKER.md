@@ -222,9 +222,9 @@ Unauthorized users cannot connect.
 | [x] | Deploy latest Markdown schema migration | Markdown schema deployed and user-confirmed working |
 | [x] | Add Markdown renderer | `MarkdownDocument` renders GFM Markdown with sanitized raw HTML, constrained inline styles, and explicit safe media iframe embeds |
 | [x] | Add Obsidian-style callouts | `> [!type] Title` callouts render with default Obsidian types/aliases and snippet-ready `.callout[data-callout="..."]` hooks |
-| [x] | Add Markdown editor | CodeMirror source editor saves `documents.markdown` with Markdown toolbar, autosave, live/source/split/preview modes, and mobile layout pass |
+| [x] | Add Markdown editor | CodeMirror editor saves `documents.markdown` with Markdown toolbar, autosave, Read/Live/Source modes, and mobile layout pass |
 | [x] | Move collaboration to Y.Text | Hocuspocus loads/stores `documents.markdown` via `Y.Text`; CodeMirror binding production-confirmed |
-| [x] | Add live preview | Live mode is default; Source/Split/Preview remain available; multi-line raw HTML stays source in live mode and renders in Preview/Split |
+| [x] | Add live preview | Live mode is default; Read shows the fully rendered document, Source shows raw Markdown, and multi-line raw HTML stays source in Live while rendering in Read |
 | [x] | Remove legacy Tiptap/ProseMirror code | Tiptap packages, editor components, ProseMirror helpers, and `documents.content` fallback code removed; migration `0005_high_captain_midlands.sql` drops the legacy column |
 | [x] | Add document update history | `document_versions` stores batched Markdown checkpoints, manual restore points, and before-restore/before-archive safety snapshots |
 | [x] | Add wiki-link rendering slice | Preview/view/public render `[[doc:id|label]]`, unambiguous `[[Title]]`, unresolved states, and external image `![[https://...]]` syntax |
@@ -268,6 +268,34 @@ Exit criteria:
 
 ```txt
 Admins can moderate accounts and publish official user-facing docs.
+```
+
+---
+
+## Phase 10 - Workspace UI Revamp
+
+Reference plan: `docs/10_WORKSPACE_UI_REVAMP_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write workspace revamp plan | Defines Obsidian-like shell, URL philosophy, tabs, side panels, gallery direction, and phased implementation |
+| [x] | Add workspace shell skeleton | `/workspace`, icon rail, collapsible left panel, draggable top tab bar with localStorage tabs, new-tab page; `/dashboard` redirects to `/workspace` |
+| [x] | Add document file browser panel | Compact owned/shared/published/recent document lists in the left workspace panel |
+| [x] | Move document editor into shell | `/docs/[docId]` now renders inside the workspace shell with persistent tabs/file browser and an editor-first canvas |
+| [x] | Convert settings/guides/admin surfaces into workspace pages | Signed-in official docs, guide, settings, friends, admin users, admin docs list, and official-doc editor pages render inside the workspace model; anonymous docs routes still use the public docs layout |
+| [x] | Add gallery v1 | `/gallery` renders inside the workspace shell and searches public documents by title, owner name, username, and slug; tags, assets, and richer filtering deferred |
+| [x] | Move document context tools into right panel | Share, publish, restore points, and archive now live in the workspace right panel instead of the document canvas |
+| [x] | Add resizable persistent panels | Left navigation and right context panel widths/collapse state are stored in localStorage and can be changed by dragging panel edges |
+| [x] | Add shared protected workspace layout | Protected workspace routes under `/workspace`, `/docs/[docId]`, `/gallery`, and `/dashboard/*` now share `app/(workspace)/layout.tsx` so tab/panel chrome persists across those route changes |
+| [x] | Add real search and gallery side panels | Workspace search quick-opens owned, shared, public, and guide pages; the gallery side panel filters public docs inline and links to the full gallery |
+| [~] | Final workspace visual pass | Document editor route now uses a centered Obsidian-like editor column with Read/Live/Source modes and a compact hover/focus icon stack for mode switching; new tab is a raw greeting/search/recent surface; workspace shell has independent scroll domains for center/side panels and hydration-safe persisted chrome state; gallery uses rendered document preview cards; mobile tabs scroll with minimum widths and mobile drawer controls expose left/right panels; remaining routes need a final consistency pass |
+
+Exit criteria:
+
+```txt
+Vault opens into an editor/file-browser workspace instead of a dashboard.
+Tabs and side panels are persistent workspace UI.
+Existing deep links, public pages, share links, and collaboration still work.
 ```
 
 ---

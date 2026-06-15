@@ -13,13 +13,13 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-09
+2026-06-14
 ```
 
 Current phase:
 
 ```txt
-Phase 9 - Admin moderation and official documentation
+Phase 10 - Workspace UI revamp
 ```
 
 Current deployment status:
@@ -37,13 +37,13 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, a protected dashboard, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, an initial Obsidian-like `/workspace` shell, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
 ```
 
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. Current follow-up work is mostly editor UX polish, knowledge graph features, sharing/access UX, and production hardening.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The next major product direction is the Obsidian-like workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md`: replace the dashboard-centric experience with an editor/file-browser shell, browser-like page tabs, persistent side panels, and a future gallery path.
 ```
 
 ---
@@ -59,7 +59,6 @@ Frontend:
   - TypeScript
   - Tailwind CSS v4
   - shadcn/ui
-  - next-themes
 
 Backend:
   - Next.js Route Handlers
@@ -91,6 +90,9 @@ Deployment:
   - Production Docker/Compose scaffolding
   - GitHub Actions workflow targeting a self-hosted mini-PC runner
   - Separate `vault-collab` container scaffold
+
+Testing / UI verification:
+  - `@playwright/test` dev dependency for local browser smoke tests and screenshots
 ```
 
 Notes:
@@ -98,7 +100,7 @@ Notes:
 ```txt
 - `next.config.ts` enables standalone output for the future production Dockerfile.
 - `shadcn@4.8.0` initialized with the default Base/Nova preset, which uses Base UI primitives. Its Button does not support `asChild`; use `buttonVariants()` for styled links.
-- Theme behavior is dark-first and switchable. `next-themes` controls the root `class`; page styling should use shadcn/Tailwind theme tokens instead of hard-coded light/dark colors.
+- Theme behavior is dark-first and switchable. `components/theme-provider.tsx` owns a small local dark/light provider using the `theme` localStorage key, while `app/layout.tsx` renders dark by default to avoid theme flash; page styling should use shadcn/Tailwind theme tokens instead of hard-coded light/dark colors.
 - Auth uses `next-auth@5.0.0-beta.31` because the current App Router API exposes `auth`, `handlers`, `signIn`, and `signOut` from the root `auth.ts`.
 ```
 
@@ -117,6 +119,8 @@ vault/
       admin/
       friends/
       settings/
+    gallery/
+    workspace/
     banned/
     terms/
     docs/
@@ -148,40 +152,42 @@ Add notes as real files appear:
 | `app/` | Next.js routes |
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js route handlers |
 | `app/api/health/route.ts` | App/database health check route |
-| `app/dashboard/page.tsx` | Server-protected dashboard with owned/shared/public document sections |
-| `app/dashboard/admin/page.tsx` | Admin-only user moderation page with user search, role changes, bans, and unbans |
-| `app/dashboard/admin/docs/page.tsx` | Admin-only official docs list/create page |
+| `app/dashboard/page.tsx` | Compatibility route that redirects to `/workspace` |
+| `app/dashboard/admin/page.tsx` | Workspace-native admin-only user moderation page with user search, role changes, bans, and unbans |
+| `app/dashboard/admin/docs/page.tsx` | Workspace-native admin-only official docs list/create page |
 | `app/dashboard/admin/docs/[docId]/page.tsx` | Admin-only manual official docs editor |
-| `app/dashboard/friends/page.tsx` | Protected friend request/friend list page |
-| `app/dashboard/settings/page.tsx` | Protected account/settings page |
+| `app/dashboard/friends/page.tsx` | Workspace-native protected friend request/friend list page |
+| `app/dashboard/settings/page.tsx` | Workspace-native protected account/settings page |
 | `app/banned/page.tsx` | Logged-in banned-account explanation and sign-out page |
 | `app/terms/page.tsx` | Public Terms and Conditions route rendered from repo Markdown |
-| `app/docs/page.tsx` | Public official documentation index |
-| `app/docs/guides/[slug]/page.tsx` | Public official documentation guide route |
+| `app/docs/page.tsx` | Official documentation index; signed-in users see it inside the workspace shell, anonymous users see the public docs layout |
+| `app/docs/guides/[slug]/page.tsx` | Official documentation guide route; signed-in users see it inside the workspace shell, anonymous users see the public docs layout |
 | `app/onboarding/page.tsx` | First-run profile completion page for username and nickname |
-| `app/docs/[docId]/page.tsx` | Protected document edit/view route |
+| `app/docs/[docId]/page.tsx` | Protected document edit/view route rendered inside the workspace shell with file browser tabs, an editor-first canvas, and a workspace right context panel for document actions; route-level permission checks and collaboration token creation remain server-side |
+| `app/gallery/page.tsx` | Workspace gallery page that lists and searches public documents by title, owner name, username, and slug |
 | `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub/Google OAuth sign-in page |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
 | `app/share/[token]/page.tsx` | Copyable document share-link route with read-only anonymous access and signed-in member edit handoff |
+| `app/workspace/page.tsx` | Protected Obsidian-like workspace new-tab route with persistent tabs and file browser |
 | `app/api/users/search/route.ts` | Authenticated user search API for friend/profile lookup |
 | `app/api/users/username-availability/route.ts` | Authenticated username validation/uniqueness API for settings |
 | `.github/workflows/deploy.yml` | Production deploy workflow for the self-hosted mini-PC runner |
-| `app/loading.tsx` | Global loading skeleton |
 | `app/not-found.tsx` | Global not-found page for missing/private/unpublished docs |
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
-| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown source editor with autosave, source/split/preview modes, and optional Yjs collaboration |
+| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, and optional Yjs collaboration |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist |
-| `components/theme-provider.tsx` | Root client theme provider using `next-themes` |
+| `components/theme-provider.tsx` | Root client theme provider using localStorage-backed dark/light class switching |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
 | `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
 | `components/document-workspace.tsx` | Client wrapper for the document editor workspace and collapsible right-side action panel |
+| `components/workspace/` | Workspace shell, draggable tab bar, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, and new-tab components for Phase 10 |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
@@ -203,10 +209,12 @@ Add notes as real files appear:
 | `content/legal/terms.md` | Repo-backed Terms and Conditions copy shown on `/terms` |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
 | `server/profile.ts` | Profile completion, profile gate, and user search helpers |
+| `server/workspace.ts` | Authenticated workspace data loader for the shell and sidebar document lists |
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
 | `docs/` | Planning and project knowledge |
 | `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan and status notes for the Markdown backbone pivot |
+| `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` | Structured plan for replacing the dashboard-centric UI with an Obsidian-like workspace shell |
 | `docker-compose.yml` | Local Postgres service |
 | `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
@@ -360,7 +368,7 @@ Important files:
 | `app/banned/page.tsx` | Active-ban landing page for signed-in banned users |
 | `server/dev-auth.ts` | Dev-only local sign-in action |
 | `server/authz.ts` | Shared active-user/admin gates backed by the current database row |
-| `app/dashboard/page.tsx` | Protected route and sign-out action |
+| `app/dashboard/page.tsx` | Compatibility redirect to `/workspace` |
 | `types/next-auth.d.ts` | Adds `session.user.id` to TypeScript session type |
 
 Session shape:
@@ -484,7 +492,7 @@ Important files:
 |---|---|
 | `db/schema.ts` | `documents` and `document_permissions` tables |
 | `server/documents.ts` | Create, update, archive, history, sharing, list, and fetch document functions |
-| `app/dashboard/page.tsx` | Owned document list and create form |
+| `app/workspace/page.tsx` and `components/workspace/WorkspaceFileBrowser.tsx` | Workspace new-tab page, compact document list, and create form |
 | `app/docs/[docId]/page.tsx` | Protected editor/viewer route |
 | `lib/markdown.ts` | Shared Markdown limits |
 
@@ -569,7 +577,7 @@ Known document caveats:
 Current editor status:
 
 ```txt
-Markdown editor implemented with CodeMirror, debounced autosave, manual save, toolbar syntax insertion, source/split/preview modes, and production-confirmed Y.Text collaboration.
+Markdown editor implemented with CodeMirror, debounced autosave, manual save, toolbar syntax insertion, Read/Live/Source modes, and production-confirmed Y.Text collaboration.
 ```
 
 Editor library:
@@ -608,7 +616,7 @@ Supported editor features:
 | Read-only mode | Yes |
 | Save status | Saved/saving/unsaved/error status |
 | Autosave | Yes |
-| Source/live/split/preview modes | Yes |
+| Read/Live/Source modes | Yes |
 
 Known editor caveats:
 
@@ -643,7 +651,10 @@ Known editor caveats:
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode replaces inactive `- [ ]` / `- [x]` markers with the same styled checkbox widget.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
-- Document edit pages use a wider responsive workspace (`max-w-[1720px]`) with a collapsible desktop side rail. When the rail is open, the editor shifts left to leave room for visibility/sharing controls; when collapsed, the editor recenters to reduce distractions. On mobile, visibility/sharing controls open in a modal so they do not sit below the editor or affect editor width.
+- Document edit pages now use the workspace shell plus an editor-first canvas. The visible document surface is the Markdown toolbar, title, and live editor; the old route header and persistent bottom Save button are hidden. Manual save UI only appears when autosave/collaboration is in an error or disconnected state. Share, publish/unpublish, copy public link, restore points, and archive live in the workspace right context panel instead of inside the document canvas.
+- `VaultWorkspaceShell` owns panel behavior. The left navigation panel and right context panel have draggable resize handles on desktop and persist widths/collapsed state in `localStorage`. The right panel is a contextual workspace service: routes provide its contents, but the shell owns the panel chrome, collapse button, width, and persistence.
+- `WorkspaceTabBar` owns client-side tab ordering. Tabs are draggable with pointer/mouse drag-and-drop, and each reorder writes the new order back to `vault.workspace.tabs.v1` in `localStorage`.
+- Workspace panel and tab state render server-safe defaults for hydration, then restore persisted `localStorage` state in a queued client callback. This avoids server/client markup mismatches while keeping the shared protected workspace layout mounted across grouped route transitions.
 - User has confirmed Markdown editing works in production.
 - Uploaded document assets are not implemented yet. Future uploaded assets should use document-owned metadata and permission-checked serving, not raw public storage URLs.
 ```
@@ -675,7 +686,7 @@ Current behavior:
 - Token includes document id, user id, role, display identity, optional avatar URL, optional share link id, expiry, and HMAC signature.
 - Collab service validates the token and re-checks current database edit permission before room access. If a token was granted by a share link, the service also re-checks that the link is enabled, unexpired, scoped to members, and configured for editor access on the same document.
 - Link-editor collaboration does not create a `document_permissions` row and does not grant share, delete, or publish rights.
-- The editor header shows current Yjs awareness users as compact collaborator avatars with cursor-color rings and hover identity cards.
+- Yjs awareness powers remote cursors/selections and lightweight toolbar-adjacent presence. The editor hides the presence cluster while solo editing; when more than one awareness user is in the room, it shows overlapping avatar circles using each user's cursor color. Hovering near the cluster expands the icons side-by-side, and hovering an icon shows the user's name/email details.
 - Hocuspocus loads `document_collab_states.yjs_state` first. If no row exists, it seeds a Y.Doc from `documents.markdown` once and immediately stores that seeded Yjs state.
 - Hocuspocus stores collaborative document text back to `documents.markdown` and the compact Yjs CRDT snapshot back to `document_collab_states`.
 - Persisting Yjs state is required for reconnect safety. Reloading every room from plain Markdown creates new CRDT item identities for the same visible characters; a browser reconnecting with older Yjs state can merge both copies and duplicate the full document.
@@ -684,7 +695,7 @@ Current behavior:
 - The Markdown editor starts in normal local-autosave mode and only attaches the CodeMirror/Yjs binding after the Hocuspocus provider reports sync. This prevents a blank editor, lost body saves when `ws://localhost:1234` is unavailable, and duplicate full-document inserts from binding local text into an unsynced empty `Y.Text`.
 - In collaborative mode, CodeMirror state should be updated through the `y-codemirror.next` binding and the editor `onChange` callback. Do not add a separate `Y.Text.observe()` path that calls `setMarkdownValue()`: `@uiw/react-codemirror` treats `value` prop changes as external document replacements, and those replacements can be echoed back into `Y.Text` as local edits.
 - In collaborative mode, CodeMirror receives a one-time initial Markdown value after the first provider sync for that session, then Yjs owns further document updates. Do not bind the `value` prop directly to `Y.Text.toString()` across renders or refresh the initial value on every reconnect/sync event; that can re-present full-document text to CodeMirror while `yCollab` is also applying Yjs updates.
-- When switching from full Preview back to Source/Live/Split in collaborative mode, CodeMirror is remounted with the current `Y.Text` snapshot as its mount seed. This prevents the editor from showing the first synced body while Preview still shows the latest React/Yjs markdown state.
+- When switching from Read back to Source/Live in collaborative mode, CodeMirror is remounted with the current `Y.Text` snapshot as its mount seed. This prevents the editor from showing the first synced body while Read still shows the latest React/Yjs markdown state.
 - Do not add server-side "deduplication" logic that rewrites repeated document bodies. Repeated content can be intentional user content, so duplication prevention must happen at the collaboration/source-of-truth boundary rather than by guessing after the fact.
 - After collaboration is synced, the normal server action saves title changes only so it does not overwrite the live Yjs body.
 - Viewer/public routes remain read-only and do not connect to the collaboration service.
@@ -811,8 +822,8 @@ Important files:
 | `app/dashboard/admin/docs/[docId]/page.tsx` | Official docs manual editor route |
 | `components/markdown/OfficialDocEditor.tsx` | Manual-save Markdown editor for official docs |
 | `app/banned/page.tsx` | Active-ban explanation page |
-| `app/docs/page.tsx` | Public official docs index |
-| `app/docs/guides/[slug]/page.tsx` | Public official guide renderer |
+| `app/docs/page.tsx` | Hybrid official docs index: workspace shell when signed in, public docs layout when anonymous |
+| `app/docs/guides/[slug]/page.tsx` | Hybrid official guide renderer: workspace shell when signed in, public docs layout when anonymous |
 
 Current moderation behavior:
 
@@ -846,6 +857,51 @@ Known admin/docs caveats:
 - There is no seeded first admin yet; set `users.role = 'admin'` manually for the first trusted account after migration.
 - There is no audit log table yet for moderation actions.
 - Initial repo docs exist for Markdown basics, wiki links/embeds, callouts, CSS snippets, safe HTML/embeds, and sharing/permissions.
+```
+
+---
+
+## 13.1 Workspace UI Knowledge
+
+Current workspace routes:
+
+```txt
+/workspace
+/docs/[docId]
+/docs
+/docs/guides/[slug] when signed in
+/dashboard/settings
+/dashboard/friends
+/dashboard/admin
+/dashboard/admin/docs
+/dashboard/admin/docs/[docId]
+/gallery
+```
+
+Current workspace behavior:
+
+```txt
+- `app/(workspace)/layout.tsx` wraps protected workspace routes in a shared persistent shell. Navigating between grouped workspace routes keeps the tab bar, icon rail, side panel chrome, and resize/collapse client state mounted instead of recreating a full shell per page.
+- `VaultWorkspaceShell` owns the icon rail, draggable page tabs, left panel, right context panel, and resizable/collapsible side panel state.
+- `WorkspaceChrome` supplies shell data from `getWorkspaceData()` and pages use `WorkspacePageRegistration` to set the active tab title and optional right context panel.
+- Workspace tabs are client-side navigation state persisted in localStorage; deep links still use normal route URLs.
+- The workspace shell is viewport-bound (`h-dvh`/`overflow-hidden`). The browser body should not scroll on workspace pages; the center `main` content area scrolls independently, and side panels own their own internal scroll regions.
+- `/workspace` is a raw new-tab surface: greeting title, underline document search, New document action, and one list that shows recent documents until a search query filters owned/shared documents.
+- Workspace tabs have a mobile-safe minimum width and live inside a horizontal scroll container rather than shrinking to fit. On mobile, the workspace exposes a Panel drawer with the same mode choices as the desktop icon rail, and document routes expose a Context drawer for right-panel actions.
+- The left workspace panel has real modes for files, docs, search, gallery, settings, and admin. Files/docs/search/gallery use richer panels; settings/admin still use compact utility panels.
+- The workspace search panel filters owned docs, shared docs, public docs, and official guides client-side and opens the matching route in the current tab stack.
+- The workspace gallery panel filters public docs inline by title, owner display name, username, and public slug, with a link into the full `/gallery?q=...` route for the complete gallery view.
+- The full `/gallery` workspace page uses a grid of rendered document preview cards via `WorkspaceDocumentPreviewCard`, reusing the `.vault-doc-preview-*` visual language from the old dashboard previews.
+- `/docs/[docId]` is the most complete editor-first route: the document canvas only contains toolbar, live presence, title, editor/preview surface, and fallback save state. Share, visibility, history, and archive controls live in the right context panel.
+- Settings, friends, admin users, admin docs list, admin official-doc editor, gallery, and signed-in official docs routes now render inside the workspace shell with flatter workspace-native surfaces.
+- `app/dashboard/admin/docs/[docId]/page.tsx` moved to `app/(workspace)/dashboard/admin/docs/[docId]/page.tsx`; it now registers its right context panel and uses a flatter `OfficialDocEditor` surface.
+- `/gallery` currently lists public documents and filters by document title, owner display name, username, and public slug. Tags, asset uploads, score/rating, and image-board behavior are intentionally deferred until separate schema/design work.
+```
+
+Known workspace caveats:
+
+```txt
+- Anonymous-capable `/docs` and `/docs/guides/[slug]` remain outside the protected route group so logged-out documentation keeps the public docs layout. Signed-in docs pages still manually wrap in the workspace shell and can be folded into a hybrid shared layout later if that becomes worth the added routing complexity.
 ```
 
 ---
@@ -918,6 +974,7 @@ Known deployment caveats:
 - `.env.production` is intentionally not committed. Create it on the deployment host.
 - `.github/workflows/deploy.yml` calls `/opt/apps/vault/repo/scripts/deploy.sh`; because the workflow resets the repo to `origin/master`, that script must stay committed.
 - The deploy script explicitly builds `web`, `collab`, and the profile-gated `migrate` image, then runs migrations with `--build` before starting `web`. This is required because profile-gated services may otherwise use stale images missing new migration files.
+- After a successful deploy, `scripts/deploy.sh` prunes stale Docker images older than 24 hours and build cache older than 7 days. It intentionally does not prune volumes, so `vault_postgres` is not removed.
 - Bash backup scripts need Docker available in the shell environment. On this Windows machine, WSL Bash could not see Docker Desktop; the PowerShell backup script works locally.
 ```
 
@@ -990,6 +1047,20 @@ Manual checks:
 | Official docs layout | `npm run build` succeeds | Passed | 2026-06-06 |
 | Hybrid official docs | `npm run lint` succeeds after repo-doc merge and terms route | Passed | 2026-06-06 |
 | Hybrid official docs | `npm run build` succeeds after repo-doc merge and terms route | Passed | 2026-06-06 |
+| Workspace utility conversion | `npm run lint` succeeds after settings/friends/admin/gallery workspace conversion | Passed | 2026-06-14 |
+| Workspace utility conversion | `npm run build` succeeds after settings/friends/admin/gallery workspace conversion | Passed | 2026-06-14 |
+| Workspace search/gallery panels | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after real side-panel search/gallery tools | Passed | 2026-06-15 |
+| Workspace search/gallery panels | Playwright smoke test signs in locally and verifies `/workspace`, `/docs`, and `/gallery` render inside workspace chrome | Passed | 2026-06-15 |
+| Workspace scroll domains | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after viewport-bound shell layout changes | Passed | 2026-06-15 |
+| Workspace scroll domains | Playwright smoke test on `/docs/[docId]` confirms body scroll height equals viewport height and center `main` owns vertical scrolling | Passed | 2026-06-15 |
+| Workspace gallery preview grid | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after gallery preview-card conversion | Passed | 2026-06-15 |
+| Workspace gallery preview grid | Playwright smoke test on `/gallery` confirms helper text is gone and rendered preview cards are present | Passed | 2026-06-15 |
+| Workspace raw new tab | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after converting `/workspace` to greeting/search/recent surface | Passed | 2026-06-15 |
+| Workspace raw new tab | Playwright smoke test confirms greeting title, underline search, New document action, and dynamic search-results heading | Passed | 2026-06-15 |
+| Workspace mobile chrome | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after mobile tab/panel accessibility changes | Passed | 2026-06-15 |
+| Workspace mobile chrome | Playwright mobile smoke test confirms tabs scroll with 144px minimum width, side-panel mode buttons are accessible, and document Context drawer appears | Passed | 2026-06-15 |
+| Editor mode switch | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after adding Read/Live/Source document modes | Passed | 2026-06-15 |
+| Editor mode switch polish | `npm run lint`, `npx tsc --noEmit`, and `npm run build` succeed after compacting the mode switch into a hover/focus icon stack and deferring workspace localStorage hydration | Passed | 2026-06-15 |
 
 ---
 
@@ -1028,6 +1099,8 @@ Current invariants:
 - Admin-only routes/actions must use `requireAdmin()` and must not rely on client-hidden UI controls.
 - Active bans must be enforced server-side through `requireActiveUser()` or stronger guards on protected mutations.
 - New UI should use theme tokens (`background`, `foreground`, `card`, `border`, `muted`) rather than hard-coded one-off colors unless there is a deliberate design reason.
+- The workspace document editor should keep toolbar, live presence, title, editable surface, preview surface, and fallback save state inside one centered editor column. Avoid reintroducing independent max-width children that drift out of alignment.
+- Workspace routes should keep shell chrome fixed in the viewport. Avoid replacing `h-dvh`, `min-h-0`, or region-level `overflow-y-auto` with page-level `min-h-screen` patterns that make the whole browser body scroll.
 ```
 
 ---
@@ -1037,10 +1110,10 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Run migrations through `0010_fast_phantom_reporter.sql` and promote the first trusted account with `update users set role = 'admin' where email = '<email>';`.
-2. Browser-test `/dashboard/admin`, ban/unban behavior, and `/banned` with disposable accounts.
-3. Browser-test `/docs`, `/docs/guides/markdown-basics`, `/terms`, and `/dashboard/admin/docs` after deployment.
-4. Consider adding moderation audit logs before expanding admin tools further.
+1. Browser-test protected workspace navigation after deploy, especially document -> settings -> admin docs editor transitions.
+2. Decide whether signed-in `/docs` and `/docs/guides/[slug]` should move into a hybrid shared workspace layout or remain public-route wrappers.
+3. Continue the final workspace visual pass on remaining non-editor surfaces.
+4. Defer tags, asset upload, image gallery, and score/rating search until separate schema/design docs exist.
 ```
 
 ---
@@ -1110,3 +1183,27 @@ Use this as a compact implementation log.
 | 2026-06-09 | Revamped document sharing | Sharing moved into a modal with friend-prioritized user autocomplete, thinner access rows, and revocable copyable share links for anyone-viewer, members-viewer, and members-editor access |
 | 2026-06-09 | Persisted Yjs collaboration state | Added `document_collab_states` and changed the collab server to load/store binary Yjs snapshots so room unload/reconnect cycles do not recreate Markdown as new CRDT text and duplicate content |
 | 2026-06-12 | Added share-link collaboration presence | Active members-editor links now authorize normal Yjs collaboration without permanent permission rows, and the editor header shows live collaborator avatars with cursor-color rings |
+| 2026-06-14 | Planned workspace UI revamp | Added `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` for an Obsidian-like workspace shell, tabs, side panels, gallery direction, URL rules, and phased rollout |
+| 2026-06-14 | Added initial workspace shell | Added `/workspace`, persistent localStorage page tabs, icon rail, collapsible left file panel, compact owned/shared/published/recent document lists, `/gallery` v1, and `/dashboard` redirect compatibility |
+| 2026-06-14 | Integrated official docs into workspace | Signed-in `/docs` and `/docs/guides/[slug]` now render inside the workspace shell with a docs navigation panel, while anonymous docs routes keep the public layout; workspace tabs now preserve order when returning to an existing tab |
+| 2026-06-14 | Moved document editor route into workspace | `/docs/[docId]` now renders inside `VaultWorkspaceShell` with persistent tabs and file browser while preserving existing Markdown editor, collaboration, sharing, history, publish, and archive behavior |
+| 2026-06-14 | Added Playwright browser verification setup | Added `@playwright/test` as a dev dependency and installed local Chromium browser bundles so workspace routes can be smoke-tested with Playwright |
+| 2026-06-14 | Flattened document editor workspace view | Removed the old document route header/sidebar from `/docs/[docId]`, moved the Markdown toolbar above the title, aligned the live editor surface to the document column, and hid the bottom Save button unless autosave/collab fails |
+| 2026-06-14 | Added workspace document context panel | Restored share, publish, restore-point, and archive controls as a narrow workspace right panel so the document canvas stays editor-only |
+| 2026-06-14 | Added resizable workspace side panels | `VaultWorkspaceShell` now persists left navigation width, right context width, and right/left collapsed state, with draggable desktop panel edges |
+| 2026-06-14 | Reduced workspace transition flicker | Workspace shell panels and tab bar now initialize from localStorage immediately instead of rendering defaults first and snapping after mount |
+| 2026-06-14 | Restored lightweight live presence | Markdown editor now shows collaborator avatars beside the toolbar only when multiple Yjs awareness users are active, with cursor-color rings and hover identity details |
+| 2026-06-14 | Centered workspace editor column | Toolbar, live presence, title, editor body, preview pane, and fallback save state now share one centered document column so the writing surface feels like an Obsidian tab instead of a nested page frame |
+| 2026-06-14 | Added draggable workspace tabs | Workspace tabs can now be rearranged by dragging, and the reordered tab list persists in localStorage |
+| 2026-06-14 | Added workspace utility panels | `VaultWorkspaceShell` now supports search, gallery, settings, and admin panel slots, with `WorkspaceUtilityPanel` providing real navigation for non-file modes |
+| 2026-06-14 | Converted utility routes into workspace | Settings, friends, admin users, admin docs list, and gallery now render inside the workspace shell with flatter workspace-native surfaces; gallery search filters public docs by title, owner, username, and slug |
+| 2026-06-15 | Added deploy image cleanup | Successful deploys now run conservative `docker image prune` and `docker builder prune` commands to remove stale images/cache without touching volumes |
+| 2026-06-15 | Added shared protected workspace layout | Protected workspace routes moved under `app/(workspace)` and share `WorkspaceChrome`, so tab/panel chrome persists across `/workspace`, `/docs/[docId]`, `/gallery`, and `/dashboard/*` workspace navigation |
+| 2026-06-15 | Converted official-doc editor to workspace | `/dashboard/admin/docs/[docId]` now uses the shared workspace shell, registers an admin context panel, and uses a flatter official-doc editor surface |
+| 2026-06-15 | Added real workspace search and gallery panels | Search now quick-opens owned, shared, public, and guide pages from the side panel; gallery now filters public docs inline and links into the full gallery route |
+| 2026-06-15 | Fixed workspace scroll domains | Workspace shell is now viewport-bound so document pages scroll only in the center content area while side panels stay fixed and scroll internally |
+| 2026-06-15 | Added gallery preview grid | `/gallery` now shows public documents as rendered preview cards and workspace page helper copy was reduced across the shell |
+| 2026-06-15 | Simplified workspace new tab | `/workspace` now uses a raw greeting, underline document search, New document action, and a recent/search result list instead of shortcut cards |
+| 2026-06-15 | Improved mobile workspace chrome | Workspace tabs now scroll with a minimum tab width on mobile, the left panel drawer exposes all panel modes, and document pages expose a mobile context drawer |
+| 2026-06-15 | Added Read/Live/Source editor modes | Normal document editing now exposes Read for fully rendered output, Live for the main decorated CodeMirror editing experience, and Source for raw Markdown |
+| 2026-06-15 | Polished editor mode switch and hydration | The Read/Live/Source control is now a compact icon stack that expands on hover/focus; workspace panel/tab state restores after hydration; the root theme provider no longer renders the `next-themes` script |

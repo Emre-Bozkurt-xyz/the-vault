@@ -1,14 +1,12 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 
 import { auth } from "@/auth";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { UserSearchField } from "@/components/user-search-field";
-import { cn } from "@/lib/utils";
+import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import {
   acceptFriendRequestAction,
   listFriendPageData,
@@ -26,37 +24,33 @@ export default async function FriendsPage() {
   }
 
   await requireCompletedProfile();
-  const { friends, incomingRequests, outgoingRequests } = await listFriendPageData(
-    session.user.id,
-  );
+  const { friends, incomingRequests, outgoingRequests } =
+    await listFriendPageData(session.user.id);
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-10 px-6 py-8">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-6">
-          <Link
-            href="/dashboard"
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
-          >
-            <ArrowLeft className="size-4" />
-            Dashboard
-          </Link>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Badge variant="outline">Friends</Badge>
+    <>
+      <WorkspacePageRegistration
+        page={{ type: "settings", title: "Friends", href: "/dashboard/friends" }}
+      />
+      <section className="mx-auto grid w-full max-w-6xl gap-5 py-4">
+        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/70 pb-5">
+          <div>
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+              Account
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
+              Friends
+            </h1>
           </div>
+          <Badge variant="outline">{friends.length} friends</Badge>
         </header>
 
-        <section className="grid gap-8 lg:grid-cols-[320px_1fr]">
-          <aside className="vault-fade-up rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+        <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+          <aside className="vault-fade-up border border-border/60 bg-card/45 p-5 text-card-foreground">
             <UserPlus className="mb-4 size-8 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight vault-display">
+            <h2 className="text-xl font-semibold tracking-tight vault-display">
               Add a friend
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Search by nickname, username, or email. Friends are useful
-              collaborators for document sharing.
-            </p>
+            </h2>
 
             <form action={sendFriendRequestAction} className="mt-6 grid gap-3">
               <UserSearchField />
@@ -68,7 +62,7 @@ export default async function FriendsPage() {
           </aside>
 
           <div className="grid gap-6">
-            <section className="vault-fade-up vault-delay-1 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+            <section className="vault-fade-up vault-delay-1 border border-border/60 bg-card/45 p-5 text-card-foreground">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Friends</h2>
                 <Badge variant="outline">{friends.length}</Badge>
@@ -81,7 +75,7 @@ export default async function FriendsPage() {
                   {friends.map((friend) => (
                     <div
                       key={friend.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-3 border border-border/60 bg-background/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <UserSummary
                         name={friend.name}
@@ -101,7 +95,7 @@ export default async function FriendsPage() {
               )}
             </section>
 
-            <section className="vault-fade-up vault-delay-2 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+            <section className="vault-fade-up vault-delay-2 border border-border/60 bg-card/45 p-5 text-card-foreground">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Incoming requests</h2>
                 <Badge variant="outline">{incomingRequests.length}</Badge>
@@ -114,7 +108,7 @@ export default async function FriendsPage() {
                   {incomingRequests.map((request) => (
                     <div
                       key={request.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-3 border border-border/60 bg-background/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <UserSummary
                         name={request.requesterName}
@@ -142,7 +136,7 @@ export default async function FriendsPage() {
               )}
             </section>
 
-            <section className="vault-fade-up vault-delay-3 rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.6)] backdrop-blur">
+            <section className="vault-fade-up vault-delay-3 border border-border/60 bg-card/45 p-5 text-card-foreground">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Sent requests</h2>
                 <Badge variant="outline">{outgoingRequests.length}</Badge>
@@ -155,7 +149,7 @@ export default async function FriendsPage() {
                   {outgoingRequests.map((request) => (
                     <div
                       key={request.id}
-                      className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-4"
+                      className="flex items-center justify-between border border-border/60 bg-background/60 px-3 py-2.5"
                     >
                       <UserSummary
                         name={request.recipientName}
@@ -170,15 +164,15 @@ export default async function FriendsPage() {
               )}
             </section>
           </div>
-        </section>
-      </div>
-    </main>
+        </div>
+      </section>
+    </>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">
+    <div className="mt-4 border border-dashed border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">
       {text}
     </div>
   );

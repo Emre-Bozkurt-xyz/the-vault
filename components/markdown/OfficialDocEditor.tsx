@@ -190,8 +190,8 @@ export function OfficialDocEditor({
   }
 
   return (
-    <section className="rounded-3xl border border-border/60 bg-card/80 text-card-foreground shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)]">
-      <div className="grid gap-4 border-b border-border/60 p-5 lg:grid-cols-[1fr_220px_180px_110px_auto] lg:items-end">
+    <section className="grid gap-4 text-foreground">
+      <div className="grid gap-4 border-b border-border/70 pb-5 lg:grid-cols-[1fr_220px_180px_110px_auto] lg:items-end">
         <label className="grid gap-2">
           <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             Title
@@ -256,7 +256,7 @@ export function OfficialDocEditor({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
           Official documentation
         </p>
@@ -276,11 +276,13 @@ export function OfficialDocEditor({
         </div>
       </div>
 
-      <MarkdownToolbar onFormat={applyFormat} />
+      <div className="overflow-x-auto border-y border-border/70 bg-card/35 py-2">
+        <MarkdownToolbar onFormat={applyFormat} />
+      </div>
 
       <div
         className={cn(
-          "grid min-h-[620px]",
+          "grid min-h-[620px] border-b border-border/70",
           mode === "split" ? "lg:grid-cols-2" : "grid-cols-1",
         )}
       >
@@ -298,18 +300,18 @@ export function OfficialDocEditor({
               highlightActiveLine: true,
               highlightActiveLineGutter: true,
             }}
-            className="min-h-[620px] overflow-hidden border-r border-border/60 bg-background/70"
+            className="min-h-[620px] overflow-hidden border-r border-border/60 bg-transparent"
           />
         ) : null}
         {mode !== "source" ? (
-          <div className="min-h-[620px] overflow-auto bg-background/40 p-6">
+          <div className="min-h-[620px] overflow-auto bg-transparent p-6">
             <MarkdownDocument markdown={markdownValue} className="max-w-4xl" />
           </div>
         ) : null}
       </div>
 
       {message || error ? (
-        <div className="flex items-center gap-2 border-t border-border/60 px-5 py-3 text-sm">
+        <div className="flex items-center gap-2 text-sm">
           {error ? (
             <>
               <AlertCircle className="size-4 text-destructive" />

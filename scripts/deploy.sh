@@ -102,3 +102,7 @@ fi
 
 echo "[deploy] Deployment complete."
 dc ps
+
+echo "[deploy] Cleaning stale Docker images/build cache..."
+docker image prune -f --filter "until=24h" || true
+docker builder prune -f --filter "until=168h" || true

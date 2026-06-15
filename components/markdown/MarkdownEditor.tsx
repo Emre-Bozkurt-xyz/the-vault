@@ -37,8 +37,8 @@ import CodeMirror from "@uiw/react-codemirror";
 import { createRoot, type Root } from "react-dom/client";
 import {
   AlertCircle,
+  BookOpenText,
   CheckCircle2,
-  Columns2,
   Eye,
   FileCode2,
   Loader2,
@@ -83,7 +83,7 @@ type MarkdownEditorProps = {
   wikiLinks?: WikiLinkResolutionMap;
 };
 
-type PreviewMode = "source" | "live" | "split" | "preview";
+type EditorMode = "source" | "live" | "read";
 type CollabStatus = "off" | "connecting" | "connected" | "disconnected";
 type RangeLike = ReturnType<Decoration["range"]>;
 type CollabSession = {
@@ -135,7 +135,7 @@ export function MarkdownEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("live");
+  const [editorMode, setEditorMode] = useState<EditorMode>("live");
   const [wikiLinkMap] = useState<WikiLinkResolutionMap>(wikiLinks ?? {});
   const [collabStatus, setCollabStatus] = useState<CollabStatus>(
     collaboration ? "connecting" : "off",
@@ -240,15 +240,15 @@ export function MarkdownEditor({
             return null;
           }
 
+          const userColor = user.color ?? colorFromString(user.email ?? user.name);
+
           return {
             clientId,
             name: user.name,
             email: user.email ?? null,
             image: user.image ?? null,
-            color: user.color ?? colorFromString(user.email ?? user.name),
-            colorLight:
-              user.colorLight ??
-              `${colorFromString(user.email ?? user.name)}33`,
+            color: userColor,
+            colorLight: user.colorLight ?? `${userColor}33`,
           };
         })
         .filter((user): user is CollabPresenceUser => Boolean(user))
@@ -264,6 +264,7 @@ export function MarkdownEditor({
     return () => {
       mounted = false;
       awareness?.off("change", updatePresenceUsers);
+      setPresenceUsers([]);
       provider.destroy();
       ydoc.destroy();
     };
@@ -309,6 +310,26 @@ export function MarkdownEditor({
         (!isCollaborative && markdownValueRef.current !== markdownAtSave),
     );
   }, [documentId, isCollaborative, shareLinkId]);
+
+  useEffect(() => {
+    if (editorMode !== "read" || !isCollaborative || !collabSession) {
+      return;
+    }
+
+    const updateReadMarkdown = () => {
+      const latestMarkdown = collabSession.ytext.toString();
+      markdownValueRef.current = latestMarkdown;
+      setMarkdownValue(latestMarkdown);
+      setEditorMountMarkdown(latestMarkdown);
+    };
+
+    updateReadMarkdown();
+    collabSession.ytext.observe(updateReadMarkdown);
+
+    return () => {
+      collabSession.ytext.unobserve(updateReadMarkdown);
+    };
+  }, [collabSession, editorMode, isCollaborative]);
 
   const extensions = useMemo(
     () => {
@@ -528,7 +549,7 @@ export function MarkdownEditor({
       }),
     ];
 
-      if (previewMode === "live") {
+      if (editorMode === "live") {
         baseExtensions.push(createMarkdownLivePreviewExtension(wikiLinkMap));
       }
 
@@ -558,7 +579,7 @@ export function MarkdownEditor({
     [
       collabSession,
       isCollaborative,
-      previewMode,
+      editorMode,
       wikiCompletionDismissal,
       wikiLinkMap,
       wikiLinkMapStore,
@@ -653,9 +674,13 @@ export function MarkdownEditor({
     }
   }, []);
 
-  const changePreviewMode = useCallback(
-    (nextMode: PreviewMode) => {
-      if (previewMode === "preview" && nextMode !== "preview") {
+  const changeEditorMode = useCallback(
+    (nextMode: EditorMode) => {
+      if (editorMode === nextMode) {
+        return;
+      }
+
+      if (editorMode === "read" || nextMode === "read") {
         const latestMarkdown =
           isCollaborative && collabSession
             ? collabSession.ytext.toString()
@@ -666,9 +691,9 @@ export function MarkdownEditor({
         setEditorMountMarkdown(latestMarkdown);
       }
 
-      setPreviewMode(nextMode);
+      setEditorMode(nextMode);
     },
-    [collabSession, isCollaborative, previewMode],
+    [collabSession, editorMode, isCollaborative],
   );
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -705,130 +730,116 @@ export function MarkdownEditor({
         : collabStatus === "disconnected"
           ? "Live collaboration disconnected"
           : "Local Markdown draft";
+  const showManualSave =
+    Boolean(saveError) || (collaboration && collabStatus === "disconnected");
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-4 sm:gap-6">
-      <div className="flex flex-col gap-3 px-3 pt-4 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-0 sm:pt-0">
-        <span>Markdown source</span>
-        <div className="-mx-1 flex max-w-full items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
-          <PreviewModeButton
-            active={previewMode === "source"}
-            label="Source"
-            onClick={() => changePreviewMode("source")}
-            icon={FileCode2}
-          />
-          <PreviewModeButton
-            active={previewMode === "live"}
-            label="Live"
-            onClick={() => changePreviewMode("live")}
-            icon={Eye}
-          />
-          <PreviewModeButton
-            active={previewMode === "split"}
-            label="Split"
-            onClick={() => changePreviewMode("split")}
-            icon={Columns2}
-          />
-          <PreviewModeButton
-            active={previewMode === "preview"}
-            label="Preview"
-            onClick={() => changePreviewMode("preview")}
-            icon={Eye}
-          />
-          {collaboration ? (
-            <CollaborationPresence
-              users={presenceUsers}
-              status={collabStatus}
-            />
-          ) : null}
+    <form
+      onSubmit={handleSubmit}
+      className="vault-editor-canvas min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10"
+    >
+      <div className="vault-editor-column mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5">
+        <div className="vault-editor-toolbar-row flex items-center gap-3">
+          {editorMode !== "read" ? (
+            <div className="min-w-0 flex-1">
+              <MarkdownToolbar onFormat={applyFormat} />
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1" />
+          )}
+          <CollaborationPresence users={presenceUsers} />
+          <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} />
         </div>
-      </div>
-      <input
-        name="title"
-        value={titleValue}
-        onChange={(event) => {
-          titleValueRef.current = event.target.value;
-          setTitleValue(event.target.value);
-          setDirty(true);
-        }}
-        className="w-full bg-transparent px-3 text-3xl font-semibold leading-[1.08] tracking-tight outline-none sm:px-0 sm:text-5xl vault-display"
-        aria-label="Document title"
-      />
-      <div
-        className={cn(
-          "vault-markdown-editor overflow-hidden border-y border-border/70 bg-card/80 text-card-foreground shadow-[0_25px_80px_-70px_rgba(0,0,0,0.6)] backdrop-blur sm:rounded-3xl sm:border",
-          `vault-markdown-editor-${previewMode}`,
+        {editorMode === "read" ? (
+          <h1 className="vault-editor-title w-full text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl vault-display">
+            {titleValue || "Untitled document"}
+          </h1>
+        ) : (
+          <input
+            name="title"
+            value={titleValue}
+            onChange={(event) => {
+              titleValueRef.current = event.target.value;
+              setTitleValue(event.target.value);
+              setDirty(true);
+            }}
+            className="vault-editor-title w-full bg-transparent text-4xl font-semibold leading-[1.02] tracking-tight outline-none sm:text-5xl lg:text-6xl vault-display"
+            aria-label="Document title"
+          />
         )}
-      >
-        {previewMode !== "preview" ? (
-          <MarkdownToolbar onFormat={applyFormat} />
-        ) : null}
         <div
           className={cn(
-            previewMode === "split"
-              ? "grid min-h-[calc(100svh-17rem)] lg:min-h-[520px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
-              : "min-h-[calc(100svh-17rem)] lg:min-h-[520px]",
+            "vault-markdown-editor min-h-[calc(100svh-12rem)] overflow-visible bg-transparent text-card-foreground",
+            `vault-markdown-editor-${editorMode}`,
           )}
         >
-          {previewMode !== "preview" ? (
-            <div
-              className={cn(
-                previewMode === "split"
-                  ? "border-b border-border/70 lg:border-b-0 lg:border-r"
-                  : null,
-              )}
-            >
-              <CodeMirror
-                key={`${collaborationKey}:${isCollaborative ? "collab" : "local"}`}
-                value={
-                  isCollaborative
-                    ? editorMountMarkdown
-                    : markdownValue
-                }
-                extensions={extensions}
-                basicSetup={{
-                  foldGutter: previewMode !== "live",
-                  highlightActiveLine: true,
-                  highlightSelectionMatches: true,
-                  lineNumbers: previewMode !== "live",
-                }}
-                onCreateEditor={(view) => {
-                  viewRef.current = view;
-                }}
-                onChange={(value) => {
-                  markdownValueRef.current = value;
-                  setMarkdownValue(value);
-                  if (!isCollaborative) {
-                    setDirty(true);
+          <div
+            className={cn(
+              "min-h-[calc(100svh-18rem)] lg:min-h-[520px]",
+            )}
+          >
+            {editorMode !== "read" ? (
+              <div>
+                <CodeMirror
+                  key={`${collaborationKey}:${isCollaborative ? "collab" : "local"}`}
+                  value={
+                    isCollaborative
+                      ? editorMountMarkdown
+                      : markdownValue
                   }
-                }}
-                theme="none"
-              />
-            </div>
-          ) : null}
-          {previewMode !== "source" &&
-          previewMode !== "live" ? (
-            <div className="vault-markdown-editor-preview-pane min-h-[calc(100svh-17rem)] px-4 py-5 sm:min-h-[520px] sm:px-8 sm:py-8">
-              <MarkdownDocument markdown={markdownValue} wikiLinks={wikiLinkMap} />
-            </div>
-          ) : null}
+                  extensions={extensions}
+                  basicSetup={{
+                    foldGutter: editorMode !== "live",
+                    highlightActiveLine: true,
+                    highlightSelectionMatches: true,
+                    lineNumbers: editorMode !== "live",
+                  }}
+                  onCreateEditor={(view) => {
+                    viewRef.current = view;
+                  }}
+                  onChange={(value) => {
+                    markdownValueRef.current = value;
+                    setMarkdownValue(value);
+                    if (!isCollaborative) {
+                      setDirty(true);
+                    }
+                  }}
+                  theme="none"
+                />
+              </div>
+            ) : null}
+            {editorMode === "read" ? (
+              <div className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8">
+                <MarkdownDocument
+                  markdown={markdownValue}
+                  wikiLinks={wikiLinkMap}
+                  contained={false}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col justify-between gap-3 border-t border-border/60 px-3 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:px-0">
-        <div className="flex flex-col gap-1">
-          <p className="flex items-center gap-2">
-            {statusIcon}
-            {statusText}
-          </p>
-          <p className="text-xs">{collaborationStatusText}</p>
-          {saveError ? (
-            <p className="text-xs text-destructive">Try again in a moment.</p>
-          ) : null}
-        </div>
-        <Button type="submit" size="lg" disabled={!dirty || saving}>
-          <Save data-icon="inline-start" />
-          Save changes
-        </Button>
+        <p className="sr-only" aria-live="polite">
+          {statusText}. {collaborationStatusText}.
+        </p>
+        {showManualSave ? (
+          <div className="flex flex-col justify-between gap-3 border border-border/70 bg-card/80 px-4 py-3 text-sm text-muted-foreground shadow-[0_18px_60px_-55px_rgba(0,0,0,0.55)] sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-1">
+            <p className="flex items-center gap-2">
+              {statusIcon}
+              {statusText}
+            </p>
+            <p className="text-xs">{collaborationStatusText}</p>
+            {saveError ? (
+              <p className="text-xs text-destructive">Try again in a moment.</p>
+            ) : null}
+            </div>
+            <Button type="submit" size="lg" disabled={!dirty || saving}>
+              <Save data-icon="inline-start" />
+              Save changes
+            </Button>
+          </div>
+        ) : null}
       </div>
     </form>
   );
@@ -843,6 +854,57 @@ function colorFromString(value: string) {
   }
 
   return colors[hash];
+}
+
+function EditorModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: EditorMode;
+  onChange: (mode: EditorMode) => void;
+}) {
+  const modes: Array<{
+    value: EditorMode;
+    label: string;
+    icon: typeof BookOpenText;
+  }> = [
+    { value: "read", label: "Read", icon: BookOpenText },
+    { value: "live", label: "Live", icon: Eye },
+    { value: "source", label: "Source", icon: FileCode2 },
+  ];
+  const orderedModes = [
+    ...modes.filter((item) => item.value === mode),
+    ...modes.filter((item) => item.value !== mode),
+  ];
+
+  return (
+    <div
+      className="vault-editor-mode-switch group/mode-switch relative ml-auto h-8 w-8 shrink-0"
+      aria-label="Editor mode"
+    >
+      {orderedModes.map((item) => {
+        const Icon = item.icon;
+        const active = item.value === mode;
+
+        return (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onChange(item.value)}
+            aria-pressed={active}
+            title={`${item.label} mode`}
+            className={cn(
+              "vault-editor-mode-button absolute left-0 top-0 flex size-8 items-center justify-center rounded-md text-muted-foreground focus-visible:outline-none",
+              active ? "vault-editor-mode-button-active text-foreground" : null,
+            )}
+          >
+            <Icon className="size-4" />
+            <span className="sr-only">{item.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function createWikiCompletionDismissalStore(): WikiCompletionDismissalStore {
@@ -2731,91 +2793,49 @@ function isListContinuation(text: string) {
   return /^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+|\S)/.test(text);
 }
 
-function PreviewModeButton({
-  active,
-  label,
-  onClick,
-  icon: Icon,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-  icon: typeof FileCode2;
-}) {
+function CollaborationPresence({ users }: { users: CollabPresenceUser[] }) {
+  if (users.length < 2) {
+    return null;
+  }
+
   return (
-    <Button
-      type="button"
-      variant={active ? "secondary" : "outline"}
-      size="sm"
-      onClick={onClick}
-      aria-pressed={active}
-      className="shrink-0 gap-1.5 normal-case tracking-normal"
+    <div
+      className="group/presence relative -my-2 hidden shrink-0 items-center py-2 pr-1 sm:flex"
+      aria-label={`${users.length} people in this document`}
     >
-      <Icon className="size-3.5" />
-      {label}
-    </Button>
-  );
-}
-
-function CollaborationPresence({
-  users,
-  status,
-}: {
-  users: CollabPresenceUser[];
-  status: CollabStatus;
-}) {
-  const label =
-    status === "connected"
-      ? `${users.length || 1} in document`
-      : status === "connecting"
-        ? "Joining..."
-        : "Offline";
-
-  return (
-    <div className="ml-1 flex shrink-0 items-center gap-2 rounded-full border border-border/70 bg-background/65 px-2 py-1 normal-case tracking-normal shadow-sm">
-      <div className="flex -space-x-2">
-        {users.length > 0 ? (
-          users.slice(0, 6).map((user) => (
-            <div
-              key={user.clientId}
-              className="group relative"
-              title={user.email ? `${user.name} (${user.email})` : user.name}
+      <div className="flex -space-x-3 transition-[gap] duration-150 ease-out group-hover/presence:space-x-1">
+        {users.slice(0, 8).map((user) => (
+          <div key={user.clientId} className="group/user relative">
+            <span
+              className="flex size-8 items-center justify-center overflow-hidden rounded-full border-2 bg-background text-[0.7rem] font-semibold text-foreground shadow-[0_0_0_1px_var(--background)] transition-transform duration-150 group-hover/presence:shadow-none group-hover/user:-translate-y-0.5"
+              style={{
+                borderColor: user.color,
+                boxShadow: `0 0 0 1px var(--background), 0 0 16px ${user.colorLight}`,
+              }}
             >
-              <span
-                className="flex size-7 items-center justify-center overflow-hidden rounded-full border-2 bg-card text-[0.68rem] font-semibold text-card-foreground shadow-sm"
-                style={{ borderColor: user.color }}
-              >
-                {user.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={user.image}
-                    alt=""
-                    className="size-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  getInitials(user.name)
-                )}
-              </span>
-              <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-max max-w-56 -translate-x-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs normal-case tracking-normal text-popover-foreground shadow-xl group-hover:block">
-                <span className="block font-medium">{user.name}</span>
-                {user.email ? (
-                  <span className="mt-0.5 block text-muted-foreground">
-                    {user.email}
-                  </span>
-                ) : null}
-              </span>
-            </div>
-          ))
-        ) : (
-          <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-border bg-muted text-[0.68rem] text-muted-foreground">
-            ...
-          </span>
-        )}
+              {user.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.image}
+                  alt=""
+                  className="size-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                getInitials(user.name)
+              )}
+            </span>
+            <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-max max-w-60 -translate-x-1/2 border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-xl group-hover/user:block">
+              <span className="block font-medium">{user.name}</span>
+              {user.email ? (
+                <span className="mt-0.5 block text-muted-foreground">
+                  {user.email}
+                </span>
+              ) : null}
+            </span>
+          </div>
+        ))}
       </div>
-      <span className="hidden text-xs text-muted-foreground sm:inline">
-        {label}
-      </span>
     </div>
   );
 }

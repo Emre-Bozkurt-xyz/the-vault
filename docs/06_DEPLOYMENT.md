@@ -37,7 +37,7 @@ Deployments are triggered by GitHub Actions on a self-hosted mini-PC runner. The
 /opt/apps/vault/repo/scripts/deploy.sh
 ```
 
-Because the workflow uses `git reset --hard origin/master`, `scripts/deploy.sh` must be committed in this repo. The current script builds `web`, `collab`, and the profile-gated `migrate` image, starts Postgres, waits for Postgres health, runs the Compose `migrate` profile with `--build`, starts `collab` and `web`, then checks `/healthz` and the local collab port.
+Because the workflow uses `git reset --hard origin/master`, `scripts/deploy.sh` must be committed in this repo. The current script builds `web`, `collab`, and the profile-gated `migrate` image, starts Postgres, waits for Postgres health, runs the Compose `migrate` profile with `--build`, starts `collab` and `web`, then checks `/healthz` and the local collab port. After a successful deploy, it prunes stale Docker images older than 24 hours and build cache older than 7 days. It does not prune volumes.
 
 Important migration caveat:
 

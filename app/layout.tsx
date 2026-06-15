@@ -54,7 +54,8 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${uiFont.variable} ${displayFont.variable} ${monoFont.variable} h-full antialiased`}
+      className={`${uiFont.variable} ${displayFont.variable} ${monoFont.variable} dark h-full antialiased`}
+      style={{ colorScheme: "dark" }}
     >
       <body className="flex min-h-full flex-col">
         <ThemeProvider>{children}</ThemeProvider>

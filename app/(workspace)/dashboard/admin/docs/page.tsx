@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ArrowLeft, BookOpen, FilePlus2, FileText, Globe2, Pencil } from "lucide-react";
+import { FilePlus2, FileText, Globe2, Pencil } from "lucide-react";
 
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { cn } from "@/lib/utils";
 import {
   createOfficialDocAction,
@@ -14,48 +14,35 @@ export default async function AdminOfficialDocsPage() {
   const docs = await listOfficialDocsForAdmin();
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-8">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-6">
-          <Link
-            href="/dashboard/admin"
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
-          >
-            <ArrowLeft className="size-4" />
-            Admin
-          </Link>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Badge variant="outline">Official docs</Badge>
+    <>
+      <WorkspacePageRegistration
+        page={{
+          type: "admin",
+          title: "Official docs",
+          href: "/dashboard/admin/docs",
+        }}
+      />
+      <section className="mx-auto grid w-full max-w-6xl gap-5 py-4">
+        <header className="flex flex-col gap-4 border-b border-border/70 pb-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+              Admin
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
+              Official documentation
+            </h1>
           </div>
+          <form action={createOfficialDocAction}>
+            <Button type="submit">
+              <FilePlus2 className="size-4" />
+              New official doc
+            </Button>
+          </form>
         </header>
 
-        <section className="rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <BookOpen className="size-6 text-primary" />
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight vault-display">
-                Official documentation
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                These pages are public user-facing guides. They use manual saves,
-                Repo-backed docs are canonical and read-only here. Database
-                docs use manual saves, publish states, and no collaboration
-                session.
-              </p>
-            </div>
-            <form action={createOfficialDocAction}>
-              <Button type="submit" size="lg">
-                <FilePlus2 className="size-4" />
-                New official doc
-              </Button>
-            </form>
-          </div>
-        </section>
-
-        <section className="grid gap-4">
+        <section className="grid gap-3">
           {docs.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-border/70 bg-card/70 p-8 text-card-foreground">
+            <div className="border border-dashed border-border/70 bg-card/45 p-8 text-card-foreground">
               <p className="font-semibold">No official docs yet</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 Create a draft to start building the help center.
@@ -65,7 +52,7 @@ export default async function AdminOfficialDocsPage() {
             docs.map((doc) => (
               <article
                 key={doc.id}
-                className="flex flex-col gap-4 rounded-3xl border border-border/60 bg-card/80 p-5 text-card-foreground md:flex-row md:items-center md:justify-between"
+                className="flex flex-col gap-4 border border-border/60 bg-card/45 p-4 text-card-foreground md:flex-row md:items-center md:justify-between"
               >
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -89,8 +76,8 @@ export default async function AdminOfficialDocsPage() {
                     ) : null}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {doc.category} / order {doc.sortOrder} - /docs/guides/{doc.slug} - Updated{" "}
-                    {doc.updatedAt.toLocaleDateString()}
+                    {doc.category} / order {doc.sortOrder} - /docs/guides/
+                    {doc.slug} - Updated {doc.updatedAt.toLocaleDateString()}
                   </p>
                   {doc.source === "repo" ? (
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -137,7 +124,7 @@ export default async function AdminOfficialDocsPage() {
             ))
           )}
         </section>
-      </div>
-    </main>
+      </section>
+    </>
   );
 }

@@ -11,7 +11,7 @@ Current Markdown pivot status:
 ```txt
 Editable document pages now use CodeMirror for Markdown source editing.
 Viewer/public pages render `documents.markdown` with sanitized raw HTML support.
-Source/split/preview modes exist locally.
+Editable document pages expose Read, Live, and Source modes.
 The Markdown editor is wired to Hocuspocus/Yjs through `Y.Text` when `NEXT_PUBLIC_COLLAB_URL` is set.
 Production collaboration and Markdown editing have been user-confirmed working.
 ```
@@ -204,7 +204,7 @@ Responsibilities:
 - Trigger save action.
 - Autosave.
 - Bind to Y.Text when collaboration is available.
-- Render source/live/split/preview modes.
+- Render Source/Live/Read modes.
 
 ### `MarkdownToolbar.tsx`
 

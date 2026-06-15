@@ -1224,6 +1224,7 @@
   }
 
   .vault-markdown-editor-live,
+  .vault-markdown-editor-read,
   .vault-markdown-editor-preview {
     border-color: transparent !important;
     background: transparent !important;
@@ -1232,6 +1233,7 @@
   }
 
   .vault-markdown-editor-live .cm-editor,
+  .vault-markdown-editor-read .cm-editor,
   .vault-markdown-editor-preview .cm-editor {
     background: transparent;
   }
@@ -1263,6 +1265,143 @@
   .vault-markdown-editor-live .cm-selectionBackground,
   .vault-markdown-editor-live .cm-focused .cm-selectionBackground {
     background: color-mix(in oklab, var(--primary) 28%, transparent) !important;
+  }
+
+  .vault-editor-canvas {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--background) 96%, var(--card) 4%) 0%,
+        var(--background) 24rem
+      );
+  }
+
+  .vault-editor-toolbar {
+    scrollbar-width: none;
+  }
+
+  .vault-editor-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .vault-editor-column {
+    position: relative;
+    width: min(100%, 56rem);
+  }
+
+  .vault-editor-toolbar-row {
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .vault-editor-mode-switch {
+    z-index: 20;
+    isolation: isolate;
+    opacity: 0.66;
+    transition: opacity 140ms ease;
+  }
+
+  .vault-editor-mode-switch::before {
+    content: "";
+    position: absolute;
+    inset: -1rem -1.25rem -5.75rem -1.25rem;
+    z-index: 0;
+  }
+
+  .vault-editor-mode-switch:hover,
+  .vault-editor-mode-switch:focus-within {
+    opacity: 1;
+  }
+
+  .vault-editor-mode-button {
+    z-index: 2;
+    border: 1px solid transparent;
+    background: color-mix(in oklab, var(--background) 82%, transparent);
+    box-shadow: 0 8px 22px -20px rgba(0, 0, 0, 0.75);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transform: translate3d(0, 0, 0) scale(0.78);
+    transition:
+      opacity 150ms ease,
+      transform 170ms cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0ms linear 170ms,
+      color 140ms ease,
+      border-color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .vault-editor-mode-button:hover,
+  .vault-editor-mode-button:focus-visible {
+    border-color: color-mix(in oklab, var(--border) 82%, transparent);
+    background: color-mix(in oklab, var(--foreground) 8%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-editor-mode-button-active {
+    z-index: 4;
+    border-color: color-mix(in oklab, var(--border) 70%, transparent);
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button,
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transition-delay: 0ms, 0ms, 0ms, 0ms, 0ms, 0ms;
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button:nth-child(1),
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button:nth-child(1) {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button:nth-child(2),
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button:nth-child(2) {
+    transform: translate3d(0, 2.15rem, 0) scale(1);
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button:nth-child(3),
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button:nth-child(3) {
+    transform: translate3d(0, 4.3rem, 0) scale(1);
+  }
+
+  @media (max-width: 640px) {
+    .vault-editor-mode-switch {
+      margin-left: 0;
+    }
+  }
+
+  .vault-editor-canvas .vault-markdown-editor {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .vault-editor-canvas .cm-editor,
+  .vault-editor-canvas .cm-scroller {
+    background: transparent;
+  }
+
+  .vault-editor-canvas .vault-markdown-editor-live .cm-content {
+    max-width: 100%;
+    min-height: calc(100svh - 18rem);
+    margin-inline: 0;
+    padding: 0.25rem 0 8rem !important;
+  }
+
+  .vault-editor-canvas .vault-markdown-editor-live .cm-line {
+    padding-inline: 0 !important;
+  }
+
+  .vault-editor-canvas .vault-markdown-editor-preview-pane > .vault-markdown {
+    max-width: 100%;
+    margin-inline: 0;
   }
 
   .vault-markdown-editor-preview-pane {
