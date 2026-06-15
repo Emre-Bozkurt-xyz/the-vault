@@ -415,31 +415,75 @@ Current implementation:
 
 ## 9. Future Document Assets
 
-Image/file uploads are not implemented yet.
-
-If added, prefer private-by-default document assets rather than public file URLs:
+Detailed implementation plan:
 
 ```txt
+docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md
+```
+
+Image/file uploads are not implemented yet. The accepted direction is
+private-by-default uploaded assets backed by private R2 object storage and
+Postgres metadata.
+
+Important rules:
+
+- Store uploaded bytes in R2, not Postgres.
+- Keep the R2 bucket private.
+- Do not insert raw R2/public storage URLs into Markdown.
+- Store stable Markdown references such as `![[asset:<asset-id>|label]]`.
+- Route asset reads through Vault permission checks.
+- Publishing a document does not automatically publish embedded assets.
+- Individual assets can be explicitly published later for gallery visibility.
+
+Planned schema additions:
+
+```txt
+users
+  storage_used_bytes BIGINT NOT NULL DEFAULT 0
+  storage_quota_bytes BIGINT NOT NULL DEFAULT 268435456
+
+assets
+  id UUID PRIMARY KEY
+  owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL
+  storage_driver TEXT NOT NULL DEFAULT 'r2'
+  storage_bucket TEXT NOT NULL
+  storage_key TEXT NOT NULL UNIQUE
+  original_filename TEXT NOT NULL
+  display_name TEXT NOT NULL
+  description TEXT
+  alt_text TEXT
+  mime_type TEXT NOT NULL
+  detected_mime_type TEXT NOT NULL
+  file_extension TEXT NOT NULL
+  size_bytes BIGINT NOT NULL
+  width INTEGER
+  height INTEGER
+  kind TEXT NOT NULL
+  visibility TEXT NOT NULL DEFAULT 'private'
+  status TEXT NOT NULL DEFAULT 'pending'
+  checksum_sha256 TEXT
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+  published_at TIMESTAMP
+  deleted_at TIMESTAMP
+
 document_assets
   id UUID PRIMARY KEY
   document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE
-  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL
-  filename TEXT NOT NULL
-  mime_type TEXT NOT NULL
-  size_bytes INTEGER NOT NULL
-  storage_key TEXT NOT NULL
+  asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE
+  linked_by UUID REFERENCES users(id) ON DELETE SET NULL
   created_at TIMESTAMP NOT NULL DEFAULT now()
+  UNIQUE(document_id, asset_id)
 ```
 
-Serve assets through a route that checks document read permission, such as:
+Asset read access is allowed when:
 
 ```txt
-/api/docs/:docId/assets/:assetId
+asset.visibility = public
+OR asset.owner_id = current_user.id
+OR asset is linked to a document current_user can read
 ```
-
-Public documents may expose their assets publicly through the same route only
-because `canReadDocument(null, docId)` allows public documents. Private document
-assets must not be exposed via raw public storage URLs.
 
 ---
 

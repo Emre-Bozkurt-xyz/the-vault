@@ -25,6 +25,7 @@ Mini-PC Docker Compose
   +-- vault-postgres
   +-- vault-redis, later
   +-- vault-collab, later
+  +-- Cloudflare R2 private object storage for uploaded assets, later
 ```
 
 The main application is a Next.js app. It handles frontend rendering, server actions, route handlers, authentication, document CRUD, permissions, and public pages.
@@ -87,6 +88,28 @@ Responsibilities:
 - Presence/awareness.
 - Persisting collaborative document state back to Postgres JSONB.
 
+### Cloudflare R2
+
+Planned private object storage for user-uploaded images, PDFs, and later files.
+
+Responsibilities:
+
+- Store uploaded asset bytes.
+- Remain private; no public `r2.dev` URL or public custom domain for v1.
+- Let `vault-web` read/write objects through S3-compatible credentials.
+
+Non-responsibilities:
+
+- R2 does not decide who can read an asset.
+- R2 object keys are not the permission model.
+- Raw R2 URLs should not be inserted into documents.
+
+Detailed plan:
+
+```txt
+docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md
+```
+
 ---
 
 ## 3. Request Flow
@@ -133,6 +156,24 @@ Validate payload
 Update document row
   |
 Return success
+```
+
+### Uploaded asset read
+
+```txt
+Browser requests /api/assets/:assetId/content
+  |
+Next.js server checks optional session
+  |
+Check asset access:
+  - public asset, or
+  - asset owner, or
+  - asset linked to a readable document
+  |
+If allowed:
+  stream private R2 object through Vault
+Else:
+  return 404 for private inaccessible assets
 ```
 
 ---

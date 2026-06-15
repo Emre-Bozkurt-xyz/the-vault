@@ -155,6 +155,18 @@ POSTGRES_PASSWORD=<strong password>
 DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
 NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab
 COLLAB_PORT=1234
+
+ASSET_STORAGE_DRIVER=r2
+R2_BUCKET=vault-assets
+R2_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=<r2-access-key-id>
+R2_SECRET_ACCESS_KEY=<r2-secret-access-key>
+ASSET_ROUTE_BASE_PATH=/api/assets
+DEFAULT_USER_STORAGE_QUOTA_BYTES=268435456
+MAX_IMAGE_UPLOAD_BYTES=10485760
+MAX_PDF_UPLOAD_BYTES=26214400
+ASSET_PRIVATE_CACHE_SECONDS=0
+ASSET_PUBLIC_CACHE_SECONDS=3600
 ```
 
 Do not commit `.env.production`.
@@ -164,6 +176,16 @@ Commit only:
 ```txt
 .env.example
 ```
+
+Asset storage notes:
+
+- Uploaded asset storage is planned in `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
+- R2 is private byte storage only.
+- Keep public `r2.dev` access disabled.
+- Do not configure a public custom domain for uploaded assets in v1.
+- `R2_ENDPOINT` is the account-level endpoint and must not include the bucket
+  name.
+- The app will serve assets through permission-checked `/api/assets` routes.
 
 ---
 

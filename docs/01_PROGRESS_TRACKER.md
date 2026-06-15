@@ -236,7 +236,7 @@ Unauthorized users cannot connect.
 | [x] | Add block and region-scoped wiki links | `[[doc#^block-id]]` targets hidden Obsidian-style block anchors; `[[doc#@region-id]]` targets hidden Vault regions; embeds render only the selected block/region |
 | [x] | Add guide/public wiki namespaces | `guide:<slug>` links official docs; `public:<slug>` links published user docs and autocomplete shows publisher usernames |
 | [x] | Flatten writing surfaces | Live editor and Preview/public reading modes now use seamless page surfaces instead of large card frames; Live mode hides line-number/fold gutters |
-| [ ] | Add uploaded document assets | Future `![[asset:id]]` support with private-by-default storage and permission-checked serving |
+| [~] | Add uploaded document assets | Planning moved to `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; implementation not started |
 
 Exit criteria:
 
@@ -296,6 +296,35 @@ Exit criteria:
 Vault opens into an editor/file-browser workspace instead of a dashboard.
 Tabs and side panels are persistent workspace UI.
 Existing deep links, public pages, share links, and collaboration still work.
+```
+
+---
+
+## Phase 11 - Asset Storage and Library
+
+Reference plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Decide private-by-default storage model | R2 remains private byte storage; Vault owns all asset read/write authorization |
+| [x] | Write asset storage and library plan | Covers schema, upload route, private serving, editor insertion, asset library, explicit asset publishing, gallery integration, deployment, and tests |
+| [x] | Prepare storage dependencies and env placeholders | `@aws-sdk/client-s3`, `file-type`, private R2 env placeholders, and server-only/lazy-env `lib/storage/r2.ts` helper exist |
+| [ ] | Add asset schema and migrations | Add user quota fields, `assets`, and `document_assets` |
+| [ ] | Add private upload API | `POST /api/assets` with auth, document edit checks, validation, quota, R2 upload, metadata, and document link |
+| [ ] | Add private serving API | Permission-checked `/api/assets/:assetId/content`, including owner/public/document-context reads |
+| [ ] | Render Markdown asset embeds | Resolve `![[asset:id|label]]` through server-provided asset maps; no raw R2 URLs in Markdown |
+| [ ] | Add editor upload and paste flows | Toolbar file picker and clipboard image paste insert asset embeds through CodeMirror transactions |
+| [ ] | Add asset library page | `/assets` workspace page with masonry grid, filters, details/config panel, metadata editing, and copy embed |
+| [ ] | Add explicit asset publishing | Asset-level public/private toggle; publishing documents does not publish embedded assets |
+| [ ] | Integrate public assets into gallery | `/gallery` lists explicitly public assets alongside public documents |
+| [ ] | Add cleanup and reconciliation tools | Unused asset detection, object deletion, quota repair, and R2 backup/export notes |
+
+Exit criteria:
+
+```txt
+Users can upload/paste images into private docs, browse owned assets, and publish
+individual assets to the gallery without making private document assets public by
+default.
 ```
 
 ---

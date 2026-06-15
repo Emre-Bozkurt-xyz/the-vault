@@ -13,13 +13,13 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-14
+2026-06-15
 ```
 
 Current phase:
 
 ```txt
-Phase 10 - Workspace UI revamp
+Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library planning
 ```
 
 Current deployment status:
@@ -37,13 +37,13 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, an initial Obsidian-like `/workspace` shell, health endpoints, GitHub Actions deployment wiring, and production-confirmed Markdown/Y.Text collaboration.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, an initial Obsidian-like `/workspace` shell, health endpoints, GitHub Actions deployment wiring, production-confirmed Markdown/Y.Text collaboration, and a private-by-default asset storage plan with preliminary R2 helper/dependency scaffolding.
 ```
 
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The next major product direction is the Obsidian-like workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md`: replace the dashboard-centric experience with an editor/file-browser shell, browser-like page tabs, persistent side panels, and a future gallery path.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. The next major product feature plan is private-by-default uploaded asset storage and an asset library, documented in `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
 ```
 
 ---
@@ -85,6 +85,12 @@ Realtime collaboration:
   - Yjs + Hocuspocus service for owner/editor Markdown live editing
   - CodeMirror remote cursor/selection awareness through `y-codemirror.next`
   - Markdown `Y.Text` persistence back to `documents.markdown`
+
+Object storage:
+  - Planned private Cloudflare R2 storage for uploaded assets
+  - `@aws-sdk/client-s3` and `file-type` dependencies are installed
+  - `lib/storage/r2.ts` is server-only, lazily validates R2 env values, and exposes put/get/head/delete helpers
+  - Asset upload/serve routes and schema are not implemented yet
 
 Deployment:
   - Production Docker/Compose scaffolding
@@ -137,6 +143,7 @@ vault/
     ui/
   db/
   lib/
+    storage/
   server/
   docs/
   public/
@@ -199,6 +206,7 @@ Add notes as real files appear:
 | `lib/repo-docs.ts` | Filesystem loader for repo-backed docs and legal Markdown content |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
+| `lib/storage/r2.ts` | Server-only private R2/S3-compatible object helper for future uploaded asset storage; exposes put/get/head/delete helpers and validates env lazily |
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
 | `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
@@ -215,6 +223,7 @@ Add notes as real files appear:
 | `docs/` | Planning and project knowledge |
 | `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan and status notes for the Markdown backbone pivot |
 | `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` | Structured plan for replacing the dashboard-centric UI with an Obsidian-like workspace shell |
+| `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` | Private-by-default uploaded asset storage, asset library, explicit asset publishing, and gallery integration plan |
 | `docker-compose.yml` | Local Postgres service |
 | `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
@@ -242,6 +251,17 @@ GOOGLE_CLIENT_SECRET=replace-with-google-oauth-client-secret
 NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
 COLLAB_PORT=1234
 ENABLE_DEV_LOGIN=true
+ASSET_STORAGE_DRIVER=r2
+R2_BUCKET=vault-assets
+R2_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=replace-with-r2-access-key-id
+R2_SECRET_ACCESS_KEY=replace-with-r2-secret-access-key
+ASSET_ROUTE_BASE_PATH=/api/assets
+DEFAULT_USER_STORAGE_QUOTA_BYTES=268435456
+MAX_IMAGE_UPLOAD_BYTES=10485760
+MAX_PDF_UPLOAD_BYTES=26214400
+ASSET_PRIVATE_CACHE_SECONDS=0
+ASSET_PUBLIC_CACHE_SECONDS=3600
 ```
 
 ### Production
@@ -268,6 +288,17 @@ Rules:
 | `NEXT_PUBLIC_COLLAB_URL` | Optional | Editor | WebSocket URL for live collaboration; when absent, editor falls back to normal autosave |
 | `COLLAB_PORT` | Optional | Collab service | Internal Hocuspocus listen port, default `1234` |
 | `ENABLE_DEV_LOGIN` | Optional | Login page | Enables dev-only local Auth.js database-session login when not production; defaults enabled outside production unless set to `false` |
+| `ASSET_STORAGE_DRIVER` | Planned | Asset upload/serve routes | Storage backend selector; currently planned value is `r2` |
+| `R2_BUCKET` | Planned | Asset storage helper | Private R2 bucket name for uploaded asset bytes |
+| `R2_ENDPOINT` | Planned | Asset storage helper | Account-level R2 S3 API endpoint, `https://<cloudflare-account-id>.r2.cloudflarestorage.com`, without bucket suffix |
+| `R2_ACCESS_KEY_ID` | Planned | Asset storage helper | Server-only R2 S3-compatible access key |
+| `R2_SECRET_ACCESS_KEY` | Planned | Asset storage helper | Server-only R2 S3-compatible secret key |
+| `ASSET_ROUTE_BASE_PATH` | Planned | Asset renderer/API | Vault route prefix for permission-checked asset reads, default `/api/assets` |
+| `DEFAULT_USER_STORAGE_QUOTA_BYTES` | Planned | Asset quota logic | Default per-user storage quota; current planned default is 256 MiB |
+| `MAX_IMAGE_UPLOAD_BYTES` | Planned | Asset upload validation | Maximum image upload size; current planned default is 10 MiB |
+| `MAX_PDF_UPLOAD_BYTES` | Planned | Asset upload validation | Maximum PDF upload size; current planned default is 25 MiB |
+| `ASSET_PRIVATE_CACHE_SECONDS` | Planned | Asset content route | Cache seconds for private asset responses; current planned default is `0` |
+| `ASSET_PUBLIC_CACHE_SECONDS` | Planned | Asset content route | Cache seconds for explicitly public asset responses; current planned default is `3600` |
 
 ---
 
@@ -339,6 +370,7 @@ Schema notes:
 - `/api/health` uses `select 1` and does not require any application tables.
 - Wiki-link metadata is derived from document Markdown at read time. Resolved wiki maps include headings, Obsidian-style block anchors (`^block-id`), and hidden Vault regions (`<!-- vault-region id="..." -->`), so links and embeds can target a specific heading, block, or region without schema changes. Vault regions marked `foldable` render as collapsible disclosure blocks; `collapsed` makes them initially closed.
 - Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
+- Asset tables are not implemented yet. Planned schema adds `users.storage_used_bytes`, `users.storage_quota_bytes`, `assets`, and `document_assets` for private-by-default uploaded content.
 ```
 
 ---
@@ -657,7 +689,7 @@ Known editor caveats:
 - `WorkspaceTabBar` owns client-side tab ordering. Tabs are draggable with pointer/mouse drag-and-drop, and each reorder writes the new order back to `vault.workspace.tabs.v1` in `localStorage`.
 - Workspace panel and tab state render server-safe defaults for hydration, then restore persisted `localStorage` state in a queued client callback. This avoids server/client markup mismatches while keeping the shared protected workspace layout mounted across grouped route transitions.
 - User has confirmed Markdown editing works in production.
-- Uploaded document assets are not implemented yet. Future uploaded assets should use document-owned metadata and permission-checked serving, not raw public storage URLs.
+- Uploaded document assets are not implemented yet. The accepted plan is in `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`: assets are user-owned, private by default, backed by private R2 byte storage, referenced in Markdown as `![[asset:id|label]]`, served only through Vault permission checks, and published to the gallery only through explicit asset-level publishing. Publishing a document must not automatically publish embedded assets.
 ```
 
 ---
@@ -1104,6 +1136,7 @@ Current invariants:
 - New UI should use theme tokens (`background`, `foreground`, `card`, `border`, `muted`) rather than hard-coded one-off colors unless there is a deliberate design reason.
 - The workspace document editor should keep toolbar, live presence, title, editable surface, preview surface, and fallback save state inside one centered editor column. Avoid reintroducing independent max-width children that drift out of alignment.
 - Workspace routes should keep shell chrome fixed in the viewport. Avoid replacing `h-dvh`, `min-h-0`, or region-level `overflow-y-auto` with page-level `min-h-screen` patterns that make the whole browser body scroll.
+- Uploaded assets must stay private by default. Do not insert raw R2 URLs into Markdown, do not expose public R2 bucket/custom-domain reads for private assets, and do not make document publishing automatically publish embedded assets.
 ```
 
 ---
@@ -1113,10 +1146,10 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Browser-test protected workspace navigation after deploy, especially document -> settings -> admin docs editor transitions.
-2. Decide whether signed-in `/docs` and `/docs/guides/[slug]` should move into a hybrid shared workspace layout or remain public-route wrappers.
-3. Continue the final workspace visual pass on remaining non-editor surfaces.
-4. Defer tags, asset upload, image gallery, and score/rating search until separate schema/design docs exist.
+1. Start Phase 11 with asset schema/quota fields and Drizzle migration from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
+2. Implement `POST /api/assets` as the first vertical slice: auth, edit permission, file validation, quota reservation, private R2 upload, metadata insert, and `![[asset:id|label]]` response.
+3. Add permission-checked asset content serving before wiring editor previews.
+4. Continue the final workspace visual pass on remaining non-editor surfaces when not working on asset storage.
 ```
 
 ---
@@ -1212,3 +1245,4 @@ Use this as a compact implementation log.
 | 2026-06-15 | Polished editor mode switch and hydration | The Read/Live/Source control is now a compact icon stack that expands on hover/focus; workspace panel/tab state restores after hydration; the root theme provider no longer renders the `next-themes` script |
 | 2026-06-15 | Polished live-mode rendering | Live mode now uses read-mode-style body typography, inactive rendered list markers, and callout hanging indents so wrapped callout paragraphs stay aligned with their content |
 | 2026-06-15 | Fixed callout line breaks and drag selection | Read mode now preserves callout body line breaks as separate paragraphs, and live mode keeps an active callout in source while dragging a selection from inside it |
+| 2026-06-15 | Planned private asset storage and library | Added `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`, changed storage env examples away from public R2 URLs, hardened `lib/storage/r2.ts`, and recorded that document publishing must not automatically publish embedded assets |

@@ -730,52 +730,29 @@ explicitly reduced to a small metadata-only slice.
 
 ## 13. Uploaded Images and Assets Future Plan
 
-Image/file storage is also a later feature.
-
-Desired editor behavior:
+Image/file storage has its own detailed plan:
 
 ```txt
-User pastes or uploads an image
-  |
-Vault stores it as a document-owned asset
-  |
-Editor inserts ![[asset:<id>]]
-  |
-Renderer serves the asset through permission-checked routes
+docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md
 ```
 
-Important rules:
+The workspace shell should leave room for:
 
-- Assets should be private by default.
-- Asset reads must check document access unless explicitly published.
-- Public documents need controlled public asset serving.
-- Avoid raw public bucket URLs as the only permission model.
-- Store metadata in Postgres even if file bytes live in object storage.
+- An `/assets` workspace page for the user's own uploaded content.
+- A masonry-style grid for images and PDF/file cards.
+- An asset detail/configuration panel.
+- Explicit asset publishing controls.
+- Public gallery integration for assets marked public by their owner.
 
-Possible future schema:
+Important product rule:
 
 ```txt
-document_assets
-  id
-  document_id
-  owner_id
-  storage_key
-  filename
-  mime_type
-  byte_size
-  width
-  height
-  visibility
-  created_at
+Publishing a document does not automatically publish its embedded assets.
 ```
 
-Future gallery integration:
-
-- Published images/assets can become gallery items.
-- Assets can have tags.
-- Public image pages can reuse the workspace/public renderer shell.
-
-Do not block the workspace UI revamp on asset storage.
+Uploaded assets are private by default, stored in private R2 object storage, and
+served through Vault permission checks. Do not block the workspace UI revamp on
+asset storage, but do not reintroduce raw public storage URLs as the asset model.
 
 ---
 

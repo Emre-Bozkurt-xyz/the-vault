@@ -148,7 +148,7 @@ Current first slice:
 Future slices:
 
 - `![[asset:id]]` uploaded document assets served through permission-checked
-  routes.
+  routes. Full plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
 
 Current editor behavior:
 
@@ -178,9 +178,10 @@ Current editor behavior:
   so the `![[...]]` line can expand visually without needing multi-line
   CodeMirror block replacement.
 
-Uploaded assets should be private-by-default document attachments, not public
-opaque URLs. Store metadata in a future `document_assets` table and serve files
-through routes that check `canReadDocument()` before returning the object.
+Uploaded assets should be private-by-default user-owned assets, not public
+opaque URLs. Store metadata in future `assets` and `document_assets` tables,
+serve file bytes through routes that check owner/public/document access, and do
+not publish embedded assets automatically when a document becomes public.
 
 ---
 
