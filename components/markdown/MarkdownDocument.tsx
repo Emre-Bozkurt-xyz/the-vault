@@ -733,11 +733,17 @@ function createCalloutBodyFromMarkerParagraph(
   preservedBodyChildren: ReactNode[],
 ) {
   if (preservedBodyChildren.length > 0) {
-    return [
-      <p key="callout-body" className="vault-md-p">
-        {preservedBodyChildren}
-      </p>,
-    ];
+    const lines = splitReactNodesByLine(preservedBodyChildren)
+      .map((line) => trimLeadingWhitespaceFromNodes(line))
+      .filter((line) => reactNodeToText(line).trim().length > 0);
+
+    if (lines.length > 0) {
+      return lines.map((line, index) => (
+        <p key={`callout-body-${index}`} className="vault-md-p">
+          {line}
+        </p>
+      ));
+    }
   }
 
   const bodyText = bodyLines.join("\n").trim();
@@ -746,7 +752,50 @@ function createCalloutBodyFromMarkerParagraph(
     return [];
   }
 
-  return [<p key="callout-body" className="vault-md-p">{bodyText}</p>];
+  return bodyText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => (
+      <p key={`callout-body-${index}`} className="vault-md-p">
+        {line}
+      </p>
+    ));
+}
+
+function splitReactNodesByLine(nodes: ReactNode[]) {
+  const lines: ReactNode[][] = [[]];
+
+  const pushNode = (node: ReactNode) => {
+    lines[lines.length - 1].push(node);
+  };
+
+  const pushLineBreaks = (parts: string[]) => {
+    parts.forEach((part, index) => {
+      if (index > 0) {
+        lines.push([]);
+      }
+
+      if (part) {
+        pushNode(part);
+      }
+    });
+  };
+
+  nodes.forEach((node) => {
+    if (node === null || node === undefined || typeof node === "boolean") {
+      return;
+    }
+
+    if (typeof node === "string" || typeof node === "number") {
+      pushLineBreaks(String(node).split(/\r?\n/));
+      return;
+    }
+
+    pushNode(node);
+  });
+
+  return lines;
 }
 
 function getElementChildren(element: ReactElement) {

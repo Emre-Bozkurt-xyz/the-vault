@@ -451,7 +451,7 @@ export function MarkdownEditor({
           textDecorationColor:
             "color-mix(in oklab, var(--foreground) 55%, transparent)",
         },
-        ".vault-markdown-editor-source & .cm-content span, .vault-markdown-editor-split & .cm-content span, .vault-markdown-editor-live & .cm-content span": {
+        ".vault-markdown-editor-source & .cm-content span, .vault-markdown-editor-split & .cm-content span": {
           fontFamily: "var(--font-mono)",
           fontSize: "inherit",
           fontStyle: "normal",
@@ -462,7 +462,7 @@ export function MarkdownEditor({
           textDecoration: "none",
           textDecorationLine: "none",
         },
-        ".vault-markdown-editor-source & .cm-content, .vault-markdown-editor-split & .cm-content, .vault-markdown-editor-live & .cm-content": {
+        ".vault-markdown-editor-source & .cm-content, .vault-markdown-editor-split & .cm-content": {
           fontVariantLigatures: "none",
           fontFeatureSettings: '"liga" 0, "calt" 0',
         },
@@ -1374,6 +1374,28 @@ class TaskCheckboxWidget extends WidgetType {
   }
 }
 
+class ListMarkerWidget extends WidgetType {
+  constructor(private readonly marker: string) {
+    super();
+  }
+
+  eq(widget: ListMarkerWidget) {
+    return widget.marker === this.marker;
+  }
+
+  toDOM() {
+    const marker = document.createElement("span");
+    const ordered = /^\d+\.$/.test(this.marker);
+    marker.className = ordered
+      ? "vault-cm-list-marker vault-cm-list-marker-ordered"
+      : "vault-cm-list-marker vault-cm-list-marker-bullet";
+    marker.textContent = ordered ? this.marker : "•";
+    marker.setAttribute("aria-hidden", "true");
+
+    return marker;
+  }
+}
+
 class CalloutMarkerWidget extends WidgetType {
   constructor(
     private readonly inputType: string,
@@ -1409,6 +1431,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
     class {
       decorations: DecorationSet;
       isMouseSelecting = false;
+      dragActiveLines = new Set<number>();
 
       constructor(view: EditorView) {
         this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
@@ -1425,6 +1448,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
             update.view,
             wikiLinks,
             this.isMouseSelecting,
+            this.dragActiveLines,
           );
         }
       }
@@ -1438,7 +1462,13 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           }
 
           this.isMouseSelecting = true;
-          this.decorations = buildLivePreviewDecorations(view, wikiLinks, true);
+          this.dragActiveLines = getActiveStructuralLines(view);
+          this.decorations = buildLivePreviewDecorations(
+            view,
+            wikiLinks,
+            true,
+            this.dragActiveLines,
+          );
         },
         mouseup(_event, view) {
           if (!this.isMouseSelecting) {
@@ -1446,6 +1476,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           }
 
           this.isMouseSelecting = false;
+          this.dragActiveLines = new Set<number>();
           this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
           view.dispatch({});
         },
@@ -1458,6 +1489,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           }
 
           this.isMouseSelecting = false;
+          this.dragActiveLines = new Set<number>();
           this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
           view.dispatch({});
         },
@@ -1467,6 +1499,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           }
 
           this.isMouseSelecting = false;
+          this.dragActiveLines = new Set<number>();
           this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
           view.dispatch({});
         },
@@ -1535,10 +1568,11 @@ function buildLivePreviewDecorations(
   view: EditorView,
   wikiLinks: WikiLinkResolutionMap,
   suppressSourceReveal: boolean,
+  forcedActiveLines = new Set<number>(),
 ) {
   const ranges = [];
   const activeLines = suppressSourceReveal
-    ? new Set<number>()
+    ? forcedActiveLines
     : getActiveStructuralLines(view);
   const activePositions = suppressSourceReveal
     ? []
@@ -1904,11 +1938,24 @@ function decorateInactiveMarkdownLine(
     if (task) {
       const markerFrom = lineFrom + task[1].length;
       const markerTo = lineFrom + task[0].length;
-      ranges.push(
-        Decoration.replace({
-          widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x"),
-        }).range(markerFrom, markerTo),
-      );
+      if (!hasActivePositionInRange(activePositions, markerFrom, markerTo)) {
+        ranges.push(
+          Decoration.replace({
+            widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x"),
+          }).range(markerFrom, markerTo),
+        );
+      }
+    } else {
+      const markerFrom = lineFrom + list[1].length;
+      const markerTo = lineFrom + list[0].length;
+
+      if (!hasActivePositionInRange(activePositions, markerFrom, markerTo)) {
+        ranges.push(
+          Decoration.replace({
+            widget: new ListMarkerWidget(list[2].trim()),
+          }).range(markerFrom, markerTo),
+        );
+      }
     }
   }
 

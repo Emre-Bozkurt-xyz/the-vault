@@ -633,14 +633,17 @@
   .vault-markdown-editor-live .cm-line.vault-cm-callout,
   .cm-line.callout.vault-cm-callout {
     --callout-color: 83, 112, 255;
+    --callout-pad-x: clamp(1.05rem, 2vw, 1.5rem);
+    --callout-marker-width: 2.45rem;
     position: relative;
     display: block !important;
     width: auto !important;
     overflow: visible !important;
     margin: 0 !important;
     min-height: 1.9em;
-    padding-left: clamp(1rem, 2vw, 1.5rem) !important;
-    padding-right: clamp(1rem, 2vw, 1.5rem) !important;
+    padding-left: calc(var(--callout-pad-x) + var(--callout-marker-width)) !important;
+    padding-right: var(--callout-pad-x) !important;
+    text-indent: calc(var(--callout-marker-width) * -1);
     background:
       linear-gradient(
         90deg,
@@ -654,13 +657,44 @@
     border-bottom: 0 !important;
     border-radius: 0 !important;
     color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 400;
     box-shadow: inset 3px 0 0 rgba(var(--callout-color), 0.85);
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-preview-list:not(.vault-cm-callout) {
+    --list-marker-width: 1.55rem;
+    padding-left: var(--list-marker-width) !important;
+    text-indent: calc(var(--list-marker-width) * -1);
+  }
+
+  .vault-cm-list-marker {
+    display: inline-flex;
+    width: 1.55rem;
+    align-items: baseline;
+    justify-content: center;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.92;
+    text-indent: 0;
+  }
+
+  .vault-cm-list-marker-bullet {
+    font-size: 0.92em;
+  }
+
+  .vault-cm-list-marker-ordered {
+    justify-content: flex-start;
+    font-size: 0.9em;
   }
 
   .vault-markdown-editor-live .cm-line.vault-cm-callout-title-line,
   .cm-line.vault-cm-callout-title-line {
     color: rgb(var(--callout-color));
     font-weight: 700;
+    line-height: 1.35;
   }
 
   .vault-markdown-editor-live .cm-line.vault-cm-callout-first,
@@ -677,6 +711,7 @@
   .cm-line.vault-cm-callout-body-line {
     padding-top: 0.18rem !important;
     padding-bottom: 0.18rem !important;
+    line-height: 1.75;
   }
 
   .vault-markdown-editor-live .cm-line.vault-cm-callout-last,
@@ -738,6 +773,7 @@
     color: rgb(var(--callout-color));
     font-family: var(--font-sans);
     font-weight: 700;
+    text-indent: 0;
   }
 
   .vault-cm-callout-marker::before {
@@ -1203,8 +1239,7 @@
   }
 
   .vault-markdown-editor-source .cm-content span,
-  .vault-markdown-editor-split .cm-content span,
-  .vault-markdown-editor-live .cm-content span {
+  .vault-markdown-editor-split .cm-content span {
     font-family: var(--font-mono);
     font-size: inherit;
     font-style: normal;
@@ -1217,8 +1252,7 @@
   }
 
   .vault-markdown-editor-source .cm-content,
-  .vault-markdown-editor-split .cm-content,
-  .vault-markdown-editor-live .cm-content {
+  .vault-markdown-editor-split .cm-content {
     font-variant-ligatures: none;
     font-feature-settings: "liga" 0, "calt" 0;
   }
@@ -1248,10 +1282,21 @@
     min-height: calc(100svh - 17rem);
     margin-inline: auto;
     padding: clamp(1rem, 3vw, 2rem) clamp(0.75rem, 2vw, 1.5rem) 6rem;
+    font-family: var(--font-sans);
+    font-feature-settings: normal;
+    font-variant-ligatures: normal;
   }
 
   .vault-markdown-editor-live .cm-line {
     padding-inline: 0;
+    font-family: var(--font-sans);
+    line-height: 1.75;
+  }
+
+  .vault-markdown-editor-live .cm-content span {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variant-ligatures: inherit;
   }
 
   .vault-markdown-editor-live .cm-gutters {
@@ -1395,7 +1440,7 @@
     padding: 0.25rem 0 8rem !important;
   }
 
-  .vault-editor-canvas .vault-markdown-editor-live .cm-line {
+  .vault-editor-canvas .vault-markdown-editor-live .cm-line:not(.vault-cm-callout):not(.vault-cm-preview-list) {
     padding-inline: 0 !important;
   }
 
