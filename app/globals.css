@@ -1072,6 +1072,145 @@
     visibility: hidden;
   }
 
+  .vault-asset-embed--image {
+    display: block;
+    width: 100%;
+    max-width: min(100%, 48rem);
+    margin: 1rem auto;
+    white-space: normal;
+  }
+
+  .vault-asset-embed--image .vault-md-image-frame {
+    display: block;
+    width: 100%;
+    min-height: 0;
+    background: transparent;
+  }
+
+  .vault-asset-embed--image .vault-md-img {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    object-fit: contain;
+  }
+
+  .vault-asset-embed--image .vault-md-image-frame[data-image-state="error"] {
+    display: grid;
+    min-height: 10rem;
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+  }
+
+  .vault-asset-width-small {
+    max-width: min(100%, 18rem);
+  }
+
+  .vault-asset-width-medium {
+    max-width: min(100%, 32rem);
+  }
+
+  .vault-asset-width-large {
+    max-width: min(100%, 48rem);
+  }
+
+  .vault-asset-width-full {
+    max-width: 100%;
+  }
+
+  .vault-asset-align-left {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .vault-asset-align-center {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .vault-asset-align-right {
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  .vault-asset-layout-inline {
+    display: inline-block;
+    width: auto;
+    max-width: min(100%, 18rem);
+    margin: 0 0.35rem;
+    vertical-align: middle;
+  }
+
+  .vault-asset-layout-inline.vault-asset-width-medium {
+    max-width: min(100%, 24rem);
+  }
+
+  .vault-asset-layout-inline.vault-asset-width-large,
+  .vault-asset-layout-inline.vault-asset-width-full {
+    max-width: min(100%, 32rem);
+  }
+
+  .vault-asset-layout-inline .vault-md-image-frame {
+    min-height: 0;
+  }
+
+  .vault-asset-layout-inline .vault-md-img {
+    max-height: 12rem;
+  }
+
+  .vault-asset-layout-wrap {
+    width: min(45%, 100%);
+    margin-top: 0.25rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .vault-asset-layout-wrap.vault-asset-align-left {
+    float: left;
+    margin-right: 1.25rem;
+  }
+
+  .vault-asset-layout-wrap.vault-asset-align-right {
+    float: right;
+    margin-left: 1.25rem;
+  }
+
+  .vault-asset-layout-wrap.vault-asset-align-center {
+    float: none;
+    width: 100%;
+  }
+
+  .vault-asset-embed-caption {
+    display: block;
+    margin-top: 0.45rem;
+    color: var(--muted-foreground);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  .vault-asset-align-left .vault-asset-embed-caption {
+    text-align: left;
+  }
+
+  .vault-asset-align-right .vault-asset-embed-caption {
+    text-align: right;
+  }
+
+  .vault-markdown::after,
+  .vault-markdown-editor-live .cm-content::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+
+  @media (max-width: 760px) {
+    .vault-asset-layout-wrap {
+      float: none !important;
+      width: 100%;
+      max-width: 100% !important;
+      margin-left: 0;
+      margin-right: 0;
+    }
+  }
+
   .vault-cm-wiki-image-preview {
     margin-block: 0.35rem;
     white-space: normal;
@@ -1329,6 +1468,122 @@
     display: none;
   }
 
+  .vault-asset-format-panel {
+    display: grid;
+    gap: 0.65rem;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--card) 62%, transparent);
+    padding: 0.65rem;
+    color: var(--foreground);
+    box-shadow: 0 16px 48px -44px rgba(0, 0, 0, 0.75);
+  }
+
+  .vault-asset-format-panel-header {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.75rem;
+  }
+
+  .vault-asset-format-label {
+    color: var(--foreground);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .vault-asset-format-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.55rem;
+  }
+
+  .vault-asset-format-segment,
+  .vault-asset-format-field {
+    display: grid;
+    gap: 0.28rem;
+    color: var(--muted-foreground);
+    font-size: 0.68rem;
+  }
+
+  .vault-asset-format-segment > span,
+  .vault-asset-format-field > span {
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .vault-asset-format-segment > div {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+  }
+
+  .vault-asset-format-segment button,
+  .vault-asset-format-field button {
+    min-height: 1.9rem;
+    border: 0;
+    border-right: 1px solid color-mix(in oklab, var(--border) 66%, transparent);
+    background: transparent;
+    padding: 0 0.65rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+
+  .vault-asset-format-segment button:last-child {
+    border-right: 0;
+  }
+
+  .vault-asset-format-segment button:hover,
+  .vault-asset-format-field button:hover,
+  .vault-asset-format-segment button[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--foreground) 9%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-asset-format-field select,
+  .vault-asset-format-field input {
+    height: 1.9rem;
+    min-width: 0;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+    padding: 0 0.55rem;
+    color: var(--foreground);
+    font-size: 0.75rem;
+    outline: none;
+  }
+
+  .vault-asset-format-field select:focus,
+  .vault-asset-format-field input:focus {
+    border-color: color-mix(in oklab, var(--primary) 62%, var(--border));
+  }
+
+  .vault-asset-format-width-select {
+    width: 7.5rem;
+  }
+
+  .vault-asset-format-width-input {
+    grid-template-columns: minmax(5.5rem, 7rem) auto;
+  }
+
+  .vault-asset-format-width-input > span {
+    grid-column: 1 / -1;
+  }
+
+  .vault-asset-format-width-input button {
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+  }
+
+  .vault-asset-format-text {
+    min-width: min(100%, 11rem);
+    flex: 1 1 11rem;
+  }
+
   .vault-editor-column {
     position: relative;
     width: min(100%, 56rem);
@@ -1437,7 +1692,7 @@
     max-width: 100%;
     min-height: calc(100svh - 18rem);
     margin-inline: 0;
-    padding: 0.25rem 0 8rem !important;
+    padding: 0.25rem 0 8rem 0.35rem !important;
   }
 
   .vault-editor-canvas .vault-markdown-editor-live .cm-line:not(.vault-cm-callout):not(.vault-cm-preview-list) {

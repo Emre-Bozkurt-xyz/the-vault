@@ -785,6 +785,25 @@ Use:
 ![[asset:<asset-id>|Alt text or title]]
 ```
 
+V1 also supports a controlled attribute block immediately after the embed:
+
+```md
+![[asset:<asset-id>|Diagram]]{layout=block align=center width=large caption="Figure 1" alt="Diagram alt text"}
+![[asset:<asset-id>|Side image]]{layout=wrap align=right width=320}
+![[asset:<asset-id>|Inline icon]]{layout=inline width=small}
+```
+
+Supported attributes:
+
+- `layout=block|wrap|inline`
+- `align=left|center|right`
+- `width=small|medium|large|full|<pixels>|<percent>`
+- `caption="Text shown under the image"`
+- `alt="Image alt text"`
+
+Do not allow arbitrary CSS in asset embeds. Unknown attributes are ignored, and
+custom width values are sanitized to pixels or percentages before rendering.
+
 Resolution should work similarly to document wiki embeds:
 
 - Parse asset targets in Markdown.
@@ -1094,6 +1113,26 @@ Exit criteria:
 ```txt
 Future agents have one source of truth for asset storage and gallery behavior.
 ```
+
+Implementation status as of 2026-06-15:
+
+- Phase 1 is implemented with migration `0011_tiresome_ultimates.sql`.
+- Phase 2 is implemented for the R2 helper functions in `lib/storage/r2.ts`;
+  a broader storage-driver interface can still be added when S3 is introduced.
+- Phase 3 is implemented for toolbar/API uploads.
+- Phase 4 is implemented for metadata reads, `GET`/`HEAD` content streaming,
+  Range requests, and safe headers.
+- Phase 5 is implemented for images, file links, unresolved placeholders, and
+  conservative public rendering. Controlled image embed attributes are
+  implemented for Read and Live modes; richer PDF cards remain future work.
+- Phase 6 is implemented for toolbar upload, clipboard paste, and drag/drop;
+  collaborative smoke testing remains manual.
+- Phase 7 is implemented for `/assets` owned asset grid, search/filter/sort,
+  details panel, metadata editing, delete, copy embed, and public/private toggle.
+- Phase 8 is implemented for owner public/private toggling, and `/gallery`
+  includes explicitly public assets.
+- Phase 10 is implemented with `assets:audit`, `assets:repair-quota`,
+  `assets:delete-orphans`, and `assets:export`.
 
 ### Phase 1 - Schema And Migrations
 

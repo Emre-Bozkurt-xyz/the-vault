@@ -29,7 +29,7 @@ export function WorkspaceIconRail({
     { label: "Files", mode: "files" as const, icon: Files },
     { label: "Search", mode: "search" as const, icon: Search },
     { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid, href: "/gallery" },
-    { label: "Assets", mode: "gallery" as const, icon: ImageIcon },
+    { label: "Assets", mode: "assets" as const, icon: ImageIcon, href: "/assets" },
     { label: "Docs", mode: "docs" as const, icon: BookOpen, href: "/docs" },
     { label: "Settings", mode: "settings" as const, icon: Settings, href: "/dashboard/settings" },
     ...(isAdmin

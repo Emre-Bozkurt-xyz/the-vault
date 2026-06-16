@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Globe2, Home, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
+import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { WorkspacePageDescriptor, WorkspacePageType } from "@/components/workspace/workspace-types";
@@ -21,6 +21,7 @@ const iconByType: Record<WorkspacePageType, typeof Home> = {
   public: Globe2,
   guide: FileText,
   gallery: LayoutGrid,
+  assets: ImageIcon,
   settings: Settings,
   admin: ShieldCheck,
 };

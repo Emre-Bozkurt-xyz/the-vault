@@ -144,11 +144,22 @@ Current first slice:
   selected heading's owned section, from that heading until the next heading of
   equal or higher level. Block fragments render only the selected block. Region
   fragments render only the Markdown inside the hidden region markers.
+- Uploaded asset embeds support `![[asset:<uuid>|label]]` plus controlled
+  layout attributes such as
+  `![[asset:<uuid>|Diagram]]{layout=wrap align=right width=320 caption="Figure 1"}`.
+  Document pages pass a server-resolved asset map into `MarkdownDocument`;
+  image assets render through `/api/assets/<assetId>/content` with the selected
+  block/wrap/inline layout, alignment, width, caption, and alt text. PDF/file
+  assets render as links for now. Live mode renders standalone inactive asset
+  embed lines with the same layout parser as Read mode. Public document pages
+  only resolve explicitly public assets, so document publishing does not publish
+  private uploads.
 
 Future slices:
 
-- `![[asset:id]]` uploaded document assets served through permission-checked
-  routes. Full plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
+- Asset library browsing, metadata editing, explicit asset publishing,
+  clipboard/drop upload handling, and PDF preview UI. Full plan:
+  `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
 
 Current editor behavior:
 
@@ -172,16 +183,25 @@ Current editor behavior:
   completion instead of replacing it.
 - The Region toolbar button and `Ctrl/Cmd+Alt+R` insert a foldable collapsed
   Vault region scaffold. If text is selected, the scaffold wraps the selection.
+- The Upload image toolbar button, clipboard image/PDF paste, and editor
+  drag/drop accept supported image/PDF files, post them to `POST /api/assets`,
+  and insert the returned `![[asset:<uuid>|label]]` Markdown reference with a
+  CodeMirror transaction.
+- When the cursor is inside an asset embed source, the editor shows a compact
+  asset formatting row for layout, alignment, width, caption, and alt text. The
+  controls rewrite the Markdown attribute block in place, so collaboration and
+  autosave still operate on normal document text.
 - Live mode hides inactive wiki-link markers and styles the visible label; moving
   the cursor into the link reveals the source.
 - Live mode renders standalone document embeds as a single-line source widget,
   so the `![[...]]` line can expand visually without needing multi-line
   CodeMirror block replacement.
 
-Uploaded assets should be private-by-default user-owned assets, not public
-opaque URLs. Store metadata in future `assets` and `document_assets` tables,
-serve file bytes through routes that check owner/public/document access, and do
-not publish embedded assets automatically when a document becomes public.
+Uploaded assets are private-by-default user-owned assets, not public opaque
+URLs. Metadata lives in `assets` and `document_assets`, bytes live in private
+R2, and file reads go through Vault routes that check owner/public/signed-in
+document access. Embedded assets are not automatically published when a
+document becomes public.
 
 ---
 

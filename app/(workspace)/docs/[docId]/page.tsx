@@ -10,6 +10,7 @@ import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
+import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
   archiveDocumentAction,
   createManualDocumentVersionAction,
@@ -61,6 +62,7 @@ export default async function DocumentPage({
     activeShareLink,
     friends,
     versions,
+    assetLinks,
   ] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -78,6 +80,7 @@ export default async function DocumentPage({
       document.access.canEdit
         ? listDocumentVersionsForUser(document.id, session.user.id)
         : Promise.resolve([]),
+      listAssetResolutionsForDocument(document.id, session.user.id),
     ]);
   const wikiLinks = {
     ...readableWikiLinks,
@@ -144,6 +147,7 @@ export default async function DocumentPage({
             markdown={markdown}
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}
+            assetLinks={assetLinks}
             collaboration={
               collabToken && collabUrl
                 ? {
@@ -165,7 +169,11 @@ export default async function DocumentPage({
                 {document.title}
               </h1>
             </div>
-            <MarkdownDocument markdown={markdown} wikiLinks={wikiLinks} />
+            <MarkdownDocument
+              markdown={markdown}
+              wikiLinks={wikiLinks}
+              assetLinks={assetLinks}
+            />
           </article>
         )}
       </div>

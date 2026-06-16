@@ -9,6 +9,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Image as ImageIcon,
   Italic,
   Link2,
   List,
@@ -31,6 +32,7 @@ export type MarkdownFormat =
   | "bold"
   | "italic"
   | "link"
+  | "imageUpload"
   | "bulletList"
   | "orderedList"
   | "taskList"
@@ -53,6 +55,7 @@ export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
         <ToolbarButton label="Bold" shortcut="Ctrl+B" icon={Bold} onClick={() => onFormat("bold")} />
         <ToolbarButton label="Italic" shortcut="Ctrl+I" icon={Italic} onClick={() => onFormat("italic")} />
         <ToolbarButton label="Link" shortcut="Ctrl+K" icon={Link2} onClick={() => onFormat("link")} />
+        <ToolbarButton label="Upload image" icon={ImageIcon} onClick={() => onFormat("imageUpload")} />
         <ToolbarButton label="Inline code" shortcut="Ctrl+E" icon={Code} onClick={() => onFormat("inlineCode")} />
       </ToolbarGroup>
       <ToolbarGroup>

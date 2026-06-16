@@ -106,6 +106,7 @@ export function WorkspaceChrome({
             activeHref={currentHref}
           />
         }
+        assetsPanel={<WorkspaceUtilityPanel mode="assets" activeHref={currentHref} />}
         settingsPanel={<WorkspaceUtilityPanel mode="settings" activeHref={currentHref} />}
         adminPanel={
           <WorkspaceUtilityPanel
@@ -179,6 +180,10 @@ function inferWorkspacePage(
     return { type: "gallery", title: "Gallery", href };
   }
 
+  if (pathname === "/assets") {
+    return { type: "assets", title: "Assets", href };
+  }
+
   if (pathname === "/dashboard/settings") {
     return { type: "settings", title: "Settings", href };
   }
@@ -215,6 +220,10 @@ function defaultPanelModeForHref(href: string) {
 
   if (pathname === "/gallery") {
     return "gallery";
+  }
+
+  if (pathname === "/assets") {
+    return "assets";
   }
 
   if (pathname.startsWith("/workspace/public/")) {

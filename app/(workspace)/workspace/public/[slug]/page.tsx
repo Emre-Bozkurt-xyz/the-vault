@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { cn } from "@/lib/utils";
+import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
   getPublicDocumentBySlug,
   listPublicWikiLinkResolutions,
@@ -27,9 +28,10 @@ export default async function WorkspacePublicDocumentPage({
     notFound();
   }
 
-  const [publicWikiLinks, guideWikiLinks] = await Promise.all([
+  const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
     listPublicWikiLinkResolutions({ workspaceHrefs: true }),
     listOfficialDocWikiLinkResolutions(),
+    listAssetResolutionsForDocument(document.id, null),
   ]);
   const wikiLinks = {
     ...publicWikiLinks,
@@ -88,6 +90,7 @@ export default async function WorkspacePublicDocumentPage({
             markdown={document.markdown}
             className="vault-public-markdown"
             wikiLinks={wikiLinks}
+            assetLinks={assetLinks}
             contained={false}
           />
         </div>

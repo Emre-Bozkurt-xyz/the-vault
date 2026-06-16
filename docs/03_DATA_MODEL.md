@@ -421,9 +421,10 @@ Detailed implementation plan:
 docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md
 ```
 
-Image/file uploads are not implemented yet. The accepted direction is
-private-by-default uploaded assets backed by private R2 object storage and
-Postgres metadata.
+Image/PDF uploads have a first implementation slice: private-by-default assets
+backed by private R2 object storage and Postgres metadata. The asset library,
+metadata editing, explicit asset publishing UI, and cleanup tools are still
+future work.
 
 Important rules:
 
@@ -435,7 +436,7 @@ Important rules:
 - Publishing a document does not automatically publish embedded assets.
 - Individual assets can be explicitly published later for gallery visibility.
 
-Planned schema additions:
+Implemented schema additions in migration `0011_tiresome_ultimates.sql`:
 
 ```txt
 users
@@ -445,7 +446,7 @@ users
 assets
   id UUID PRIMARY KEY
   owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
-  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL
+  uploader_id UUID REFERENCES users(id) ON DELETE SET NULL
   storage_driver TEXT NOT NULL DEFAULT 'r2'
   storage_bucket TEXT NOT NULL
   storage_key TEXT NOT NULL UNIQUE
@@ -482,8 +483,12 @@ Asset read access is allowed when:
 ```txt
 asset.visibility = public
 OR asset.owner_id = current_user.id
-OR asset is linked to a document current_user can read
+OR current_user is signed in and asset is linked to a document current_user can read
 ```
+
+Anonymous public document reads must not make private linked assets public. A
+published document can render an embedded asset for anonymous viewers only when
+that asset is explicitly public.
 
 ---
 

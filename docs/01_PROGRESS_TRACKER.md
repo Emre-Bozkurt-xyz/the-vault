@@ -310,15 +310,15 @@ Reference plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`
 | [x] | Decide private-by-default storage model | R2 remains private byte storage; Vault owns all asset read/write authorization |
 | [x] | Write asset storage and library plan | Covers schema, upload route, private serving, editor insertion, asset library, explicit asset publishing, gallery integration, deployment, and tests |
 | [x] | Prepare storage dependencies and env placeholders | `@aws-sdk/client-s3`, `file-type`, private R2 env placeholders, and server-only/lazy-env `lib/storage/r2.ts` helper exist |
-| [ ] | Add asset schema and migrations | Add user quota fields, `assets`, and `document_assets` |
-| [ ] | Add private upload API | `POST /api/assets` with auth, document edit checks, validation, quota, R2 upload, metadata, and document link |
-| [ ] | Add private serving API | Permission-checked `/api/assets/:assetId/content`, including owner/public/document-context reads |
-| [ ] | Render Markdown asset embeds | Resolve `![[asset:id|label]]` through server-provided asset maps; no raw R2 URLs in Markdown |
-| [ ] | Add editor upload and paste flows | Toolbar file picker and clipboard image paste insert asset embeds through CodeMirror transactions |
-| [ ] | Add asset library page | `/assets` workspace page with masonry grid, filters, details/config panel, metadata editing, and copy embed |
-| [ ] | Add explicit asset publishing | Asset-level public/private toggle; publishing documents does not publish embedded assets |
-| [ ] | Integrate public assets into gallery | `/gallery` lists explicitly public assets alongside public documents |
-| [ ] | Add cleanup and reconciliation tools | Unused asset detection, object deletion, quota repair, and R2 backup/export notes |
+| [x] | Add asset schema and migrations | Migration `0011_tiresome_ultimates.sql` adds user quota fields, `assets`, and `document_assets` |
+| [x] | Add private upload API | `POST /api/assets` authenticates, checks document edit access, validates file signatures, reserves quota, uploads to private R2, stores metadata, and links to the document |
+| [x] | Add private serving API | Permission-checked `/api/assets/:assetId/content` streams from private R2; private linked assets require a signed-in readable document context |
+| [x] | Render Markdown asset embeds | `![[asset:id|label]]` resolves through server-provided asset maps; image embeds support controlled layout/align/width/caption/alt attributes in Read and Live modes, with selected-embed editor controls; public document pages only resolve explicitly public assets |
+| [x] | Add editor upload and paste flows | Toolbar file picker, clipboard paste, and drag/drop upload supported through the same asset API |
+| [x] | Add asset library page | `/assets` workspace page has a masonry-style owned asset grid, search/filter/sort controls, details/config panel, metadata editing, delete, and copy embed |
+| [x] | Add explicit asset publishing | `/assets` can toggle owned assets public/private; publishing documents still does not publish embedded assets |
+| [x] | Integrate public assets into gallery | `/gallery` lists explicitly public assets alongside public documents |
+| [x] | Add cleanup and reconciliation tools | `assets:audit`, `assets:repair-quota`, `assets:delete-orphans`, and `assets:export` cover unused asset detection, object cleanup, quota repair, and R2 export |
 
 Exit criteria:
 

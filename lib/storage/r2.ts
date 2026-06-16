@@ -75,11 +75,12 @@ export async function putAssetObject(input: {
   );
 }
 
-export async function getAssetObject(key: string) {
+export async function getAssetObject(key: string, range?: string) {
   return getR2Client().send(
     new GetObjectCommand({
       Bucket: getR2Bucket(),
       Key: key,
+      Range: range,
     }),
   );
 }

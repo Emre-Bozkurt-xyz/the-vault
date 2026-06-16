@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createMarkdownExcerpt } from "@/lib/markdown";
+import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
   getPublicDocumentBySlug,
   listPublicWikiLinkResolutions,
@@ -75,9 +76,10 @@ export default async function PublicDocumentPage({
     notFound();
   }
 
-  const [publicWikiLinks, guideWikiLinks] = await Promise.all([
+  const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
     listPublicWikiLinkResolutions(),
     listOfficialDocWikiLinkResolutions(),
+    listAssetResolutionsForDocument(document.id, null),
   ]);
   const wikiLinks = {
     ...publicWikiLinks,
@@ -124,6 +126,7 @@ export default async function PublicDocumentPage({
               markdown={document.markdown}
               className="vault-public-markdown"
               wikiLinks={wikiLinks}
+              assetLinks={assetLinks}
             />
           </div>
         </article>

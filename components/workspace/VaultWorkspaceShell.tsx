@@ -33,6 +33,7 @@ type VaultWorkspaceShellProps = {
   docsPanel?: ReactNode;
   searchPanel?: ReactNode;
   galleryPanel?: ReactNode;
+  assetsPanel?: ReactNode;
   settingsPanel?: ReactNode;
   adminPanel?: ReactNode;
   defaultPanelMode?: WorkspacePanelMode;
@@ -60,6 +61,7 @@ export function VaultWorkspaceShell({
   docsPanel,
   searchPanel,
   galleryPanel,
+  assetsPanel,
   settingsPanel,
   adminPanel,
   defaultPanelMode = "files",
@@ -168,11 +170,13 @@ export function VaultWorkspaceShell({
           ? searchPanel
           : panelMode === "gallery"
             ? galleryPanel
-            : panelMode === "settings"
-              ? settingsPanel
-              : panelMode === "admin"
-                ? adminPanel
-                : null;
+            : panelMode === "assets"
+              ? assetsPanel
+              : panelMode === "settings"
+                ? settingsPanel
+                : panelMode === "admin"
+                  ? adminPanel
+                  : null;
 
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground">
@@ -370,7 +374,7 @@ function mobilePanelItems(isAdmin: boolean) {
     { label: "Files", mode: "files" as const, icon: Files },
     { label: "Search", mode: "search" as const, icon: Search },
     { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid },
-    { label: "Assets", mode: "gallery" as const, icon: ImageIcon },
+    { label: "Assets", mode: "assets" as const, icon: ImageIcon },
     { label: "Docs", mode: "docs" as const, icon: BookOpen },
     { label: "Settings", mode: "settings" as const, icon: Settings },
     ...(isAdmin
@@ -409,6 +413,7 @@ function PlaceholderPanel({ mode }: { mode: WorkspacePanelMode }) {
     files: { title: "Files", body: "Your documents live here." },
     search: { title: "Search", body: "Global search will land here." },
     gallery: { title: "Gallery", body: "Public content browsing is next." },
+    assets: { title: "Assets", body: "Uploaded images and files live here." },
     docs: { title: "Docs", body: "Official guide navigation will land here." },
     settings: { title: "Settings", body: "Account and workspace controls." },
     admin: { title: "Admin", body: "Moderation and docs publishing tools." },
@@ -479,6 +484,7 @@ function isPanelMode(value: string | null): value is WorkspacePanelMode {
     value === "files" ||
     value === "search" ||
     value === "gallery" ||
+    value === "assets" ||
     value === "docs" ||
     value === "settings" ||
     value === "admin"

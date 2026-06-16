@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
   getDocumentByShareLink,
   listPublicWikiLinkResolutions,
@@ -40,9 +41,10 @@ export default async function ShareLinkPage({
     redirect(`/docs/${document.id}?share=${token}`);
   }
 
-  const [publicWikiLinks, guideWikiLinks] = await Promise.all([
+  const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
     listPublicWikiLinkResolutions(),
     listOfficialDocWikiLinkResolutions(),
+    listAssetResolutionsForDocument(document.id, session?.user?.id ?? null),
   ]);
   const wikiLinks = {
     ...publicWikiLinks,
@@ -99,7 +101,11 @@ export default async function ShareLinkPage({
             </p>
           ) : null}
           <div className="mt-8 border-t border-border/50 pt-7">
-            <MarkdownDocument markdown={document.markdown} wikiLinks={wikiLinks} />
+            <MarkdownDocument
+              markdown={document.markdown}
+              wikiLinks={wikiLinks}
+              assetLinks={assetLinks}
+            />
           </div>
         </article>
       </div>

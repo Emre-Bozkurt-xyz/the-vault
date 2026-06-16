@@ -991,7 +991,7 @@ export async function getDocumentByShareLink(
   } as const;
 }
 
-async function canEditDocumentWithOptionalShareLink(
+export async function canEditDocumentWithOptionalShareLink(
   userId: string,
   documentId: string,
   shareLinkId?: string | null,
@@ -1083,6 +1083,7 @@ export async function getDocumentForUser(userId: string, documentId: string) {
 export async function getPublicDocumentBySlug(slug: string) {
   const [document] = await db
     .select({
+      id: documents.id,
       title: documents.title,
       markdown: documents.markdown,
       updatedAt: documents.updatedAt,

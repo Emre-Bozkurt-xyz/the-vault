@@ -1,6 +1,7 @@
 import type { AdapterAccountType } from "@auth/core/adapters";
 import { relations, sql } from "drizzle-orm";
 import {
+  bigint,
   customType,
   index,
   integer,
@@ -17,6 +18,9 @@ export type DocumentVisibility = "private" | "public";
 export type DocumentShareLinkScope = "anyone" | "members";
 export type DocumentShareLinkRole = "viewer" | "editor";
 export type UserRole = "user" | "admin";
+export type AssetKind = "image" | "pdf";
+export type AssetVisibility = "private" | "public";
+export type AssetStatus = "pending" | "ready" | "failed" | "deleted";
 export type OfficialDocStatus = "draft" | "published" | "archived";
 export type FriendRequestStatus =
   | "pending"
@@ -44,6 +48,12 @@ export const users = pgTable(
     bannedUntil: timestamp("banned_until", { withTimezone: true }),
     banReason: text("ban_reason"),
     profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
+    storageUsedBytes: bigint("storage_used_bytes", { mode: "number" })
+      .notNull()
+      .default(0),
+    storageQuotaBytes: bigint("storage_quota_bytes", { mode: "number" })
+      .notNull()
+      .default(268435456),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -260,6 +270,80 @@ export const documentCollabStates = pgTable("document_collab_states", {
     .default(sql`now()`),
 });
 
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    uploaderId: uuid("uploader_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    storageDriver: text("storage_driver").notNull().default("r2"),
+    storageBucket: text("storage_bucket").notNull(),
+    storageKey: text("storage_key").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    displayName: text("display_name").notNull(),
+    description: text("description"),
+    altText: text("alt_text"),
+    mimeType: text("mime_type").notNull(),
+    detectedMimeType: text("detected_mime_type").notNull(),
+    fileExtension: text("file_extension").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    kind: text("kind").$type<AssetKind>().notNull(),
+    visibility: text("visibility").$type<AssetVisibility>().notNull().default("private"),
+    status: text("status").$type<AssetStatus>().notNull().default("pending"),
+    checksumSha256: text("checksum_sha256"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("assets_owner_id_idx").on(table.ownerId),
+    index("assets_kind_idx").on(table.kind),
+    index("assets_visibility_status_idx").on(table.visibility, table.status),
+    index("assets_created_at_idx").on(table.createdAt),
+    index("assets_deleted_at_idx").on(table.deletedAt),
+    uniqueIndex("assets_storage_key_unique").on(table.storageKey),
+  ],
+);
+
+export const documentAssets = pgTable(
+  "document_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    linkedBy: uuid("linked_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("document_assets_document_asset_unique").on(
+      table.documentId,
+      table.assetId,
+    ),
+    index("document_assets_document_id_idx").on(table.documentId),
+    index("document_assets_asset_id_idx").on(table.assetId),
+    index("document_assets_linked_by_idx").on(table.linkedBy),
+  ],
+);
+
 export const documentsRelations = relations(documents, ({ one, many }) => ({
   owner: one(users, {
     fields: [documents.ownerId],
@@ -272,6 +356,7 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
   permissions: many(documentPermissions),
   versions: many(documentVersions),
   shareLinks: many(documentShareLinks),
+  assets: many(documentAssets),
 }));
 
 export const documentPermissionsRelations = relations(
@@ -325,6 +410,33 @@ export const documentCollabStatesRelations = relations(
     }),
   }),
 );
+
+export const assetsRelations = relations(assets, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [assets.ownerId],
+    references: [users.id],
+  }),
+  uploader: one(users, {
+    fields: [assets.uploaderId],
+    references: [users.id],
+  }),
+  documentAssets: many(documentAssets),
+}));
+
+export const documentAssetsRelations = relations(documentAssets, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentAssets.documentId],
+    references: [documents.id],
+  }),
+  asset: one(assets, {
+    fields: [documentAssets.assetId],
+    references: [assets.id],
+  }),
+  linker: one(users, {
+    fields: [documentAssets.linkedBy],
+    references: [users.id],
+  }),
+}));
 
 export const friendRequests = pgTable(
   "friend_requests",

@@ -6,6 +6,7 @@ export type WorkspacePageType =
   | "public"
   | "guide"
   | "gallery"
+  | "assets"
   | "settings"
   | "admin";
 
@@ -56,4 +57,11 @@ export type WorkspaceNavItem = {
   adminOnly?: boolean;
 };
 
-export type WorkspacePanelMode = "files" | "search" | "gallery" | "docs" | "settings" | "admin";
+export type WorkspacePanelMode =
+  | "files"
+  | "search"
+  | "gallery"
+  | "assets"
+  | "docs"
+  | "settings"
+  | "admin";

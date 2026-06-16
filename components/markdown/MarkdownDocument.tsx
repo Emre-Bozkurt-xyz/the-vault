@@ -27,6 +27,10 @@ import rehypeSanitize from "rehype-sanitize";
 import { defaultSchema, type Schema } from "hast-util-sanitize";
 import remarkGfm from "remark-gfm";
 
+import {
+  transformAssetEmbeds,
+  type AssetEmbedResolutionMap,
+} from "@/lib/asset-embeds";
 import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
@@ -46,6 +50,7 @@ type MarkdownDocumentProps = {
   contained?: boolean;
   disableLinks?: boolean;
   wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
   embedDepth?: number;
   embedTrail?: string[];
 };
@@ -591,22 +596,22 @@ function createMarkdownComponents(
   em({ children, className, style }) {
     return <em {...styledProps("vault-md-em", className, style)}>{children}</em>;
   },
-  a({ href, children, className, style }) {
+  a({ href, children, className, style, target, rel }) {
     if (disableLinks) {
       return <span {...styledProps("vault-md-link", className, style)}>{children}</span>;
     }
 
     const safeHref = href && allowedLinkProtocol.test(href) ? href : "#";
+    const safeTarget = target === "_blank" ? "_blank" : undefined;
+    const linkTarget =
+      safeTarget ??
+      (safeHref.startsWith("/") || safeHref.startsWith("#") ? undefined : "_blank");
 
     return (
       <a
         href={safeHref}
-        rel="noreferrer"
-        target={
-          safeHref.startsWith("/") || safeHref.startsWith("#")
-            ? undefined
-            : "_blank"
-        }
+        rel={linkTarget === "_blank" ? (rel || "noreferrer") : undefined}
+        target={linkTarget}
         {...styledProps("vault-md-link", className, style)}
       >
         {children}
@@ -938,10 +943,14 @@ export function MarkdownDocument({
   contained = true,
   disableLinks = false,
   wikiLinks,
+  assetLinks,
   embedDepth = 0,
   embedTrail = [],
 }: MarkdownDocumentProps) {
-  const sourceMarkdown = normalizeSelfClosingIframes(markdown || "_No content yet._");
+  const sourceMarkdown = transformAssetEmbeds(
+    normalizeSelfClosingIframes(markdown || "_No content yet._"),
+    assetLinks,
+  );
   const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);
   const headingIds = new Map<string, number>();
 
@@ -961,6 +970,7 @@ export function MarkdownDocument({
             markdown={block.markdown}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
+            assetLinks={assetLinks}
             headingIds={headingIds}
           />
         ) : block.type === "region" ? (
@@ -969,6 +979,7 @@ export function MarkdownDocument({
             block={block}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
+            assetLinks={assetLinks}
             embedDepth={embedDepth}
             embedTrail={embedTrail}
           />
@@ -978,6 +989,7 @@ export function MarkdownDocument({
             block={block}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
+            assetLinks={assetLinks}
             embedDepth={embedDepth}
             embedTrail={embedTrail}
           />
@@ -991,12 +1003,14 @@ function VaultRegion({
   block,
   disableLinks,
   wikiLinks,
+  assetLinks,
   embedDepth,
   embedTrail,
 }: {
   block: Extract<WikiDocumentEmbedBlock, { type: "region" }>;
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
   embedDepth: number;
   embedTrail: string[];
 }) {
@@ -1004,6 +1018,7 @@ function VaultRegion({
     <MarkdownDocument
       markdown={block.markdown}
       wikiLinks={wikiLinks}
+      assetLinks={assetLinks}
       disableLinks={disableLinks}
       embedDepth={embedDepth}
       embedTrail={embedTrail}
@@ -1044,14 +1059,19 @@ function MarkdownSegment({
   markdown,
   disableLinks,
   wikiLinks,
+  assetLinks,
   headingIds,
 }: {
   markdown: string;
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
 }) {
-  const renderedMarkdown = transformWikiLinks(markdown, wikiLinks);
+  const renderedMarkdown = transformWikiLinks(
+    transformAssetEmbeds(markdown, assetLinks),
+    wikiLinks,
+  );
 
   return (
     <ReactMarkdown
@@ -1072,12 +1092,14 @@ function WikiDocumentEmbed({
   block,
   disableLinks,
   wikiLinks,
+  assetLinks,
   embedDepth,
   embedTrail,
 }: {
   block: Extract<WikiDocumentEmbedBlock, { type: "embed" }>;
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
   embedDepth: number;
   embedTrail: string[];
 }) {
@@ -1122,6 +1144,7 @@ function WikiDocumentEmbed({
             block.fragment,
           )}
           wikiLinks={wikiLinks}
+          assetLinks={assetLinks}
           disableLinks={disableLinks}
           embedDepth={embedDepth + 1}
           embedTrail={documentId ? [...embedTrail, documentId] : embedTrail}

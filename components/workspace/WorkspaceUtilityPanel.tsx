@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   BookOpen,
+  ImageIcon,
   LayoutGrid,
   Search,
   Settings,
@@ -11,7 +12,7 @@ import {
 
 import { cn } from "@/lib/utils";
 
-type UtilityPanelMode = "search" | "gallery" | "settings" | "admin";
+type UtilityPanelMode = "search" | "gallery" | "assets" | "settings" | "admin";
 
 type UtilityPanelItem = {
   label: string;
@@ -47,6 +48,12 @@ const panelContent: Record<
         icon: LayoutGrid,
       },
       {
+        label: "Assets",
+        href: "/assets",
+        description: "Browse your uploaded content.",
+        icon: ImageIcon,
+      },
+      {
         label: "Docs",
         href: "/docs",
         description: "Read official Vault guides.",
@@ -70,6 +77,25 @@ const panelContent: Record<
         href: "/docs/guides/sharing-and-permissions",
         description: "Learn how sharing and publishing work.",
         icon: BookOpen,
+      },
+    ],
+  },
+  assets: {
+    label: "Library",
+    title: "Assets",
+    description: "Private uploads and publish controls.",
+    items: [
+      {
+        label: "My assets",
+        href: "/assets",
+        description: "Browse and configure uploaded images and PDFs.",
+        icon: ImageIcon,
+      },
+      {
+        label: "Public gallery",
+        href: "/gallery",
+        description: "See public content.",
+        icon: LayoutGrid,
       },
     ],
   },

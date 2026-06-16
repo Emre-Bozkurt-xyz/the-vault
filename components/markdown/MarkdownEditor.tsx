@@ -53,6 +53,16 @@ import {
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
 import { Button } from "@/components/ui/button";
+import {
+  formatAssetEmbedSource,
+  getAssetEmbedClassName,
+  getAssetEmbedStyle,
+  parseAssetEmbedSource,
+  type AssetEmbedAttributes,
+  type AssetEmbedResolutionMap,
+  type AssetEmbedWidthPreset,
+  type ParsedAssetEmbed,
+} from "@/lib/asset-embeds";
 import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
@@ -81,6 +91,7 @@ type MarkdownEditorProps = {
     };
   } | null;
   wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
 };
 
 type EditorMode = "source" | "live" | "read";
@@ -120,6 +131,12 @@ type WikiLinkMapStore = {
   get: () => WikiLinkResolutionMap;
   set: (wikiLinks: WikiLinkResolutionMap) => void;
 };
+type SelectedAssetEmbed = {
+  from: number;
+  to: number;
+  parsed: ParsedAssetEmbed;
+  asset: AssetEmbedResolutionMap[string] | null;
+};
 
 export function MarkdownEditor({
   documentId,
@@ -128,15 +145,21 @@ export function MarkdownEditor({
   shareLinkId = null,
   collaboration = null,
   wikiLinks,
+  assetLinks,
 }: MarkdownEditorProps) {
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
+  const [uploadingAsset, setUploadingAsset] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("live");
   const [wikiLinkMap] = useState<WikiLinkResolutionMap>(wikiLinks ?? {});
+  const [assetLinkMap, setAssetLinkMap] = useState<AssetEmbedResolutionMap>(
+    assetLinks ?? {},
+  );
   const [collabStatus, setCollabStatus] = useState<CollabStatus>(
     collaboration ? "connecting" : "off",
   );
@@ -147,8 +170,15 @@ export function MarkdownEditor({
     value: string;
   } | null>(null);
   const [presenceUsers, setPresenceUsers] = useState<CollabPresenceUser[]>([]);
+  const [selectedAssetEmbed, setSelectedAssetEmbed] =
+    useState<SelectedAssetEmbed | null>(null);
+  const [assetWidthDraft, setAssetWidthDraft] = useState("");
   const [editorMountMarkdown, setEditorMountMarkdown] = useState(markdown);
   const viewRef = useRef<EditorView | null>(null);
+  const assetInputRef = useRef<HTMLInputElement | null>(null);
+  const assetUploadHandlerRef = useRef<
+    ((file: File, view: EditorView | null) => Promise<void>) | null
+  >(null);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
@@ -169,6 +199,19 @@ export function MarkdownEditor({
       collabReady &&
       collabInitialMarkdown?.key === collaborationKey,
   );
+
+  useEffect(() => {
+    setAssetLinkMap(assetLinks ?? {});
+  }, [assetLinks]);
+
+  useEffect(() => {
+    setAssetWidthDraft(
+      selectedAssetEmbed
+        ? selectedAssetEmbed.parsed.attributes.customWidth ??
+            selectedAssetEmbed.parsed.attributes.width
+        : "",
+    );
+  }, [selectedAssetEmbed]);
 
   useEffect(() => {
     if (!collaboration) {
@@ -343,8 +386,50 @@ export function MarkdownEditor({
       EditorView.lineWrapping,
       Prec.highest(keymap.of(createMarkdownShortcutKeymap(wikiCompletionDismissal))),
       createBlockAnchorMarkerExtension(),
+      EditorView.domEventHandlers({
+        paste(event, view) {
+          const file = firstSupportedAssetFile(event.clipboardData?.files);
+
+          if (!file) {
+            return false;
+          }
+
+          event.preventDefault();
+          void assetUploadHandlerRef.current?.(file, view);
+          return true;
+        },
+        drop(event, view) {
+          const file = firstSupportedAssetFile(event.dataTransfer?.files);
+
+          if (!file) {
+            return false;
+          }
+
+          event.preventDefault();
+          const position = view.posAtCoords({
+            x: event.clientX,
+            y: event.clientY,
+          });
+
+          if (typeof position === "number") {
+            view.dispatch({
+              selection: EditorSelection.cursor(position),
+              scrollIntoView: true,
+            });
+          }
+
+          void assetUploadHandlerRef.current?.(file, view);
+          return true;
+        },
+      }),
       EditorView.updateListener.of((update) => {
         const dismissal = wikiCompletionDismissal.get();
+
+        if (update.selectionSet || update.docChanged || update.focusChanged) {
+          setSelectedAssetEmbed(
+            findAssetEmbedAtSelection(update.view, assetLinkMap),
+          );
+        }
 
         if (!dismissal || !update.selectionSet) {
           return;
@@ -550,7 +635,9 @@ export function MarkdownEditor({
     ];
 
       if (editorMode === "live") {
-        baseExtensions.push(createMarkdownLivePreviewExtension(wikiLinkMap));
+        baseExtensions.push(
+          createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
+        );
       }
 
       baseExtensions.push(
@@ -581,6 +668,7 @@ export function MarkdownEditor({
       isCollaborative,
       editorMode,
       wikiCompletionDismissal,
+      assetLinkMap,
       wikiLinkMap,
       wikiLinkMapStore,
     ],
@@ -598,10 +686,80 @@ export function MarkdownEditor({
     return () => window.clearTimeout(autosaveTimer);
   }, [dirty, saveDocument, saving, titleValue, markdownValue]);
 
+  const uploadAssetFile = useCallback(
+    async (file: File, view: EditorView | null = viewRef.current) => {
+      if (!view) {
+        return;
+      }
+
+      setAssetUploadError(null);
+      setUploadingAsset(true);
+
+      try {
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("documentId", documentId);
+
+        if (shareLinkId) {
+          formData.set("shareLinkId", shareLinkId);
+        }
+
+        const response = await fetch("/api/assets", {
+          method: "POST",
+          body: formData,
+        });
+        const payload = (await response.json()) as {
+          asset?: {
+            id: string;
+            kind: "image" | "pdf";
+            displayName: string;
+            mimeType: string;
+            sizeBytes: number;
+            url: string;
+            markdown: string;
+          };
+          error?: string;
+        };
+
+        if (!response.ok || !payload.asset) {
+          throw new Error(payload.error ?? "Upload failed.");
+        }
+
+        const asset = payload.asset;
+        setAssetLinkMap((current) => ({
+          ...current,
+          [asset.id]: {
+            id: asset.id,
+            kind: asset.kind,
+            displayName: asset.displayName,
+            altText: asset.displayName,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            url: asset.url,
+          },
+        }));
+        insertMarkdownAtSelection(view, `${asset.markdown}\n`);
+      } catch (error) {
+        setAssetUploadError(
+          error instanceof Error ? error.message : "Upload failed.",
+        );
+      } finally {
+        setUploadingAsset(false);
+      }
+    },
+    [documentId, shareLinkId],
+  );
+  assetUploadHandlerRef.current = uploadAssetFile;
+
   const applyFormat = useCallback((format: MarkdownFormat) => {
     const view = viewRef.current;
 
     if (!view) {
+      return;
+    }
+
+    if (format === "imageUpload") {
+      assetInputRef.current?.click();
       return;
     }
 
@@ -657,6 +815,7 @@ export function MarkdownEditor({
       italic: null,
       link: null,
       inlineCode: null,
+      imageUpload: null,
       codeFence: null,
       table: null,
       region: null,
@@ -673,6 +832,49 @@ export function MarkdownEditor({
       toggleLinePrefix(view, prefix, format);
     }
   }, []);
+
+  const updateSelectedAssetAttributes = useCallback(
+    (nextAttributes: Partial<AssetEmbedAttributes>) => {
+      const view = viewRef.current;
+
+      if (!view) {
+        return;
+      }
+
+      const current = findAssetEmbedAtSelection(view, assetLinkMap);
+
+      if (!current) {
+        setSelectedAssetEmbed(null);
+        return;
+      }
+
+      const attributes = {
+        ...current.parsed.attributes,
+        ...nextAttributes,
+      };
+      const nextSource = formatAssetEmbedSource(current.parsed, attributes);
+      const nextSelection = EditorSelection.cursor(current.from);
+
+      view.dispatch({
+        changes: { from: current.from, to: current.to, insert: nextSource },
+        selection: nextSelection,
+        scrollIntoView: true,
+      });
+      setSelectedAssetEmbed(
+        findAssetEmbedInLine(current.from, nextSource, assetLinkMap),
+      );
+      view.focus();
+    },
+    [assetLinkMap],
+  );
+
+  const applyAssetWidthDraft = useCallback(() => {
+    const attributes = parseAssetEmbedAttributesFromDraft(assetWidthDraft);
+
+    if (attributes) {
+      updateSelectedAssetAttributes(attributes);
+    }
+  }, [assetWidthDraft, updateSelectedAssetAttributes]);
 
   const changeEditorMode = useCallback(
     (nextMode: EditorMode) => {
@@ -743,6 +945,20 @@ export function MarkdownEditor({
           {editorMode !== "read" ? (
             <div className="min-w-0 flex-1">
               <MarkdownToolbar onFormat={applyFormat} />
+              <input
+                ref={assetInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+
+                  if (file) {
+                    void uploadAssetFile(file);
+                  }
+                }}
+              />
             </div>
           ) : (
             <div className="min-w-0 flex-1" />
@@ -750,6 +966,20 @@ export function MarkdownEditor({
           <CollaborationPresence users={presenceUsers} />
           <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} />
         </div>
+        {uploadingAsset || assetUploadError ? (
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {uploadingAsset ? "Uploading asset..." : assetUploadError}
+          </p>
+        ) : null}
+        {editorMode !== "read" && selectedAssetEmbed ? (
+          <AssetEmbedControls
+            selected={selectedAssetEmbed}
+            widthDraft={assetWidthDraft}
+            onWidthDraftChange={setAssetWidthDraft}
+            onApplyWidth={applyAssetWidthDraft}
+            onChangeAttributes={updateSelectedAssetAttributes}
+          />
+        ) : null}
         {editorMode === "read" ? (
           <h1 className="vault-editor-title w-full text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl vault-display">
             {titleValue || "Untitled document"}
@@ -796,6 +1026,9 @@ export function MarkdownEditor({
                   }}
                   onCreateEditor={(view) => {
                     viewRef.current = view;
+                    setSelectedAssetEmbed(
+                      findAssetEmbedAtSelection(view, assetLinkMap),
+                    );
                   }}
                   onChange={(value) => {
                     markdownValueRef.current = value;
@@ -813,6 +1046,7 @@ export function MarkdownEditor({
                 <MarkdownDocument
                   markdown={markdownValue}
                   wikiLinks={wikiLinkMap}
+                  assetLinks={assetLinkMap}
                   contained={false}
                 />
               </div>
@@ -854,6 +1088,161 @@ function colorFromString(value: string) {
   }
 
   return colors[hash];
+}
+
+function AssetEmbedControls({
+  selected,
+  widthDraft,
+  onWidthDraftChange,
+  onApplyWidth,
+  onChangeAttributes,
+}: {
+  selected: SelectedAssetEmbed;
+  widthDraft: string;
+  onWidthDraftChange: (value: string) => void;
+  onApplyWidth: () => void;
+  onChangeAttributes: (attributes: Partial<AssetEmbedAttributes>) => void;
+}) {
+  const attributes = selected.parsed.attributes;
+  const widthValue = attributes.customWidth ? "custom" : attributes.width;
+
+  return (
+    <div className="vault-asset-format-panel" aria-label="Selected asset formatting">
+      <div className="vault-asset-format-panel-header">
+        <span className="vault-asset-format-label">Asset</span>
+        <span className="truncate text-muted-foreground">
+          {selected.asset?.displayName ?? selected.parsed.label ?? selected.parsed.assetId}
+        </span>
+      </div>
+      <div className="vault-asset-format-row">
+        <AssetFormatSegment
+          label="Layout"
+          value={attributes.layout}
+          options={[
+            ["block", "Block"],
+            ["wrap", "Wrap"],
+            ["inline", "Inline"],
+          ]}
+          onChange={(layout) => onChangeAttributes({ layout })}
+        />
+        <AssetFormatSegment
+          label="Align"
+          value={attributes.align}
+          options={[
+            ["left", "Left"],
+            ["center", "Center"],
+            ["right", "Right"],
+          ]}
+          onChange={(align) => onChangeAttributes({ align })}
+        />
+        <label className="vault-asset-format-field vault-asset-format-width-select">
+          <span>Width</span>
+          <select
+            value={widthValue}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+
+              if (value === "custom") {
+                const customWidth = attributes.customWidth ?? "320px";
+                onWidthDraftChange(customWidth);
+                onChangeAttributes({
+                  width: "medium",
+                  customWidth,
+                });
+                return;
+              }
+
+              onChangeAttributes({
+                width: value as AssetEmbedWidthPreset,
+                customWidth: null,
+              });
+            }}
+          >
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+            <option value="full">Full</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        {widthValue === "custom" ? (
+          <label className="vault-asset-format-field vault-asset-format-width-input">
+            <span>Value</span>
+            <input
+              value={widthDraft}
+              placeholder="320px or 50%"
+              onChange={(event) => onWidthDraftChange(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onApplyWidth();
+                }
+              }}
+            />
+            <button type="button" onClick={onApplyWidth}>
+              Apply
+            </button>
+          </label>
+        ) : null}
+        <label className="vault-asset-format-field vault-asset-format-text">
+          <span>Caption</span>
+          <input
+            key={`caption:${selected.parsed.source}`}
+            defaultValue={attributes.caption ?? ""}
+            placeholder="Optional caption"
+            onBlur={(event) =>
+              onChangeAttributes({
+                caption: event.currentTarget.value.trim() || null,
+              })
+            }
+          />
+        </label>
+        <label className="vault-asset-format-field vault-asset-format-text">
+          <span>Alt</span>
+          <input
+            key={`alt:${selected.parsed.source}`}
+            defaultValue={attributes.alt ?? ""}
+            placeholder="Alt text"
+            onBlur={(event) =>
+              onChangeAttributes({
+                alt: event.currentTarget.value.trim() || null,
+              })
+            }
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function AssetFormatSegment<TValue extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: TValue;
+  options: Array<[TValue, string]>;
+  onChange: (value: TValue) => void;
+}) {
+  return (
+    <div className="vault-asset-format-segment" aria-label={label}>
+      <span>{label}</span>
+      <div>
+        {options.map(([optionValue, optionLabel]) => (
+          <button
+            key={optionValue}
+            type="button"
+            aria-pressed={value === optionValue}
+            onClick={() => onChange(optionValue)}
+          >
+            {optionLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function EditorModeSwitch({
@@ -1314,6 +1703,87 @@ class WikiImagePreviewWidget extends WidgetType {
   }
 }
 
+class AssetEmbedPreviewWidget extends WidgetType {
+  constructor(
+    private readonly asset: AssetEmbedResolutionMap[string],
+    private readonly label: string,
+    private readonly attributes: AssetEmbedAttributes,
+  ) {
+    super();
+  }
+
+  eq(widget: AssetEmbedPreviewWidget) {
+    return (
+      widget.asset.id === this.asset.id &&
+      widget.asset.url === this.asset.url &&
+      widget.label === this.label &&
+      JSON.stringify(widget.attributes) === JSON.stringify(this.attributes)
+    );
+  }
+
+  toDOM() {
+    if (this.asset.kind === "image") {
+      const figure = document.createElement("figure");
+      figure.className = getAssetEmbedClassName(
+        this.attributes,
+        "vault-cm-wiki-image-preview vault-asset-embed vault-asset-embed--image",
+      );
+
+      const figureStyle = getAssetEmbedStyle(this.attributes);
+
+      if (figureStyle) {
+        figure.setAttribute("style", figureStyle);
+      }
+
+      const frame = document.createElement("span");
+      frame.className = "vault-md-image-frame";
+
+      const image = document.createElement("img");
+      image.className = "vault-md-img vault-asset-embed-image";
+      image.src = this.asset.url;
+      image.alt =
+        this.attributes.alt ||
+        this.asset.altText ||
+        this.label ||
+        this.asset.displayName;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.addEventListener(
+        "error",
+        () => {
+          frame.dataset.imageState = "error";
+        },
+        { once: true },
+      );
+
+      const fallback = document.createElement("figcaption");
+      fallback.className = "vault-md-image-fallback";
+      fallback.textContent = "Image unavailable";
+
+      frame.append(image, fallback);
+      figure.append(frame);
+
+      if (this.attributes.caption) {
+        const caption = document.createElement("figcaption");
+        caption.className = "vault-asset-embed-caption";
+        caption.textContent = this.attributes.caption;
+        figure.append(caption);
+      }
+
+      return figure;
+    }
+
+    const link = document.createElement("a");
+    link.className = "vault-asset-embed vault-asset-embed--file";
+    link.href = this.asset.url;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = this.label || this.asset.displayName;
+
+    return link;
+  }
+}
+
 class WikiDocumentEmbedPreviewWidget extends WidgetType {
   private root: Root | null = null;
 
@@ -1426,7 +1896,10 @@ class CalloutMarkerWidget extends WidgetType {
   }
 }
 
-function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
+function createMarkdownLivePreviewExtension(
+  wikiLinks: WikiLinkResolutionMap,
+  assetLinks: AssetEmbedResolutionMap,
+) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
@@ -1434,7 +1907,12 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
       dragActiveLines = new Set<number>();
 
       constructor(view: EditorView) {
-        this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+        this.decorations = buildLivePreviewDecorations(
+          view,
+          wikiLinks,
+          assetLinks,
+          false,
+        );
       }
 
       update(update: ViewUpdate) {
@@ -1447,6 +1925,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           this.decorations = buildLivePreviewDecorations(
             update.view,
             wikiLinks,
+            assetLinks,
             this.isMouseSelecting,
             this.dragActiveLines,
           );
@@ -1466,6 +1945,7 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
           this.decorations = buildLivePreviewDecorations(
             view,
             wikiLinks,
+            assetLinks,
             true,
             this.dragActiveLines,
           );
@@ -1477,7 +1957,12 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
 
           this.isMouseSelecting = false;
           this.dragActiveLines = new Set<number>();
-          this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+          this.decorations = buildLivePreviewDecorations(
+            view,
+            wikiLinks,
+            assetLinks,
+            false,
+          );
           view.dispatch({});
         },
         mouseleave(event, view) {
@@ -1490,7 +1975,12 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
 
           this.isMouseSelecting = false;
           this.dragActiveLines = new Set<number>();
-          this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+          this.decorations = buildLivePreviewDecorations(
+            view,
+            wikiLinks,
+            assetLinks,
+            false,
+          );
           view.dispatch({});
         },
         mousemove(event, view) {
@@ -1500,7 +1990,12 @@ function createMarkdownLivePreviewExtension(wikiLinks: WikiLinkResolutionMap) {
 
           this.isMouseSelecting = false;
           this.dragActiveLines = new Set<number>();
-          this.decorations = buildLivePreviewDecorations(view, wikiLinks, false);
+          this.decorations = buildLivePreviewDecorations(
+            view,
+            wikiLinks,
+            assetLinks,
+            false,
+          );
           view.dispatch({});
         },
       },
@@ -1567,6 +2062,7 @@ function buildBlockAnchorMarkerDecorations(view: EditorView) {
 function buildLivePreviewDecorations(
   view: EditorView,
   wikiLinks: WikiLinkResolutionMap,
+  assetLinks: AssetEmbedResolutionMap,
   suppressSourceReveal: boolean,
   forcedActiveLines = new Set<number>(),
 ) {
@@ -1585,7 +2081,6 @@ function buildLivePreviewDecorations(
 
     while (position <= visibleRange.to) {
       const line = doc.lineAt(position);
-
       if (!activeLines.has(line.number)) {
         const htmlBlock = codeFenceLines.has(line.number)
           ? null
@@ -1605,6 +2100,27 @@ function buildLivePreviewDecorations(
             position = fromLine.to + 1;
             continue;
           }
+        }
+
+        const assetEmbed = getAssetEmbedPreview(line.text, assetLinks);
+
+        if (
+          assetEmbed &&
+          !hasActivePositionInRange(activePositions, line.from, line.to)
+        ) {
+          ranges.push(previewWikiDocumentEmbedLine.range(line.from));
+          ranges.push(
+            Decoration.replace({
+              widget: new AssetEmbedPreviewWidget(
+                assetEmbed.asset,
+                assetEmbed.label,
+                assetEmbed.attributes,
+              ),
+            }).range(line.from, line.to),
+          );
+
+          position = line.to + 1;
+          continue;
         }
 
         const wikiEmbed = getWikiDocumentEmbed(line.text, wikiLinks);
@@ -1647,6 +2163,100 @@ function buildLivePreviewDecorations(
   }
 
   return Decoration.set(ranges, true);
+}
+
+function getAssetEmbedPreview(
+  lineText: string,
+  assetLinks: AssetEmbedResolutionMap,
+) {
+  const parsed = parseAssetEmbedSource(lineText);
+
+  if (!parsed) {
+    return null;
+  }
+
+  const asset = assetLinks[parsed.assetId];
+
+  if (!asset) {
+    return null;
+  }
+
+  return {
+    asset,
+    label: parsed.label || asset.displayName,
+    attributes: parsed.attributes,
+  };
+}
+
+function findAssetEmbedAtSelection(
+  view: EditorView,
+  assetLinks: AssetEmbedResolutionMap,
+): SelectedAssetEmbed | null {
+  const selection = view.state.selection.main;
+  const line = view.state.doc.lineAt(selection.head);
+  const leadingWhitespace = line.text.match(/^\s*/)?.[0].length ?? 0;
+  const trailingWhitespace = line.text.match(/\s*$/)?.[0].length ?? 0;
+  const source = line.text.trim();
+  const from = line.from + leadingWhitespace;
+  const to = line.to - trailingWhitespace;
+
+  if (selection.head < from || selection.head > to) {
+    return null;
+  }
+
+  return findAssetEmbedInLine(from, source, assetLinks);
+}
+
+function findAssetEmbedInLine(
+  from: number,
+  source: string,
+  assetLinks: AssetEmbedResolutionMap,
+): SelectedAssetEmbed | null {
+  const parsed = parseAssetEmbedSource(source);
+
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    from,
+    to: from + source.length,
+    parsed,
+    asset: assetLinks[parsed.assetId] ?? null,
+  };
+}
+
+function parseAssetEmbedAttributesFromDraft(
+  draft: string,
+): Partial<AssetEmbedAttributes> | null {
+  const value = draft.trim().toLowerCase();
+
+  if (
+    value === "small" ||
+    value === "medium" ||
+    value === "large" ||
+    value === "full"
+  ) {
+    return { width: value, customWidth: null };
+  }
+
+  const pixelMatch = value.match(/^(\d{2,4})(px)?$/);
+
+  if (pixelMatch) {
+    const width = Math.min(Math.max(Number(pixelMatch[1]), 80), 1600);
+
+    return { width: "medium", customWidth: `${width}px` };
+  }
+
+  const percentMatch = value.match(/^(\d{1,3})%$/);
+
+  if (percentMatch) {
+    const width = Math.min(Math.max(Number(percentMatch[1]), 10), 100);
+
+    return { width: "medium", customWidth: `${width}%` };
+  }
+
+  return null;
 }
 
 function getActiveStructuralLines(view: EditorView) {
@@ -3270,6 +3880,38 @@ function insertBlock(view: EditorView, text: string, cursorOffset: number | null
     scrollIntoView: true,
   });
   view.focus();
+}
+
+function insertMarkdownAtSelection(view: EditorView, markdown: string) {
+  const selection = view.state.selection.main;
+  const line = view.state.doc.lineAt(selection.from);
+  const needsLeadingBreak = selection.from > line.from;
+  const insert = `${needsLeadingBreak ? "\n\n" : ""}${markdown}`;
+
+  view.dispatch({
+    changes: { from: selection.from, to: selection.to, insert },
+    selection: EditorSelection.cursor(selection.from + insert.length),
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
+function firstSupportedAssetFile(files?: FileList | null) {
+  if (!files) {
+    return null;
+  }
+
+  return (
+    Array.from(files).find((file) =>
+      [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "application/pdf",
+      ].includes(file.type),
+    ) ?? null
+  );
 }
 
 function insertVaultRegion(view: EditorView) {

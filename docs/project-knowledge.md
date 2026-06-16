@@ -13,7 +13,7 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-15
+2026-06-16
 ```
 
 Current phase:
@@ -37,7 +37,7 @@ In progress
 One-sentence current reality:
 
 ```txt
-Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, an initial Obsidian-like `/workspace` shell, health endpoints, GitHub Actions deployment wiring, production-confirmed Markdown/Y.Text collaboration, and a private-by-default asset storage plan with preliminary R2 helper/dependency scaffolding.
+Vault currently has a runnable dark-first Next.js app shell, switchable theming, GitHub/Google Auth.js wiring, Dockerized Postgres, Markdown document editing with autosave and live preview modes, safe Markdown read-only/public rendering, direct and link-based document sharing, public publishing, friend requests, server-side permission helpers, admin moderation, official docs publishing, an Obsidian-like `/workspace` shell, health endpoints, GitHub Actions deployment wiring, production-confirmed Markdown/Y.Text collaboration, and private-by-default R2 asset storage with upload, library, gallery publishing, and controlled Markdown asset embed rendering.
 ```
 
 Planned direction:
@@ -87,10 +87,12 @@ Realtime collaboration:
   - Markdown `Y.Text` persistence back to `documents.markdown`
 
 Object storage:
-  - Planned private Cloudflare R2 storage for uploaded assets
+  - Private Cloudflare R2 storage for uploaded assets
   - `@aws-sdk/client-s3` and `file-type` dependencies are installed
   - `lib/storage/r2.ts` is server-only, lazily validates R2 env values, and exposes put/get/head/delete helpers
-  - Asset upload/serve routes and schema are not implemented yet
+  - `POST /api/assets` uploads validated image/PDF bytes to private R2 and stores asset metadata in Postgres
+  - `/api/assets/[assetId]` supports owner metadata reads, metadata/visibility updates, and soft delete
+  - `/api/assets/[assetId]/content` streams bytes through Vault permission checks, including byte Range responses; raw R2 URLs are not inserted into Markdown
 
 Deployment:
   - Production Docker/Compose scaffolding
@@ -159,6 +161,9 @@ Add notes as real files appear:
 | `app/` | Next.js routes |
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js route handlers |
 | `app/api/health/route.ts` | App/database health check route |
+| `app/api/assets/route.ts` | Authenticated asset list/upload API; upload validates file signatures, reserves quota, writes private R2 bytes, stores metadata, and optionally links to a document |
+| `app/api/assets/[assetId]/route.ts` | Owner-only asset metadata reads, metadata updates, public/private visibility updates, and soft delete |
+| `app/api/assets/[assetId]/content/route.ts` | Permission-checked private asset content stream from R2 with `GET`, `HEAD`, and byte Range support; returns 404 for inaccessible private assets |
 | `app/dashboard/page.tsx` | Compatibility route that redirects to `/workspace` |
 | `app/dashboard/admin/page.tsx` | Workspace-native admin-only user moderation page with user search, role changes, bans, and unbans |
 | `app/dashboard/admin/docs/page.tsx` | Workspace-native admin-only official docs list/create page |
@@ -172,6 +177,7 @@ Add notes as real files appear:
 | `app/onboarding/page.tsx` | First-run profile completion page for username and nickname |
 | `app/docs/[docId]/page.tsx` | Protected document edit/view route rendered inside the workspace shell with file browser tabs, an editor-first canvas, and a workspace right context panel for document actions; route-level permission checks and collaboration token creation remain server-side |
 | `app/gallery/page.tsx` | Workspace gallery page that lists and searches public documents by title, owner name, username, and slug |
+| `app/assets/page.tsx` | Workspace asset library page for browsing owned uploads, editing metadata, copying embeds, and toggling public/private visibility |
 | `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub/Google OAuth sign-in page |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
@@ -184,12 +190,13 @@ Add notes as real files appear:
 | `app/not-found.tsx` | Global not-found page for missing/private/unpublished docs |
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
+| `components/assets/AssetLibraryClient.tsx` | Client-side asset library masonry grid, search/filter/sort controls, owner configuration panel, copy embed, and delete action |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
-| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, and optional Yjs collaboration |
+| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
-| `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax |
-| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist |
+| `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax and opens the asset upload picker |
+| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist and permission-resolved asset embed rendering, including controlled image layout attributes |
 | `components/theme-provider.tsx` | Root client theme provider using localStorage-backed dark/light class switching |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
@@ -199,7 +206,7 @@ Add notes as real files appear:
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
-| `db/schema.ts` | Auth, document, and document permission schema |
+| `db/schema.ts` | Auth, document, permission, collaboration, friend, official docs, and uploaded asset schema |
 | `lib/` | Shared helpers |
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
@@ -207,9 +214,11 @@ Add notes as real files appear:
 | `lib/repo-docs.ts` | Filesystem loader for repo-backed docs and legal Markdown content |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
-| `lib/storage/r2.ts` | Server-only private R2/S3-compatible object helper for future uploaded asset storage; exposes put/get/head/delete helpers and validates env lazily |
+| `lib/asset-embeds.ts` | Markdown asset embed parser/renderer for `![[asset:id|label]]` references and controlled `{layout align width caption alt}` image attributes |
+| `lib/storage/r2.ts` | Server-only private R2/S3-compatible object helper for uploaded asset storage; exposes put/get/head/delete helpers and validates env lazily |
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
+| `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, public asset listing, owner metadata updates, document links, and read authorization |
 | `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
 | `server/authz.ts` | DB-backed active-user and admin guards; active bans redirect to `/banned` |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
@@ -221,6 +230,8 @@ Add notes as real files appear:
 | `server/workspace.ts` | Authenticated workspace data loader for the shell and sidebar document lists |
 | `auth.ts` | Auth.js configuration, Drizzle adapter, GitHub provider, session callback |
 | `scripts/collab-server.mjs` | Hocuspocus/Yjs collaboration websocket service |
+| `scripts/reconcile-assets.mjs` | Asset maintenance script for quota drift, unused private assets, missing objects, orphaned R2 objects, quota repair, and orphan deletion |
+| `scripts/export-assets.mjs` | Exports asset metadata plus active R2 object bytes to a local backup directory |
 | `docs/` | Planning and project knowledge |
 | `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan and status notes for the Markdown backbone pivot |
 | `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` | Structured plan for replacing the dashboard-centric UI with an Obsidian-like workspace shell |
@@ -289,17 +300,17 @@ Rules:
 | `NEXT_PUBLIC_COLLAB_URL` | Optional | Editor | WebSocket URL for live collaboration; when absent, editor falls back to normal autosave |
 | `COLLAB_PORT` | Optional | Collab service | Internal Hocuspocus listen port, default `1234` |
 | `ENABLE_DEV_LOGIN` | Optional | Login page | Enables dev-only local Auth.js database-session login when not production; defaults enabled outside production unless set to `false` |
-| `ASSET_STORAGE_DRIVER` | Planned | Asset upload/serve routes | Storage backend selector; currently planned value is `r2` |
-| `R2_BUCKET` | Planned | Asset storage helper | Private R2 bucket name for uploaded asset bytes |
-| `R2_ENDPOINT` | Planned | Asset storage helper | Account-level R2 S3 API endpoint, `https://<cloudflare-account-id>.r2.cloudflarestorage.com`, without bucket suffix |
-| `R2_ACCESS_KEY_ID` | Planned | Asset storage helper | Server-only R2 S3-compatible access key |
-| `R2_SECRET_ACCESS_KEY` | Planned | Asset storage helper | Server-only R2 S3-compatible secret key |
-| `ASSET_ROUTE_BASE_PATH` | Planned | Asset renderer/API | Vault route prefix for permission-checked asset reads, default `/api/assets` |
-| `DEFAULT_USER_STORAGE_QUOTA_BYTES` | Planned | Asset quota logic | Default per-user storage quota; current planned default is 256 MiB |
-| `MAX_IMAGE_UPLOAD_BYTES` | Planned | Asset upload validation | Maximum image upload size; current planned default is 10 MiB |
-| `MAX_PDF_UPLOAD_BYTES` | Planned | Asset upload validation | Maximum PDF upload size; current planned default is 25 MiB |
-| `ASSET_PRIVATE_CACHE_SECONDS` | Planned | Asset content route | Cache seconds for private asset responses; current planned default is `0` |
-| `ASSET_PUBLIC_CACHE_SECONDS` | Planned | Asset content route | Cache seconds for explicitly public asset responses; current planned default is `3600` |
+| `ASSET_STORAGE_DRIVER` | Optional | Asset planning | Storage backend selector; current implementation is R2 only |
+| `R2_BUCKET` | Required for uploads | Asset storage helper | Private R2 bucket name for uploaded asset bytes |
+| `R2_ENDPOINT` | Required for uploads | Asset storage helper | Account-level R2 S3 API endpoint, `https://<cloudflare-account-id>.r2.cloudflarestorage.com`, without bucket suffix |
+| `R2_ACCESS_KEY_ID` | Required for uploads | Asset storage helper | Server-only R2 S3-compatible access key |
+| `R2_SECRET_ACCESS_KEY` | Required for uploads | Asset storage helper | Server-only R2 S3-compatible secret key |
+| `ASSET_ROUTE_BASE_PATH` | Optional | Asset renderer/API | Vault route prefix for permission-checked asset reads, default `/api/assets` |
+| `DEFAULT_USER_STORAGE_QUOTA_BYTES` | Planned | Asset quota logic | Placeholder for future configurable user creation; current DB default is 256 MiB |
+| `MAX_IMAGE_UPLOAD_BYTES` | Optional | Asset upload validation | Maximum image upload size; current default is 10 MiB |
+| `MAX_PDF_UPLOAD_BYTES` | Optional | Asset upload validation | Maximum PDF upload size; current default is 25 MiB |
+| `ASSET_PRIVATE_CACHE_SECONDS` | Optional | Asset content route | Cache seconds for private asset responses; current default is `0` |
+| `ASSET_PUBLIC_CACHE_SECONDS` | Optional | Asset content route | Cache seconds for explicitly public asset responses; current default is `3600` |
 
 ---
 
@@ -349,11 +360,12 @@ Current migrations:
 | `0008_overrated_radioactive_man.sql` | Adds `official_docs.category`, `official_docs.sort_order`, and category/order index | Generated | No |
 | `0009_simple_korvac.sql` | Adds `document_share_links` for copyable document access links | Generated | No |
 | `0010_fast_phantom_reporter.sql` | Adds `document_collab_states` for durable Yjs room state | Generated | No |
+| `0011_tiresome_ultimates.sql` | Adds user storage quota fields, `assets`, and `document_assets` for private uploaded asset metadata | Generated | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_versions, friend_requests, friendships, and official_docs.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_versions, friend_requests, friendships, official_docs, assets, and document_assets.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion; `users.role` supports `user`/`admin`.
 - `users.banned_at`, `users.banned_until`, and `users.ban_reason` store moderation state. `banned_at` with no `banned_until` is treated as permanent.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
@@ -371,7 +383,9 @@ Schema notes:
 - `/api/health` uses `select 1` and does not require any application tables.
 - Wiki-link metadata is derived from document Markdown at read time. Resolved wiki maps include headings, Obsidian-style block anchors (`^block-id`), and hidden Vault regions (`<!-- vault-region id="..." -->`), so links and embeds can target a specific heading, block, or region without schema changes. Vault regions marked `foldable` render as collapsible disclosure blocks; `collapsed` makes them initially closed.
 - Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
-- Asset tables are not implemented yet. Planned schema adds `users.storage_used_bytes`, `users.storage_quota_bytes`, `assets`, and `document_assets` for private-by-default uploaded content.
+- `users.storage_used_bytes` and `users.storage_quota_bytes` track uploaded asset quota; migration `0011_tiresome_ultimates.sql` defaults existing/new users to 0 used bytes and 256 MiB quota.
+- `assets` stores private-by-default uploaded object metadata, ownership, R2 bucket/key, MIME detection data, size, checksum, visibility, and upload status. R2 stores bytes; Postgres owns identity, quota, and authorization metadata.
+- `document_assets` links assets to documents without duplicating object bytes. The current upload route creates this link when uploading from a document editor.
 ```
 
 ---
@@ -670,6 +684,8 @@ Known editor caveats:
 - CodeMirror wiki autocomplete fetches the current readable document map from `/api/documents/wiki-links` when completion starts in either `[[...]]` links or `![[...]]` document embeds, and inserts canonical `doc:id|title` targets. Arrow keys navigate suggestions, Tab/Enter accept, Escape closes the popup, and mouse selection applies the completion. The completion is bracket-aware and fills inside an existing auto-paired `[[|]]` field without adding duplicate closing brackets; when it has to insert closing brackets itself, it leaves the cursor before `]]` so the user can keep typing a heading fragment. Typing `#` inside a wiki field explicitly starts heading autocomplete, including after an accepted canonical `doc:id|title` completion. Heading completion filters and replaces only the text after `#`, so UUID-backed canonical links still show heading suggestions. Live mode hides inactive wiki-link markers and styles the visible label; placing the cursor inside the link reveals source.
 - External image wiki embeds use `![[https://...]]`; Preview/view/public translate them to standard Markdown image rendering before the sanitized Markdown pipeline, and live mode renders inactive embeds as stable image preview frames.
 - Standalone document transclusions use `![[doc:id|label]]` or unambiguous `![[Title]]` syntax. Preview/view/public split those lines into recursive `MarkdownDocument` embeds styled with `.vault-md-document-embed`; Live mode replaces the single source line with a React-backed CodeMirror widget that reuses `MarkdownDocument`. Heading fragments on document embeds render only the selected heading's owned section, from that heading until the next heading of equal or higher level. Embeds are permission-aware, public pages only include public document Markdown, and recursive embeds are capped.
+- Uploaded image asset embeds use `![[asset:id|label]]` with optional controlled attributes such as `{layout=wrap align=right width=320 caption="Figure" alt="Description"}`. Read mode and inactive Live mode use the same parser. Supported image layout values are `block`, `wrap`, and `inline`; alignment is `left`, `center`, or `right`; width is `small`, `medium`, `large`, `full`, sanitized pixels, or sanitized percentages. Raw CSS is intentionally not accepted in asset embed syntax.
+- The Markdown editor shows a compact asset formatting row when the cursor is inside an asset embed source. Layout, alignment, width, caption, and alt controls rewrite the embed's Markdown attribute block in place; no separate asset-layout table or hidden metadata exists.
 - Markdown image rendering uses a stable responsive frame so slow or broken image loads do not repeatedly change document layout height.
 - Document titles are intentionally not unique; document identity remains `documents.id`, and public route identity remains `public_slug`.
 - Raw HTML in read-only/public rendering is parsed through `rehype-raw` and sanitized with an explicit `rehype-sanitize` allowlist. Scripts, event handlers, forms, unsafe URL protocols, and unsafe CSS values are not allowed; a constrained inline `style` allowlist supports common presentation styles. HTML inside fenced code blocks still displays as code.
@@ -689,8 +705,9 @@ Known editor caveats:
 - `VaultWorkspaceShell` owns panel behavior. The left navigation panel and right context panel have draggable resize handles on desktop and persist widths/collapsed state in `localStorage`. The right panel is a contextual workspace service: routes provide its contents, but the shell owns the panel chrome, collapse button, width, and persistence.
 - `WorkspaceTabBar` owns client-side tab ordering. Tabs are draggable with pointer/mouse drag-and-drop, and each reorder writes the new order back to `vault.workspace.tabs.v1` in `localStorage`.
 - Workspace panel and tab state render server-safe defaults for hydration, then restore persisted `localStorage` state in a queued client callback. This avoids server/client markup mismatches while keeping the shared protected workspace layout mounted across grouped route transitions.
+- The workspace route-group layout injects an inline history-restore guard before React hydration. It forces a normal reload when the browser restores a workspace page through back/forward cache or a `back_forward` document navigation after leaving the app. This must run outside React because broken restores can occur before client effects attach. Debug logs can be enabled with `localStorage.setItem("vault.debug.historyRestore", "true")`. Without this guard, returning from browser PDF viewers, address-bar searches, or external sites can restore stale React/RSC workspace state with missing content or default panel/tab state. In-workspace App Router history navigation is unaffected.
 - User has confirmed Markdown editing works in production.
-- Uploaded document assets are not implemented yet. The accepted plan is in `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`: assets are user-owned, private by default, backed by private R2 byte storage, referenced in Markdown as `![[asset:id|label]]`, served only through Vault permission checks, and published to the gallery only through explicit asset-level publishing. Publishing a document must not automatically publish embedded assets.
+- Uploaded document assets have a first working slice: schema/quota metadata, private R2 upload, permission-checked content serving, toolbar upload insertion, Live/Read `![[asset:id|label]]` Markdown rendering, and asset library configuration are implemented. Assets remain user-owned and private by default. Public document pages only resolve explicitly public assets, so publishing a document does not publish embedded private assets.
 ```
 
 ---
@@ -1149,10 +1166,10 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Start Phase 11 with asset schema/quota fields and Drizzle migration from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
-2. Implement `POST /api/assets` as the first vertical slice: auth, edit permission, file validation, quota reservation, private R2 upload, metadata insert, and `![[asset:id|label]]` response.
-3. Add permission-checked asset content serving before wiring editor previews.
-4. Continue the final workspace visual pass on remaining non-editor surfaces when not working on asset storage.
+1. Add grouped asset blocks for side-by-side image sets once the single-asset attributes feel good in manual testing.
+2. Add richer PDF/file preview cards in Markdown rendering and the asset library.
+3. Add publish-time warnings for public documents that still embed private assets.
+4. Add asset usage refresh/unlink cleanup when document Markdown removes embeds.
 ```
 
 ---
@@ -1250,3 +1267,8 @@ Use this as a compact implementation log.
 | 2026-06-15 | Fixed callout line breaks and drag selection | Read mode now preserves callout body line breaks as separate paragraphs, and live mode keeps an active callout in source while dragging a selection from inside it |
 | 2026-06-15 | Added workspace public reader | Signed-in gallery/search public-document links now open `/workspace/public/[slug]`, preserving workspace chrome while keeping `/public/[slug]` as the canonical external share page |
 | 2026-06-15 | Planned private asset storage and library | Added `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`, changed storage env examples away from public R2 URLs, hardened `lib/storage/r2.ts`, and recorded that document publishing must not automatically publish embedded assets |
+| 2026-06-15 | Added first private asset storage slice | Added asset/quota schema and migration, private R2 upload/list APIs, permission-checked asset content streaming, Markdown asset embed rendering, and toolbar upload insertion in the document editor |
+| 2026-06-15 | Added asset library test surface | Added `/assets` workspace library with masonry-style owned asset browsing, metadata editing, copy embed, public/private toggles, and `/gallery` integration for explicitly public assets |
+| 2026-06-15 | Completed asset workflow follow-up slice | Added editor clipboard/drop upload, asset library search/filter/sort/delete, metadata GET, byte Range content responses, and asset audit/repair/export scripts |
+| 2026-06-16 | Added controlled asset embed attributes | `![[asset:id|label]]{layout align width caption alt}` now renders consistently in Read mode and inactive Live mode without allowing arbitrary embed CSS |
+| 2026-06-16 | Added selected-asset formatting controls | Cursoring into an asset embed source now shows controls for layout, alignment, width, caption, and alt text that rewrite the Markdown attribute block |

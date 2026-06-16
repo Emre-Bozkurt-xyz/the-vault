@@ -10,7 +10,11 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "assets:audit": "node scripts/reconcile-assets.mjs",
+    "assets:repair-quota": "node scripts/reconcile-assets.mjs --repair-quota --apply",
+    "assets:delete-orphans": "node scripts/reconcile-assets.mjs --delete-orphans --apply",
+    "assets:export": "node scripts/export-assets.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
