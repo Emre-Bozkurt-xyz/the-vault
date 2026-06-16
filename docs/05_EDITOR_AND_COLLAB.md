@@ -166,7 +166,9 @@ Current first slice:
   Groups render in Read mode as responsive image grids. Live mode renders an
   inactive group through the specialized CodeMirror Live block layer, then
   reveals the literal fenced Markdown source when the cursor or selection enters
-  the group. Supported group attributes are `layout=grid`, `align=left|center|right`,
+  the group. Rendered groups expose a square icon-only configure button in the
+  top-right corner; it opens the group formatting panel without changing the
+  underlying Markdown representation. Supported group attributes are `layout=grid`, `align=left|center|right`,
   `width=medium|large|full`, `gap=small|medium|large`,
   `columns=auto|2|3|4`, and `caption`. Child asset embeds can still carry their
   own width/caption/alt attributes. Mobile collapses fixed column counts to one
@@ -204,11 +206,27 @@ Current editor behavior:
   drag/drop accept supported image/PDF files, post them to `POST /api/assets`,
   and insert the returned `![[asset:<uuid>|label]]` Markdown reference with a
   CodeMirror transaction.
+- Asset autocomplete is available inside `![[asset:...]]`. It intentionally
+  returns only assets owned by the editor and assets already linked to the
+  current document; public gallery assets are not ambient autocomplete
+  suggestions. Selecting an existing private asset creates or preserves the
+  `document_assets` association before inserting the Markdown reference, so
+  document collaborators can render it through the document context.
 - When the cursor is inside an asset embed source, the editor shows a compact
   floating asset inspector for layout, alignment, width, caption, and alt text.
   The controls rewrite the Markdown attribute block in place, so collaboration
   and autosave still operate on normal document text without moving the document
   content up or down.
+- Rendered Live-mode asset groups expose an icon-only configure button. The
+  group panel edits columns, gap, alignment, width, and shared caption by
+  rewriting the opening `:::assets { ... }` fence line.
+- The toolbar Asset group button inserts a two-item `:::assets` scaffold when no
+  asset lines are selected, or wraps selected standalone asset embed lines in a
+  centered grid group and chooses an initial column count from the selection.
+- Inactive Live-mode callouts render through the same `MarkdownDocument` callout
+  renderer used by Read mode. This keeps callout icons, colors, title parsing,
+  body rendering, and future callout changes aligned between Live and Read while
+  still revealing raw source when the cursor enters the callout.
 - Live mode hides inactive wiki-link markers and styles the visible label; moving
   the cursor into the link reveals the source.
 - Live mode renders standalone document embeds as a single-line source widget,

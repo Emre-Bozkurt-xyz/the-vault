@@ -391,6 +391,16 @@ function replacementForFormat(format: MarkdownFormat, selected: string) {
         cursorStart: 2,
         cursorEnd: 2 + content.length,
       };
+    case "assetGroup": {
+      const text = `:::assets {layout=grid align=center width=full gap=medium columns=2}\n${content}\n:::`;
+      const cursorStart = text.indexOf(content);
+
+      return {
+        text,
+        cursorStart,
+        cursorEnd: cursorStart + content.length,
+      };
+    }
     case "link":
       return {
         text: `[${content}](https://example.com)`,
@@ -469,6 +479,10 @@ function sampleTextForFormat(format: MarkdownFormat) {
 
   if (format === "region") {
     return "Region content";
+  }
+
+  if (format === "assetGroup") {
+    return "![[asset:<asset-id>|Image]]\n![[asset:<asset-id>|Image]]";
   }
 
   return "text";

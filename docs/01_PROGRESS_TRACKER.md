@@ -232,7 +232,7 @@ Unauthorized users cannot connect.
 | [x] | Add source-mode HTML autocomplete | Markdown CodeMirror keeps HTML tag completion available in source/split/live modes alongside wiki-link completion |
 | [x] | Add live wiki-link styling | Live mode hides inactive wiki-link markers and styles the visible label |
 | [x] | Add document transclusion embeds | Standalone `![[doc]]` embeds render permission-aware document previews in Preview/view/public and Live mode |
-| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups now use syntax-aware detection plus a direct `StateField` rendered block widget with source reveal, while callouts/document embeds remain next |
+| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups and inactive callouts now use syntax-aware detection plus direct `StateField` block widgets with source reveal; asset groups also expose an icon-triggered formatting panel, while document embeds remain next |
 | [x] | Add heading-scoped wiki links | `[[doc#heading]]` links navigate to rendered heading anchors; `![[doc#heading]]` embeds only the selected heading section |
 | [x] | Add block and region-scoped wiki links | `[[doc#^block-id]]` targets hidden Obsidian-style block anchors; `[[doc#@region-id]]` targets hidden Vault regions; embeds render only the selected block/region |
 | [x] | Add guide/public wiki namespaces | `guide:<slug>` links official docs; `public:<slug>` links published user docs and autocomplete shows publisher usernames |

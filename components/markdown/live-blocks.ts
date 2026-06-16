@@ -6,7 +6,10 @@ import {
   EditorView,
   WidgetType,
 } from "@codemirror/view";
+import { createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
 
+import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   getAssetEmbedClassName,
   getAssetEmbedStyle,
@@ -17,6 +20,7 @@ import {
   type AssetGroupAttributes,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
+import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
 
 export type LiveAssetGroupLineKind = "first" | "middle" | "last" | "single";
 
@@ -40,7 +44,27 @@ export type LiveAssetGroupBlock = {
   children: LiveAssetGroupChild[];
 };
 
-export type LiveBlock = LiveAssetGroupBlock;
+export type LiveCalloutBlock = {
+  kind: "callout";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+};
+
+export type LiveBlock = LiveAssetGroupBlock | LiveCalloutBlock;
+export type LiveAssetGroupSelection = Pick<
+  LiveAssetGroupBlock,
+  "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
+> & {
+  childCount: number;
+};
+export type LiveBlockOptions = {
+  assetLinks: AssetEmbedResolutionMap;
+  wikiLinks?: WikiLinkResolutionMap;
+  onConfigureAssetGroup?: (selection: LiveAssetGroupSelection) => void;
+};
 
 type SyntaxRange = {
   from: number;
@@ -48,6 +72,7 @@ type SyntaxRange = {
 };
 
 const assetGroupFenceCapturePattern = /^:::assets(?:\s*\{([^}\n]*)\})?\s*$/i;
+const calloutStartPattern = /^>\s?\[!([^\]\s]+)\]([+-])?\s*/i;
 const assetGroupFirstLine = Decoration.line({
   class: "vault-cm-asset-group-source vault-cm-asset-group-source-first",
 });
@@ -63,13 +88,13 @@ const assetGroupSingleLine = Decoration.line({
 });
 
 export function createLiveBlockDecorationExtension(
-  assetLinks: AssetEmbedResolutionMap,
+  options: LiveBlockOptions,
 ) {
-  return createLiveBlockDecorationField(assetLinks);
+  return createLiveBlockDecorationField(options);
 }
 
 export function getMarkdownLiveBlocks(state: EditorState): LiveBlock[] {
-  return getLiveAssetGroupBlocks(state);
+  return getLiveBlocks(state);
 }
 
 export function getAssetGroupLineKinds(state: EditorState) {
@@ -99,17 +124,33 @@ export function getAssetGroupLineKinds(state: EditorState) {
   return lineKinds;
 }
 
-function createLiveBlockDecorationField(assetLinks: AssetEmbedResolutionMap) {
+export function getLiveBlockLineNumbers(state: EditorState) {
+  const lineNumbers = new Set<number>();
+
+  for (const block of getLiveBlocks(state)) {
+    for (
+      let lineNumber = block.startLine;
+      lineNumber <= block.endLine;
+      lineNumber += 1
+    ) {
+      lineNumbers.add(lineNumber);
+    }
+  }
+
+  return lineNumbers;
+}
+
+function createLiveBlockDecorationField(options: LiveBlockOptions) {
   return StateField.define<DecorationSet>({
     create(state) {
-      return buildLiveBlockDecorations(state, assetLinks);
+      return buildLiveBlockDecorations(state, options);
     },
     update(decorations, transaction) {
       if (!transaction.docChanged && !transaction.selection) {
         return decorations;
       }
 
-      return buildLiveBlockDecorations(transaction.state, assetLinks);
+      return buildLiveBlockDecorations(transaction.state, options);
     },
     provide(field) {
       return EditorView.decorations.from(field);
@@ -119,18 +160,25 @@ function createLiveBlockDecorationField(assetLinks: AssetEmbedResolutionMap) {
 
 function buildLiveBlockDecorations(
   state: EditorState,
-  assetLinks: AssetEmbedResolutionMap,
+  options: LiveBlockOptions,
 ) {
   const ranges = [];
 
-  for (const block of getLiveAssetGroupBlocks(state)) {
+  for (const block of getLiveBlocks(state)) {
     if (!isBlockActive(state, block)) {
       ranges.push(
         Decoration.replace({
           block: true,
-          widget: new AssetGroupBlockWidget(block, assetLinks),
+          widget:
+            block.kind === "assetGroup"
+              ? new AssetGroupBlockWidget(block, options)
+              : new CalloutBlockWidget(block, options),
         }).range(block.from, block.to),
       );
+      continue;
+    }
+
+    if (block.kind === "callout") {
       continue;
     }
 
@@ -174,7 +222,7 @@ function getAssetGroupLineDecoration(kind: LiveAssetGroupLineKind) {
 class AssetGroupBlockWidget extends WidgetType {
   constructor(
     private readonly block: LiveAssetGroupBlock,
-    private readonly assetLinks: AssetEmbedResolutionMap,
+    private readonly options: LiveBlockOptions,
   ) {
     super();
   }
@@ -182,7 +230,8 @@ class AssetGroupBlockWidget extends WidgetType {
   eq(widget: AssetGroupBlockWidget) {
     return (
       widget.block.source === this.block.source &&
-      widget.assetLinks === this.assetLinks
+      widget.options.assetLinks === this.options.assetLinks &&
+      widget.options.onConfigureAssetGroup === this.options.onConfigureAssetGroup
     );
   }
 
@@ -193,13 +242,38 @@ class AssetGroupBlockWidget extends WidgetType {
       "vault-cm-asset-group-rendered",
     ].join(" ");
 
+    const configureButton = document.createElement("button");
+    configureButton.className = "vault-cm-asset-group-configure";
+    configureButton.type = "button";
+    configureButton.setAttribute("aria-label", "Configure asset group");
+    configureButton.title = "Configure asset group";
+    configureButton.innerHTML =
+      '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>';
+    configureButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    configureButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.options.onConfigureAssetGroup?.({
+        from: this.block.from,
+        to: this.block.to,
+        startLine: this.block.startLine,
+        endLine: this.block.endLine,
+        source: this.block.source,
+        attributes: this.block.attributes,
+        childCount: this.block.children.length,
+      });
+    });
+
     const grid = document.createElement("div");
     grid.className = "vault-asset-group-grid";
 
     for (const child of this.block.children) {
       const item = document.createElement("div");
       item.className = "vault-asset-group-item";
-      const asset = this.assetLinks[child.assetId];
+      const asset = this.options.assetLinks[child.assetId];
 
       if (!asset) {
         const missing = document.createElement("span");
@@ -272,7 +346,7 @@ class AssetGroupBlockWidget extends WidgetType {
       grid.append(item);
     }
 
-    figure.append(grid);
+    figure.append(configureButton, grid);
 
     if (this.block.attributes.caption) {
       const caption = document.createElement("figcaption");
@@ -282,6 +356,64 @@ class AssetGroupBlockWidget extends WidgetType {
     }
 
     return figure;
+  }
+
+  ignoreEvent(event: Event) {
+    const target = event.target;
+
+    return target instanceof Element
+      ? Boolean(target.closest(".vault-cm-asset-group-configure"))
+      : false;
+  }
+}
+
+class CalloutBlockWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly block: LiveCalloutBlock,
+    private readonly options: LiveBlockOptions,
+  ) {
+    super();
+  }
+
+  eq(widget: CalloutBlockWidget) {
+    return (
+      widget.block.source === this.block.source &&
+      widget.options.assetLinks === this.options.assetLinks &&
+      widget.options.wikiLinks === this.options.wikiLinks
+    );
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "vault-cm-callout-rendered";
+    this.root = createRoot(container);
+    this.root.render(
+      createElement(MarkdownDocument, {
+        markdown: this.block.source,
+        assetLinks: this.options.assetLinks,
+        wikiLinks: this.options.wikiLinks,
+        contained: false,
+        disableLinks: true,
+        className: "vault-cm-callout-rendered-markdown",
+      }),
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+
+    if (root) {
+      window.setTimeout(() => root.unmount(), 0);
+    }
+  }
+
+  ignoreEvent() {
+    return false;
   }
 }
 
@@ -293,6 +425,21 @@ function isBlockActive(state: EditorState, block: LiveBlock) {
 
     return range.from < block.to && range.to > block.from;
   });
+}
+
+function getLiveBlocks(state: EditorState): LiveBlock[] {
+  const assetGroups = getLiveAssetGroupBlocks(state);
+  const syntaxExclusions = getSyntaxExclusionRanges(state);
+  const assetGroupRanges = assetGroups.map((block) => ({
+    from: block.from,
+    to: block.to,
+  }));
+  const callouts = getLiveCalloutBlocks(state, [
+    ...syntaxExclusions,
+    ...assetGroupRanges,
+  ]);
+
+  return [...assetGroups, ...callouts].sort((a, b) => a.from - b.from);
 }
 
 function getLiveAssetGroupBlocks(state: EditorState): LiveAssetGroupBlock[] {
@@ -358,6 +505,56 @@ function getLiveAssetGroupBlocks(state: EditorState): LiveAssetGroupBlock[] {
 
       openGroup = null;
     }
+  }
+
+  return blocks;
+}
+
+function getLiveCalloutBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveCalloutBlock[] {
+  const blocks: LiveCalloutBlock[] = [];
+  const doc = state.doc;
+  let lineNumber = 1;
+
+  while (lineNumber <= doc.lines) {
+    const line = doc.line(lineNumber);
+
+    if (
+      isInsideSyntaxRange(line.from, excludedRanges) ||
+      !calloutStartPattern.test(line.text)
+    ) {
+      lineNumber += 1;
+      continue;
+    }
+
+    let endLineNumber = lineNumber;
+
+    while (
+      endLineNumber < doc.lines &&
+      /^>\s?/.test(doc.line(endLineNumber + 1).text)
+    ) {
+      endLineNumber += 1;
+    }
+
+    while (
+      endLineNumber > lineNumber &&
+      /^>\s*$/.test(doc.line(endLineNumber).text)
+    ) {
+      endLineNumber -= 1;
+    }
+
+    const endLine = doc.line(endLineNumber);
+    blocks.push({
+      kind: "callout",
+      from: line.from,
+      to: endLine.to,
+      startLine: lineNumber,
+      endLine: endLineNumber,
+      source: doc.sliceString(line.from, endLine.to),
+    });
+    lineNumber = endLineNumber + 1;
   }
 
   return blocks;

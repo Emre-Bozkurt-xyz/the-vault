@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FileText } from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 
@@ -33,6 +34,10 @@ export function WorkspaceDocumentPreviewCard({
           </div>
         </div>
         <div className="vault-doc-body">
+          <p className="vault-doc-kicker">
+            <FileText className="size-3.5" />
+            Public document
+          </p>
           <h2 className="vault-doc-title text-sm font-semibold">{title}</h2>
           {meta ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">{meta}</p>

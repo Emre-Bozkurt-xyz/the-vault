@@ -234,6 +234,21 @@ export function formatAssetEmbedSource(
   return `![[asset:${parsed.assetId}${label}]]{${attributeSource}}`;
 }
 
+export function formatAssetGroupFence(attributes: AssetGroupAttributes) {
+  const attributeSource = [
+    `layout=${attributes.layout}`,
+    `align=${attributes.align}`,
+    `width=${attributes.width}`,
+    `gap=${attributes.gap}`,
+    `columns=${attributes.columns}`,
+    attributes.caption ? `caption=${quoteAttributeValue(attributes.caption)}` : null,
+  ]
+    .filter((attribute): attribute is string => Boolean(attribute))
+    .join(" ");
+
+  return `:::assets {${attributeSource}}`;
+}
+
 export function getAssetEmbedClassName(
   attributes: AssetEmbedAttributes,
   baseClassName = "vault-asset-embed",

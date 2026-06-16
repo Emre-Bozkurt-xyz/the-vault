@@ -41,8 +41,10 @@ import {
   CheckCircle2,
   Eye,
   FileCode2,
+  Grid3x3,
   Loader2,
   Save,
+  X,
 } from "lucide-react";
 import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
@@ -50,7 +52,9 @@ import { yCollab } from "y-codemirror.next";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   createLiveBlockDecorationExtension,
-  getAssetGroupLineKinds,
+  getLiveBlockLineNumbers,
+  getMarkdownLiveBlocks,
+  type LiveAssetGroupSelection,
 } from "@/components/markdown/live-blocks";
 import {
   MarkdownToolbar,
@@ -59,12 +63,18 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   formatAssetEmbedSource,
+  formatAssetGroupFence,
   getAssetEmbedClassName,
   getAssetEmbedStyle,
   parseAssetEmbedSource,
   type AssetEmbedAttributes,
   type AssetEmbedResolutionMap,
   type AssetEmbedWidthPreset,
+  type AssetGroupAttributes,
+  type AssetGroupAlign,
+  type AssetGroupColumns,
+  type AssetGroupGap,
+  type AssetGroupWidth,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
 import { sanitizeInlineStyle } from "@/lib/html-style";
@@ -135,6 +145,20 @@ type WikiLinkMapStore = {
   get: () => WikiLinkResolutionMap;
   set: (wikiLinks: WikiLinkResolutionMap) => void;
 };
+type AssetCompletionItem = {
+  id: string;
+  kind: "image" | "pdf";
+  displayName: string;
+  description: string | null;
+  altText: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  visibility: "private" | "public";
+  ownerUsername: string | null;
+  scope: "mine" | "document";
+  url: string;
+  markdown: string;
+};
 type SelectedAssetEmbed = {
   from: number;
   to: number;
@@ -176,6 +200,8 @@ export function MarkdownEditor({
   const [presenceUsers, setPresenceUsers] = useState<CollabPresenceUser[]>([]);
   const [selectedAssetEmbed, setSelectedAssetEmbed] =
     useState<SelectedAssetEmbed | null>(null);
+  const [selectedAssetGroup, setSelectedAssetGroup] =
+    useState<LiveAssetGroupSelection | null>(null);
   const [assetWidthDraft, setAssetWidthDraft] = useState("");
   const [editorMountMarkdown, setEditorMountMarkdown] = useState(markdown);
   const viewRef = useRef<EditorView | null>(null);
@@ -216,6 +242,14 @@ export function MarkdownEditor({
         : "",
     );
   }, [selectedAssetEmbed]);
+
+  const configureAssetGroup = useCallback(
+    (selection: LiveAssetGroupSelection) => {
+      setSelectedAssetEmbed(null);
+      setSelectedAssetGroup(selection);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!collaboration) {
@@ -640,7 +674,11 @@ export function MarkdownEditor({
 
       if (editorMode === "live") {
         baseExtensions.push(
-          createLiveBlockDecorationExtension(assetLinkMap),
+          createLiveBlockDecorationExtension({
+            assetLinks: assetLinkMap,
+            wikiLinks: wikiLinkMap,
+            onConfigureAssetGroup: configureAssetGroup,
+          }),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
         );
       }
@@ -653,6 +691,28 @@ export function MarkdownEditor({
               wikiLinkMapStore,
               wikiCompletionDismissal,
             ),
+            createAssetCompletionSource({
+              documentId,
+              shareLinkId,
+              onResolvedAsset(asset) {
+                setAssetUploadError(null);
+                setAssetLinkMap((current) => ({
+                  ...current,
+                  [asset.id]: {
+                    id: asset.id,
+                    kind: asset.kind,
+                    displayName: asset.displayName,
+                    altText: asset.altText,
+                    mimeType: asset.mimeType,
+                    sizeBytes: asset.sizeBytes,
+                    url: asset.url,
+                  },
+                }));
+              },
+              onError(message) {
+                setAssetUploadError(message);
+              },
+            }),
           ],
         }),
       );
@@ -669,6 +729,7 @@ export function MarkdownEditor({
       return baseExtensions;
     },
     [
+      configureAssetGroup,
       collabSession,
       isCollaborative,
       editorMode,
@@ -676,6 +737,8 @@ export function MarkdownEditor({
       assetLinkMap,
       wikiLinkMap,
       wikiLinkMapStore,
+      documentId,
+      shareLinkId,
     ],
   );
 
@@ -768,6 +831,11 @@ export function MarkdownEditor({
       return;
     }
 
+    if (format === "assetGroup") {
+      insertAssetGroup(view);
+      return;
+    }
+
     if (format === "bold") {
       toggleInlineFormat(view, "bold");
       return;
@@ -821,6 +889,7 @@ export function MarkdownEditor({
       link: null,
       inlineCode: null,
       imageUpload: null,
+      assetGroup: null,
       codeFence: null,
       table: null,
       region: null,
@@ -871,6 +940,62 @@ export function MarkdownEditor({
       view.focus();
     },
     [assetLinkMap],
+  );
+
+  const updateSelectedAssetGroupAttributes = useCallback(
+    (nextAttributes: Partial<AssetGroupAttributes>) => {
+      const view = viewRef.current;
+
+      if (!view || !selectedAssetGroup) {
+        return;
+      }
+
+      const current = findCurrentAssetGroupSelection(
+        view,
+        selectedAssetGroup,
+      );
+
+      if (!current) {
+        setSelectedAssetGroup(null);
+        return;
+      }
+
+      const attributes = {
+        ...current.attributes,
+        ...nextAttributes,
+      };
+      const startLine = view.state.doc.line(current.startLine);
+      const nextFence = formatAssetGroupFence(attributes);
+
+      view.dispatch({
+        changes: {
+          from: startLine.from,
+          to: startLine.to,
+          insert: nextFence,
+        },
+        scrollIntoView: false,
+      });
+
+      const nextBlock =
+        getMarkdownLiveBlocks(view.state).find(
+          (block) =>
+            block.kind === "assetGroup" &&
+            block.startLine === current.startLine,
+        ) ?? null;
+
+      if (nextBlock?.kind === "assetGroup") {
+        setSelectedAssetGroup({
+          from: nextBlock.from,
+          to: nextBlock.to,
+          startLine: nextBlock.startLine,
+          endLine: nextBlock.endLine,
+          source: nextBlock.source,
+          attributes: nextBlock.attributes,
+          childCount: nextBlock.children.length,
+        });
+      }
+    },
+    [selectedAssetGroup],
   );
 
   const applyAssetWidthDraft = useCallback(() => {
@@ -983,6 +1108,13 @@ export function MarkdownEditor({
             onWidthDraftChange={setAssetWidthDraft}
             onApplyWidth={applyAssetWidthDraft}
             onChangeAttributes={updateSelectedAssetAttributes}
+          />
+        ) : null}
+        {editorMode !== "read" && selectedAssetGroup ? (
+          <AssetGroupControls
+            selected={selectedAssetGroup}
+            onClose={() => setSelectedAssetGroup(null)}
+            onChangeAttributes={updateSelectedAssetGroupAttributes}
           />
         ) : null}
         {editorMode === "read" ? (
@@ -1211,6 +1343,97 @@ function AssetEmbedControls({
             onBlur={(event) =>
               onChangeAttributes({
                 alt: event.currentTarget.value.trim() || null,
+              })
+            }
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function AssetGroupControls({
+  selected,
+  onClose,
+  onChangeAttributes,
+}: {
+  selected: LiveAssetGroupSelection;
+  onClose: () => void;
+  onChangeAttributes: (attributes: Partial<AssetGroupAttributes>) => void;
+}) {
+  const attributes = selected.attributes;
+
+  return (
+    <div
+      className="vault-asset-format-panel vault-asset-group-format-panel"
+      aria-label="Selected asset group formatting"
+    >
+      <div className="vault-asset-format-panel-header">
+        <Grid3x3 className="size-4 text-muted-foreground" aria-hidden="true" />
+        <span className="vault-asset-format-label">Group</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {selected.childCount} item{selected.childCount === 1 ? "" : "s"}
+        </span>
+        <button
+          type="button"
+          className="vault-asset-format-close"
+          aria-label="Close group controls"
+          onClick={onClose}
+        >
+          <X className="size-3.5" aria-hidden="true" />
+        </button>
+      </div>
+      <div className="vault-asset-format-row">
+        <AssetFormatSegment<AssetGroupColumns>
+          label="Columns"
+          value={attributes.columns}
+          options={[
+            ["auto", "Auto"],
+            ["2", "2"],
+            ["3", "3"],
+            ["4", "4"],
+          ]}
+          onChange={(columns) => onChangeAttributes({ columns })}
+        />
+        <AssetFormatSegment<AssetGroupGap>
+          label="Gap"
+          value={attributes.gap}
+          options={[
+            ["small", "S"],
+            ["medium", "M"],
+            ["large", "L"],
+          ]}
+          onChange={(gap) => onChangeAttributes({ gap })}
+        />
+        <AssetFormatSegment<AssetGroupAlign>
+          label="Align"
+          value={attributes.align}
+          options={[
+            ["left", "Left"],
+            ["center", "Center"],
+            ["right", "Right"],
+          ]}
+          onChange={(align) => onChangeAttributes({ align })}
+        />
+        <AssetFormatSegment<AssetGroupWidth>
+          label="Width"
+          value={attributes.width}
+          options={[
+            ["medium", "M"],
+            ["large", "L"],
+            ["full", "Full"],
+          ]}
+          onChange={(width) => onChangeAttributes({ width })}
+        />
+        <label className="vault-asset-format-field vault-asset-format-text vault-asset-group-caption-field">
+          <span>Caption</span>
+          <input
+            key={`group-caption:${selected.source}`}
+            defaultValue={attributes.caption ?? ""}
+            placeholder="Shared caption"
+            onBlur={(event) =>
+              onChangeAttributes({
+                caption: event.currentTarget.value.trim() || null,
               })
             }
           />
@@ -2079,7 +2302,7 @@ function buildLivePreviewDecorations(
     ? []
     : view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
-  const assetGroupLines = getAssetGroupLineKinds(view.state);
+  const liveBlockLines = getLiveBlockLineNumbers(view.state);
   const doc = view.state.doc;
 
   for (const visibleRange of view.visibleRanges) {
@@ -2108,9 +2331,9 @@ function buildLivePreviewDecorations(
           }
         }
 
-        const assetGroupLine = assetGroupLines.get(line.number);
+        const isLiveBlockLine = liveBlockLines.has(line.number);
 
-        const assetEmbed = assetGroupLine
+        const assetEmbed = isLiveBlockLine
           ? null
           : getAssetEmbedPreview(line.text, assetLinks);
 
@@ -2136,7 +2359,7 @@ function buildLivePreviewDecorations(
         const wikiEmbed = getWikiDocumentEmbed(line.text, wikiLinks);
 
         if (
-          !assetGroupLine &&
+          !isLiveBlockLine &&
           wikiEmbed &&
           !hasActivePositionInRange(activePositions, line.from, line.to)
         ) {
@@ -2154,7 +2377,7 @@ function buildLivePreviewDecorations(
           continue;
         }
 
-        if (!assetGroupLine) {
+        if (!isLiveBlockLine) {
           const lineRanges = decorateInactiveMarkdownLine(
             doc,
             line.number,
@@ -2219,6 +2442,42 @@ function findAssetEmbedAtSelection(
   }
 
   return findAssetEmbedInLine(from, source, assetLinks);
+}
+
+function findCurrentAssetGroupSelection(
+  view: EditorView,
+  selected: LiveAssetGroupSelection,
+) {
+  const blocks = getMarkdownLiveBlocks(view.state);
+  const exact = blocks.find(
+    (block) =>
+      block.kind === "assetGroup" &&
+      block.from === selected.from &&
+      block.startLine === selected.startLine,
+  );
+
+  if (exact?.kind === "assetGroup") {
+    return exact;
+  }
+
+  const sameSource = blocks.find(
+    (block) => block.kind === "assetGroup" && block.source === selected.source,
+  );
+
+  if (sameSource?.kind === "assetGroup") {
+    return sameSource;
+  }
+
+  const containingPreviousStart = blocks.find(
+    (block) =>
+      block.kind === "assetGroup" &&
+      selected.from >= block.from &&
+      selected.from <= block.to,
+  );
+
+  return containingPreviousStart?.kind === "assetGroup"
+    ? containingPreviousStart
+    : null;
 }
 
 function findAssetEmbedInLine(
@@ -2880,6 +3139,10 @@ function createWikiLinkCompletionSource(
       return null;
     }
 
+    if (region.query.toLowerCase().startsWith("asset:")) {
+      return null;
+    }
+
     if (
       wikiCompletionDismissal.get()?.markerFrom === region.markerFrom &&
       !context.explicit
@@ -2903,6 +3166,239 @@ function createWikiLinkCompletionSource(
         text.includes("#") === region.query.includes("#"),
     };
   };
+}
+
+function createAssetCompletionSource({
+  documentId,
+  shareLinkId,
+  onResolvedAsset,
+  onError,
+}: {
+  documentId: string;
+  shareLinkId: string | null;
+  onResolvedAsset: (asset: AssetCompletionItem) => void;
+  onError: (message: string) => void;
+}) {
+  return async (context: CompletionContext) => {
+    const region = getOpenWikiLinkCompletionRegion(context.state, context.pos);
+
+    if (!region || !region.query.toLowerCase().startsWith("asset:")) {
+      return null;
+    }
+
+    const assetPrefixLength = "asset:".length;
+    const query = region.query.slice(assetPrefixLength);
+    const assets = await fetchAssetCompletionItems({
+      documentId,
+      shareLinkId,
+    });
+    const options = assets
+      .filter((asset) => matchesAssetCompletionQuery(asset, query))
+      .map((asset) =>
+        createAssetCompletionOption({
+          asset,
+          documentId,
+          shareLinkId,
+          hasClosingMarker: region.hasClosingMarker,
+          onResolvedAsset,
+          onError,
+        }),
+      );
+
+    return {
+      from: region.markerTo + assetPrefixLength,
+      to: region.contentTo,
+      options,
+      validFor: /^[^\[\]\n]*$/,
+    };
+  };
+}
+
+async function fetchAssetCompletionItems({
+  documentId,
+  shareLinkId,
+}: {
+  documentId: string;
+  shareLinkId: string | null;
+}) {
+  const params = new URLSearchParams({ documentId });
+
+  if (shareLinkId) {
+    params.set("shareLinkId", shareLinkId);
+  }
+
+  try {
+    const response = await fetch(`/api/assets/completions?${params}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as {
+      assets?: AssetCompletionItem[];
+    };
+
+    return Array.isArray(payload.assets) ? payload.assets : [];
+  } catch {
+    return [];
+  }
+}
+
+function createAssetCompletionOption({
+  asset,
+  documentId,
+  shareLinkId,
+  hasClosingMarker,
+  onResolvedAsset,
+  onError,
+}: {
+  asset: AssetCompletionItem;
+  documentId: string;
+  shareLinkId: string | null;
+  hasClosingMarker: boolean;
+  onResolvedAsset: (asset: AssetCompletionItem) => void;
+  onError: (message: string) => void;
+}): Completion {
+  return {
+    label: assetCompletionSearchLabel(asset),
+    displayLabel: asset.displayName,
+    detail: assetCompletionDetail(asset),
+    type: asset.kind === "image" ? "image" : "file",
+    apply(view, completion, from, to) {
+      void applyAssetCompletion({
+        view,
+        completion,
+        from,
+        to,
+        asset,
+        documentId,
+        shareLinkId,
+        hasClosingMarker,
+        onResolvedAsset,
+        onError,
+      });
+    },
+    info: assetCompletionInfo(asset),
+  };
+}
+
+async function applyAssetCompletion({
+  view,
+  completion,
+  from,
+  to,
+  asset,
+  documentId,
+  shareLinkId,
+  hasClosingMarker,
+  onResolvedAsset,
+  onError,
+}: {
+  view: EditorView;
+  completion: Completion;
+  from: number;
+  to: number;
+  asset: AssetCompletionItem;
+  documentId: string;
+  shareLinkId: string | null;
+  hasClosingMarker: boolean;
+  onResolvedAsset: (asset: AssetCompletionItem) => void;
+  onError: (message: string) => void;
+}) {
+  try {
+    const response = await fetch(`/api/assets/${asset.id}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ documentId, shareLinkId }),
+    });
+    const payload = (await response.json()) as {
+      asset?: AssetCompletionItem;
+      error?: string;
+    };
+
+    if (!response.ok || !payload.asset) {
+      throw new Error(payload.error ?? "Could not link asset.");
+    }
+
+    const label = escapeWikiLinkLabel(
+      payload.asset.displayName || asset.displayName,
+    );
+    const insertText = `${payload.asset.id}|${label}`;
+    const text = hasClosingMarker ? insertText : `${insertText}]]`;
+    const cursor = from + insertText.length;
+
+    onResolvedAsset(payload.asset);
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: EditorSelection.cursor(cursor),
+      annotations: pickedCompletion.of(completion),
+    });
+    view.focus();
+  } catch (error) {
+    onError(error instanceof Error ? error.message : "Could not link asset.");
+  }
+}
+
+function matchesAssetCompletionQuery(asset: AssetCompletionItem, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    asset.id,
+    asset.displayName,
+    asset.altText,
+    asset.description,
+    asset.mimeType,
+    asset.ownerUsername ? `@${asset.ownerUsername}` : "",
+  ]
+    .filter(Boolean)
+    .some((value) => value?.toLowerCase().includes(normalizedQuery));
+}
+
+function assetCompletionSearchLabel(asset: AssetCompletionItem) {
+  return [
+    asset.displayName,
+    asset.id,
+    asset.altText ?? "",
+    asset.ownerUsername ? `@${asset.ownerUsername}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function assetCompletionDetail(asset: AssetCompletionItem) {
+  const scope = asset.scope === "mine" ? "my asset" : "in this document";
+  return `${scope} · ${asset.kind} · ${formatBytes(asset.sizeBytes)}`;
+}
+
+function assetCompletionInfo(asset: AssetCompletionItem) {
+  const owner = asset.ownerUsername ? `@${asset.ownerUsername}` : "unknown owner";
+  const visibility = asset.visibility === "public" ? "public" : "private";
+  return `${asset.displayName}\n${owner} · ${visibility} · ${asset.mimeType}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ["KiB", "MiB", "GiB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function getOpenWikiLinkCompletionRegion(
@@ -3937,6 +4433,65 @@ function insertVaultRegion(view: EditorView) {
   const cursorOffset = idOffset >= 0 ? idOffset : null;
 
   insertBlock(view, text, cursorOffset);
+}
+
+function insertAssetGroup(view: EditorView) {
+  const selection = view.state.selection.main;
+  const fromLine = view.state.doc.lineAt(selection.from);
+  const toLine = view.state.doc.lineAt(selection.to);
+  const lines = [];
+
+  for (
+    let lineNumber = fromLine.number;
+    lineNumber <= toLine.number;
+    lineNumber += 1
+  ) {
+    lines.push(view.state.doc.line(lineNumber));
+  }
+
+  const selectedAssetLines = lines
+    .map((line) => line.text.trim())
+    .filter(Boolean)
+    .filter((line) => parseAssetEmbedSource(line));
+  const body =
+    selectedAssetLines.length > 0
+      ? selectedAssetLines.join("\n")
+      : "![[asset:<asset-id>|Image]]\n![[asset:<asset-id>|Image]]";
+  const columns =
+    selectedAssetLines.length >= 2 && selectedAssetLines.length <= 4
+      ? String(selectedAssetLines.length)
+      : "auto";
+  const fence = formatAssetGroupFence({
+    layout: "grid",
+    align: "center",
+    width: "full",
+    gap: "medium",
+    columns: columns as AssetGroupColumns,
+    caption: null,
+  });
+  const replacement = `${fence}\n${body}\n:::`;
+  const replacingRealSelection =
+    selectedAssetLines.length > 0 &&
+    lines.every((line) => {
+      const trimmed = line.text.trim();
+
+      return !trimmed || Boolean(parseAssetEmbedSource(trimmed));
+    });
+
+  if (replacingRealSelection) {
+    const from = fromLine.from;
+    const to = toLine.to;
+
+    view.dispatch({
+      changes: { from, to, insert: replacement },
+      selection: EditorSelection.cursor(from + replacement.length),
+      scrollIntoView: true,
+    });
+    view.focus();
+    return;
+  }
+
+  insertBlock(view, replacement, replacement.indexOf("<asset-id>"));
 }
 
 function toggleLinePrefix(

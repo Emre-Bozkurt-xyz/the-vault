@@ -6,6 +6,7 @@ import {
   Braces,
   CheckSquare,
   Code,
+  Grid2x2,
   Heading1,
   Heading2,
   Heading3,
@@ -33,6 +34,7 @@ export type MarkdownFormat =
   | "italic"
   | "link"
   | "imageUpload"
+  | "assetGroup"
   | "bulletList"
   | "orderedList"
   | "taskList"
@@ -56,6 +58,7 @@ export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
         <ToolbarButton label="Italic" shortcut="Ctrl+I" icon={Italic} onClick={() => onFormat("italic")} />
         <ToolbarButton label="Link" shortcut="Ctrl+K" icon={Link2} onClick={() => onFormat("link")} />
         <ToolbarButton label="Upload image" icon={ImageIcon} onClick={() => onFormat("imageUpload")} />
+        <ToolbarButton label="Asset group" icon={Grid2x2} onClick={() => onFormat("assetGroup")} />
         <ToolbarButton label="Inline code" shortcut="Ctrl+E" icon={Code} onClick={() => onFormat("inlineCode")} />
       </ToolbarGroup>
       <ToolbarGroup>

@@ -1,5 +1,6 @@
-import { FileText, ImageIcon, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
+import { PublicAssetGallery } from "@/components/assets/PublicAssetGallery";
 import { Button } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { WorkspaceDocumentPreviewCard } from "@/components/workspace/WorkspaceDocumentPreviewCard";
@@ -80,61 +81,19 @@ export default async function GalleryPage({
           </form>
         </div>
 
-        <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 grid gap-6">
           {publicDocuments.length > 0 || visibleAssets.length > 0 ? (
-            <>
-            {visibleAssets.map((asset) => (
-              <a
-                key={asset.id}
-                href={asset.url}
-                target="_blank"
-                rel="noreferrer"
-                className="group overflow-hidden rounded-md border border-border/70 bg-card text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg"
-              >
-                {asset.kind === "image" ? (
-                  <span className="block bg-muted">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={asset.url}
-                      alt={asset.altText ?? asset.displayName}
-                      className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]"
-                      loading="lazy"
-                    />
-                  </span>
-                ) : (
-                  <span className="flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground">
-                    <FileText className="size-10" />
-                  </span>
-                )}
-                <span className="block p-4">
-                  <span className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    {asset.kind === "image" ? (
-                      <ImageIcon className="size-3.5" />
-                    ) : (
-                      <FileText className="size-3.5" />
-                    )}
-                    Public asset
-                  </span>
-                  <span className="mt-2 block truncate text-sm font-semibold">
-                    {asset.displayName}
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    @{asset.ownerUsername ?? "unknown"} -{" "}
-                    {asset.createdAt.toLocaleDateString()}
-                  </span>
-                </span>
-              </a>
-            ))}
-            {publicDocuments.map((document) => (
-              <WorkspaceDocumentPreviewCard
-                key={document.id}
-                href={document.href}
-                title={document.title}
-                markdown={document.markdown}
-                meta={`@${document.ownerUsername ?? "unknown"} - ${document.updatedAt.toLocaleDateString()}`}
-              />
-            ))}
-            </>
+            <PublicAssetGallery assets={visibleAssets}>
+              {publicDocuments.map((document) => (
+                <WorkspaceDocumentPreviewCard
+                  key={document.id}
+                  href={document.href}
+                  title={document.title}
+                  markdown={document.markdown}
+                  meta={`@${document.ownerUsername ?? "unknown"} - ${document.updatedAt.toLocaleDateString()}`}
+                />
+              ))}
+            </PublicAssetGallery>
           ) : (
             <p className="rounded-md border border-border/70 px-3 py-6 text-sm text-muted-foreground">
               {query

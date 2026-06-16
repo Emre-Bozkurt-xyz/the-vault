@@ -1157,6 +1157,14 @@ Implementation status as of 2026-06-15:
   details panel, metadata editing, delete, copy embed, and public/private toggle.
 - Phase 8 is implemented for owner public/private toggling, and `/gallery`
   includes explicitly public assets.
+- Asset autocomplete is implemented for `![[asset:...]]` in the editor, scoped
+  to assets owned by the current user and assets already linked to the current
+  document. It deliberately excludes the global public gallery. Selecting an
+  existing private asset links it to the current document before inserting the
+  Markdown reference.
+- Public gallery asset cards now open a detail panel with metadata, open-link,
+  copy-embed, and copy-id actions. Public asset reuse is therefore explicit
+  from the gallery instead of mixed into private editor autocomplete.
 - Phase 10 is implemented with `assets:audit`, `assets:repair-quota`,
   `assets:delete-orphans`, and `assets:export`.
 

@@ -162,7 +162,9 @@ Add notes as real files appear:
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js route handlers |
 | `app/api/health/route.ts` | App/database health check route |
 | `app/api/assets/route.ts` | Authenticated asset list/upload API; upload validates file signatures, reserves quota, writes private R2 bytes, stores metadata, and optionally links to a document |
+| `app/api/assets/completions/route.ts` | Authenticated editor autocomplete API for assets owned by the user or already linked to the current editable document |
 | `app/api/assets/[assetId]/route.ts` | Owner-only asset metadata reads, metadata updates, public/private visibility updates, and soft delete |
+| `app/api/assets/[assetId]/link/route.ts` | Authenticated route that links an owned or already document-linked asset to the current editable document before editor insertion |
 | `app/api/assets/[assetId]/content/route.ts` | Permission-checked private asset content stream from R2 with `GET`, `HEAD`, and byte Range support; returns 404 for inaccessible private assets |
 | `app/dashboard/page.tsx` | Compatibility route that redirects to `/workspace` |
 | `app/dashboard/admin/page.tsx` | Workspace-native admin-only user moderation page with user search, role changes, bans, and unbans |
@@ -191,12 +193,13 @@ Add notes as real files appear:
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
 | `components/assets/AssetLibraryClient.tsx` | Client-side asset library masonry grid, search/filter/sort controls, owner configuration panel, copy embed, and delete action |
+| `components/assets/PublicAssetGallery.tsx` | Client-side public gallery asset grid and details panel with open, copy embed, and copy asset ID actions |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
-| `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups while ignoring fenced code blocks and renders inactive groups through a `StateField<DecorationSet>` block widget with source reveal |
+| `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups and Obsidian-style callouts while ignoring fenced code blocks, renders inactive blocks through `StateField<DecorationSet>` widgets, and reveals literal source when the cursor enters the block |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
-| `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax and opens the asset upload picker |
+| `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax, opens the asset upload picker, and can create/wrap `:::assets` groups |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist and permission-resolved asset embed rendering, including controlled image layout attributes |
 | `components/theme-provider.tsx` | Root client theme provider using localStorage-backed dark/light class switching |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
@@ -219,7 +222,7 @@ Add notes as real files appear:
 | `lib/storage/r2.ts` | Server-only private R2/S3-compatible object helper for uploaded asset storage; exposes put/get/head/delete helpers and validates env lazily |
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
-| `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, public asset listing, owner metadata updates, document links, and read authorization |
+| `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, editor autocomplete, explicit document linking, public asset listing, owner metadata updates, document links, and read authorization |
 | `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
 | `server/authz.ts` | DB-backed active-user and admin guards; active bans redirect to `/banned` |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
@@ -686,7 +689,9 @@ Known editor caveats:
 - External image wiki embeds use `![[https://...]]`; Preview/view/public translate them to standard Markdown image rendering before the sanitized Markdown pipeline, and live mode renders inactive embeds as stable image preview frames.
 - Standalone document transclusions use `![[doc:id|label]]` or unambiguous `![[Title]]` syntax. Preview/view/public split those lines into recursive `MarkdownDocument` embeds styled with `.vault-md-document-embed`; Live mode replaces the single source line with a React-backed CodeMirror widget that reuses `MarkdownDocument`. Heading fragments on document embeds render only the selected heading's owned section, from that heading until the next heading of equal or higher level. Embeds are permission-aware, public pages only include public document Markdown, and recursive embeds are capped.
 - Uploaded image asset embeds use `![[asset:id|label]]` with optional controlled attributes such as `{layout=wrap align=right width=320 caption="Figure" alt="Description"}`. Read mode and inactive Live mode use the same parser. Supported image layout values are `block`, `wrap`, and `inline`; alignment is `left`, `center`, or `right`; width is `small`, `medium`, `large`, `full`, sanitized pixels, or sanitized percentages. Raw CSS is intentionally not accepted in asset embed syntax.
-- Asset groups use `:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}` fences containing one asset embed per line. Read mode renders them as responsive grids; inactive Live mode renders the group through `components/markdown/live-blocks.ts` as a direct `StateField` block widget, and cursor/selection entry reveals the literal Markdown source. Fixed `columns=2|3|4` collapse to one column on mobile. Group attributes are deliberately limited to grid layout, alignment, width, gap, columns, and shared caption.
+- Editor asset autocomplete activates inside `![[asset:...]]` and only suggests the current user's assets plus assets already linked to the open document. It does not query global public gallery assets. Choosing an existing asset calls `/api/assets/:assetId/link` before inserting the Markdown reference, which creates or preserves the `document_assets` row needed for collaborator read-through.
+- Asset groups use `:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}` fences containing one asset embed per line. Read mode renders them as responsive grids; inactive Live mode renders the group through `components/markdown/live-blocks.ts` as a direct `StateField` block widget, and cursor/selection entry reveals the literal Markdown source. The toolbar Asset group button inserts a scaffold or wraps selected standalone asset embed lines. Rendered Live groups expose an icon-only top-right configure button that opens a panel for columns, gap, alignment, width, and shared caption; edits rewrite only the opening fence line. Fixed `columns=2|3|4` collapse to one column on mobile. Group attributes are deliberately limited to grid layout, alignment, width, gap, columns, and shared caption.
+- Inactive Live-mode callouts are now also owned by `components/markdown/live-blocks.ts`. They render through `MarkdownDocument`, the same renderer used by Read mode, so callout icons, colors, title/body parsing, and nested Markdown stay matched instead of relying on per-line CodeMirror styling. Moving the cursor or a selection into the callout reveals the raw blockquote source.
 - The Markdown editor shows a compact floating asset inspector when the cursor is inside an asset embed source. Layout, alignment, width, caption, and alt controls rewrite the embed's Markdown attribute block in place without changing document layout; no separate asset-layout table or hidden metadata exists.
 - Markdown image rendering uses a stable responsive frame so slow or broken image loads do not repeatedly change document layout height.
 - Document titles are intentionally not unique; document identity remains `documents.id`, and public route identity remains `public_slug`.
@@ -700,7 +705,7 @@ Known editor caveats:
 - Live callout lines also expose `.callout`, `data-callout`, `data-callout-resolved`, and `data-callout-fold` when present, so callout CSS variables from future snippets can affect Preview and Live mode. Live mode uses a stronger CodeMirror translation layer plus classes such as `.vault-cm-callout-first`, `.vault-cm-callout-body-line`, and `.vault-cm-callout-marker` so generic `.callout` snippet/card styling does not turn each editor line into a separate card.
 - Live preview allows the same iframe block tags and applies the same source allowlist plus normalized iframe permissions before rendering the inactive block preview.
 - Live preview renders inline HTML and single-line sanitized raw HTML blocks. Multi-line raw HTML intentionally remains source in live mode; asset groups use the newer direct-decoration Live block layer. Full Read mode still renders all supported Markdown through the sanitized Markdown pipeline. Code fences remain source/code preview, not rendered HTML.
-- The next Live Preview architecture is documented in `docs/05_EDITOR_AND_COLLAB.md`: syntax-aware `LiveBlock` scanning first, then direct-decoration `StateField<DecorationSet>` block widgets for vertical-layout-changing inactive previews. `components/markdown/live-blocks.ts` is the first slice of that architecture and currently renders inactive asset groups while ignoring `:::assets` text inside fenced code blocks.
+- The next Live Preview architecture is documented in `docs/05_EDITOR_AND_COLLAB.md`: syntax-aware `LiveBlock` scanning first, then direct-decoration `StateField<DecorationSet>` block widgets for vertical-layout-changing inactive previews. `components/markdown/live-blocks.ts` currently renders inactive asset groups and callouts while ignoring matching source text inside fenced code blocks.
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode uses read-mode-style sans typography by default and replaces inactive list/task markers with rendered bullets, ordered numbers, or the same styled checkbox widget while preserving source syntax when the cursor enters the marker.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
@@ -710,7 +715,8 @@ Known editor caveats:
 - Workspace panel and tab state render server-safe defaults for hydration, then restore persisted `localStorage` state in a queued client callback. This avoids server/client markup mismatches while keeping the shared protected workspace layout mounted across grouped route transitions.
 - The workspace route-group layout injects an inline history-restore guard before React hydration. It forces a normal reload when the browser restores a workspace page through back/forward cache or a `back_forward` document navigation after leaving the app. This must run outside React because broken restores can occur before client effects attach. Debug logs can be enabled with `localStorage.setItem("vault.debug.historyRestore", "true")`. Without this guard, returning from browser PDF viewers, address-bar searches, or external sites can restore stale React/RSC workspace state with missing content or default panel/tab state. In-workspace App Router history navigation is unaffected.
 - User has confirmed Markdown editing works in production.
-- Uploaded document assets have a first working slice: schema/quota metadata, private R2 upload, permission-checked content serving, toolbar upload insertion, Live/Read `![[asset:id|label]]` Markdown rendering, and asset library configuration are implemented. Assets remain user-owned and private by default. Public document pages only resolve explicitly public assets, so publishing a document does not publish embedded private assets.
+- Uploaded document assets have a working slice: schema/quota metadata, private R2 upload, permission-checked content serving, toolbar upload insertion, private/document-scoped editor autocomplete, Live/Read `![[asset:id|label]]` Markdown rendering, and asset library configuration are implemented. Assets remain user-owned and private by default. Public document pages only resolve explicitly public assets, so publishing a document does not publish embedded private assets.
+- Public gallery lists explicitly published assets alongside public documents. Public asset cards open a floating details panel on click, with metadata plus copy embed/copy ID/open actions; no asset is selected by default, and public assets are intentionally copied from this panel rather than appearing in private editor autocomplete.
 ```
 
 ---
@@ -1169,12 +1175,11 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Add robust source reveal and drag-selection tests for asset-group Live block widgets.
-2. Move callouts and document embeds into the syntax-aware Live block registry if asset-group manual testing is stable.
-3. Add editor controls/snippets for creating and editing `:::assets` groups without hand-writing the fence syntax.
-4. Add richer PDF/file preview cards in Markdown rendering and the asset library.
-5. Add publish-time warnings for public documents that still embed private assets.
-6. Add asset usage refresh/unlink cleanup when document Markdown removes embeds.
+1. Add robust source reveal and drag-selection tests for Live block widgets.
+2. Move document embeds into the syntax-aware Live block registry if the callout/widget path remains stable.
+3. Add richer PDF/file preview cards in Markdown rendering and the asset library.
+4. Add publish-time warnings for public documents that still embed private assets.
+5. Add asset usage refresh/unlink cleanup when document Markdown removes embeds.
 ```
 
 ---
@@ -1279,3 +1284,8 @@ Use this as a compact implementation log.
 | 2026-06-16 | Added selected-asset formatting controls | Cursoring into an asset embed source now shows a floating inspector for layout, alignment, width, caption, and alt text that rewrites the Markdown attribute block |
 | 2026-06-16 | Added first-pass asset groups | `:::assets` fences now render responsive grouped image grids in Read mode and inactive Live mode |
 | 2026-06-16 | Started specialized CM6 Live Preview layer | Added the architecture plan and `components/markdown/live-blocks.ts`, a syntax-aware scanner/direct decoration field that renders inactive asset groups while ignoring fenced code |
+| 2026-06-16 | Added asset group formatting control | Rendered Live-mode asset groups now expose an icon-only configure button that opens a group panel for columns, gap, alignment, width, and caption |
+| 2026-06-16 | Added asset group toolbar insertion | The toolbar can insert a new `:::assets` scaffold or wrap selected standalone asset embed lines into a centered grid group |
+| 2026-06-16 | Moved callouts into Live block widgets | Inactive Live-mode callouts now render through `MarkdownDocument` via the syntax-aware Live block layer, matching Read-mode icons and markup while preserving source reveal on cursor entry |
+| 2026-06-16 | Added private asset autocomplete | Editor completion inside `![[asset:...]]` suggests owned/current-document assets only and links selected existing assets to the open document before insertion |
+| 2026-06-16 | Added public asset gallery details | Public gallery asset cards now show a details panel with metadata plus copy embed, copy ID, and open asset actions |

@@ -51,6 +51,21 @@ export type AssetResolution = {
   sizeBytes: number;
 };
 
+export type AssetCompletion = {
+  id: string;
+  kind: AssetKind;
+  displayName: string;
+  description: string | null;
+  altText: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  visibility: "private" | "public";
+  ownerUsername: string | null;
+  scope: "mine" | "document";
+  url: string;
+  markdown: string;
+};
+
 export async function getOptionalAssetUser(): Promise<ActiveAssetUser | null> {
   const session = await auth();
 
@@ -194,6 +209,159 @@ export async function linkAssetToDocument(input: {
     });
 }
 
+export async function linkExistingAssetToDocument(input: {
+  userId: string;
+  documentId: string;
+  assetId: string;
+}) {
+  const [asset] = await db
+    .select({
+      id: assets.id,
+      ownerId: assets.ownerId,
+      kind: assets.kind,
+      displayName: assets.displayName,
+      description: assets.description,
+      altText: assets.altText,
+      mimeType: assets.mimeType,
+      sizeBytes: assets.sizeBytes,
+      visibility: assets.visibility,
+      ownerUsername: users.username,
+    })
+    .from(assets)
+    .innerJoin(users, eq(assets.ownerId, users.id))
+    .where(
+      and(
+        eq(assets.id, input.assetId),
+        eq(assets.status, "ready"),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!asset) {
+    throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
+  }
+
+  if (asset.ownerId !== input.userId) {
+    const [existingLink] = await db
+      .select({ assetId: documentAssets.assetId })
+      .from(documentAssets)
+      .where(
+        and(
+          eq(documentAssets.documentId, input.documentId),
+          eq(documentAssets.assetId, input.assetId),
+        ),
+      )
+      .limit(1);
+
+    if (!existingLink) {
+      throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
+    }
+  }
+
+  await linkAssetToDocument({
+    documentId: input.documentId,
+    assetId: input.assetId,
+    linkedBy: input.userId,
+  });
+
+  return {
+    id: asset.id,
+    kind: asset.kind,
+    displayName: asset.displayName,
+    description: asset.description,
+    altText: asset.altText,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    visibility: asset.visibility,
+    ownerUsername: asset.ownerUsername,
+    scope: asset.ownerId === input.userId ? "mine" : "document",
+    url: buildAssetContentUrl(asset.id, input.documentId),
+    markdown: buildAssetMarkdown(asset.id, asset.displayName),
+  };
+}
+
+export async function listAssetCompletionsForDocument(input: {
+  userId: string;
+  documentId: string;
+}): Promise<AssetCompletion[]> {
+  const [ownedRows, documentRows] = await Promise.all([
+    db
+      .select({
+        id: assets.id,
+        kind: assets.kind,
+        displayName: assets.displayName,
+        description: assets.description,
+        altText: assets.altText,
+        mimeType: assets.mimeType,
+        sizeBytes: assets.sizeBytes,
+        visibility: assets.visibility,
+        ownerUsername: users.username,
+      })
+      .from(assets)
+      .innerJoin(users, eq(assets.ownerId, users.id))
+      .where(
+        and(
+          eq(assets.ownerId, input.userId),
+          eq(assets.status, "ready"),
+          isNull(assets.deletedAt),
+        ),
+      )
+      .orderBy(desc(assets.createdAt))
+      .limit(80),
+    db
+      .select({
+        id: assets.id,
+        kind: assets.kind,
+        displayName: assets.displayName,
+        description: assets.description,
+        altText: assets.altText,
+        mimeType: assets.mimeType,
+        sizeBytes: assets.sizeBytes,
+        visibility: assets.visibility,
+        ownerUsername: users.username,
+      })
+      .from(documentAssets)
+      .innerJoin(assets, eq(documentAssets.assetId, assets.id))
+      .innerJoin(users, eq(assets.ownerId, users.id))
+      .where(
+        and(
+          eq(documentAssets.documentId, input.documentId),
+          eq(assets.status, "ready"),
+          isNull(assets.deletedAt),
+        ),
+      )
+      .orderBy(desc(documentAssets.createdAt))
+      .limit(80),
+  ]);
+
+  const completions = new Map<string, AssetCompletion>();
+
+  for (const asset of ownedRows) {
+    completions.set(asset.id, {
+      ...asset,
+      scope: "mine",
+      url: buildAssetContentUrl(asset.id, input.documentId),
+      markdown: buildAssetMarkdown(asset.id, asset.displayName),
+    });
+  }
+
+  for (const asset of documentRows) {
+    if (completions.has(asset.id)) {
+      continue;
+    }
+
+    completions.set(asset.id, {
+      ...asset,
+      scope: "document",
+      url: buildAssetContentUrl(asset.id, input.documentId),
+      markdown: buildAssetMarkdown(asset.id, asset.displayName),
+    });
+  }
+
+  return [...completions.values()];
+}
+
 export async function listAssetsForUser(userId: string) {
   const rows = await db
     .select({
@@ -249,6 +417,7 @@ export async function listPublicAssets() {
   return rows.map((asset) => ({
     ...asset,
     url: buildAssetContentUrl(asset.id),
+    markdown: buildAssetMarkdown(asset.id, asset.displayName),
   }));
 }
 
