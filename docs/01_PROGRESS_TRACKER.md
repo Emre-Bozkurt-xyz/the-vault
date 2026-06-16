@@ -232,6 +232,7 @@ Unauthorized users cannot connect.
 | [x] | Add source-mode HTML autocomplete | Markdown CodeMirror keeps HTML tag completion available in source/split/live modes alongside wiki-link completion |
 | [x] | Add live wiki-link styling | Live mode hides inactive wiki-link markers and styles the visible label |
 | [x] | Add document transclusion embeds | Standalone `![[doc]]` embeds render permission-aware document previews in Preview/view/public and Live mode |
+| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups now use syntax-aware detection plus a direct `StateField` rendered block widget with source reveal, while callouts/document embeds remain next |
 | [x] | Add heading-scoped wiki links | `[[doc#heading]]` links navigate to rendered heading anchors; `![[doc#heading]]` embeds only the selected heading section |
 | [x] | Add block and region-scoped wiki links | `[[doc#^block-id]]` targets hidden Obsidian-style block anchors; `[[doc#@region-id]]` targets hidden Vault regions; embeds render only the selected block/region |
 | [x] | Add guide/public wiki namespaces | `guide:<slug>` links official docs; `public:<slug>` links published user docs and autocomplete shows publisher usernames |
@@ -313,7 +314,7 @@ Reference plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`
 | [x] | Add asset schema and migrations | Migration `0011_tiresome_ultimates.sql` adds user quota fields, `assets`, and `document_assets` |
 | [x] | Add private upload API | `POST /api/assets` authenticates, checks document edit access, validates file signatures, reserves quota, uploads to private R2, stores metadata, and links to the document |
 | [x] | Add private serving API | Permission-checked `/api/assets/:assetId/content` streams from private R2; private linked assets require a signed-in readable document context |
-| [x] | Render Markdown asset embeds | `![[asset:id|label]]` resolves through server-provided asset maps; image embeds support controlled layout/align/width/caption/alt attributes in Read and Live modes, with selected-embed editor controls; public document pages only resolve explicitly public assets |
+| [x] | Render Markdown asset embeds | `![[asset:id|label]]` resolves through server-provided asset maps; image embeds support controlled layout/align/width/caption/alt attributes and first-pass `:::assets` grid groups in Read mode and inactive Live mode, plus selected-embed editor controls; public document pages only resolve explicitly public assets |
 | [x] | Add editor upload and paste flows | Toolbar file picker, clipboard paste, and drag/drop upload supported through the same asset API |
 | [x] | Add asset library page | `/assets` workspace page has a masonry-style owned asset grid, search/filter/sort controls, details/config panel, metadata editing, delete, and copy embed |
 | [x] | Add explicit asset publishing | `/assets` can toggle owned assets public/private; publishing documents still does not publish embedded assets |

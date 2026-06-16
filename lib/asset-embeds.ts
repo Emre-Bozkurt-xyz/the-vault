@@ -15,6 +15,11 @@ export type AssetEmbedResolutionMap = Record<string, AssetEmbedResolution>;
 export type AssetEmbedLayout = "block" | "wrap" | "inline";
 export type AssetEmbedAlign = "left" | "center" | "right";
 export type AssetEmbedWidthPreset = "small" | "medium" | "large" | "full";
+export type AssetGroupLayout = "grid";
+export type AssetGroupAlign = "left" | "center" | "right";
+export type AssetGroupGap = "small" | "medium" | "large";
+export type AssetGroupWidth = "medium" | "large" | "full";
+export type AssetGroupColumns = "auto" | "2" | "3" | "4";
 
 export type AssetEmbedAttributes = {
   layout: AssetEmbedLayout;
@@ -32,11 +37,23 @@ export type ParsedAssetEmbed = {
   source: string;
 };
 
+export type AssetGroupAttributes = {
+  layout: AssetGroupLayout;
+  align: AssetGroupAlign;
+  gap: AssetGroupGap;
+  width: AssetGroupWidth;
+  columns: AssetGroupColumns;
+  caption: string | null;
+};
+
 const ASSET_EMBED_PATTERN =
   /!\[\[asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|([^\]\n]+))?\]\](?:\{([^}\n]*)\})?/gi;
 
 const ASSET_EMBED_SOURCE_PATTERN =
   /^!\[\[asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|([^\]\n]+))?\]\](?:\{([^}\n]*)\})?$/i;
+
+const ASSET_GROUP_PATTERN =
+  /^:::assets(?:\s*\{([^}\n]*)\})?\s*\n([\s\S]*?)\n:::\s*$/gim;
 
 const defaultAssetEmbedAttributes: AssetEmbedAttributes = {
   layout: "block",
@@ -47,11 +64,20 @@ const defaultAssetEmbedAttributes: AssetEmbedAttributes = {
   alt: null,
 };
 
+const defaultAssetGroupAttributes: AssetGroupAttributes = {
+  layout: "grid",
+  align: "center",
+  gap: "medium",
+  width: "full",
+  columns: "auto",
+  caption: null,
+};
+
 export function transformAssetEmbeds(
   markdown: string,
   resolutions: AssetEmbedResolutionMap = {},
 ) {
-  return markdown.replace(
+  return transformAssetGroups(markdown, resolutions).replace(
     ASSET_EMBED_PATTERN,
     (match, assetId: string, label?: string, rawAttributes?: string) => {
       const normalizedAssetId = assetId.toLowerCase();
@@ -66,37 +92,7 @@ export function transformAssetEmbeds(
         )}</span>`;
       }
 
-      const alt = attributes.alt || asset.altText || parsedLabel || asset.displayName;
-      const url = encodeURI(asset.url);
-
-      if (asset.kind === "image") {
-        const caption = attributes.caption;
-        const figureStyle = getAssetEmbedStyle(attributes);
-        const containerTag = attributes.layout === "inline" ? "span" : "figure";
-        const renderCaption = attributes.layout !== "inline" && caption;
-
-        return [
-          `<${containerTag} class="${getAssetEmbedClassName(
-            attributes,
-            "vault-asset-embed vault-asset-embed--image",
-          )}"${figureStyle ? ` style="${figureStyle}"` : ""}>`,
-          `<img class="vault-asset-embed-image" src="${escapeHtml(url)}" alt="${escapeHtml(
-            alt,
-          )}" loading="lazy" />`,
-          renderCaption
-            ? `<figcaption class="vault-asset-embed-caption">${escapeHtml(
-                caption,
-              )}</figcaption>`
-            : "",
-          `</${containerTag}>`,
-        ].join("");
-      }
-
-      return `<a class="vault-asset-embed vault-asset-embed--file" href="${escapeHtml(
-        asset.url,
-      )}" target="_blank" rel="noreferrer">${escapeHtml(
-        parsedLabel || asset.displayName,
-      )}</a>`;
+      return renderAssetEmbedHtml(asset, parsedLabel, attributes);
     },
   );
 }
@@ -129,13 +125,7 @@ export function parseAssetEmbedAttributes(rawAttributes?: string) {
     return attributes;
   }
 
-  const tokens = rawAttributes.matchAll(
-    /([A-Za-z][A-Za-z0-9_-]*)\s*=\s*("([^"]*)"|'([^']*)'|[^\s}]+)/g,
-  );
-
-  for (const token of tokens) {
-    const key = token[1].toLowerCase();
-    const value = (token[3] ?? token[4] ?? token[2] ?? "").trim();
+  for (const { key, value } of parseAttributeTokens(rawAttributes)) {
 
     if (!value) {
       continue;
@@ -169,6 +159,57 @@ export function parseAssetEmbedAttributes(rawAttributes?: string) {
 
     if (key === "alt") {
       attributes.alt = value.slice(0, 240);
+    }
+  }
+
+  return attributes;
+}
+
+export function parseAssetGroupAttributes(rawAttributes?: string) {
+  const attributes: AssetGroupAttributes = { ...defaultAssetGroupAttributes };
+
+  if (!rawAttributes) {
+    return attributes;
+  }
+
+  for (const { key, value } of parseAttributeTokens(rawAttributes)) {
+    if (!value) {
+      continue;
+    }
+
+    if (key === "layout" && value === "grid") {
+      attributes.layout = value;
+      continue;
+    }
+
+    if (
+      key === "align" &&
+      (value === "left" || value === "center" || value === "right")
+    ) {
+      attributes.align = value;
+      continue;
+    }
+
+    if (key === "gap" && (value === "small" || value === "medium" || value === "large")) {
+      attributes.gap = value;
+      continue;
+    }
+
+    if (key === "width" && (value === "medium" || value === "large" || value === "full")) {
+      attributes.width = value;
+      continue;
+    }
+
+    if (
+      key === "columns" &&
+      (value === "auto" || value === "2" || value === "3" || value === "4")
+    ) {
+      attributes.columns = value;
+      continue;
+    }
+
+    if (key === "caption") {
+      attributes.caption = value.slice(0, 240);
     }
   }
 
@@ -211,6 +252,115 @@ export function getAssetEmbedStyle(attributes: AssetEmbedAttributes) {
   }
 
   return `max-width: ${attributes.customWidth}`;
+}
+
+function transformAssetGroups(
+  markdown: string,
+  resolutions: AssetEmbedResolutionMap,
+) {
+  return markdown.replace(
+    ASSET_GROUP_PATTERN,
+    (_match, rawAttributes: string | undefined, rawBody: string) => {
+      const attributes = parseAssetGroupAttributes(rawAttributes);
+      const items = rawBody
+        .split(/\r?\n/)
+        .map((line) => parseAssetEmbedSource(line.trim()))
+        .filter((item): item is ParsedAssetEmbed => Boolean(item))
+        .map((item) => {
+          const asset = resolutions[item.assetId];
+          const label = item.label || asset?.displayName || "Private asset";
+
+          if (!asset) {
+            return `<div class="vault-asset-group-item"><span class="vault-asset-embed vault-asset-embed--missing">${escapeHtml(
+              label,
+            )}</span></div>`;
+          }
+
+          return `<div class="vault-asset-group-item">${renderAssetEmbedHtml(
+            asset,
+            item.label,
+            item.attributes,
+          )}</div>`;
+        });
+
+      if (items.length === 0) {
+        return "";
+      }
+
+      return [
+        `<figure class="${getAssetGroupClassName(attributes)}">`,
+        `<div class="vault-asset-group-grid">`,
+        items.join(""),
+        `</div>`,
+        attributes.caption
+          ? `<figcaption class="vault-asset-group-caption">${escapeHtml(
+              attributes.caption,
+            )}</figcaption>`
+          : "",
+        `</figure>`,
+      ].join("");
+    },
+  );
+}
+
+export function getAssetGroupClassName(attributes: AssetGroupAttributes) {
+  return [
+    "vault-asset-group",
+    `vault-asset-group-layout-${attributes.layout}`,
+    `vault-asset-group-align-${attributes.align}`,
+    `vault-asset-group-gap-${attributes.gap}`,
+    `vault-asset-group-width-${attributes.width}`,
+    `vault-asset-group-columns-${attributes.columns}`,
+  ].join(" ");
+}
+
+function renderAssetEmbedHtml(
+  asset: AssetEmbedResolution,
+  parsedLabel: string | null,
+  attributes: AssetEmbedAttributes,
+) {
+  if (asset.kind !== "image") {
+    return `<a class="vault-asset-embed vault-asset-embed--file" href="${escapeHtml(
+      asset.url,
+    )}" target="_blank" rel="noreferrer">${escapeHtml(
+      parsedLabel || asset.displayName,
+    )}</a>`;
+  }
+
+  const alt = attributes.alt || asset.altText || parsedLabel || asset.displayName;
+  const url = encodeURI(asset.url);
+  const caption = attributes.caption;
+  const figureStyle = getAssetEmbedStyle(attributes);
+  const containerTag = attributes.layout === "inline" ? "span" : "figure";
+  const renderCaption = attributes.layout !== "inline" && caption;
+
+  return [
+    `<${containerTag} class="${getAssetEmbedClassName(
+      attributes,
+      "vault-asset-embed vault-asset-embed--image",
+    )}"${figureStyle ? ` style="${figureStyle}"` : ""}>`,
+    `<img class="vault-asset-embed-image" src="${escapeHtml(url)}" alt="${escapeHtml(
+      alt,
+    )}" loading="lazy" />`,
+    renderCaption
+      ? `<figcaption class="vault-asset-embed-caption">${escapeHtml(
+          caption,
+        )}</figcaption>`
+      : "",
+    `</${containerTag}>`,
+  ].join("");
+}
+
+function parseAttributeTokens(rawAttributes: string) {
+  return Array.from(
+    rawAttributes.matchAll(
+      /([A-Za-z][A-Za-z0-9_-]*)\s*=\s*("([^"]*)"|'([^']*)'|[^\s}]+)/g,
+    ),
+    (token) => ({
+      key: token[1].toLowerCase(),
+      value: (token[3] ?? token[4] ?? token[2] ?? "").trim(),
+    }),
+  );
 }
 
 function isAssetEmbedLayout(value: string): value is AssetEmbedLayout {

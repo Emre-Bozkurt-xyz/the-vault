@@ -154,6 +154,23 @@ Current first slice:
   embed lines with the same layout parser as Read mode. Public document pages
   only resolve explicitly public assets, so document publishing does not publish
   private uploads.
+- Asset groups support a first-pass fenced container:
+
+```md
+:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}
+![[asset:<uuid>|Left image]]
+![[asset:<uuid>|Right image]]
+:::
+```
+
+  Groups render in Read mode as responsive image grids. Live mode renders an
+  inactive group through the specialized CodeMirror Live block layer, then
+  reveals the literal fenced Markdown source when the cursor or selection enters
+  the group. Supported group attributes are `layout=grid`, `align=left|center|right`,
+  `width=medium|large|full`, `gap=small|medium|large`,
+  `columns=auto|2|3|4`, and `caption`. Child asset embeds can still carry their
+  own width/caption/alt attributes. Mobile collapses fixed column counts to one
+  column.
 
 Future slices:
 
@@ -188,14 +205,78 @@ Current editor behavior:
   and insert the returned `![[asset:<uuid>|label]]` Markdown reference with a
   CodeMirror transaction.
 - When the cursor is inside an asset embed source, the editor shows a compact
-  asset formatting row for layout, alignment, width, caption, and alt text. The
-  controls rewrite the Markdown attribute block in place, so collaboration and
-  autosave still operate on normal document text.
+  floating asset inspector for layout, alignment, width, caption, and alt text.
+  The controls rewrite the Markdown attribute block in place, so collaboration
+  and autosave still operate on normal document text without moving the document
+  content up or down.
 - Live mode hides inactive wiki-link markers and styles the visible label; moving
   the cursor into the link reveals the source.
 - Live mode renders standalone document embeds as a single-line source widget,
   so the `![[...]]` line can expand visually without needing multi-line
   CodeMirror block replacement.
+
+### Specialized CodeMirror Live Preview Plan
+
+The next editor investment is a more deliberate CodeMirror 6 Live Preview layer,
+closer to Obsidian's model while keeping Markdown text as the source of truth.
+
+Current constraint:
+
+```txt
+View-plugin decorations are fine for inline marks and viewport-only styling, but
+CodeMirror does not allow those plugin-provided decorations to replace ranges
+that include line breaks or otherwise change vertical layout after viewport
+measurement.
+```
+
+Target architecture:
+
+- Add a syntax-aware Live block scanner that uses the CodeMirror Markdown syntax
+  tree as the first filter, then Vault-specific scanners for constructs such as
+  `:::assets`, callouts, document embeds, and regions.
+- Represent complex source ranges as typed blocks:
+
+```ts
+type LiveBlock =
+  | { kind: "assetGroup"; from: number; to: number; startLine: number; endLine: number }
+  | { kind: "callout"; from: number; to: number; startLine: number; endLine: number }
+  | { kind: "documentEmbed"; from: number; to: number };
+```
+
+- Move vertical-layout-changing Live behavior into direct CodeMirror decoration
+  sources, preferably `StateField<DecorationSet>` providers, so block widgets and
+  multi-line replacements are known before viewport layout is computed.
+- Keep the existing view-plugin decoration path for cheap viewport-only inline
+  styling, active-source reveal, drag-selection protection, and simple
+  single-line widgets.
+- Add source-reveal rules that are block-aware: a rendered block becomes editable
+  source when the cursor enters its source range, when the user starts a
+  selection inside it, or when a command needs to rewrite the underlying
+  Markdown.
+- Use `EditorView.atomicRanges` for widgets that should behave as one unit for
+  cursor movement/deletion, especially compact single-line embeds and future
+  inline asset chips.
+
+Ideal implementation order:
+
+1. Extract a syntax-aware `LiveBlock` scanner without changing rendering.
+2. Move asset-group line detection onto that scanner so group behavior no longer
+   depends on ad hoc line walking inside `MarkdownEditor.tsx`.
+3. Introduce a direct-decoration `StateField` for inactive block widgets.
+4. Add an inactive rendered asset-group block widget behind the new state field.
+5. Add robust source reveal and drag-selection tests for asset groups.
+6. Move callouts and document embeds into the same block registry only after the
+   asset-group path is stable.
+7. Consider nested editors only for genuinely editable rich blocks; do not start
+   there.
+
+Definition of done for the first major slice:
+
+- Asset groups are detected through the shared Live block scanner.
+- Asset-group fences inside fenced code blocks are ignored.
+- Read mode remains the source of visual truth.
+- Live mode can toggle between literal source and rendered block widgets without
+  `RangeError`, cursor loss, or document layout corruption.
 
 Uploaded assets are private-by-default user-owned assets, not public opaque
 URLs. Metadata lives in `assets` and `document_assets`, bytes live in private

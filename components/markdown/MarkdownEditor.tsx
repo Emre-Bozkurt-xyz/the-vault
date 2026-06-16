@@ -49,6 +49,10 @@ import { yCollab } from "y-codemirror.next";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
+  createLiveBlockDecorationExtension,
+  getAssetGroupLineKinds,
+} from "@/components/markdown/live-blocks";
+import {
   MarkdownToolbar,
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
@@ -636,6 +640,7 @@ export function MarkdownEditor({
 
       if (editorMode === "live") {
         baseExtensions.push(
+          createLiveBlockDecorationExtension(assetLinkMap),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
         );
       }
@@ -2074,6 +2079,7 @@ function buildLivePreviewDecorations(
     ? []
     : view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
+  const assetGroupLines = getAssetGroupLineKinds(view.state);
   const doc = view.state.doc;
 
   for (const visibleRange of view.visibleRanges) {
@@ -2102,7 +2108,11 @@ function buildLivePreviewDecorations(
           }
         }
 
-        const assetEmbed = getAssetEmbedPreview(line.text, assetLinks);
+        const assetGroupLine = assetGroupLines.get(line.number);
+
+        const assetEmbed = assetGroupLine
+          ? null
+          : getAssetEmbedPreview(line.text, assetLinks);
 
         if (
           assetEmbed &&
@@ -2126,6 +2136,7 @@ function buildLivePreviewDecorations(
         const wikiEmbed = getWikiDocumentEmbed(line.text, wikiLinks);
 
         if (
+          !assetGroupLine &&
           wikiEmbed &&
           !hasActivePositionInRange(activePositions, line.from, line.to)
         ) {
@@ -2143,15 +2154,18 @@ function buildLivePreviewDecorations(
           continue;
         }
 
-        const lineRanges = decorateInactiveMarkdownLine(
-          doc,
-          line.number,
-          line.from,
-          line.text,
-          codeFenceLines.has(line.number),
-          activePositions,
-        );
-        ranges.push(...lineRanges);
+        if (!assetGroupLine) {
+          const lineRanges = decorateInactiveMarkdownLine(
+            doc,
+            line.number,
+            line.from,
+            line.text,
+            codeFenceLines.has(line.number),
+            activePositions,
+          );
+
+          ranges.push(...lineRanges);
+        }
       }
 
       if (line.to >= visibleRange.to) {

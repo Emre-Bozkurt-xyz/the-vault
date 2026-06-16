@@ -804,6 +804,28 @@ Supported attributes:
 Do not allow arbitrary CSS in asset embeds. Unknown attributes are ignored, and
 custom width values are sanitized to pixels or percentages before rendering.
 
+V1 also supports image groups for side-by-side assets:
+
+```md
+:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}
+![[asset:<asset-id>|Left image]]
+![[asset:<asset-id>|Right image]]
+:::
+```
+
+Supported group attributes:
+
+- `layout=grid`
+- `align=left|center|right`
+- `width=medium|large|full`
+- `gap=small|medium|large`
+- `columns=auto|2|3|4`
+- `caption="Shared group caption"`
+
+The first pass is intentionally grid-only. Fixed column counts collapse to one
+column on mobile. Child embeds may still define their own `caption` and `alt`
+attributes. Unknown group attributes are ignored.
+
 Resolution should work similarly to document wiki embeds:
 
 - Parse asset targets in Markdown.
@@ -1124,7 +1146,11 @@ Implementation status as of 2026-06-15:
   Range requests, and safe headers.
 - Phase 5 is implemented for images, file links, unresolved placeholders, and
   conservative public rendering. Controlled image embed attributes are
-  implemented for Read and Live modes; richer PDF cards remain future work.
+  implemented for Read and Live modes. First-pass `:::assets` image groups are
+  implemented for Read mode and inactive Live mode. Live uses the specialized
+  CodeMirror block layer, not view-plugin replacement decorations, so cursoring
+  into a group reveals the literal Markdown source without the previous
+  multi-line decoration crash path; richer PDF cards remain future work.
 - Phase 6 is implemented for toolbar upload, clipboard paste, and drag/drop;
   collaborative smoke testing remains manual.
 - Phase 7 is implemented for `/assets` owned asset grid, search/filter/sort,

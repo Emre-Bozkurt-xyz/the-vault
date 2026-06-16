@@ -385,6 +385,12 @@ function replacementForFormat(format: MarkdownFormat, selected: string) {
       return wrap("*", content);
     case "inlineCode":
       return wrap("`", content);
+    case "imageUpload":
+      return {
+        text: `![${content}](https://example.com/image.png)`,
+        cursorStart: 2,
+        cursorEnd: 2 + content.length,
+      };
     case "link":
       return {
         text: `[${content}](https://example.com)`,
