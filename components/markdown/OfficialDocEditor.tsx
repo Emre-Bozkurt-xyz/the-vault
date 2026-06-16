@@ -358,7 +358,7 @@ function formatTextareaValue(
   format: MarkdownFormat,
 ) {
   const selected = value.slice(selectionStart, selectionEnd);
-  const replacement = replacementForFormat(format, selected);
+  const replacement = replacementForFormat(format, selected)!;
   const nextValue =
     value.slice(0, selectionStart) + replacement.text + value.slice(selectionEnd);
 
