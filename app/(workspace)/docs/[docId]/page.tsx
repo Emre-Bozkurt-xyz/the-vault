@@ -4,13 +4,17 @@ import { Archive, ChevronDown, Globe2, History, RotateCcw, Save, Share2 } from "
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
+import { DocumentPublishControl } from "@/components/document-publish-control";
 import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
-import { listAssetResolutionsForDocument } from "@/server/assets";
+import {
+  listAssetResolutionsForDocument,
+  listPrivateEmbeddedAssetsForPublish,
+} from "@/server/assets";
 import {
   archiveDocumentAction,
   createManualDocumentVersionAction,
@@ -63,6 +67,7 @@ export default async function DocumentPage({
     friends,
     versions,
     assetLinks,
+    privateEmbeddedAssets,
   ] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -81,6 +86,12 @@ export default async function DocumentPage({
         ? listDocumentVersionsForUser(document.id, session.user.id)
         : Promise.resolve([]),
       listAssetResolutionsForDocument(document.id, session.user.id),
+      document.access.canPublish
+        ? listPrivateEmbeddedAssetsForPublish({
+            documentId: document.id,
+            markdown: document.markdown,
+          })
+        : Promise.resolve([]),
     ]);
   const wikiLinks = {
     ...readableWikiLinks,
@@ -120,6 +131,14 @@ export default async function DocumentPage({
           title: document.title,
           href: documentHref,
         }}
+        documentItem={{
+          id: document.id,
+          title: document.title,
+          href: `/docs/${document.id}`,
+          updatedAt: document.updatedAt,
+          visibility: document.visibility,
+          role: document.access.role ?? "viewer",
+        }}
         rightPanel={
           showRightPanel ? (
           <DocumentContextPanel
@@ -135,6 +154,7 @@ export default async function DocumentPage({
             friends={friends}
             activeShareLink={activeShareLink}
             versions={versions}
+            privateEmbeddedAssets={privateEmbeddedAssets}
           />
           ) : undefined
         }
@@ -194,6 +214,7 @@ type DocumentContextPanelProps = {
   friends: Awaited<ReturnType<typeof listFriendsForUser>>;
   activeShareLink: Awaited<ReturnType<typeof getActiveDocumentShareLinkForUser>>;
   versions: Awaited<ReturnType<typeof listDocumentVersionsForUser>>;
+  privateEmbeddedAssets: Awaited<ReturnType<typeof listPrivateEmbeddedAssetsForPublish>>;
 };
 
 function DocumentContextPanel({
@@ -209,6 +230,7 @@ function DocumentContextPanel({
   friends,
   activeShareLink,
   versions,
+  privateEmbeddedAssets,
 }: DocumentContextPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto px-3 py-3 text-sm">
@@ -286,12 +308,11 @@ function DocumentContextPanel({
                   </form>
                 </>
               ) : (
-                <form action={publishDocumentAction}>
-                  <input type="hidden" name="documentId" value={documentId} />
-                  <Button type="submit" variant="outline" size="sm" className="w-full">
-                    Publish
-                  </Button>
-                </form>
+                <DocumentPublishControl
+                  documentId={documentId}
+                  privateAssets={privateEmbeddedAssets}
+                  action={publishDocumentAction}
+                />
               )
             ) : (
               <p className="text-xs text-muted-foreground">

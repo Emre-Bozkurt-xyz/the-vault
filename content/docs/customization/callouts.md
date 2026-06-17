@@ -15,6 +15,11 @@ Vault supports Obsidian-style callouts in blockquotes.
 > Body text goes here.
 ```
 
+Rendered example:
+
+> [!note] Title
+> Body text goes here.
+
 ## Default callout types
 
 These callout IDs have predefined icons and colors:
@@ -48,6 +53,14 @@ Vault recognizes Obsidian's fold metadata:
 > [!note]- Closed by default
 > This starts collapsed.
 ```
+
+Rendered examples:
+
+> [!note]+ Open by default
+> This starts expanded.
+
+> [!note]- Closed by default
+> This starts collapsed.
 
 ## Styling hooks
 

@@ -13,13 +13,13 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-16
+2026-06-17
 ```
 
 Current phase:
 
 ```txt
-Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library planning
+Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library
 ```
 
 Current deployment status:
@@ -43,7 +43,7 @@ Vault currently has a runnable dark-first Next.js app shell, switchable theming,
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. The next major product feature plan is private-by-default uploaded asset storage and an asset library, documented in `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. Private-by-default uploaded asset storage and the asset library are implemented from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; remaining asset work should be follow-up polish rather than initial architecture.
 ```
 
 ---
@@ -93,6 +93,7 @@ Object storage:
   - `POST /api/assets` uploads validated image/PDF bytes to private R2 and stores asset metadata in Postgres
   - `/api/assets/[assetId]` supports owner metadata reads, metadata/visibility updates, and soft delete
   - `/api/assets/[assetId]/content` streams bytes through Vault permission checks, including byte Range responses; raw R2 URLs are not inserted into Markdown
+  - Document publish UI warns owners when linked private embeds will be hidden from anonymous public readers
 
 Deployment:
   - Production Docker/Compose scaffolding
@@ -195,9 +196,10 @@ Add notes as real files appear:
 | `components/assets/AssetLibraryClient.tsx` | Client-side asset library masonry grid, search/filter/sort controls, owner configuration panel, copy embed, and delete action |
 | `components/assets/PublicAssetGallery.tsx` | Client-side public gallery asset grid and details panel with open, copy embed, and copy asset ID actions |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
+| `components/document-publish-control.tsx` | Client-side publish confirmation gate that warns when publishing a document with linked private asset embeds |
 | `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
-| `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups and Obsidian-style callouts while ignoring fenced code blocks, renders inactive blocks through `StateField<DecorationSet>` widgets, and reveals literal source when the cursor enters the block |
+| `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups, Obsidian-style callouts, and standalone document embeds while ignoring fenced code blocks, renders inactive blocks through `StateField<DecorationSet>` widgets, and reveals literal source when the cursor enters the block |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax, opens the asset upload picker, and can create/wrap `:::assets` groups |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist and permission-resolved asset embed rendering, including controlled image layout attributes |
@@ -206,7 +208,7 @@ Add notes as real files appear:
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
 | `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
 | `components/document-workspace.tsx` | Client wrapper for the document editor workspace and collapsible right-side action panel |
-| `components/workspace/` | Workspace shell, draggable tab bar, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, and new-tab components for Phase 10 |
+| `components/workspace/` | Workspace shell, draggable tab bar, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, document-state sync helpers, and new-tab components for Phase 10 |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
@@ -218,16 +220,16 @@ Add notes as real files appear:
 | `lib/repo-docs.ts` | Filesystem loader for repo-backed docs and legal Markdown content |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
-| `lib/asset-embeds.ts` | Markdown asset embed parser/renderer for `![[asset:id|label]]` references, controlled `{layout align width caption alt}` image attributes, and first-pass `:::assets` grid groups |
+| `lib/asset-embeds.ts` | Markdown asset embed parser/renderer for `![[asset:id|label]]` references, controlled `{layout align width caption alt}` image attributes, PDF/file cards, and first-pass `:::assets` grid groups |
 | `lib/storage/r2.ts` | Server-only private R2/S3-compatible object helper for uploaded asset storage; exposes put/get/head/delete helpers and validates env lazily |
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
-| `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, editor autocomplete, explicit document linking, public asset listing, owner metadata updates, document links, and read authorization |
+| `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, editor autocomplete, explicit document linking, publish-warning analysis, stale document-link cleanup, public asset listing, owner metadata updates, document links, and read authorization |
 | `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
 | `server/authz.ts` | DB-backed active-user and admin guards; active bans redirect to `/banned` |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
 | `server/official-docs.ts` | Official documentation queries and admin save/create actions |
-| `content/docs/` | Repo-backed canonical user documentation rendered with the same docs UI as DB docs |
+| `content/docs/` | Repo-backed canonical user documentation rendered with the same docs UI as DB docs; includes getting started, collaboration, customization, security, and asset guides |
 | `content/legal/terms.md` | Repo-backed Terms and Conditions copy shown on `/terms` |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
 | `server/profile.ts` | Profile completion, profile gate, and user search helpers |
@@ -380,7 +382,7 @@ Schema notes:
 - `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
 - `official_docs` stores admin-authored Markdown docs with `draft`, `published`, and `archived` statuses. Public docs routes only read published rows.
 - `official_docs.category` and `official_docs.sort_order` drive the public docs sidebar grouping and order. Published docs sort by category, sort order, then title.
-- `content/docs/**/*.md` stores repo-backed canonical docs with frontmatter (`title`, `slug`, `category`, `order`, `public`). Repo docs are merged with DB docs in the public/admin docs UI.
+- `content/docs/**/*.md` stores repo-backed canonical docs with frontmatter (`title`, `slug`, `category`, `order`, `public`). Repo docs are merged with DB docs in the public/admin docs UI. The Assets category currently includes `asset-library` and `asset-embeds-and-layout`; guide examples intentionally include rendered Markdown snippets so the docs show both source syntax and output shape.
 - Repo docs own their slugs. DB docs with a slug collision are hidden from public docs and cannot be saved until the slug changes.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `document_share_links` stores one active revocable share link at a time per document. Link access is dynamic and does not create a `document_permissions` row. `anyone` links are read-only; `members` links may be viewer or editor, but editor access requires a signed-in Vault account and does not grant sharing/publishing/deleting rights.
@@ -389,7 +391,7 @@ Schema notes:
 - Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
 - `users.storage_used_bytes` and `users.storage_quota_bytes` track uploaded asset quota; migration `0011_tiresome_ultimates.sql` defaults existing/new users to 0 used bytes and 256 MiB quota.
 - `assets` stores private-by-default uploaded object metadata, ownership, R2 bucket/key, MIME detection data, size, checksum, visibility, and upload status. R2 stores bytes; Postgres owns identity, quota, and authorization metadata.
-- `document_assets` links assets to documents without duplicating object bytes. The current upload route creates this link when uploading from a document editor.
+- `document_assets` links assets to documents without duplicating object bytes. The current upload route creates this link when uploading from a document editor; document saves and collaboration stores remove links for assets no longer embedded in the Markdown source.
 ```
 
 ---
@@ -687,9 +689,10 @@ Known editor caveats:
 - Preview/view/public Markdown rendering supports Obsidian-style wiki links through server-provided resolution maps. Canonical links use `[[doc:<uuid>|Label]]`; convenience title links like `[[Title]]` resolve only when exactly one readable document has that title. Heading fragments such as `[[doc:<uuid>#heading|Label]]`, `[[doc:<uuid>|Label#heading]]`, and `[[Title#heading]]` append rendered heading anchors to resolved document routes. Title-based heading links use the last `#` as the heading separator; document titles are not currently restricted from containing `#`, so canonical `doc:id` links are preferred when a title could be ambiguous. Ambiguous/private/unresolved links render as non-clickable styled spans. Public rendering only resolves links to `/public/[slug]` and does not expose private document IDs/routes.
 - CodeMirror wiki autocomplete fetches the current readable document map from `/api/documents/wiki-links` when completion starts in either `[[...]]` links or `![[...]]` document embeds, and inserts canonical `doc:id|title` targets. Arrow keys navigate suggestions, Tab/Enter accept, Escape closes the popup, and mouse selection applies the completion. The completion is bracket-aware and fills inside an existing auto-paired `[[|]]` field without adding duplicate closing brackets; when it has to insert closing brackets itself, it leaves the cursor before `]]` so the user can keep typing a heading fragment. Typing `#` inside a wiki field explicitly starts heading autocomplete, including after an accepted canonical `doc:id|title` completion. Heading completion filters and replaces only the text after `#`, so UUID-backed canonical links still show heading suggestions. Live mode hides inactive wiki-link markers and styles the visible label; placing the cursor inside the link reveals source.
 - External image wiki embeds use `![[https://...]]`; Preview/view/public translate them to standard Markdown image rendering before the sanitized Markdown pipeline, and live mode renders inactive embeds as stable image preview frames.
-- Standalone document transclusions use `![[doc:id|label]]` or unambiguous `![[Title]]` syntax. Preview/view/public split those lines into recursive `MarkdownDocument` embeds styled with `.vault-md-document-embed`; Live mode replaces the single source line with a React-backed CodeMirror widget that reuses `MarkdownDocument`. Heading fragments on document embeds render only the selected heading's owned section, from that heading until the next heading of equal or higher level. Embeds are permission-aware, public pages only include public document Markdown, and recursive embeds are capped.
-- Uploaded image asset embeds use `![[asset:id|label]]` with optional controlled attributes such as `{layout=wrap align=right width=320 caption="Figure" alt="Description"}`. Read mode and inactive Live mode use the same parser. Supported image layout values are `block`, `wrap`, and `inline`; alignment is `left`, `center`, or `right`; width is `small`, `medium`, `large`, `full`, sanitized pixels, or sanitized percentages. Raw CSS is intentionally not accepted in asset embed syntax.
+- Standalone document transclusions use `![[doc:id|label]]` or unambiguous `![[Title]]` syntax. Preview/view/public split those lines into recursive `MarkdownDocument` embeds styled with `.vault-md-document-embed`; inactive Live mode now renders standalone transclusions through `components/markdown/live-blocks.ts` as direct `StateField` block widgets that reuse `MarkdownDocument` and reveal the raw source when the cursor enters the line. Heading fragments on document embeds render only the selected heading's owned section, from that heading until the next heading of equal or higher level. Embeds are permission-aware, public pages only include public document Markdown, and recursive embeds are capped.
+- Uploaded image asset embeds use `![[asset:id|label]]` with optional controlled attributes such as `{layout=wrap align=right width=320 caption="Figure" alt="Description"}`. Read mode and inactive Live mode use the same parser. Supported image layout values are `block`, `wrap`, and `inline`; alignment is `left`, `center`, or `right`; width is `small`, `medium`, `large`, `full`, sanitized pixels, or sanitized percentages. Raw CSS is intentionally not accepted in asset embed syntax. PDF/file embeds render as compact cards that open `/api/assets/:id/content?doc=:docId` in a new tab when the asset is readable.
 - Editor asset autocomplete activates inside `![[asset:...]]` and only suggests the current user's assets plus assets already linked to the open document. It does not query global public gallery assets. Choosing an existing asset calls `/api/assets/:assetId/link` before inserting the Markdown reference, which creates or preserves the `document_assets` row needed for collaborator read-through.
+- The owner publish control preflights the current Markdown for linked private embedded assets. Publishing still only mutates document visibility/public slug; private assets remain private and anonymous public readers receive unresolved/private placeholders for those embeds.
 - Asset groups use `:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}` fences containing one asset embed per line. Read mode renders them as responsive grids; inactive Live mode renders the group through `components/markdown/live-blocks.ts` as a direct `StateField` block widget, and cursor/selection entry reveals the literal Markdown source. The toolbar Asset group button inserts a scaffold or wraps selected standalone asset embed lines. Rendered Live groups expose an icon-only top-right configure button that opens a panel for columns, gap, alignment, width, and shared caption; edits rewrite only the opening fence line. Fixed `columns=2|3|4` collapse to one column on mobile. Group attributes are deliberately limited to grid layout, alignment, width, gap, columns, and shared caption.
 - Inactive Live-mode callouts are now also owned by `components/markdown/live-blocks.ts`. They render through `MarkdownDocument`, the same renderer used by Read mode, so callout icons, colors, title/body parsing, and nested Markdown stay matched instead of relying on per-line CodeMirror styling. Moving the cursor or a selection into the callout reveals the raw blockquote source.
 - The Markdown editor shows a compact floating asset inspector when the cursor is inside an asset embed source. Layout, alignment, width, caption, and alt controls rewrite the embed's Markdown attribute block in place without changing document layout; no separate asset-layout table or hidden metadata exists.
@@ -705,7 +708,7 @@ Known editor caveats:
 - Live callout lines also expose `.callout`, `data-callout`, `data-callout-resolved`, and `data-callout-fold` when present, so callout CSS variables from future snippets can affect Preview and Live mode. Live mode uses a stronger CodeMirror translation layer plus classes such as `.vault-cm-callout-first`, `.vault-cm-callout-body-line`, and `.vault-cm-callout-marker` so generic `.callout` snippet/card styling does not turn each editor line into a separate card.
 - Live preview allows the same iframe block tags and applies the same source allowlist plus normalized iframe permissions before rendering the inactive block preview.
 - Live preview renders inline HTML and single-line sanitized raw HTML blocks. Multi-line raw HTML intentionally remains source in live mode; asset groups use the newer direct-decoration Live block layer. Full Read mode still renders all supported Markdown through the sanitized Markdown pipeline. Code fences remain source/code preview, not rendered HTML.
-- The next Live Preview architecture is documented in `docs/05_EDITOR_AND_COLLAB.md`: syntax-aware `LiveBlock` scanning first, then direct-decoration `StateField<DecorationSet>` block widgets for vertical-layout-changing inactive previews. `components/markdown/live-blocks.ts` currently renders inactive asset groups and callouts while ignoring matching source text inside fenced code blocks.
+- The next Live Preview architecture is documented in `docs/05_EDITOR_AND_COLLAB.md`: syntax-aware `LiveBlock` scanning first, then direct-decoration `StateField<DecorationSet>` block widgets for vertical-layout-changing inactive previews. `components/markdown/live-blocks.ts` currently renders inactive asset groups, callouts, and standalone document embeds while ignoring matching source text inside fenced code blocks.
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode uses read-mode-style sans typography by default and replaces inactive list/task markers with rendered bullets, ordered numbers, or the same styled checkbox widget while preserving source syntax when the cursor enters the marker.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
@@ -749,6 +752,7 @@ Current behavior:
 - Yjs awareness powers remote cursors/selections and lightweight toolbar-adjacent presence. The editor hides the presence cluster while solo editing; when more than one awareness user is in the room, it shows overlapping avatar circles using each user's cursor color. Hovering near the cluster expands the icons side-by-side, and hovering an icon shows the user's name/email details.
 - Hocuspocus loads `document_collab_states.yjs_state` first. If no row exists, it seeds a Y.Doc from `documents.markdown` once and immediately stores that seeded Yjs state.
 - Hocuspocus stores collaborative document text back to `documents.markdown` and the compact Yjs CRDT snapshot back to `document_collab_states`.
+- Hocuspocus also reconciles `document_assets` during store by deleting stale links for assets no longer embedded in the persisted Markdown.
 - Persisting Yjs state is required for reconnect safety. Reloading every room from plain Markdown creates new CRDT item identities for the same visible characters; a browser reconnecting with older Yjs state can merge both copies and duplicate the full document.
 - Non-collab full Markdown writes and restores delete the `document_collab_states` row so the next collab session reseeds from the newest Markdown.
 - Before collaborative persistence overwrites Markdown, the collab service uses the same batched checkpoint policy and writes `document_versions.reason = 'collab'` when a checkpoint is due.
@@ -943,7 +947,8 @@ Current workspace behavior:
 ```txt
 - `app/(workspace)/layout.tsx` wraps protected workspace routes in a shared persistent shell. Navigating between grouped workspace routes keeps the tab bar, icon rail, side panel chrome, and resize/collapse client state mounted instead of recreating a full shell per page.
 - `VaultWorkspaceShell` owns the icon rail, draggable page tabs, left panel, right context panel, and resizable/collapsible side panel state.
-- `WorkspaceChrome` supplies shell data from `getWorkspaceData()` and pages use `WorkspacePageRegistration` to set the active tab title and optional right context panel.
+- `WorkspaceChrome` supplies shell data from `getWorkspaceData()` and pages use `WorkspacePageRegistration` to set the active tab title, optional right context panel, and current document item. It keeps a client-side workspace document snapshot that can be patched without waiting for the shared layout to rerender.
+- `components/workspace/workspace-events.ts` exposes `dispatchWorkspaceDocumentChanged()` and the subscription helper used by `WorkspaceChrome`. The Markdown editor dispatches title/update events as the title changes and after saves, so open tabs plus file/search/gallery panels reflect the active document title immediately.
 - Workspace tabs are client-side navigation state persisted in localStorage; deep links still use normal route URLs.
 - The workspace shell is viewport-bound (`h-dvh`/`overflow-hidden`). The browser body should not scroll on workspace pages; the center `main` content area scrolls independently, and side panels own their own internal scroll regions.
 - `/workspace` is a raw new-tab surface: greeting title, underline document search, New document action, and one list that shows recent documents until a search query filters owned/shared documents.
@@ -1176,10 +1181,10 @@ Keep this short and current.
 
 ```txt
 1. Add robust source reveal and drag-selection tests for Live block widgets.
-2. Move document embeds into the syntax-aware Live block registry if the callout/widget path remains stable.
-3. Add richer PDF/file preview cards in Markdown rendering and the asset library.
-4. Add publish-time warnings for public documents that still embed private assets.
-5. Add asset usage refresh/unlink cleanup when document Markdown removes embeds.
+2. Evaluate whether standalone asset embeds should move from the viewport plugin into the Live block registry after selected-asset formatting remains stable.
+3. Continue the final workspace visual consistency pass across less-used routes.
+4. Add focused tests around asset privacy: owner, collaborator, public asset, private embedded asset in public document, and deleted asset cases.
+5. Add richer gallery filters for public documents and public assets after tags/categories are designed.
 ```
 
 ---
@@ -1289,3 +1294,6 @@ Use this as a compact implementation log.
 | 2026-06-16 | Moved callouts into Live block widgets | Inactive Live-mode callouts now render through `MarkdownDocument` via the syntax-aware Live block layer, matching Read-mode icons and markup while preserving source reveal on cursor entry |
 | 2026-06-16 | Added private asset autocomplete | Editor completion inside `![[asset:...]]` suggests owned/current-document assets only and links selected existing assets to the open document before insertion |
 | 2026-06-16 | Added public asset gallery details | Public gallery asset cards now show a details panel with metadata plus copy embed, copy ID, and open asset actions |
+| 2026-06-16 | Added workspace document state sync | Document pages upsert themselves into the workspace document snapshot, and Markdown title edits dispatch workspace events so tabs and document panels update immediately |
+| 2026-06-17 | Refreshed README and asset guides | README is now a short repo landing page; repo-backed guides now cover asset library usage, embed syntax, layout attributes, asset groups, privacy/sharing behavior, PDF cards, and rendered examples |
+| 2026-06-17 | Moved document embeds into Live block widgets | Standalone Live-mode document transclusions now render through the syntax-aware `live-blocks.ts` direct decoration field instead of the older viewport plugin widget path |

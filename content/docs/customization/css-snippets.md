@@ -45,7 +45,9 @@ Live mode is built inside CodeMirror, which has stricter rendering rules than no
 
 ```css
 .vault-markdown .callout { }
-.vault-markdown-editor-live .cm-line.vault-cm-callout { }
+.vault-markdown-editor-live .vault-cm-callout-rendered .callout { }
 ```
 
-The preview renderer is the canonical output. Live mode tries to approximate it while keeping the source editable.
+The preview renderer is the canonical output. Inactive Live-mode callouts and
+asset groups use rendered block widgets; entering the block reveals the Markdown
+source for editing.

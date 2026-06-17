@@ -335,11 +335,23 @@ function renderAssetEmbedHtml(
   attributes: AssetEmbedAttributes,
 ) {
   if (asset.kind !== "image") {
-    return `<a class="vault-asset-embed vault-asset-embed--file" href="${escapeHtml(
-      asset.url,
-    )}" target="_blank" rel="noreferrer">${escapeHtml(
-      parsedLabel || asset.displayName,
-    )}</a>`;
+    const label = parsedLabel || asset.displayName;
+    const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
+
+    return [
+      `<a class="vault-asset-embed vault-asset-embed--file vault-asset-embed--${escapeHtml(
+        asset.kind,
+      )}" href="${escapeHtml(asset.url)}" target="_blank" rel="noreferrer">`,
+      `<span class="vault-asset-file-icon" aria-hidden="true">${kindLabel}</span>`,
+      `<span class="vault-asset-file-body">`,
+      `<span class="vault-asset-file-title">${escapeHtml(label)}</span>`,
+      `<span class="vault-asset-file-meta">${escapeHtml(
+        [kindLabel, formatAssetFileSize(asset.sizeBytes)].filter(Boolean).join(" - "),
+      )}</span>`,
+      `</span>`,
+      `<span class="vault-asset-file-action">Open</span>`,
+      `</a>`,
+    ].join("");
   }
 
   const alt = attributes.alt || asset.altText || parsedLabel || asset.displayName;
@@ -441,4 +453,20 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function formatAssetFileSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "";
+  }
+
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 1024)} KiB`;
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }

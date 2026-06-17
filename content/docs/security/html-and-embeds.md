@@ -67,6 +67,19 @@ bandcamp.com
 
 Provider paths are restricted. For example, YouTube embeds must use `/embed/...`, and TIDAL embeds must use supported media paths such as `/tracks/...`.
 
+## Uploaded files
+
+Uploaded images and PDFs are not embedded through raw storage URLs. They render
+through Vault asset routes such as:
+
+```txt
+/api/assets/<asset-id>/content?doc=<document-id>
+```
+
+Those routes check asset ownership, public visibility, or document read access
+before streaming bytes. Inaccessible private assets return a not-found style
+response.
+
 ## Live mode caveat
 
 Single-line iframe HTML can render in live mode. Multi-line raw HTML stays as source in live mode because CodeMirror has strict rules around replacing multiple editable lines with rendered blocks.

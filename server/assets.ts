@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { fileTypeFromBuffer } from "file-type";
 
 import { auth } from "@/auth";
@@ -13,6 +13,7 @@ import {
   users,
   type AssetKind,
 } from "@/db/schema";
+import { extractAssetEmbedIds } from "@/lib/asset-embeds";
 import { canReadDocument } from "@/lib/permissions";
 import { deleteAssetObject, getR2Bucket, putAssetObject } from "@/lib/storage/r2";
 import { isUserBanActive } from "@/server/authz";
@@ -64,6 +65,14 @@ export type AssetCompletion = {
   scope: "mine" | "document";
   url: string;
   markdown: string;
+};
+
+export type PrivateEmbeddedAsset = {
+  id: string;
+  kind: AssetKind;
+  displayName: string;
+  mimeType: string;
+  sizeBytes: number;
 };
 
 export async function getOptionalAssetUser(): Promise<ActiveAssetUser | null> {
@@ -207,6 +216,61 @@ export async function linkAssetToDocument(input: {
     .onConflictDoNothing({
       target: [documentAssets.documentId, documentAssets.assetId],
     });
+}
+
+export async function reconcileDocumentAssetLinks(input: {
+  documentId: string;
+  markdown: string;
+}) {
+  const embeddedAssetIds = [...new Set(extractAssetEmbedIds(input.markdown))];
+
+  if (embeddedAssetIds.length === 0) {
+    await db
+      .delete(documentAssets)
+      .where(eq(documentAssets.documentId, input.documentId));
+    return;
+  }
+
+  await db
+    .delete(documentAssets)
+    .where(
+      and(
+        eq(documentAssets.documentId, input.documentId),
+        notInArray(documentAssets.assetId, embeddedAssetIds),
+      ),
+    );
+}
+
+export async function listPrivateEmbeddedAssetsForPublish(input: {
+  documentId: string;
+  markdown: string;
+}): Promise<PrivateEmbeddedAsset[]> {
+  const embeddedAssetIds = [...new Set(extractAssetEmbedIds(input.markdown))];
+
+  if (embeddedAssetIds.length === 0) {
+    return [];
+  }
+
+  return db
+    .select({
+      id: assets.id,
+      kind: assets.kind,
+      displayName: assets.displayName,
+      mimeType: assets.mimeType,
+      sizeBytes: assets.sizeBytes,
+    })
+    .from(documentAssets)
+    .innerJoin(assets, eq(documentAssets.assetId, assets.id))
+    .where(
+      and(
+        eq(documentAssets.documentId, input.documentId),
+        inArray(documentAssets.assetId, embeddedAssetIds),
+        eq(assets.visibility, "private"),
+        eq(assets.status, "ready"),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .orderBy(desc(documentAssets.createdAt));
 }
 
 export async function linkExistingAssetToDocument(input: {

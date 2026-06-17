@@ -150,7 +150,8 @@ Current first slice:
   Document pages pass a server-resolved asset map into `MarkdownDocument`;
   image assets render through `/api/assets/<assetId>/content` with the selected
   block/wrap/inline layout, alignment, width, caption, and alt text. PDF/file
-  assets render as links for now. Live mode renders standalone inactive asset
+  assets render as compact file cards that open the permission-checked content
+  route in a new tab. Live mode renders standalone inactive asset
   embed lines with the same layout parser as Read mode. Public document pages
   only resolve explicitly public assets, so document publishing does not publish
   private uploads.
@@ -212,6 +213,9 @@ Current editor behavior:
   suggestions. Selecting an existing private asset creates or preserves the
   `document_assets` association before inserting the Markdown reference, so
   document collaborators can render it through the document context.
+- Document saves and collaboration stores reconcile `document_assets` against
+  the Markdown source by removing stale document-to-asset links for assets no
+  longer embedded in the document.
 - When the cursor is inside an asset embed source, the editor shows a compact
   floating asset inspector for layout, alignment, width, caption, and alt text.
   The controls rewrite the Markdown attribute block in place, so collaboration
@@ -229,9 +233,9 @@ Current editor behavior:
   still revealing raw source when the cursor enters the callout.
 - Live mode hides inactive wiki-link markers and styles the visible label; moving
   the cursor into the link reveals the source.
-- Live mode renders standalone document embeds as a single-line source widget,
-  so the `![[...]]` line can expand visually without needing multi-line
-  CodeMirror block replacement.
+- Inactive Live-mode document embeds render through the specialized Live block
+  registry, reusing `MarkdownDocument` for the preview and revealing the raw
+  `![[...]]` source when the cursor or selection enters the line.
 
 ### Specialized CodeMirror Live Preview Plan
 
@@ -284,7 +288,8 @@ Ideal implementation order:
 4. Add an inactive rendered asset-group block widget behind the new state field.
 5. Add robust source reveal and drag-selection tests for asset groups.
 6. Move callouts and document embeds into the same block registry only after the
-   asset-group path is stable.
+   asset-group path is stable. Completed for callouts and standalone document
+   embeds.
 7. Consider nested editors only for genuinely editable rich blocks; do not start
    there.
 
@@ -300,7 +305,9 @@ Uploaded assets are private-by-default user-owned assets, not public opaque
 URLs. Metadata lives in `assets` and `document_assets`, bytes live in private
 R2, and file reads go through Vault routes that check owner/public/signed-in
 document access. Embedded assets are not automatically published when a
-document becomes public.
+document becomes public. The owner publish control warns when the current
+Markdown embeds private linked assets, because those assets will remain hidden
+from anonymous public readers.
 
 ---
 

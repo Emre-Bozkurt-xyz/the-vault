@@ -1,81 +1,80 @@
 # Vault
 
-Vault is a self-hosted collaborative document platform with OAuth login, rich-text editing, private/public publishing, friend-based sharing, and server-enforced document permissions.
+Vault is a self-hosted Markdown workspace for private notes, collaborative
+documents, public publishing, and user-owned assets.
 
-Live target:
+Live app:
 
 ```txt
 https://vault.ems-place.com
 ```
 
-## Features
+## Why It Exists
 
-- GitHub OAuth with Auth.js and database-backed sessions.
-- PostgreSQL persistence through Drizzle ORM.
-- Tiptap rich-text editing stored as ProseMirror JSONB.
-- Autosave plus manual save status in the editor.
-- Real-time collaborative editing for authorized owner/editor sessions.
-- Live collaborator caret presence.
-- Private documents with server-side read/write/share checks.
-- Owner/editor/viewer document roles.
-- Friend requests and friend-based sharing.
-- Public read-only document publishing through stable slugs.
-- Dockerized production app and Postgres services.
-- GitHub Actions entrypoint for server-side deployment.
-- Health endpoint for service and database checks.
+I wanted to use an editor tailored to my needs, and also why not.
+It combines an Obsidian-like workspace with server-enforced privacy, role-based
+sharing, real-time Markdown collaboration, and private-by-default uploaded
+content storage.
+
+## What It Does
+
+- Create private Markdown documents in a workspace with tabs and side panels.
+- Edit in Source, Live, or Read mode using CodeMirror.
+- Share documents with owner, editor, and viewer roles.
+- Collaborate in real time through Yjs and Hocuspocus.
+- Publish selected documents as public read-only pages.
+- Upload images and PDFs to private Cloudflare R2 storage.
+- Embed assets with controlled layout attributes and grouped image grids.
+- Publish individual assets to the public gallery without publishing the
+  documents that use them.
 
 ## Architecture
 
 ```txt
 Browser
-  |
-  | HTTPS
-  v
-Cloudflare DNS
-  |
-  v
-DigitalOcean VPS
-  |
-  | Caddy reverse proxy
-  v
-FRP tunnel
-  |
-  v
-Mini-PC Docker Compose
-  |
-  +-- vault-web
-  +-- vault-postgres
-  +-- vault-collab
+  -> Cloudflare DNS
+  -> DigitalOcean VPS / Caddy
+  -> FRP tunnel
+  -> Mini-PC Docker Compose
+     -> Next.js web app
+     -> PostgreSQL
+     -> Hocuspocus collaboration service
+     -> Cloudflare R2 asset bucket
 ```
 
-The main app is a Next.js App Router project. Server components and server actions handle authenticated document reads, writes, sharing, publishing, and dashboard data. PostgreSQL stores users, sessions, documents, collaborator roles, friend requests, friendships, and public slugs. A separate Hocuspocus/Yjs service handles live document rooms and persists collaborative document state back to PostgreSQL.
+The app uses Next.js App Router, TypeScript, React, Tailwind, Auth.js,
+PostgreSQL, Drizzle ORM, CodeMirror, Yjs, Hocuspocus, Docker Compose, and
+private R2 object storage.
 
 ## Security Model
 
-Vault treats document authorization as a server-side concern. Every private document read or write goes through the session user and permission helpers before returning content or mutating data. Inaccessible private documents return a not-found response to avoid leaking document existence. Public documents are served only through the dedicated read-only public route and only when visibility is explicitly set to `public`.
+Private content stays private by default. Document and asset reads go through
+server-side permission checks; inaccessible private resources return not-found
+style responses instead of exposing existence. Public document publishing does
+not publish embedded private assets. Assets become public only through explicit
+asset publishing controls.
 
-Roles:
+## Documentation
 
-```txt
-owner  - read, edit, archive, share, publish
-editor - read, edit
-viewer - read only
-```
+User guides live in `content/docs` and are rendered in the app under `/docs`.
 
-## Tech Stack
+- [Markdown basics](content/docs/getting-started/markdown-basics.md)
+- [Wiki links and embeds](content/docs/getting-started/wiki-links-and-embeds.md)
+- [Asset library](content/docs/assets/asset-library.md)
+- [Asset embeds and layout](content/docs/assets/asset-embeds-and-layout.md)
+- [Sharing and permissions](content/docs/collaboration/sharing-and-permissions.md)
+- [Callouts](content/docs/customization/callouts.md)
+- [Safe HTML and embeds](content/docs/security/html-and-embeds.md)
 
-- Next.js 16 App Router
-- React 19
-- TypeScript
-- Tailwind CSS v4
-- shadcn/ui
-- Auth.js / NextAuth v5
-- PostgreSQL 16
-- Drizzle ORM
-- Tiptap / ProseMirror / Yjs
-- Hocuspocus
-- Docker Compose
-- Caddy, FRP, Cloudflare DNS
+Engineering notes and implementation plans live in `docs/`:
+
+- [Architecture](docs/02_ARCHITECTURE.md)
+- [Data model](docs/03_DATA_MODEL.md)
+- [Auth and permissions](docs/04_AUTH_AND_PERMISSIONS.md)
+- [Editor and collaboration](docs/05_EDITOR_AND_COLLAB.md)
+- [Deployment](docs/06_DEPLOYMENT.md)
+- [Asset storage plan](docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md)
+- [Current codebase knowledge](docs/project-knowledge.md)
 
 ## Local Development
 
@@ -86,123 +85,25 @@ npm run db:migrate
 npm run dev
 ```
 
-In a second shell, start collaboration:
+In another shell:
 
 ```bash
 npm run collab
 ```
 
-Open:
+Open `http://localhost:3000`. In non-production, `/login` includes dev login
+buttons so local work does not require OAuth setup.
 
-```txt
-http://localhost:3000
-```
-
-Required local env:
-
-```env
-DATABASE_URL=postgres://vault:vault@localhost:5432/vault
-NEXTAUTH_URL=http://localhost:3000
-AUTH_SECRET=<local secret>
-GITHUB_CLIENT_ID=<github oauth client id>
-GITHUB_CLIENT_SECRET=<github oauth secret>
-NEXT_PUBLIC_COLLAB_URL=ws://localhost:1234
-ENABLE_DEV_LOGIN=true
-```
-
-For localhost work, you do not need GitHub OAuth. In non-production, `/login`
-shows dev-only buttons for `Dev owner` and `Dev collaborator`. Those buttons
-create normal database-backed Auth.js sessions, so dashboard, document
-permissions, sharing, and collaboration still use the real server-side auth
-path. Set `ENABLE_DEV_LOGIN=false` to hide them.
-
-GitHub OAuth callback:
-
-```txt
-http://localhost:3000/api/auth/callback/github
-```
-
-## Production Deployment
-
-Production is handled by GitHub Actions on a self-hosted mini-PC runner. The workflow calls a server-local deployment script at:
-
-```txt
-/opt/apps/vault/repo/scripts/deploy.sh
-```
-
-That script is intentionally server-managed for now. The repo contains the production Dockerfile and Compose file used by the deployment.
-
-Run migrations:
+Useful checks:
 
 ```bash
-docker compose -f docker-compose.production.yml --profile migrate run --rm migrate
+npx tsc --noEmit
+npm run build
 ```
 
-Start production services:
+## Portfolio Summary
 
-```bash
-docker compose -f docker-compose.production.yml up -d postgres collab web
-```
-
-Required production env, stored only on the server:
-
-```env
-NODE_ENV=production
-NEXTAUTH_URL=https://vault.ems-place.com
-AUTH_SECRET=<strong secret>
-GITHUB_CLIENT_ID=<github oauth client id>
-GITHUB_CLIENT_SECRET=<github oauth secret>
-POSTGRES_PASSWORD=<strong password>
-DATABASE_URL=postgres://vault:<password>@postgres:5432/vault
-NEXT_PUBLIC_COLLAB_URL=wss://vault.ems-place.com/collab
-COLLAB_PORT=1234
-ENABLE_DEV_LOGIN=false
-```
-
-Production GitHub OAuth callback:
-
-```txt
-https://vault.ems-place.com/api/auth/callback/github
-```
-
-Health check:
-
-```bash
-curl https://vault.ems-place.com/api/health
-```
-
-## Backups
-
-Create a backup:
-
-```bash
-bash scripts/backup-db.sh
-```
-
-Restore from a backup:
-
-```bash
-bash scripts/restore-db.sh backups/<backup-file>.sql
-```
-
-On Windows/PowerShell against the local dev compose file:
-
-```powershell
-$env:COMPOSE_FILE="docker-compose.yml"
-$env:POSTGRES_SERVICE_NAME="postgres"
-.\scripts\backup-db.ps1
-```
-
-## Portfolio Notes
-
-Resume-ready summary:
-
-```txt
-Built and deployed Vault, a self-hosted collaborative document platform using Next.js, TypeScript, PostgreSQL, Drizzle ORM, Auth.js OAuth authentication, server-enforced role-based permissions, and a Docker/Caddy/FRP home-lab deployment pipeline.
-```
-
-Roadmap:
-
-- Add screenshots after production flow verification.
-- Add full-text search and richer document organization.
-- Verify production WebSocket routing and two-user live editing.
+Built and deployed Vault, a self-hosted Obsidian-style document platform with
+OAuth login, PostgreSQL persistence, server-enforced permissions, CRDT-powered
+real-time Markdown collaboration, private R2 asset storage, and a Dockerized
+home-lab deployment behind a public VPS edge.

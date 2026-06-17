@@ -278,9 +278,28 @@ Embeds follow the same permission rules as normal wiki links:
 - Public pages only embed public documents.
 - Unresolved, private, ambiguous, or recursive embeds show a small fallback message instead of leaking hidden content.
 
+## Uploaded assets
+
+For images and PDFs uploaded to Vault, use asset embeds:
+
+```md
+![[asset:<asset-id>|Image label]]
+![[asset:<pdf-asset-id>|Lecture notes.pdf]]
+```
+
+Type `![[asset:` to autocomplete assets you own and assets already linked to
+the current document.
+
+See the asset guides for layout attributes, grouped image grids, and public
+asset behavior:
+
+- [[guide:asset-library|Asset library]]
+- [[guide:asset-embeds-and-layout|Asset embeds and layout]]
+
 ## External images
 
-Vault also supports Obsidian-style external image embeds:
+Vault also supports Obsidian-style external image embeds when you want to
+reference a normal public image URL:
 
 ```md
 ![[https://example.com/image.png]]
@@ -289,7 +308,9 @@ Vault also supports Obsidian-style external image embeds:
 
 The first value is the image URL. The optional value after `|` becomes the image alt text.
 
-Only external `http` and `https` image URLs are supported right now. Vault does not yet store uploaded image files itself.
+Only external `http` and `https` image URLs are supported for external image
+embeds. Uploaded files should use `asset:` embeds instead of raw R2 or storage
+URLs.
 
 ## Best practices
 
@@ -297,6 +318,9 @@ Use autocomplete for important document links. It inserts stable `doc:...` links
 
 Use title links for quick drafts when you know the target title is unique.
 
-Before publishing a document, preview any links or embeds that point to private notes. Public rendering will hide private destinations, but readers will only get clickable links for documents that are public too.
+Before publishing a document, preview any links or embeds that point to private
+notes or private assets. Public rendering hides private destinations, and
+readers only get clickable document links or rendered assets when those targets
+are public too.
 
 Use document embeds for short reference notes, reusable explanations, checklists, or public documentation snippets. Avoid embedding very large documents inside many other documents until Vault has more advanced embed performance controls.

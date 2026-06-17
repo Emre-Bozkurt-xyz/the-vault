@@ -34,7 +34,6 @@ import {
 } from "@codemirror/view";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import CodeMirror from "@uiw/react-codemirror";
-import { createRoot, type Root } from "react-dom/client";
 import {
   AlertCircle,
   BookOpenText,
@@ -61,6 +60,7 @@ import {
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
 import { Button } from "@/components/ui/button";
+import { dispatchWorkspaceDocumentChanged } from "@/components/workspace/workspace-events";
 import {
   formatAssetEmbedSource,
   formatAssetGroupFence,
@@ -81,7 +81,6 @@ import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
   escapeWikiLinkLabel,
-  getWikiDocumentEmbed,
   type WikiLinkAnchor,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
@@ -385,6 +384,12 @@ export function MarkdownEditor({
       return;
     }
 
+    dispatchWorkspaceDocumentChanged({
+      id: documentId,
+      title: titleAtSave.trim() || "Untitled document",
+      href: `/docs/${documentId}`,
+      updatedAt: result.updatedAt,
+    });
     setLastSavedAt(new Date(result.updatedAt));
     setDirty(
       titleValueRef.current !== titleAtSave ||
@@ -1126,8 +1131,14 @@ export function MarkdownEditor({
             name="title"
             value={titleValue}
             onChange={(event) => {
-              titleValueRef.current = event.target.value;
-              setTitleValue(event.target.value);
+              const nextTitle = event.target.value;
+              titleValueRef.current = nextTitle;
+              setTitleValue(nextTitle);
+              dispatchWorkspaceDocumentChanged({
+                id: documentId,
+                title: nextTitle.trim() || "Untitled document",
+                href: `/docs/${documentId}`,
+              });
               setDirty(true);
             }}
             className="vault-editor-title w-full bg-transparent text-4xl font-semibold leading-[1.02] tracking-tight outline-none sm:text-5xl lg:text-6xl vault-display"
@@ -1683,7 +1694,7 @@ const previewCode = Decoration.mark({ class: "vault-cm-preview-code" });
 const previewLink = Decoration.mark({ class: "vault-cm-preview-link" });
 const previewWikiLink = Decoration.mark({ class: "vault-cm-preview-wiki-link" });
 const previewBlockAnchor = Decoration.mark({ class: "vault-cm-preview-block-anchor" });
-const previewWikiDocumentEmbedLine = Decoration.line({
+const previewStandaloneEmbedLine = Decoration.line({
   class: "vault-cm-document-embed-line",
 });
 const previewHeading1 = Decoration.line({ class: "vault-cm-preview-heading-1" });
@@ -2001,56 +2012,67 @@ class AssetEmbedPreviewWidget extends WidgetType {
       return figure;
     }
 
-    const link = document.createElement("a");
-    link.className = "vault-asset-embed vault-asset-embed--file";
-    link.href = this.asset.url;
-    link.target = "_blank";
-    link.rel = "noreferrer";
-    link.textContent = this.label || this.asset.displayName;
-
-    return link;
+    return createAssetFileCard(this.asset, this.label);
   }
 }
 
-class WikiDocumentEmbedPreviewWidget extends WidgetType {
-  private root: Root | null = null;
+function createAssetFileCard(
+  asset: AssetEmbedResolutionMap[string],
+  label: string | null,
+) {
+  const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
+  const link = document.createElement("a");
+  link.className = [
+    "vault-asset-embed",
+    "vault-asset-embed--file",
+    `vault-asset-embed--${asset.kind}`,
+  ].join(" ");
+  link.href = asset.url;
+  link.target = "_blank";
+  link.rel = "noreferrer";
 
-  constructor(
-    private readonly source: string,
-    private readonly wikiLinks: WikiLinkResolutionMap,
-  ) {
-    super();
+  const icon = document.createElement("span");
+  icon.className = "vault-asset-file-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = kindLabel;
+
+  const body = document.createElement("span");
+  body.className = "vault-asset-file-body";
+
+  const title = document.createElement("span");
+  title.className = "vault-asset-file-title";
+  title.textContent = label || asset.displayName;
+
+  const meta = document.createElement("span");
+  meta.className = "vault-asset-file-meta";
+  meta.textContent = [kindLabel, formatAssetFileSize(asset.sizeBytes)]
+    .filter(Boolean)
+    .join(" - ");
+
+  const action = document.createElement("span");
+  action.className = "vault-asset-file-action";
+  action.textContent = "Open";
+
+  body.append(title, meta);
+  link.append(icon, body, action);
+
+  return link;
+}
+
+function formatAssetFileSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "";
   }
 
-  eq(widget: WikiDocumentEmbedPreviewWidget) {
-    return widget.source === this.source && widget.wikiLinks === this.wikiLinks;
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
   }
 
-  toDOM() {
-    const container = document.createElement("div");
-    container.className = "vault-cm-document-embed-preview";
-
-    this.root = createRoot(container);
-    this.root.render(
-      <MarkdownDocument
-        markdown={this.source}
-        wikiLinks={this.wikiLinks}
-        contained={false}
-        className="vault-cm-document-embed-markdown"
-      />,
-    );
-
-    return container;
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 1024)} KiB`;
   }
 
-  destroy() {
-    const root = this.root;
-    this.root = null;
-
-    if (root) {
-      window.setTimeout(() => root.unmount(), 0);
-    }
-  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 class TaskCheckboxWidget extends WidgetType {
@@ -2341,34 +2363,13 @@ function buildLivePreviewDecorations(
           assetEmbed &&
           !hasActivePositionInRange(activePositions, line.from, line.to)
         ) {
-          ranges.push(previewWikiDocumentEmbedLine.range(line.from));
+          ranges.push(previewStandaloneEmbedLine.range(line.from));
           ranges.push(
             Decoration.replace({
               widget: new AssetEmbedPreviewWidget(
                 assetEmbed.asset,
                 assetEmbed.label,
                 assetEmbed.attributes,
-              ),
-            }).range(line.from, line.to),
-          );
-
-          position = line.to + 1;
-          continue;
-        }
-
-        const wikiEmbed = getWikiDocumentEmbed(line.text, wikiLinks);
-
-        if (
-          !isLiveBlockLine &&
-          wikiEmbed &&
-          !hasActivePositionInRange(activePositions, line.from, line.to)
-        ) {
-          ranges.push(previewWikiDocumentEmbedLine.range(line.from));
-          ranges.push(
-            Decoration.replace({
-              widget: new WikiDocumentEmbedPreviewWidget(
-                line.text.trim(),
-                wikiLinks,
               ),
             }).range(line.from, line.to),
           );

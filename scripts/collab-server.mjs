@@ -12,6 +12,8 @@ const databaseUrl = process.env.DATABASE_URL;
 const automaticVersionIntervalMs = 10 * 60 * 1000;
 const significantVersionAbsoluteDiff = 2_000;
 const significantVersionRelativeDiff = 0.25;
+const assetEmbedPattern =
+  /!\[\[asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|([^\]\n]+))?\]\](?:\{([^}\n]*)\})?/gi;
 
 if (!databaseUrl) {
   throw new Error("DATABASE_URL is required for the collaboration server");
@@ -117,6 +119,8 @@ const server = new Server({
         where id = ${documentName}
           and deleted_at is null
       `;
+
+      await reconcileDocumentAssetLinks(tx, documentName, markdown);
 
       await tx`
         insert into document_collab_states (document_id, yjs_state)
@@ -251,4 +255,30 @@ async function maybeCreateAutomaticDocumentVersion(documentId, nextMarkdown) {
       'collab'
     )
   `;
+}
+
+async function reconcileDocumentAssetLinks(tx, documentId, markdown) {
+  const embeddedAssetIds = extractAssetEmbedIds(markdown);
+
+  if (embeddedAssetIds.length === 0) {
+    await tx`
+      delete from document_assets
+      where document_id = ${documentId}
+    `;
+    return;
+  }
+
+  await tx`
+    delete from document_assets
+    where document_id = ${documentId}
+      and asset_id not in ${tx(embeddedAssetIds)}
+  `;
+}
+
+function extractAssetEmbedIds(markdown) {
+  return [...new Set(
+    Array.from(String(markdown ?? "").matchAll(assetEmbedPattern), (match) =>
+      match[1].toLowerCase(),
+    ),
+  )];
 }

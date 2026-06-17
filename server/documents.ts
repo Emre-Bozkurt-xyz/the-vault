@@ -34,6 +34,7 @@ import {
   wikiTitleKey,
 } from "@/lib/wiki-links";
 import { requireActiveUser } from "@/server/authz";
+import { reconcileDocumentAssetLinks } from "@/server/assets";
 
 const documentIdSchema = z.string().uuid();
 const initialMarkdownContent = "# Untitled document\n\nStart writing...\n";
@@ -195,6 +196,10 @@ export async function saveMarkdownDocumentAction(
       .delete(documentCollabStates)
       .where(eq(documentCollabStates.documentId, parsed.data.documentId));
   });
+  await reconcileDocumentAssetLinks({
+    documentId: parsed.data.documentId,
+    markdown: parsed.data.markdown,
+  });
 
   return {
     ok: true,
@@ -319,6 +324,8 @@ export async function restoreDocumentVersionAction(formData: FormData) {
     notFound();
   }
 
+  let restoredMarkdown = "";
+
   await db.transaction(async (tx) => {
     const [version] = await tx
       .select({
@@ -350,6 +357,8 @@ export async function restoreDocumentVersionAction(formData: FormData) {
       notFound();
     }
 
+    restoredMarkdown = version.markdown;
+
     await createDocumentVersion(tx, {
       document: currentDocument,
       actorId: user.id,
@@ -370,6 +379,10 @@ export async function restoreDocumentVersionAction(formData: FormData) {
     await tx
       .delete(documentCollabStates)
       .where(eq(documentCollabStates.documentId, input.documentId));
+  });
+  await reconcileDocumentAssetLinks({
+    documentId: input.documentId,
+    markdown: restoredMarkdown,
   });
 
   redirect(`/docs/${input.documentId}`);

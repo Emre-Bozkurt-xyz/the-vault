@@ -32,6 +32,22 @@ Owners can publish selected documents. Published documents receive a stable publ
 
 Unpublishing makes the document private again while keeping the slug reserved.
 
+## Assets in shared or public documents
+
+Uploaded assets are private by default.
+
+When an asset is linked to a document, signed-in users who can read that
+document can also render that linked private asset through the document context.
+This is what lets editors and viewers see images or PDFs inside shared private
+documents.
+
+Publishing a document does not publish its embedded assets. If a public
+document embeds a private asset, logged-out readers see an unavailable/private
+placeholder for that embed. The publish panel warns the owner when private
+linked assets are embedded.
+
+To show an asset publicly, publish the asset itself from the asset library.
+
 ## Collaboration
 
 Owner and editor sessions can connect to the collaboration server. Viewers can read the document but cannot join as editors.

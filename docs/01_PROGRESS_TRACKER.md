@@ -232,12 +232,12 @@ Unauthorized users cannot connect.
 | [x] | Add source-mode HTML autocomplete | Markdown CodeMirror keeps HTML tag completion available in source/split/live modes alongside wiki-link completion |
 | [x] | Add live wiki-link styling | Live mode hides inactive wiki-link markers and styles the visible label |
 | [x] | Add document transclusion embeds | Standalone `![[doc]]` embeds render permission-aware document previews in Preview/view/public and Live mode |
-| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups and inactive callouts now use syntax-aware detection plus direct `StateField` block widgets with source reveal; asset groups also expose an icon-triggered formatting panel, while document embeds remain next |
+| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups, inactive callouts, and standalone document embeds now use syntax-aware detection plus direct `StateField` block widgets with source reveal; asset groups also expose an icon-triggered formatting panel |
 | [x] | Add heading-scoped wiki links | `[[doc#heading]]` links navigate to rendered heading anchors; `![[doc#heading]]` embeds only the selected heading section |
 | [x] | Add block and region-scoped wiki links | `[[doc#^block-id]]` targets hidden Obsidian-style block anchors; `[[doc#@region-id]]` targets hidden Vault regions; embeds render only the selected block/region |
 | [x] | Add guide/public wiki namespaces | `guide:<slug>` links official docs; `public:<slug>` links published user docs and autocomplete shows publisher usernames |
 | [x] | Flatten writing surfaces | Live editor and Preview/public reading modes now use seamless page surfaces instead of large card frames; Live mode hides line-number/fold gutters |
-| [~] | Add uploaded document assets | Planning moved to `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; implementation not started |
+| [x] | Add uploaded document assets | Private R2 upload, permission-checked serving, library/gallery surfaces, editor insertion, asset autocomplete, controlled layout attributes, groups, cleanup, and user docs are implemented |
 
 Exit criteria:
 
@@ -288,6 +288,7 @@ Reference plan: `docs/10_WORKSPACE_UI_REVAMP_PLAN.md`
 | [x] | Move document context tools into right panel | Share, publish, restore points, and archive now live in the workspace right panel instead of the document canvas |
 | [x] | Add resizable persistent panels | Left navigation and right context panel widths/collapse state are stored in localStorage and can be changed by dragging panel edges |
 | [x] | Add shared protected workspace layout | Protected workspace routes under `/workspace`, `/docs/[docId]`, `/gallery`, and `/dashboard/*` now share `app/(workspace)/layout.tsx` so tab/panel chrome persists across those route changes |
+| [x] | Add workspace document state sync | Document pages upsert themselves into the client workspace snapshot, and editor title changes patch open tabs plus workspace document panels immediately instead of waiting for a route switch or refresh |
 | [x] | Add real search and gallery side panels | Workspace search quick-opens owned, shared, public, and guide pages; the gallery side panel filters public docs inline and links to the full gallery |
 | [x] | Add workspace public reader | Signed-in gallery/search public-document opens now route to `/workspace/public/[slug]`, a read-only workspace-native view; `/public/[slug]` remains the canonical external public page |
 | [~] | Final workspace visual pass | Document editor route now uses a centered Obsidian-like editor column with Read/Live/Source modes, a compact hover/focus icon stack for mode switching, and live-mode typography/list/callout styling closer to Read mode; new tab is a raw greeting/search/recent surface; workspace shell has independent scroll domains for center/side panels and hydration-safe persisted chrome state; gallery uses rendered document preview cards; mobile tabs scroll with minimum widths and mobile drawer controls expose left/right panels; remaining routes need a final consistency pass |
@@ -314,12 +315,13 @@ Reference plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`
 | [x] | Add asset schema and migrations | Migration `0011_tiresome_ultimates.sql` adds user quota fields, `assets`, and `document_assets` |
 | [x] | Add private upload API | `POST /api/assets` authenticates, checks document edit access, validates file signatures, reserves quota, uploads to private R2, stores metadata, and links to the document |
 | [x] | Add private serving API | Permission-checked `/api/assets/:assetId/content` streams from private R2; private linked assets require a signed-in readable document context |
-| [x] | Render Markdown asset embeds | `![[asset:id|label]]` resolves through server-provided asset maps; image embeds support controlled layout/align/width/caption/alt attributes and first-pass `:::assets` grid groups in Read mode and inactive Live mode, plus selected-embed editor controls; public document pages only resolve explicitly public assets |
+| [x] | Render Markdown asset embeds | `![[asset:id|label]]` resolves through server-provided asset maps; image embeds support controlled layout/align/width/caption/alt attributes and first-pass `:::assets` grid groups in Read mode and inactive Live mode, PDF/file embeds render as compact cards, and selected-embed editor controls exist; public document pages only resolve explicitly public assets |
 | [x] | Add editor upload and paste flows | Toolbar file picker, clipboard paste, and drag/drop upload supported through the same asset API |
 | [x] | Add asset library page | `/assets` workspace page has a masonry-style owned asset grid, search/filter/sort controls, details/config panel, metadata editing, delete, and copy embed |
-| [x] | Add explicit asset publishing | `/assets` can toggle owned assets public/private; publishing documents still does not publish embedded assets |
+| [x] | Add explicit asset publishing | `/assets` can toggle owned assets public/private; publishing documents still does not publish embedded assets, and the owner publish control warns when linked private embeds will be hidden publicly |
 | [x] | Integrate public assets into gallery | `/gallery` lists explicitly public assets alongside public documents |
-| [x] | Add cleanup and reconciliation tools | `assets:audit`, `assets:repair-quota`, `assets:delete-orphans`, and `assets:export` cover unused asset detection, object cleanup, quota repair, and R2 export |
+| [x] | Add cleanup and reconciliation tools | Document saves/collab stores remove stale document-asset links; `assets:audit`, `assets:repair-quota`, `assets:delete-orphans`, and `assets:export` cover unused asset detection, object cleanup, quota repair, and R2 export |
+| [x] | Add asset user guides | Repo-backed docs now cover the asset library, privacy/sharing rules, autocomplete, embed syntax, image layout attributes, asset groups, PDF/file cards, and rendered examples |
 
 Exit criteria:
 

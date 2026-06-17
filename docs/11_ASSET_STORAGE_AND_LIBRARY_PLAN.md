@@ -1144,19 +1144,19 @@ Implementation status as of 2026-06-15:
 - Phase 3 is implemented for toolbar/API uploads.
 - Phase 4 is implemented for metadata reads, `GET`/`HEAD` content streaming,
   Range requests, and safe headers.
-- Phase 5 is implemented for images, file links, unresolved placeholders, and
+- Phase 5 is implemented for images, PDF/file cards, unresolved placeholders, and
   conservative public rendering. Controlled image embed attributes are
   implemented for Read and Live modes. First-pass `:::assets` image groups are
   implemented for Read mode and inactive Live mode. Live uses the specialized
   CodeMirror block layer, not view-plugin replacement decorations, so cursoring
   into a group reveals the literal Markdown source without the previous
-  multi-line decoration crash path; richer PDF cards remain future work.
+  multi-line decoration crash path.
 - Phase 6 is implemented for toolbar upload, clipboard paste, and drag/drop;
   collaborative smoke testing remains manual.
 - Phase 7 is implemented for `/assets` owned asset grid, search/filter/sort,
   details panel, metadata editing, delete, copy embed, and public/private toggle.
-- Phase 8 is implemented for owner public/private toggling, and `/gallery`
-  includes explicitly public assets.
+- Phase 8 is implemented for owner public/private toggling, publish-time private
+  embed warnings, and `/gallery` includes explicitly public assets.
 - Asset autocomplete is implemented for `![[asset:...]]` in the editor, scoped
   to assets owned by the current user and assets already linked to the current
   document. It deliberately excludes the global public gallery. Selecting an
@@ -1165,7 +1165,8 @@ Implementation status as of 2026-06-15:
 - Public gallery asset cards now open a detail panel with metadata, open-link,
   copy-embed, and copy-id actions. Public asset reuse is therefore explicit
   from the gallery instead of mixed into private editor autocomplete.
-- Phase 10 is implemented with `assets:audit`, `assets:repair-quota`,
+- Phase 10 is implemented with runtime document-link cleanup on document saves
+  and collaboration stores, plus `assets:audit`, `assets:repair-quota`,
   `assets:delete-orphans`, and `assets:export`.
 
 ### Phase 1 - Schema And Migrations

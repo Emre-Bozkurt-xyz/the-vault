@@ -20,7 +20,10 @@ import {
   type AssetGroupAttributes,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
-import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
+import {
+  getWikiDocumentEmbed,
+  type WikiLinkResolutionMap,
+} from "@/lib/wiki-links";
 
 export type LiveAssetGroupLineKind = "first" | "middle" | "last" | "single";
 
@@ -53,7 +56,19 @@ export type LiveCalloutBlock = {
   source: string;
 };
 
-export type LiveBlock = LiveAssetGroupBlock | LiveCalloutBlock;
+export type LiveDocumentEmbedBlock = {
+  kind: "documentEmbed";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+};
+
+export type LiveBlock =
+  | LiveAssetGroupBlock
+  | LiveCalloutBlock
+  | LiveDocumentEmbedBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -172,13 +187,15 @@ function buildLiveBlockDecorations(
           widget:
             block.kind === "assetGroup"
               ? new AssetGroupBlockWidget(block, options)
-              : new CalloutBlockWidget(block, options),
+              : block.kind === "callout"
+                ? new CalloutBlockWidget(block, options)
+                : new DocumentEmbedBlockWidget(block, options),
         }).range(block.from, block.to),
       );
       continue;
     }
 
-    if (block.kind === "callout") {
+    if (block.kind === "callout" || block.kind === "documentEmbed") {
       continue;
     }
 
@@ -285,13 +302,7 @@ class AssetGroupBlockWidget extends WidgetType {
       }
 
       if (asset.kind !== "image") {
-        const link = document.createElement("a");
-        link.className = "vault-asset-embed vault-asset-embed--file";
-        link.href = asset.url;
-        link.target = "_blank";
-        link.rel = "noreferrer";
-        link.textContent = child.parsed.label || asset.displayName;
-        item.append(link);
+        item.append(createAssetFileCard(asset, child.parsed.label));
         grid.append(item);
         continue;
       }
@@ -417,6 +428,114 @@ class CalloutBlockWidget extends WidgetType {
   }
 }
 
+class DocumentEmbedBlockWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly block: LiveDocumentEmbedBlock,
+    private readonly options: LiveBlockOptions,
+  ) {
+    super();
+  }
+
+  eq(widget: DocumentEmbedBlockWidget) {
+    return (
+      widget.block.source === this.block.source &&
+      widget.options.assetLinks === this.options.assetLinks &&
+      widget.options.wikiLinks === this.options.wikiLinks
+    );
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "vault-cm-document-embed-preview";
+    this.root = createRoot(container);
+    this.root.render(
+      createElement(MarkdownDocument, {
+        markdown: this.block.source,
+        assetLinks: this.options.assetLinks,
+        wikiLinks: this.options.wikiLinks,
+        contained: false,
+        className: "vault-cm-document-embed-markdown",
+      }),
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+
+    if (root) {
+      window.setTimeout(() => root.unmount(), 0);
+    }
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function createAssetFileCard(
+  asset: AssetEmbedResolutionMap[string],
+  label: string | null,
+) {
+  const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
+  const link = document.createElement("a");
+  link.className = [
+    "vault-asset-embed",
+    "vault-asset-embed--file",
+    `vault-asset-embed--${asset.kind}`,
+  ].join(" ");
+  link.href = asset.url;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+
+  const icon = document.createElement("span");
+  icon.className = "vault-asset-file-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = kindLabel;
+
+  const body = document.createElement("span");
+  body.className = "vault-asset-file-body";
+
+  const title = document.createElement("span");
+  title.className = "vault-asset-file-title";
+  title.textContent = label || asset.displayName;
+
+  const meta = document.createElement("span");
+  meta.className = "vault-asset-file-meta";
+  meta.textContent = [kindLabel, formatAssetFileSize(asset.sizeBytes)]
+    .filter(Boolean)
+    .join(" - ");
+
+  const action = document.createElement("span");
+  action.className = "vault-asset-file-action";
+  action.textContent = "Open";
+
+  body.append(title, meta);
+  link.append(icon, body, action);
+
+  return link;
+}
+
+function formatAssetFileSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "";
+  }
+
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 1024)} KiB`;
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
 function isBlockActive(state: EditorState, block: LiveBlock) {
   return state.selection.ranges.some((range) => {
     if (range.empty) {
@@ -438,8 +557,16 @@ function getLiveBlocks(state: EditorState): LiveBlock[] {
     ...syntaxExclusions,
     ...assetGroupRanges,
   ]);
+  const occupiedRanges = [
+    ...syntaxExclusions,
+    ...assetGroupRanges,
+    ...callouts.map((block) => ({ from: block.from, to: block.to })),
+  ];
+  const documentEmbeds = getLiveDocumentEmbedBlocks(state, occupiedRanges);
 
-  return [...assetGroups, ...callouts].sort((a, b) => a.from - b.from);
+  return [...assetGroups, ...callouts, ...documentEmbeds].sort(
+    (a, b) => a.from - b.from,
+  );
 }
 
 function getLiveAssetGroupBlocks(state: EditorState): LiveAssetGroupBlock[] {
@@ -555,6 +682,39 @@ function getLiveCalloutBlocks(
       source: doc.sliceString(line.from, endLine.to),
     });
     lineNumber = endLineNumber + 1;
+  }
+
+  return blocks;
+}
+
+function getLiveDocumentEmbedBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveDocumentEmbedBlock[] {
+  const blocks: LiveDocumentEmbedBlock[] = [];
+  const doc = state.doc;
+
+  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
+    const line = doc.line(lineNumber);
+
+    if (isInsideSyntaxRange(line.from, excludedRanges)) {
+      continue;
+    }
+
+    const source = line.text.trim();
+
+    if (!source || !getWikiDocumentEmbed(source)) {
+      continue;
+    }
+
+    blocks.push({
+      kind: "documentEmbed",
+      from: line.from,
+      to: line.to,
+      startLine: lineNumber,
+      endLine: lineNumber,
+      source,
+    });
   }
 
   return blocks;

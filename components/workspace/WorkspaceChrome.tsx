@@ -16,6 +16,7 @@ import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPa
 import { WorkspaceSearchPanel } from "@/components/workspace/WorkspaceSearchPanel";
 import { WorkspaceUtilityPanel } from "@/components/workspace/WorkspaceUtilityPanel";
 import { VaultWorkspaceShell } from "@/components/workspace/VaultWorkspaceShell";
+import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import type {
   WorkspaceDocumentItem,
   WorkspaceGuideGroup,
@@ -35,6 +36,7 @@ type WorkspaceChromeData = {
 type WorkspaceChromeContextValue = {
   setActivePage: (page: WorkspacePageDescriptor) => void;
   setRightPanel: (panel: ReactNode | null) => void;
+  upsertDocument: (document: WorkspaceDocumentItem) => void;
 };
 
 const WorkspaceChromeContext =
@@ -60,14 +62,47 @@ export function WorkspaceChrome({
   const [activePage, setActivePage] =
     useState<WorkspacePageDescriptor>(fallbackPage);
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
+  const [workspaceState, setWorkspaceState] = useState(workspace);
   const isAdmin = workspace.profile.role === "admin";
+  const baseCurrentHref = currentHref.split("?")[0] ?? currentHref;
+
+  useEffect(() => {
+    setWorkspaceState(workspace);
+  }, [workspace]);
+
+  const upsertDocument = useMemo(
+    () => (document: WorkspaceDocumentItem) => {
+      setWorkspaceState((current) => applyDocumentChange(current, {
+        ...document,
+        updatedAt: document.updatedAt.toISOString(),
+      }));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return subscribeToWorkspaceDocumentChanges((detail) => {
+      setWorkspaceState((current) => applyDocumentChange(current, detail));
+
+      const detailHref = detail.href?.split("?")[0];
+
+      if (detailHref && detailHref === baseCurrentHref && detail.title) {
+        setActivePage((current) => ({
+          ...current,
+          title: detail.title ?? current.title,
+          href: current.href || detail.href || currentHref,
+        }));
+      }
+    });
+  }, [baseCurrentHref, currentHref]);
 
   const contextValue = useMemo(
     () => ({
       setActivePage,
       setRightPanel,
+      upsertDocument,
     }),
-    [],
+    [upsertDocument],
   );
 
   return (
@@ -79,30 +114,30 @@ export function WorkspaceChrome({
         contentClassName="max-w-none px-0 py-0 md:px-0 md:py-0"
         filePanel={
           <WorkspaceFileBrowser
-            owned={workspace.owned}
-            shared={workspace.shared}
-            published={workspace.published}
+            owned={workspaceState.owned}
+            shared={workspaceState.shared}
+            published={workspaceState.published}
             activeHref={currentHref.split("?")[0]}
           />
         }
         docsPanel={
           <WorkspaceDocsPanel
-            docs={workspace.guideGroups}
+            docs={workspaceState.guideGroups}
             activeSlug={activeGuideSlugForHref(currentHref)}
           />
         }
         searchPanel={
           <WorkspaceSearchPanel
-            owned={workspace.owned}
-            shared={workspace.shared}
-            publicDocuments={workspace.publicDocuments}
-            guideGroups={workspace.guideGroups}
+            owned={workspaceState.owned}
+            shared={workspaceState.shared}
+            publicDocuments={workspaceState.publicDocuments}
+            guideGroups={workspaceState.guideGroups}
             activeHref={currentHref}
           />
         }
         galleryPanel={
           <WorkspaceGalleryPanel
-            publicDocuments={workspace.publicDocuments}
+            publicDocuments={workspaceState.publicDocuments}
             activeHref={currentHref}
           />
         }
@@ -126,9 +161,11 @@ export function WorkspaceChrome({
 export function WorkspacePageRegistration({
   page,
   rightPanel,
+  documentItem,
 }: {
   page: WorkspacePageDescriptor;
   rightPanel?: ReactNode;
+  documentItem?: WorkspaceDocumentItem;
 }) {
   const context = useContext(WorkspaceChromeContext);
 
@@ -136,12 +173,111 @@ export function WorkspacePageRegistration({
     context?.setActivePage(page);
     context?.setRightPanel(rightPanel ?? null);
 
+    if (documentItem) {
+      context?.upsertDocument(documentItem);
+    }
+
     return () => {
       context?.setRightPanel(null);
     };
-  }, [context, page, rightPanel]);
+  }, [context, documentItem, page, rightPanel]);
 
   return null;
+}
+
+function applyDocumentChange(
+  workspace: WorkspaceChromeData,
+  detail: {
+    id: string;
+    title?: string;
+    href?: string;
+    updatedAt?: string;
+    visibility?: "private" | "public";
+    role?: "owner" | "editor" | "viewer";
+  },
+): WorkspaceChromeData {
+  const updateList = (items: WorkspaceDocumentItem[]) => {
+    let found = false;
+    const nextItems = items.map((item) => {
+      if (item.id !== detail.id) {
+        return item;
+      }
+
+      found = true;
+      return mergeDocumentItem(item, detail);
+    });
+
+    return { items: nextItems, found };
+  };
+  const owned = updateList(workspace.owned);
+  const shared = updateList(workspace.shared);
+  const shouldBeOwned = detail.role === "owner" || (!owned.found && !shared.found);
+  const shouldBeShared =
+    detail.role === "editor" || detail.role === "viewer" || shared.found;
+  let nextOwned = owned.items;
+  let nextShared = shared.items;
+
+  if (!owned.found && !shared.found) {
+    const item = createDocumentItemFromChange(detail);
+
+    if (shouldBeShared && !shouldBeOwned) {
+      nextShared = [item, ...nextShared];
+    } else {
+      nextOwned = [item, ...nextOwned];
+    }
+  }
+
+  nextOwned = sortDocumentsByUpdatedAt(nextOwned);
+  nextShared = sortDocumentsByUpdatedAt(nextShared);
+
+  return {
+    ...workspace,
+    owned: nextOwned,
+    shared: nextShared,
+    published: nextOwned.filter((document) => document.visibility === "public"),
+  };
+}
+
+function mergeDocumentItem(
+  item: WorkspaceDocumentItem,
+  detail: {
+    title?: string;
+    href?: string;
+    updatedAt?: string;
+    visibility?: "private" | "public";
+    role?: "owner" | "editor" | "viewer";
+  },
+): WorkspaceDocumentItem {
+  return {
+    ...item,
+    title: detail.title ?? item.title,
+    href: detail.href ?? item.href,
+    updatedAt: detail.updatedAt ? new Date(detail.updatedAt) : item.updatedAt,
+    visibility: detail.visibility ?? item.visibility,
+    role: detail.role ?? item.role,
+  };
+}
+
+function createDocumentItemFromChange(detail: {
+  id: string;
+  title?: string;
+  href?: string;
+  updatedAt?: string;
+  visibility?: "private" | "public";
+  role?: "owner" | "editor" | "viewer";
+}): WorkspaceDocumentItem {
+  return {
+    id: detail.id,
+    title: detail.title?.trim() || "Untitled document",
+    href: detail.href ?? `/docs/${detail.id}`,
+    updatedAt: detail.updatedAt ? new Date(detail.updatedAt) : new Date(),
+    visibility: detail.visibility ?? "private",
+    role: detail.role ?? "owner",
+  };
+}
+
+function sortDocumentsByUpdatedAt(items: WorkspaceDocumentItem[]) {
+  return [...items].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 }
 
 function inferWorkspacePage(
