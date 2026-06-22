@@ -236,6 +236,9 @@ Current editor behavior:
 - Inactive Live-mode document embeds render through the specialized Live block
   registry, reusing `MarkdownDocument` for the preview and revealing the raw
   `![[...]]` source when the cursor or selection enters the line.
+- GFM Markdown tables render through the specialized Live block registry when
+  inactive, using the same `MarkdownDocument` table renderer as Read mode. The
+  table source is revealed again when the cursor or selection enters the table.
 
 ### Specialized CodeMirror Live Preview Plan
 
@@ -262,7 +265,8 @@ Target architecture:
 type LiveBlock =
   | { kind: "assetGroup"; from: number; to: number; startLine: number; endLine: number }
   | { kind: "callout"; from: number; to: number; startLine: number; endLine: number }
-  | { kind: "documentEmbed"; from: number; to: number };
+  | { kind: "documentEmbed"; from: number; to: number }
+  | { kind: "table"; from: number; to: number; startLine: number; endLine: number };
 ```
 
 - Move vertical-layout-changing Live behavior into direct CodeMirror decoration
@@ -290,7 +294,9 @@ Ideal implementation order:
 6. Move callouts and document embeds into the same block registry only after the
    asset-group path is stable. Completed for callouts and standalone document
    embeds.
-7. Consider nested editors only for genuinely editable rich blocks; do not start
+7. Move GFM tables into the same block registry after the shared renderer path
+   is stable. Completed for inactive Live-mode tables.
+8. Consider nested editors only for genuinely editable rich blocks; do not start
    there.
 
 Definition of done for the first major slice:

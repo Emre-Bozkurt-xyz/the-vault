@@ -19,7 +19,7 @@ Last updated:
 Current phase:
 
 ```txt
-Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library
+Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library; Phase 12 - Extension registry foundation
 ```
 
 Current deployment status:
@@ -43,7 +43,7 @@ Vault currently has a runnable dark-first Next.js app shell, switchable theming,
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. Private-by-default uploaded asset storage and the asset library are implemented from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; remaining asset work should be follow-up polish rather than initial architecture.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. Private-by-default uploaded asset storage and the asset library are implemented from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; remaining asset work should be follow-up polish rather than initial architecture. Extension architecture planning lives in `docs/12_EXTENSION_REGISTRY_PLAN.md`; LaTeX/math should remain a core editor feature, while optional capabilities such as stickers, drawings, calendars, and widgets should register through trusted built-in extension APIs. Initial registry types, live-block specs, and document extension state storage exist.
 ```
 
 ---
@@ -198,8 +198,9 @@ Add notes as real files appear:
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/document-publish-control.tsx` | Client-side publish confirmation gate that warns when publishing a document with linked private asset embeds |
 | `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
+| `components/extensions/DocumentOverlayHost.tsx` | Pointer-safe document overlay host and overlay item primitive for trusted document-state extensions such as stickers or page annotations |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
-| `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups, Obsidian-style callouts, and standalone document embeds while ignoring fenced code blocks, renders inactive blocks through `StateField<DecorationSet>` widgets, and reveals literal source when the cursor enters the block |
+| `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups, Obsidian-style callouts, standalone document embeds, and GFM tables through internal `LiveBlockSpec`s while ignoring fenced code blocks, renders inactive blocks through `StateField<DecorationSet>` widgets, and reveals literal source when the cursor enters the block |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax, opens the asset upload picker, and can create/wrap `:::assets` groups |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist and permission-resolved asset embed rendering, including controlled image layout attributes |
@@ -214,6 +215,7 @@ Add notes as real files appear:
 | `db/index.ts` | Drizzle/Postgres client |
 | `db/schema.ts` | Auth, document, permission, collaboration, friend, official docs, and uploaded asset schema |
 | `lib/` | Shared helpers |
+| `lib/extensions/types.ts` | Trusted built-in extension registry types for Markdown live blocks, renderer/preprocessor hooks, document state overlays, workspace contributions, permissions, and command metadata |
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
 | `lib/markdown.ts` | Shared Markdown limits |
@@ -225,6 +227,7 @@ Add notes as real files appear:
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
 | `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, editor autocomplete, explicit document linking, publish-warning analysis, stale document-link cleanup, public asset listing, owner metadata updates, document links, and read authorization |
+| `server/document-extensions.ts` | Permission-checked CRUD helpers for `document_extension_states`; editors can write, readers can read public extension state, explicit collaborators can read private state, and editor-only state requires edit access |
 | `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
 | `server/authz.ts` | DB-backed active-user and admin guards; active bans redirect to `/banned` |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
@@ -346,6 +349,7 @@ Current tables:
 | `document_permissions` | Yes | Per-document access |
 | `document_share_links` | Yes | Revocable copyable document share links |
 | `document_collab_states` | Yes | Durable Yjs CRDT snapshots for collaboration room reload/reconnect safety |
+| `document_extension_states` | Yes | Permission-scoped JSON state for trusted built-in document extensions |
 | `document_versions` | Yes | Batched Markdown restore checkpoints |
 | `friend_requests` | Yes | Friend request workflow |
 | `friendships` | Yes | Accepted friendships |
@@ -367,11 +371,12 @@ Current migrations:
 | `0009_simple_korvac.sql` | Adds `document_share_links` for copyable document access links | Generated | No |
 | `0010_fast_phantom_reporter.sql` | Adds `document_collab_states` for durable Yjs room state | Generated | No |
 | `0011_tiresome_ultimates.sql` | Adds user storage quota fields, `assets`, and `document_assets` for private uploaded asset metadata | Generated | No |
+| `0012_tiny_tana_nile.sql` | Adds `document_extension_states` for trusted extension state keyed by document, extension, and state key | Generated | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_versions, friend_requests, friendships, official_docs, assets, and document_assets.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_extension_states, document_versions, friend_requests, friendships, official_docs, assets, and document_assets.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion; `users.role` supports `user`/`admin`.
 - `users.banned_at`, `users.banned_until`, and `users.ban_reason` store moderation state. `banned_at` with no `banned_until` is treated as permanent.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
@@ -379,6 +384,8 @@ Schema notes:
 - `documents.content` has been removed from the Drizzle schema and will be dropped by migration `0005_high_captain_midlands.sql`.
 - `document_collab_states.yjs_state` stores compact binary Yjs state for collaboration rooms. The collab service loads this before falling back to `documents.markdown`, which prevents reconnects from merging identical plain text as separate CRDT items and duplicating the document.
 - Non-collab Markdown overwrites and restores delete the corresponding `document_collab_states` row so future collab sessions reseed from the latest Markdown instead of stale Yjs state.
+- `document_extension_states` stores non-Markdown trusted extension state keyed by `(document_id, extension_id, state_key)`. State rows are JSONB with `private`, `public`, or `editor-only` visibility. Use `server/document-extensions.ts` for permission checks; do not query these rows directly from UI routes.
+- `MarkdownEditor` wraps the editor column in `DocumentOverlayHost`, giving trusted document-state extensions a stable absolute-positioned overlay layer while keeping the Markdown editor and toolbar layout unchanged.
 - `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
 - `official_docs` stores admin-authored Markdown docs with `draft`, `published`, and `archived` statuses. Public docs routes only read published rows.
 - `official_docs.category` and `official_docs.sort_order` drive the public docs sidebar grouping and order. Published docs sort by category, sort order, then title.
@@ -695,6 +702,7 @@ Known editor caveats:
 - The owner publish control preflights the current Markdown for linked private embedded assets. Publishing still only mutates document visibility/public slug; private assets remain private and anonymous public readers receive unresolved/private placeholders for those embeds.
 - Asset groups use `:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}` fences containing one asset embed per line. Read mode renders them as responsive grids; inactive Live mode renders the group through `components/markdown/live-blocks.ts` as a direct `StateField` block widget, and cursor/selection entry reveals the literal Markdown source. The toolbar Asset group button inserts a scaffold or wraps selected standalone asset embed lines. Rendered Live groups expose an icon-only top-right configure button that opens a panel for columns, gap, alignment, width, and shared caption; edits rewrite only the opening fence line. Fixed `columns=2|3|4` collapse to one column on mobile. Group attributes are deliberately limited to grid layout, alignment, width, gap, columns, and shared caption.
 - Inactive Live-mode callouts are now also owned by `components/markdown/live-blocks.ts`. They render through `MarkdownDocument`, the same renderer used by Read mode, so callout icons, colors, title/body parsing, and nested Markdown stay matched instead of relying on per-line CodeMirror styling. Moving the cursor or a selection into the callout reveals the raw blockquote source.
+- Inactive Live-mode GFM tables are owned by `components/markdown/live-blocks.ts` as direct block widgets. They render through `MarkdownDocument`, matching Read-mode table styling, while cursor or selection entry reveals the raw table source. Table detection requires a header row followed by a valid delimiter row and ignores matching text inside fenced code or other higher-priority live blocks.
 - The Markdown editor shows a compact floating asset inspector when the cursor is inside an asset embed source. Layout, alignment, width, caption, and alt controls rewrite the embed's Markdown attribute block in place without changing document layout; no separate asset-layout table or hidden metadata exists.
 - Markdown image rendering uses a stable responsive frame so slow or broken image loads do not repeatedly change document layout height.
 - Document titles are intentionally not unique; document identity remains `documents.id`, and public route identity remains `public_slug`.
@@ -708,7 +716,7 @@ Known editor caveats:
 - Live callout lines also expose `.callout`, `data-callout`, `data-callout-resolved`, and `data-callout-fold` when present, so callout CSS variables from future snippets can affect Preview and Live mode. Live mode uses a stronger CodeMirror translation layer plus classes such as `.vault-cm-callout-first`, `.vault-cm-callout-body-line`, and `.vault-cm-callout-marker` so generic `.callout` snippet/card styling does not turn each editor line into a separate card.
 - Live preview allows the same iframe block tags and applies the same source allowlist plus normalized iframe permissions before rendering the inactive block preview.
 - Live preview renders inline HTML and single-line sanitized raw HTML blocks. Multi-line raw HTML intentionally remains source in live mode; asset groups use the newer direct-decoration Live block layer. Full Read mode still renders all supported Markdown through the sanitized Markdown pipeline. Code fences remain source/code preview, not rendered HTML.
-- The next Live Preview architecture is documented in `docs/05_EDITOR_AND_COLLAB.md`: syntax-aware `LiveBlock` scanning first, then direct-decoration `StateField<DecorationSet>` block widgets for vertical-layout-changing inactive previews. `components/markdown/live-blocks.ts` currently renders inactive asset groups, callouts, and standalone document embeds while ignoring matching source text inside fenced code blocks.
+- The next Live Preview architecture is documented in `docs/05_EDITOR_AND_COLLAB.md`: syntax-aware `LiveBlock` scanning first, then direct-decoration `StateField<DecorationSet>` block widgets for vertical-layout-changing inactive previews. `components/markdown/live-blocks.ts` currently renders inactive asset groups, callouts, standalone document embeds, and GFM tables while ignoring matching source text inside fenced code blocks.
 - GFM task-list checkboxes render without bullet markers and use custom theme-token checkbox styling instead of default browser controls. Live mode uses read-mode-style sans typography by default and replaces inactive list/task markers with rendered bullets, ordered numbers, or the same styled checkbox widget while preserving source syntax when the cursor enters the marker.
 - `MarkdownDocument` emits stable `.vault-md-*` classes for future document themes and user CSS snippets.
 - Mobile document editing uses an edge-to-edge editor surface, separate padding for title/status controls, horizontally scrollable mode/format controls, and `.vault-markdown-editor` CodeMirror overrides. The mobile fold gutter is hidden and the line-number gutter is constrained so the writing area stays wide on phone screens.
@@ -1297,3 +1305,4 @@ Use this as a compact implementation log.
 | 2026-06-16 | Added workspace document state sync | Document pages upsert themselves into the workspace document snapshot, and Markdown title edits dispatch workspace events so tabs and document panels update immediately |
 | 2026-06-17 | Refreshed README and asset guides | README is now a short repo landing page; repo-backed guides now cover asset library usage, embed syntax, layout attributes, asset groups, privacy/sharing behavior, PDF cards, and rendered examples |
 | 2026-06-17 | Moved document embeds into Live block widgets | Standalone Live-mode document transclusions now render through the syntax-aware `live-blocks.ts` direct decoration field instead of the older viewport plugin widget path |
+| 2026-06-22 | Added live table block rendering | Inactive Live-mode GFM tables now render through `MarkdownDocument` via the syntax-aware Live block layer and reveal raw source when active |

@@ -24,6 +24,11 @@ import {
   getWikiDocumentEmbed,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
+import type {
+  LiveBlockScanContext,
+  LiveBlockSpec,
+  LiveBlockWidgetContext,
+} from "@/lib/extensions/types";
 
 export type LiveAssetGroupLineKind = "first" | "middle" | "last" | "single";
 
@@ -65,10 +70,20 @@ export type LiveDocumentEmbedBlock = {
   source: string;
 };
 
+export type LiveTableBlock = {
+  kind: "table";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+};
+
 export type LiveBlock =
   | LiveAssetGroupBlock
   | LiveCalloutBlock
-  | LiveDocumentEmbedBlock;
+  | LiveDocumentEmbedBlock
+  | LiveTableBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -80,6 +95,7 @@ export type LiveBlockOptions = {
   wikiLinks?: WikiLinkResolutionMap;
   onConfigureAssetGroup?: (selection: LiveAssetGroupSelection) => void;
 };
+type LiveBlockWidgetOptions = LiveBlockOptions & LiveBlockWidgetContext;
 
 type SyntaxRange = {
   from: number;
@@ -101,6 +117,56 @@ const assetGroupSingleLine = Decoration.line({
   class:
     "vault-cm-asset-group-source vault-cm-asset-group-source-first vault-cm-asset-group-source-last",
 });
+
+const liveBlockSpecs = [
+  {
+    id: "assetGroup",
+    priority: 10,
+    scan: (state, context) =>
+      getLiveAssetGroupBlocks(state, context.syntaxExclusions),
+    widget: (block, context) =>
+      new AssetGroupBlockWidget(block as LiveAssetGroupBlock, context),
+    activeDecorations: (state, block) =>
+      getAssetGroupSourceDecorations(state, block as LiveAssetGroupBlock),
+  },
+  {
+    id: "callout",
+    priority: 20,
+    scan: (state, context) =>
+      getLiveCalloutBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new CalloutBlockWidget(block as LiveCalloutBlock, context),
+  },
+  {
+    id: "documentEmbed",
+    priority: 30,
+    scan: (state, context) =>
+      getLiveDocumentEmbedBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new DocumentEmbedBlockWidget(block as LiveDocumentEmbedBlock, context),
+  },
+  {
+    id: "table",
+    priority: 40,
+    scan: (state, context) => getLiveTableBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new TableBlockWidget(block as LiveTableBlock, context),
+  },
+] satisfies LiveBlockSpecForEditor[];
+
+type LiveBlockSpecForEditor =
+  Omit<
+    LiveBlockSpec<LiveBlock, LiveBlockWidgetOptions>,
+    "activeExtensions" | "widget" | "activeDecorations"
+  > & {
+    widget: (block: LiveBlock, context: LiveBlockWidgetOptions) => WidgetType;
+    activeDecorations?: (
+      state: EditorState,
+      block: LiveBlock,
+      context: LiveBlockWidgetOptions,
+    ) => RangeLike[];
+  };
+type RangeLike = ReturnType<Decoration["range"]>;
 
 export function createLiveBlockDecorationExtension(
   options: LiveBlockOptions,
@@ -180,44 +246,33 @@ function buildLiveBlockDecorations(
   const ranges = [];
 
   for (const block of getLiveBlocks(state)) {
-    if (!isBlockActive(state, block)) {
+    const spec = getLiveBlockSpec(block);
+    const isActive = spec.isActive?.(state, block) ?? isBlockActive(state, block);
+
+    if (!isActive) {
       ranges.push(
         Decoration.replace({
           block: true,
-          widget:
-            block.kind === "assetGroup"
-              ? new AssetGroupBlockWidget(block, options)
-              : block.kind === "callout"
-                ? new CalloutBlockWidget(block, options)
-                : new DocumentEmbedBlockWidget(block, options),
+          widget: spec.widget(block, options),
         }).range(block.from, block.to),
       );
       continue;
     }
 
-    if (block.kind === "callout" || block.kind === "documentEmbed") {
-      continue;
-    }
-
-    for (
-      let lineNumber = block.startLine;
-      lineNumber <= block.endLine;
-      lineNumber += 1
-    ) {
-      const line = state.doc.line(lineNumber);
-      const kind =
-        lineNumber === block.startLine && lineNumber === block.endLine
-          ? "single"
-          : lineNumber === block.startLine
-            ? "first"
-            : lineNumber === block.endLine
-              ? "last"
-              : "middle";
-      ranges.push(getAssetGroupLineDecoration(kind).range(line.from));
-    }
+    ranges.push(...(spec.activeDecorations?.(state, block, options) ?? []));
   }
 
   return Decoration.set(ranges, true);
+}
+
+function getLiveBlockSpec(block: LiveBlock): LiveBlockSpecForEditor {
+  const spec = liveBlockSpecs.find((candidate) => candidate.id === block.kind);
+
+  if (!spec) {
+    throw new Error(`No live block spec registered for ${block.kind}`);
+  }
+
+  return spec;
 }
 
 function getAssetGroupLineDecoration(kind: LiveAssetGroupLineKind) {
@@ -477,6 +532,56 @@ class DocumentEmbedBlockWidget extends WidgetType {
   }
 }
 
+class TableBlockWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly block: LiveTableBlock,
+    private readonly options: LiveBlockOptions,
+  ) {
+    super();
+  }
+
+  eq(widget: TableBlockWidget) {
+    return (
+      widget.block.source === this.block.source &&
+      widget.options.assetLinks === this.options.assetLinks &&
+      widget.options.wikiLinks === this.options.wikiLinks
+    );
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "vault-cm-table-rendered";
+    this.root = createRoot(container);
+    this.root.render(
+      createElement(MarkdownDocument, {
+        markdown: this.block.source,
+        assetLinks: this.options.assetLinks,
+        wikiLinks: this.options.wikiLinks,
+        contained: false,
+        disableLinks: true,
+        className: "vault-cm-table-rendered-markdown",
+      }),
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+
+    if (root) {
+      window.setTimeout(() => root.unmount(), 0);
+    }
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+}
+
 function createAssetFileCard(
   asset: AssetEmbedResolutionMap[string],
   label: string | null,
@@ -547,31 +652,59 @@ function isBlockActive(state: EditorState, block: LiveBlock) {
 }
 
 function getLiveBlocks(state: EditorState): LiveBlock[] {
-  const assetGroups = getLiveAssetGroupBlocks(state);
   const syntaxExclusions = getSyntaxExclusionRanges(state);
-  const assetGroupRanges = assetGroups.map((block) => ({
-    from: block.from,
-    to: block.to,
-  }));
-  const callouts = getLiveCalloutBlocks(state, [
-    ...syntaxExclusions,
-    ...assetGroupRanges,
-  ]);
-  const occupiedRanges = [
-    ...syntaxExclusions,
-    ...assetGroupRanges,
-    ...callouts.map((block) => ({ from: block.from, to: block.to })),
-  ];
-  const documentEmbeds = getLiveDocumentEmbedBlocks(state, occupiedRanges);
+  const blocks: LiveBlock[] = [];
+  const occupiedRanges: SyntaxRange[] = [...syntaxExclusions];
 
-  return [...assetGroups, ...callouts, ...documentEmbeds].sort(
-    (a, b) => a.from - b.from,
-  );
+  for (const spec of [...liveBlockSpecs].sort((a, b) => a.priority - b.priority)) {
+    const foundBlocks = spec.scan(state, {
+      syntaxExclusions,
+      occupiedRanges,
+    } satisfies LiveBlockScanContext);
+
+    blocks.push(...foundBlocks);
+    occupiedRanges.push(
+      ...foundBlocks.map((block) => ({
+        from: block.from,
+        to: block.to,
+      })),
+    );
+  }
+
+  return blocks.sort((a, b) => a.from - b.from);
 }
 
-function getLiveAssetGroupBlocks(state: EditorState): LiveAssetGroupBlock[] {
+function getAssetGroupSourceDecorations(
+  state: EditorState,
+  block: LiveAssetGroupBlock,
+) {
+  const ranges: RangeLike[] = [];
+
+  for (
+    let lineNumber = block.startLine;
+    lineNumber <= block.endLine;
+    lineNumber += 1
+  ) {
+    const line = state.doc.line(lineNumber);
+    const kind =
+      lineNumber === block.startLine && lineNumber === block.endLine
+        ? "single"
+        : lineNumber === block.startLine
+          ? "first"
+          : lineNumber === block.endLine
+            ? "last"
+            : "middle";
+    ranges.push(getAssetGroupLineDecoration(kind).range(line.from));
+  }
+
+  return ranges;
+}
+
+function getLiveAssetGroupBlocks(
+  state: EditorState,
+  syntaxExclusions = getSyntaxExclusionRanges(state),
+): LiveAssetGroupBlock[] {
   const blocks: LiveAssetGroupBlock[] = [];
-  const syntaxExclusions = getSyntaxExclusionRanges(state);
   const doc = state.doc;
   let openGroup: {
     startLine: number;
@@ -718,6 +851,134 @@ function getLiveDocumentEmbedBlocks(
   }
 
   return blocks;
+}
+
+function getLiveTableBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveTableBlock[] {
+  const blocks: LiveTableBlock[] = [];
+  const doc = state.doc;
+  let lineNumber = 1;
+
+  while (lineNumber < doc.lines) {
+    const headerLine = doc.line(lineNumber);
+    const delimiterLine = doc.line(lineNumber + 1);
+
+    if (
+      isInsideSyntaxRange(headerLine.from, excludedRanges) ||
+      isInsideSyntaxRange(delimiterLine.from, excludedRanges) ||
+      !isPotentialTableRow(headerLine.text) ||
+      !isTableDelimiterRow(delimiterLine.text)
+    ) {
+      lineNumber += 1;
+      continue;
+    }
+
+    const headerCells = splitTableRow(headerLine.text);
+    const delimiterCells = splitTableRow(delimiterLine.text);
+
+    if (
+      headerCells.length < 2 ||
+      delimiterCells.length < 2 ||
+      headerCells.length !== delimiterCells.length
+    ) {
+      lineNumber += 1;
+      continue;
+    }
+
+    let endLineNumber = lineNumber + 1;
+
+    while (endLineNumber < doc.lines) {
+      const nextLine = doc.line(endLineNumber + 1);
+
+      if (
+        isInsideSyntaxRange(nextLine.from, excludedRanges) ||
+        !isPotentialTableRow(nextLine.text)
+      ) {
+        break;
+      }
+
+      const nextCells = splitTableRow(nextLine.text);
+
+      if (nextCells.length < 2) {
+        break;
+      }
+
+      endLineNumber += 1;
+    }
+
+    const endLine = doc.line(endLineNumber);
+    blocks.push({
+      kind: "table",
+      from: headerLine.from,
+      to: endLine.to,
+      startLine: lineNumber,
+      endLine: endLineNumber,
+      source: doc.sliceString(headerLine.from, endLine.to),
+    });
+    lineNumber = endLineNumber + 1;
+  }
+
+  return blocks;
+}
+
+function isPotentialTableRow(text: string) {
+  const trimmed = text.trim();
+
+  return trimmed.includes("|") && splitTableRow(trimmed).length >= 2;
+}
+
+function isTableDelimiterRow(text: string) {
+  const cells = splitTableRow(text);
+
+  if (cells.length < 2) {
+    return false;
+  }
+
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function splitTableRow(text: string) {
+  let trimmed = text.trim();
+
+  if (trimmed.startsWith("|")) {
+    trimmed = trimmed.slice(1);
+  }
+
+  if (trimmed.endsWith("|") && !trimmed.endsWith("\\|")) {
+    trimmed = trimmed.slice(0, -1);
+  }
+
+  const cells: string[] = [];
+  let current = "";
+  let escaped = false;
+
+  for (const character of trimmed) {
+    if (escaped) {
+      current += character;
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      current += character;
+      escaped = true;
+      continue;
+    }
+
+    if (character === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  cells.push(current.trim());
+
+  return cells;
 }
 
 function getSyntaxExclusionRanges(state: EditorState): SyntaxRange[] {

@@ -48,6 +48,7 @@ import {
 import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 
+import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   createLiveBlockDecorationExtension,
@@ -1075,7 +1076,10 @@ export function MarkdownEditor({
       onSubmit={handleSubmit}
       className="vault-editor-canvas min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10"
     >
-      <div className="vault-editor-column mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5">
+      <DocumentOverlayHost
+        documentId={documentId}
+        className="vault-editor-column mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5"
+      >
         <div className="vault-editor-toolbar-row flex items-center gap-3">
           {editorMode !== "read" ? (
             <div className="min-w-0 flex-1">
@@ -1222,7 +1226,7 @@ export function MarkdownEditor({
             </Button>
           </div>
         ) : null}
-      </div>
+      </DocumentOverlayHost>
     </form>
   );
 }

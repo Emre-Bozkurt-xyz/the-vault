@@ -232,7 +232,7 @@ Unauthorized users cannot connect.
 | [x] | Add source-mode HTML autocomplete | Markdown CodeMirror keeps HTML tag completion available in source/split/live modes alongside wiki-link completion |
 | [x] | Add live wiki-link styling | Live mode hides inactive wiki-link markers and styles the visible label |
 | [x] | Add document transclusion embeds | Standalone `![[doc]]` embeds render permission-aware document previews in Preview/view/public and Live mode |
-| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups, inactive callouts, and standalone document embeds now use syntax-aware detection plus direct `StateField` block widgets with source reveal; asset groups also expose an icon-triggered formatting panel |
+| [~] | Add specialized CM6 Live Preview layer | Plan added to `docs/05_EDITOR_AND_COLLAB.md`; asset groups, inactive callouts, standalone document embeds, and GFM tables now use syntax-aware detection plus direct `StateField` block widgets with source reveal; asset groups also expose an icon-triggered formatting panel |
 | [x] | Add heading-scoped wiki links | `[[doc#heading]]` links navigate to rendered heading anchors; `![[doc#heading]]` embeds only the selected heading section |
 | [x] | Add block and region-scoped wiki links | `[[doc#^block-id]]` targets hidden Obsidian-style block anchors; `[[doc#@region-id]]` targets hidden Vault regions; embeds render only the selected block/region |
 | [x] | Add guide/public wiki namespaces | `guide:<slug>` links official docs; `public:<slug>` links published user docs and autocomplete shows publisher usernames |
@@ -329,6 +329,28 @@ Exit criteria:
 Users can upload/paste images into private docs, browse owned assets, and publish
 individual assets to the gallery without making private document assets public by
 default.
+```
+
+---
+
+## Phase 12 - Extension Registry
+
+Reference plan: `docs/12_EXTENSION_REGISTRY_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write extension registry plan | Separates core editor features from trusted built-in extensions, covers Markdown blocks, document overlay state, workspace contributions, asset-backed extensions, and a future verified plugin path |
+| [x] | Add registry types | Added `lib/extensions/types.ts` for trusted built-in extension manifests, Markdown contributions, document-state overlays, workspace contributions, and permissions |
+| [x] | Refactor Live blocks into specs | Asset groups, callouts, document embeds, and GFM tables now flow through internal `LiveBlockSpec`s without changing the rendered behavior |
+| [x] | Add document extension state schema | Added migration `0012_tiny_tana_nile.sql`, `document_extension_states`, and permission-checked server helpers for non-Markdown extension data such as stickers and overlays |
+| [x] | Add document overlay host | Added `DocumentOverlayHost` around the editor column with a pointer-safe absolute overlay layer for future trusted extension visuals |
+| [ ] | Prototype stickers extension | Built-in extension using uploaded assets and document-relative state, authenticated workspace-only first |
+
+Exit criteria:
+
+```txt
+Optional Vault features can register editor blocks, workspace UI, and document
+overlay state without becoming hardcoded core editor branches.
 ```
 
 ---

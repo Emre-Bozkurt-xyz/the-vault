@@ -5,6 +5,7 @@ import {
   customType,
   index,
   integer,
+  jsonb,
   primaryKey,
   pgTable,
   text,
@@ -21,6 +22,10 @@ export type UserRole = "user" | "admin";
 export type AssetKind = "image" | "pdf";
 export type AssetVisibility = "private" | "public";
 export type AssetStatus = "pending" | "ready" | "failed" | "deleted";
+export type DocumentExtensionStateVisibility =
+  | "private"
+  | "public"
+  | "editor-only";
 export type OfficialDocStatus = "draft" | "published" | "archived";
 export type FriendRequestStatus =
   | "pending"
@@ -270,6 +275,48 @@ export const documentCollabStates = pgTable("document_collab_states", {
     .default(sql`now()`),
 });
 
+export const documentExtensionStates = pgTable(
+  "document_extension_states",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    extensionId: text("extension_id").notNull(),
+    stateKey: text("state_key").notNull().default("default"),
+    state: jsonb("state").$type<Record<string, unknown>>().notNull(),
+    version: integer("version").notNull().default(1),
+    visibility: text("visibility")
+      .$type<DocumentExtensionStateVisibility>()
+      .notNull()
+      .default("private"),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("document_extension_states_document_key_unique").on(
+      table.documentId,
+      table.extensionId,
+      table.stateKey,
+    ),
+    index("document_extension_states_document_id_idx").on(table.documentId),
+    index("document_extension_states_extension_id_idx").on(table.extensionId),
+    index("document_extension_states_visibility_idx").on(table.visibility),
+    index("document_extension_states_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
 export const assets = pgTable(
   "assets",
   {
@@ -356,6 +403,7 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
   permissions: many(documentPermissions),
   versions: many(documentVersions),
   shareLinks: many(documentShareLinks),
+  extensionStates: many(documentExtensionStates),
   assets: many(documentAssets),
 }));
 
@@ -407,6 +455,24 @@ export const documentCollabStatesRelations = relations(
     document: one(documents, {
       fields: [documentCollabStates.documentId],
       references: [documents.id],
+    }),
+  }),
+);
+
+export const documentExtensionStatesRelations = relations(
+  documentExtensionStates,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentExtensionStates.documentId],
+      references: [documents.id],
+    }),
+    creator: one(users, {
+      fields: [documentExtensionStates.createdBy],
+      references: [users.id],
+    }),
+    updater: one(users, {
+      fields: [documentExtensionStates.updatedBy],
+      references: [users.id],
     }),
   }),
 );

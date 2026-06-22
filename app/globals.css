@@ -1477,7 +1477,21 @@
     user-select: none;
   }
 
+  .vault-markdown-editor-live .vault-cm-table-rendered {
+    display: block;
+    width: 100%;
+    margin-block: 0.6rem;
+    line-height: normal;
+    white-space: normal;
+    pointer-events: none;
+    user-select: none;
+  }
+
   .vault-markdown-editor-live .cm-line:has(.vault-cm-callout-rendered) {
+    line-height: 0;
+  }
+
+  .vault-markdown-editor-live .cm-line:has(.vault-cm-table-rendered) {
     line-height: 0;
   }
 
@@ -1485,6 +1499,16 @@
     max-width: none;
     margin: 0;
     line-height: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-table-rendered-markdown {
+    max-width: none;
+    margin: 0;
+    line-height: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-table-rendered-markdown .vault-md-table-wrap {
+    margin: 0;
   }
 
   .vault-markdown-editor-live .vault-cm-callout-rendered-markdown .callout {
@@ -1949,6 +1973,29 @@
   .vault-editor-column {
     position: relative;
     width: min(100%, 56rem);
+  }
+
+  .vault-document-overlay-host {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .vault-document-overlay-content {
+    position: relative;
+    z-index: 1;
+    display: contents;
+  }
+
+  .vault-document-overlay-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+  }
+
+  .vault-document-overlay-item {
+    position: absolute;
+    pointer-events: auto;
   }
 
   .vault-editor-toolbar-row {

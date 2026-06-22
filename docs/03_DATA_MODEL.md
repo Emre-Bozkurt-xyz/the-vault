@@ -253,7 +253,59 @@ Rules:
 
 ---
 
-## 5. Friend System
+## 5. Document Extension State
+
+### document_extension_states
+
+Trusted built-in extensions may need document-scoped state that should not live
+inside Markdown. Examples include page stickers, canvas overlays, calendar
+metadata, drawing state, and widget configuration.
+
+```txt
+document_extension_states
+  id UUID PRIMARY KEY
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE
+  extension_id TEXT NOT NULL
+  state_key TEXT NOT NULL DEFAULT 'default'
+  state JSONB NOT NULL
+  version INTEGER NOT NULL DEFAULT 1
+  visibility TEXT NOT NULL DEFAULT 'private'
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+  created_at TIMESTAMP NOT NULL
+  updated_at TIMESTAMP NOT NULL
+  deleted_at TIMESTAMP
+
+  UNIQUE(document_id, extension_id, state_key)
+```
+
+Allowed visibility values:
+
+```txt
+private
+public
+editor-only
+```
+
+Rules:
+
+- Use `server/document-extensions.ts` for all reads and writes. Do not query
+  extension state directly from route/UI code.
+- Editors can create, update, and soft-delete extension state.
+- Public extension state can be read by anyone who can read the document.
+- Private extension state can be read by explicit document collaborators and
+  owners, but not by anonymous/public-only readers.
+- Editor-only extension state requires edit access.
+- `extension_id` identifies a trusted built-in extension. This table is not an
+  arbitrary third-party plugin execution model.
+- `state_key` lets one extension store multiple independent records for one
+  document, such as `overlay`, `stickers`, or a widget instance id.
+- `version` lets extension state schemas migrate independently from the main
+  document schema.
+
+---
+
+## 6. Friend System
 
 ### friend_requests
 
@@ -303,7 +355,7 @@ This prevents duplicate friendship rows.
 
 ---
 
-## 6. Official Documentation
+## 7. Official Documentation
 
 Official documentation has two sources:
 
@@ -364,7 +416,7 @@ Public routes filter out duplicate DB docs if a repo doc has the same slug.
 
 ---
 
-## 7. Public Notes and Share Links
+## 8. Public Notes and Share Links
 
 Public notes use fields directly on `documents`:
 
@@ -379,7 +431,7 @@ share links are copyable URL grants controlled by the document owner.
 
 ---
 
-## 8. Document Versions
+## 9. Document Versions
 
 Not MVP, but useful later.
 
@@ -413,7 +465,7 @@ Current implementation:
 
 ---
 
-## 9. Future Document Assets
+## 10. Future Document Assets
 
 Detailed implementation plan:
 
@@ -492,7 +544,7 @@ that asset is explicitly public.
 
 ---
 
-## 10. Audit Logs
+## 11. Audit Logs
 
 Not MVP, but good later.
 
@@ -521,7 +573,7 @@ friend.accepted
 
 ---
 
-## 11. Important Indexes
+## 12. Important Indexes
 
 Add indexes for common access patterns.
 
@@ -548,7 +600,7 @@ friendships.user_high_id
 
 ---
 
-## 12. Permission Query Patterns
+## 13. Permission Query Patterns
 
 ### Can read document?
 
@@ -582,7 +634,7 @@ MVP: only owner can share.
 
 ---
 
-## 10. Drizzle Schema Sketch
+## 14. Drizzle Schema Sketch
 
 This is not final copy-paste code, but the shape should look like this:
 
@@ -602,7 +654,7 @@ export const documents = pgTable("documents", {
 
 ---
 
-## 11. Seed Data for Local Dev
+## 15. Seed Data for Local Dev
 
 Create a local seed script later:
 
@@ -621,7 +673,7 @@ Useful seed data:
 
 ---
 
-## 12. Data Model MVP Checklist
+## 16. Data Model MVP Checklist
 
 | Status | Item |
 |---|---|
