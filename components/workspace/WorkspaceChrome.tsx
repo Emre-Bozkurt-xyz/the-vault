@@ -16,7 +16,10 @@ import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPa
 import { WorkspaceSearchPanel } from "@/components/workspace/WorkspaceSearchPanel";
 import { WorkspaceUtilityPanel } from "@/components/workspace/WorkspaceUtilityPanel";
 import { VaultWorkspaceShell } from "@/components/workspace/VaultWorkspaceShell";
-import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
+import {
+  subscribeToWorkspaceDocumentChanges,
+  subscribeToWorkspaceDocumentRemovals,
+} from "@/components/workspace/workspace-events";
 import type {
   WorkspaceDocumentItem,
   WorkspaceGuideGroup,
@@ -95,6 +98,12 @@ export function WorkspaceChrome({
       }
     });
   }, [baseCurrentHref, currentHref]);
+
+  useEffect(() => {
+    return subscribeToWorkspaceDocumentRemovals(({ id }) => {
+      setWorkspaceState((current) => removeDocumentFromWorkspace(current, id));
+    });
+  }, []);
 
   const contextValue = useMemo(
     () => ({
@@ -235,6 +244,21 @@ function applyDocumentChange(
     owned: nextOwned,
     shared: nextShared,
     published: nextOwned.filter((document) => document.visibility === "public"),
+  };
+}
+
+function removeDocumentFromWorkspace(
+  workspace: WorkspaceChromeData,
+  documentId: string,
+): WorkspaceChromeData {
+  const owned = workspace.owned.filter((item) => item.id !== documentId);
+  const shared = workspace.shared.filter((item) => item.id !== documentId);
+
+  return {
+    ...workspace,
+    owned,
+    shared,
+    published: workspace.published.filter((item) => item.id !== documentId),
   };
 }
 

@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { subscribeToWorkspaceDocumentRemovals } from "@/components/workspace/workspace-events";
 import type { WorkspacePageDescriptor, WorkspacePageType } from "@/components/workspace/workspace-types";
 
 type WorkspaceTab = WorkspacePageDescriptor & {
@@ -58,6 +59,34 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
 
     return () => window.clearTimeout(timeout);
   }, [activeHref, activePage]);
+
+  useEffect(() => {
+    return subscribeToWorkspaceDocumentRemovals(({ id }) => {
+      setTabs((currentTabs) => {
+        const firstRemovedIndex = currentTabs.findIndex((tab) =>
+          isDocumentTabForId(tab, id),
+        );
+
+        if (firstRemovedIndex < 0) {
+          return currentTabs;
+        }
+
+        const nextTabs = currentTabs.filter((tab) => !isDocumentTabForId(tab, id));
+        window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
+
+        if (isDocumentHrefForId(activeHref, id)) {
+          const nextActive =
+            nextTabs[Math.max(0, firstRemovedIndex - 1)] ??
+            nextTabs[firstRemovedIndex] ??
+            nextTabs[0];
+
+          router.push(nextActive?.href ?? "/workspace");
+        }
+
+        return nextTabs;
+      });
+    });
+  }, [activeHref, router]);
 
   function closeTab(tab: WorkspaceTab) {
     setTabs((currentTabs) => {
@@ -216,4 +245,12 @@ function isWorkspaceTab(value: unknown): value is WorkspaceTab {
     typeof candidate.href === "string" &&
     typeof candidate.type === "string"
   );
+}
+
+function isDocumentTabForId(tab: WorkspaceTab, documentId: string) {
+  return tab.type === "document" && isDocumentHrefForId(tab.href, documentId);
+}
+
+function isDocumentHrefForId(href: string, documentId: string) {
+  return (href.split("?")[0] ?? href) === `/docs/${documentId}`;
 }

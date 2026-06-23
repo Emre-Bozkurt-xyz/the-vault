@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
@@ -6,6 +7,7 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { createMarkdownExcerpt } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
@@ -14,11 +16,57 @@ import {
 } from "@/server/documents";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 
-export default async function ShareLinkPage({
-  params,
-}: {
+type ShareLinkPageProps = {
   params: Promise<{ token: string }>;
-}) {
+};
+
+export async function generateMetadata({
+  params,
+}: ShareLinkPageProps): Promise<Metadata> {
+  const { token } = await params;
+  const shared = await getDocumentByShareLink(token, null);
+
+  if (!shared?.document) {
+    return {
+      title: "Shared Vault document",
+      description: "Sign in to Vault to open this shared document.",
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const document = shared.document;
+  const description = createMarkdownExcerpt(document.markdown);
+  const imageUrl = `/share/${encodeURIComponent(token)}/og`;
+
+  return {
+    title: `${document.title} · Vault`,
+    description,
+    robots: { index: false, follow: false },
+    openGraph: {
+      title: document.title,
+      description,
+      type: "article",
+      url: `/share/${token}`,
+      siteName: "Vault",
+      images: [
+        {
+          url: imageUrl,
+          width: 1200,
+          height: 630,
+          alt: `${document.title} shared through Vault`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: document.title,
+      description,
+      images: [imageUrl],
+    },
+  };
+}
+
+export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
   const { token } = await params;
   const session = await auth();
   const shared = await getDocumentByShareLink(token, session?.user?.id ?? null);

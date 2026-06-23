@@ -609,25 +609,60 @@ export async function updateDocumentShareLinkAction(formData: FormData) {
     notFound();
   }
 
-  await db
-    .update(documentShareLinks)
-    .set({
-      enabled: 0,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(documentShareLinks.documentId, input.documentId));
+  const [existingLink] = await db
+    .select({ id: documentShareLinks.id })
+    .from(documentShareLinks)
+    .where(eq(documentShareLinks.documentId, input.documentId))
+    .orderBy(desc(documentShareLinks.createdAt))
+    .limit(1);
 
-  if (input.mode !== "off") {
+  if (input.mode === "off") {
+    if (existingLink) {
+      await db
+        .update(documentShareLinks)
+        .set({
+          enabled: 0,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(documentShareLinks.documentId, input.documentId));
+    }
+  } else {
     const mode = shareLinkModeToValues(input.mode);
 
-    await db.insert(documentShareLinks).values({
-      documentId: input.documentId,
-      tokenHash: crypto.randomUUID(),
-      scope: mode.scope,
-      role: mode.role,
-      enabled: 1,
-      createdBy: user.id,
-    });
+    if (existingLink) {
+      await db
+        .update(documentShareLinks)
+        .set({
+          enabled: 0,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(documentShareLinks.documentId, input.documentId),
+            ne(documentShareLinks.id, existingLink.id),
+          ),
+        );
+
+      await db
+        .update(documentShareLinks)
+        .set({
+          scope: mode.scope,
+          role: mode.role,
+          enabled: 1,
+          expiresAt: null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(documentShareLinks.id, existingLink.id));
+    } else {
+      await db.insert(documentShareLinks).values({
+        documentId: input.documentId,
+        tokenHash: crypto.randomUUID(),
+        scope: mode.scope,
+        role: mode.role,
+        enabled: 1,
+        createdBy: user.id,
+      });
+    }
   }
 
   revalidatePath(`/docs/${input.documentId}`);

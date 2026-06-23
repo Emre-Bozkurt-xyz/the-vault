@@ -212,12 +212,14 @@ viewer
 editor
 ```
 
-V1 keeps one active share link per document. Saving link settings disables old
-links and creates a fresh active link. `anyone` links are read-only. `members`
-links can be viewer or editor; editor links only grant edit access to signed-in
-Vault users while the link is enabled. Signed-in users with an active
-members-editor link may also join the normal Yjs collaboration room, but this is
-still dynamic link access and does not create a `document_permissions` row.
+V1 keeps one stable share-link row per document. Saving link settings updates
+that row's scope, role, and enabled state instead of rotating the URL. Disabling
+the link turns access off, and re-enabling it reuses the same URL. `anyone`
+links are read-only. `members` links can be viewer or editor; editor links only
+grant edit access to signed-in Vault users while the link is enabled. Signed-in
+users with an active members-editor link may also join the normal Yjs
+collaboration room, but this is still dynamic link access and does not create a
+`document_permissions` row.
 
 ---
 

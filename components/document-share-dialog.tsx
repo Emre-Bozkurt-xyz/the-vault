@@ -184,8 +184,8 @@ export function DocumentShareDialog({
           <section className="mt-6 border-t border-border/60 pt-5">
             <h3 className="text-sm font-semibold">Link access</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Link access is temporary. Disabling or rotating the link removes
-              access immediately.
+              The URL stays the same while these settings control who can use
+              it.
             </p>
             <form action={updateDocumentShareLinkAction} className="mt-4 grid gap-3">
               <input type="hidden" name="documentId" value={documentId} />

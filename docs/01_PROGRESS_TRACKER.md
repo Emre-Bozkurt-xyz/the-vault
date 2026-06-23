@@ -101,7 +101,7 @@ User can create, edit, save, reopen, and delete own docs.
 | [x] | Add remove collaborator action | Owner only |
 | [x] | Add role update action | Owner only |
 | [x] | Add shared-with-me dashboard tab | Query permission table |
-| [x] | Revamp sharing modal and link access | Sharing moved to a modal with friend-prioritized user autocomplete, thinner access rows, and one active revocable share link per document |
+| [x] | Revamp sharing modal and link access | Sharing moved to a modal with friend-prioritized user autocomplete, thinner access rows, and one stable revocable share link per document; anonymous-readable share links emit social preview metadata |
 
 Exit criteria:
 
@@ -291,7 +291,7 @@ Reference plan: `docs/10_WORKSPACE_UI_REVAMP_PLAN.md`
 | [x] | Add workspace document state sync | Document pages upsert themselves into the client workspace snapshot, and editor title changes patch open tabs plus workspace document panels immediately instead of waiting for a route switch or refresh |
 | [x] | Add real search and gallery side panels | Workspace search quick-opens owned, shared, public, and guide pages; the gallery side panel filters public docs inline and links to the full gallery |
 | [x] | Add workspace public reader | Signed-in gallery/search public-document opens now route to `/workspace/public/[slug]`, a read-only workspace-native view; `/public/[slug]` remains the canonical external public page |
-| [~] | Final workspace visual pass | Document editor route now uses a centered Obsidian-like editor column with Read/Live/Source modes, a compact hover/focus icon stack for mode switching, and live-mode typography/list/callout styling closer to Read mode; new tab is a raw greeting/search/recent surface; workspace shell has independent scroll domains for center/side panels and hydration-safe persisted chrome state; gallery uses rendered document preview cards; mobile tabs scroll with minimum widths and mobile drawer controls expose left/right panels; remaining routes need a final consistency pass |
+| [~] | Final workspace visual pass | Document editor route now uses a centered Obsidian-like editor column with Read/Live/Source modes, a compact hover/focus icon stack for mode switching, and live-mode typography/list/callout styling closer to Read mode; new tab is a raw greeting/search/recent surface; workspace shell has independent scroll domains for center/side panels and hydration-safe persisted chrome state; gallery uses rendered document preview cards; mobile tabs scroll with minimum widths and mobile drawer controls expose left/right panels; archived documents close their workspace tabs and select the nearest remaining tab; remaining routes need a final consistency pass |
 
 Exit criteria:
 

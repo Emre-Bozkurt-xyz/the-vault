@@ -418,9 +418,9 @@ Chooses link mode
   |
 Server checks owner permission
   |
-Disable previous active links for the document
+Create or reuse the document's share-link row
   |
-Create a fresh document_share_links row
+Update that row's enabled/scope/role settings
 ```
 
 Supported link modes:
@@ -435,9 +435,13 @@ Supported link modes:
 Important:
 
 - Link access is dynamic. It does not create a `document_permissions` row.
-- Disabling or rotating the link removes future access through the old URL.
+- The URL is persistent per document. Changing the mode changes what the same
+  URL grants; disabling it removes future access until it is re-enabled.
 - Edit links require a signed-in user for editing. Signed-out visitors can only
   view the document through an edit-enabled link.
+- Publicly viewable share links emit document OpenGraph/Twitter metadata and a
+  generated preview image. Sign-in-only links keep generic metadata so private
+  titles/snippets do not leak.
 - Link access does not grant share, delete, or publish permissions.
 - Link-edit sessions are intentionally separate from durable collaborator
   access. Permanent collaborators should still be added through the people

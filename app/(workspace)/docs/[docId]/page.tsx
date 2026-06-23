@@ -4,6 +4,7 @@ import { Archive, ChevronDown, Globe2, History, RotateCcw, Save, Share2 } from "
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
+import { DocumentArchiveForm } from "@/components/document-archive-form";
 import { DocumentPublishControl } from "@/components/document-publish-control";
 import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
@@ -16,7 +17,6 @@ import {
   listPrivateEmbeddedAssetsForPublish,
 } from "@/server/assets";
 import {
-  archiveDocumentAction,
   createManualDocumentVersionAction,
   getActiveDocumentShareLinkForUser,
   getDocumentForUserWithOptionalShareLink,
@@ -408,12 +408,7 @@ function DocumentContextPanel({
             </div>
             <Archive className="size-4 shrink-0 text-muted-foreground" />
           </div>
-          <form action={archiveDocumentAction} className="mt-3">
-            <input type="hidden" name="documentId" value={documentId} />
-            <Button type="submit" variant="destructive" size="sm" className="w-full">
-              Archive document
-            </Button>
-          </form>
+          <DocumentArchiveForm documentId={documentId} />
         </section>
       ) : null}
     </div>
