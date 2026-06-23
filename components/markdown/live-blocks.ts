@@ -1,10 +1,16 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState } from "@codemirror/state";
+import {
+  EditorSelection,
+  Prec,
+  StateField,
+  type EditorState,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
   WidgetType,
+  keymap,
 } from "@codemirror/view";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -24,10 +30,12 @@ import {
   getWikiDocumentEmbed,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
+import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type {
   LiveBlockScanContext,
   LiveBlockSpec,
   LiveBlockWidgetContext,
+  VaultExtension,
 } from "@/lib/extensions/types";
 
 export type LiveAssetGroupLineKind = "first" | "middle" | "last" | "single";
@@ -79,11 +87,21 @@ export type LiveTableBlock = {
   source: string;
 };
 
+export type LiveMathBlock = {
+  kind: "mathBlock";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+};
+
 export type LiveBlock =
   | LiveAssetGroupBlock
   | LiveCalloutBlock
   | LiveDocumentEmbedBlock
-  | LiveTableBlock;
+  | LiveTableBlock
+  | LiveMathBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -118,7 +136,7 @@ const assetGroupSingleLine = Decoration.line({
     "vault-cm-asset-group-source vault-cm-asset-group-source-first vault-cm-asset-group-source-last",
 });
 
-const liveBlockSpecs = [
+const coreMarkdownLiveBlockSpecs = [
   {
     id: "assetGroup",
     priority: 10,
@@ -152,26 +170,49 @@ const liveBlockSpecs = [
     widget: (block, context) =>
       new TableBlockWidget(block as LiveTableBlock, context),
   },
+  {
+    id: "mathBlock",
+    priority: 50,
+    scan: (state, context) =>
+      getLiveMathBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new MathBlockWidget(block as LiveMathBlock, context),
+  },
 ] satisfies LiveBlockSpecForEditor[];
+
+const coreMarkdownLiveBlockExtension: VaultExtension = {
+  id: "vault.core-markdown-live-blocks",
+  name: "Core Markdown Live Blocks",
+  version: 1,
+  kind: "core",
+  markdown: {
+    liveBlocks: coreMarkdownLiveBlockSpecs as unknown as LiveBlockSpec[],
+  },
+};
+
+const liveBlockRegistry = createVaultExtensionRegistry([
+  coreMarkdownLiveBlockExtension,
+]);
+
+const liveBlockSpecs =
+  liveBlockRegistry.getMarkdownLiveBlockSpecs() as LiveBlockSpecForEditor[];
 
 type LiveBlockSpecForEditor =
   Omit<
     LiveBlockSpec<LiveBlock, LiveBlockWidgetOptions>,
-    "activeExtensions" | "widget" | "activeDecorations"
+    "activeExtensions" | "widget"
   > & {
     widget: (block: LiveBlock, context: LiveBlockWidgetOptions) => WidgetType;
-    activeDecorations?: (
-      state: EditorState,
-      block: LiveBlock,
-      context: LiveBlockWidgetOptions,
-    ) => RangeLike[];
   };
 type RangeLike = ReturnType<Decoration["range"]>;
 
 export function createLiveBlockDecorationExtension(
   options: LiveBlockOptions,
 ) {
-  return createLiveBlockDecorationField(options);
+  return [
+    createLiveBlockDecorationField(options),
+    Prec.highest(keymap.of(createLiveBlockNavigationKeymap())),
+  ];
 }
 
 export function getMarkdownLiveBlocks(state: EditorState): LiveBlock[] {
@@ -265,6 +306,85 @@ function buildLiveBlockDecorations(
   return Decoration.set(ranges, true);
 }
 
+function createLiveBlockNavigationKeymap() {
+  return [
+    {
+      key: "ArrowDown",
+      run: (view: EditorView) => moveIntoAdjacentLiveBlock(view, true),
+    },
+    {
+      key: "ArrowUp",
+      run: (view: EditorView) => moveIntoAdjacentLiveBlock(view, false),
+    },
+  ];
+}
+
+function moveIntoAdjacentLiveBlock(view: EditorView, forward: boolean) {
+  const selection = view.state.selection.main;
+
+  if (!selection.empty) {
+    return false;
+  }
+
+  const line = view.state.doc.lineAt(selection.head);
+  const blocks = getLiveBlocks(view.state);
+  const targetBlock = forward
+    ? blocks.find((block) => block.startLine === line.number + 1)
+    : blocks.find((block) => block.endLine === line.number - 1);
+
+  if (!targetBlock || isBlockActive(view.state, targetBlock)) {
+    const predictedSelection = view.moveVertically(selection, forward);
+    const predictedLine = view.state.doc.lineAt(predictedSelection.head);
+
+    if (Math.abs(predictedLine.number - line.number) <= 1) {
+      return false;
+    }
+
+    const nextLineNumber = line.number + (forward ? 1 : -1);
+
+    if (nextLineNumber < 1 || nextLineNumber > view.state.doc.lines) {
+      return false;
+    }
+
+    const nextBlock = getBlockAtLine(blocks, nextLineNumber);
+
+    if (nextBlock && !isBlockActive(view.state, nextBlock)) {
+      view.dispatch({
+        selection: EditorSelection.cursor(forward ? nextBlock.from : nextBlock.to),
+        scrollIntoView: true,
+      });
+      return true;
+    }
+
+    const nextLine = view.state.doc.line(nextLineNumber);
+    const columnOffset = selection.head - line.from;
+    const nextPosition = Math.min(nextLine.to, nextLine.from + columnOffset);
+
+    view.dispatch({
+      selection: EditorSelection.cursor(
+        nextPosition,
+        undefined,
+        undefined,
+        predictedSelection.goalColumn,
+      ),
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
+  view.dispatch({
+    selection: EditorSelection.cursor(forward ? targetBlock.from : targetBlock.to),
+    scrollIntoView: true,
+  });
+  return true;
+}
+
+function getBlockAtLine(blocks: LiveBlock[], lineNumber: number) {
+  return blocks.find(
+    (block) => block.startLine <= lineNumber && block.endLine >= lineNumber,
+  );
+}
+
 function getLiveBlockSpec(block: LiveBlock): LiveBlockSpecForEditor {
   const spec = liveBlockSpecs.find((candidate) => candidate.id === block.kind);
 
@@ -313,6 +433,7 @@ class AssetGroupBlockWidget extends WidgetType {
       getAssetGroupClassName(this.block.attributes),
       "vault-cm-asset-group-rendered",
     ].join(" ");
+    applyStableBlockWidgetSpacing(figure);
 
     const configureButton = document.createElement("button");
     configureButton.className = "vault-cm-asset-group-configure";
@@ -454,6 +575,7 @@ class CalloutBlockWidget extends WidgetType {
   toDOM() {
     const container = document.createElement("div");
     container.className = "vault-cm-callout-rendered";
+    applyStableBlockWidgetSpacing(container);
     this.root = createRoot(container);
     this.root.render(
       createElement(MarkdownDocument, {
@@ -504,6 +626,7 @@ class DocumentEmbedBlockWidget extends WidgetType {
   toDOM() {
     const container = document.createElement("div");
     container.className = "vault-cm-document-embed-preview";
+    applyStableBlockWidgetSpacing(container, "0.35rem");
     this.root = createRoot(container);
     this.root.render(
       createElement(MarkdownDocument, {
@@ -553,6 +676,7 @@ class TableBlockWidget extends WidgetType {
   toDOM() {
     const container = document.createElement("div");
     container.className = "vault-cm-table-rendered";
+    applyStableBlockWidgetSpacing(container);
     this.root = createRoot(container);
     this.root.render(
       createElement(MarkdownDocument, {
@@ -580,6 +704,66 @@ class TableBlockWidget extends WidgetType {
   ignoreEvent() {
     return false;
   }
+}
+
+class MathBlockWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly block: LiveMathBlock,
+    private readonly options: LiveBlockOptions,
+  ) {
+    super();
+  }
+
+  eq(widget: MathBlockWidget) {
+    return (
+      widget.block.source === this.block.source &&
+      widget.options.assetLinks === this.options.assetLinks &&
+      widget.options.wikiLinks === this.options.wikiLinks
+    );
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "vault-cm-math-rendered";
+    applyStableBlockWidgetSpacing(container);
+    this.root = createRoot(container);
+    this.root.render(
+      createElement(MarkdownDocument, {
+        markdown: this.block.source,
+        assetLinks: this.options.assetLinks,
+        wikiLinks: this.options.wikiLinks,
+        contained: false,
+        disableLinks: true,
+        className: "vault-cm-math-rendered-markdown",
+      }),
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+
+    if (root) {
+      window.setTimeout(() => root.unmount(), 0);
+    }
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function applyStableBlockWidgetSpacing(
+  element: HTMLElement,
+  paddingBlock = "0.6rem",
+) {
+  element.style.boxSizing = "border-box";
+  element.style.marginBlock = "0";
+  element.style.paddingBlock = paddingBlock;
 }
 
 function createAssetFileCard(
@@ -918,6 +1102,71 @@ function getLiveTableBlocks(
       source: doc.sliceString(headerLine.from, endLine.to),
     });
     lineNumber = endLineNumber + 1;
+  }
+
+  return blocks;
+}
+
+function getLiveMathBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveMathBlock[] {
+  const blocks: LiveMathBlock[] = [];
+  const doc = state.doc;
+  let lineNumber = 1;
+
+  while (lineNumber <= doc.lines) {
+    const startLine = doc.line(lineNumber);
+    const trimmed = startLine.text.trim();
+
+    if (
+      isInsideSyntaxRange(startLine.from, excludedRanges) ||
+      !trimmed.startsWith("$$")
+    ) {
+      lineNumber += 1;
+      continue;
+    }
+
+    if (trimmed.length > 2 && trimmed.endsWith("$$")) {
+      blocks.push({
+        kind: "mathBlock",
+        from: startLine.from,
+        to: startLine.to,
+        startLine: lineNumber,
+        endLine: lineNumber,
+        source: startLine.text,
+      });
+      lineNumber += 1;
+      continue;
+    }
+
+    let endLineNumber = lineNumber + 1;
+
+    while (endLineNumber <= doc.lines) {
+      const endLine = doc.line(endLineNumber);
+
+      if (
+        !isInsideSyntaxRange(endLine.from, excludedRanges) &&
+        endLine.text.trim().endsWith("$$")
+      ) {
+        blocks.push({
+          kind: "mathBlock",
+          from: startLine.from,
+          to: endLine.to,
+          startLine: lineNumber,
+          endLine: endLineNumber,
+          source: doc.sliceString(startLine.from, endLine.to),
+        });
+        lineNumber = endLineNumber + 1;
+        break;
+      }
+
+      endLineNumber += 1;
+    }
+
+    if (endLineNumber > doc.lines) {
+      lineNumber += 1;
+    }
   }
 
   return blocks;

@@ -434,7 +434,261 @@ Make these extensions:
 
 ---
 
-## 10. Open Questions
+## 10. Near-Term Groundwork Plan
+
+This is the concrete order for the next implementation pass.
+
+### Slice A: Registry Runtime Skeleton
+
+Goal: create a real registry without changing current behavior.
+
+Status: first runtime pass exists in `lib/extensions/registry.ts`. It provides
+ordered extension storage plus Markdown LiveBlockSpec/preprocessor selectors.
+The current Live block engine now routes its core specs through a core
+`VaultExtension`, while the later file split remains follow-up work.
+
+Add:
+
+```txt
+lib/extensions/registry.ts
+lib/extensions/core.ts
+lib/extensions/built-ins.ts
+```
+
+Responsibilities:
+
+- Export a single ordered list of enabled extensions.
+- Keep pure metadata server-safe.
+- Keep React/CodeMirror implementation pieces in client-safe modules.
+- Provide helper selectors:
+  - `getMarkdownLiveBlockSpecs()`
+  - `getMarkdownPreprocessors()`
+  - `getCompletionContributions()`
+  - `getToolbarContributions()`
+  - `getDocumentOverlayContributions()`
+  - `getWorkspaceContributions()`
+
+Important boundary:
+
+```txt
+Core Markdown features may register through the same registry plumbing, but
+they are still core features. Optional extensions should be removable without
+breaking Markdown rendering.
+```
+
+### Slice B: Move Live Block Specs Into Registry
+
+Goal: use the registry to prove the architecture with existing behavior.
+
+Current state:
+
+```txt
+components/markdown/live-blocks.ts owns the block engine and local specs for
+asset groups, callouts, document embeds, and GFM tables.
+```
+
+Target state:
+
+```txt
+components/markdown/live-blocks.ts
+  owns the generic CodeMirror block-decoration engine.
+
+components/markdown/live-block-specs/
+  owns current core Markdown live block specs:
+    asset-group.tsx
+    callout.tsx
+    document-embed.tsx
+    table.tsx
+
+lib/extensions/core.ts
+  registers those specs as core Markdown contributions.
+```
+
+Rules:
+
+- Keep the existing `StateField<DecorationSet>` behavior.
+- Keep source reveal behavior identical.
+- Keep priority ordering:
+  1. asset groups
+  2. callouts
+  3. document embeds
+  4. tables
+- Keep fenced-code exclusion shared by the engine, not repeated by every spec.
+- Add only focused tests/manual checks after migration:
+  - asset group outside/inside source
+  - callout outside/inside source
+  - document embed outside/inside source
+  - table outside/inside source
+  - all ignored inside code fences
+
+### Slice C: Core Math Rendering
+
+Math/LaTeX is a core Markdown feature.
+
+Status: initial core rendering is implemented with `remark-math` and
+`rehype-katex`. Read/public/official/embed paths use the shared
+`MarkdownDocument` pipeline, and inactive Live-mode display math is rendered as
+a core LiveBlockSpec.
+
+Use the unified/React Markdown pipeline:
+
+```txt
+remark-math + rehype-katex
+```
+
+Reasoning:
+
+- `remark-math` adds dollar-delimited Markdown math syntax.
+- `rehype-katex` renders math during Markdown processing, so
+  Vault does not need to load arbitrary client-side math scripts on every
+  page.
+- The same rendered output can flow through Read mode, public pages, guide docs,
+  share pages, embeds, and Live-mode block widgets that reuse
+  `MarkdownDocument`.
+
+Initial syntax:
+
+```md
+Inline math: $E = mc^2$
+
+Block math:
+
+$$
+\int_0^1 x^2 dx = \frac{1}{3}
+$$
+```
+
+Initial support target:
+
+- Read mode renders inline and block math.
+- Public pages render inline and block math.
+- Official docs render inline and block math.
+- Markdown document embeds render math through the existing recursive
+  `MarkdownDocument` path.
+- Live mode renders inactive block math through a core `mathBlock` LiveBlockSpec.
+- Live mode keeps inline math as styled source in the first slice unless a
+  lightweight inline renderer proves stable.
+
+Do not:
+
+- Execute author-provided scripts.
+- Add remote CDN math scripts.
+- Treat math as raw HTML.
+- Allow math rendering inside fenced code blocks.
+
+### Slice D: Extension State Runtime API
+
+Goal: make document-state extensions useful without wiring stickers yet.
+
+Status: implemented for object-shaped state with
+`server/document-extension-actions.ts` and
+`components/extensions/use-document-extension-state.ts`. The first pass is
+workspace/authenticated and non-realtime.
+
+Add a small runtime wrapper around `server/document-extensions.ts`:
+
+- Server APIs/actions for listing readable states for a document.
+- Server APIs/actions for upserting/deleting editor-writable states.
+- Client hook for authenticated workspace use:
+  - `useDocumentExtensionState(extensionId, stateKey)`
+  - reads initial server-provided state
+  - debounces JSON writes
+  - exposes `dirty`, `saving`, `error`
+
+Rules:
+
+- Do not expose raw DB rows to generic components.
+- Validate state through the extension's registered schema before save.
+- Keep first version non-realtime; later Yjs maps can be extension-owned.
+
+### Slice E: Overlay Runtime Mounting
+
+Goal: make the overlay host actually consume registered contributions.
+
+Add:
+
+```txt
+components/extensions/DocumentExtensionRenderer.tsx
+```
+
+Responsibilities:
+
+- Receive `documentId`, access flags, and resolved extension states.
+- Ask the registry which document overlay contributions are enabled.
+- Render overlays inside `DocumentOverlayHost`.
+- Keep pointer behavior explicit:
+  - overlay layer is pointer-safe by default
+  - an extension must opt into interactive handles
+
+This still ships no sticker UI. It only makes the mounting point real.
+
+### Slice F: Workspace Contribution Shell
+
+Goal: prepare non-document extension surfaces.
+
+Add registry-backed slots for:
+
+- left-panel views
+- right-panel inspectors
+- workspace pages
+- command palette entries later
+
+First pass can expose no new user-visible extension UI. The goal is for a
+future calendar/drawing/sticker extension to add panels without editing the
+workspace shell directly.
+
+### Slice G: First Real Extension Prototypes
+
+After the registry, math, state API, and overlay mounting are stable:
+
+1. Stickers
+   - Tests document-state overlays.
+   - Uses uploaded assets.
+   - Stores positions in `document_extension_states`.
+   - Starts authenticated-workspace-only.
+
+2. Calendar
+   - Tests workspace/page contributions and optional Markdown content blocks.
+   - Starts as a workspace page reading document metadata and/or tasks.
+   - Adds Markdown block syntax only if the workspace page proves useful.
+
+---
+
+## 11. Core Math Acceptance Criteria
+
+Math is considered working when:
+
+- `$inline$` math renders in Read mode, public pages, official docs, and embeds.
+- `$$block$$` math renders in Read mode, public pages, official docs, and embeds.
+- Invalid TeX fails softly as visible source or a non-crashing placeholder.
+- Fenced code containing `$...$` remains code.
+- Live mode can edit math source without cursor jumps.
+- Live mode renders inactive block math through the Live block registry.
+- Build passes without relying on CDN scripts or browser-only global math renderers.
+
+Inline Live rendering can be a follow-up if block math and Read-mode math are
+stable.
+
+---
+
+## 12. Extension Registry Acceptance Criteria
+
+The registry foundation is considered ready for stickers/calendar work when:
+
+- Existing Live block behavior is provided by registered core specs.
+- Adding/removing a built-in optional LiveBlockSpec does not require editing the
+  generic live block engine.
+- Extension metadata is centralized and discoverable.
+- Extension state reads/writes go through permission-checked server helpers.
+- Overlay contributions mount through `DocumentOverlayHost`.
+- Workspace contribution slots exist even if no optional extension uses them
+  yet.
+- `docs/project-knowledge.md` names the registry entrypoints and security
+  boundaries.
+
+---
+
+## 13. Open Questions
 
 - Should extension state be included in restore points/version history?
   - Recommendation: not initially. Add extension-owned history later for large

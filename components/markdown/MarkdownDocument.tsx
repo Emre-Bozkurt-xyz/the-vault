@@ -22,10 +22,12 @@ import {
   type ReactNode,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { defaultSchema, type Schema } from "hast-util-sanitize";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 import {
   transformAssetEmbeds,
@@ -1075,11 +1077,12 @@ function MarkdownSegment({
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],
         rehypeSanitizeInlineStyles,
+        rehypeKatex,
       ]}
       components={createMarkdownComponents(disableLinks, headingIds)}
     >

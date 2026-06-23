@@ -344,7 +344,12 @@ Reference plan: `docs/12_EXTENSION_REGISTRY_PLAN.md`
 | [x] | Refactor Live blocks into specs | Asset groups, callouts, document embeds, and GFM tables now flow through internal `LiveBlockSpec`s without changing the rendered behavior |
 | [x] | Add document extension state schema | Added migration `0012_tiny_tana_nile.sql`, `document_extension_states`, and permission-checked server helpers for non-Markdown extension data such as stickers and overlays |
 | [x] | Add document overlay host | Added `DocumentOverlayHost` around the editor column with a pointer-safe absolute overlay layer for future trusted extension visuals |
+| [x] | Flesh out registry groundwork | `docs/12_EXTENSION_REGISTRY_PLAN.md` now defines the next registry runtime, LiveBlockSpec migration, core math slice, extension state runtime, overlay mounting, workspace contribution slots, and prototype order |
+| [x] | Add core math rendering | `remark-math` and `rehype-katex` now run in the shared Markdown pipeline; Live mode renders inactive `$$...$$` block math through the Live block registry |
+| [~] | Move Live block specs into registry | Added `lib/extensions/registry.ts` and route current core LiveBlockSpecs through a `VaultExtension`; splitting specs into separate registry-owned modules remains |
+| [x] | Add extension state runtime API | Added permission-checked server actions and a debounced client hook for object-shaped document extension state |
 | [ ] | Prototype stickers extension | Built-in extension using uploaded assets and document-relative state, authenticated workspace-only first |
+| [ ] | Prototype calendar extension | Workspace/page contribution first; optional Markdown block after the workspace flow proves useful |
 
 Exit criteria:
 

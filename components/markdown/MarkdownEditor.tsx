@@ -33,6 +33,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { HocuspocusProvider } from "@hocuspocus/provider";
+import katex from "katex";
 import CodeMirror from "@uiw/react-codemirror";
 import {
   AlertCircle,
@@ -1906,6 +1907,35 @@ class InlineHtmlPreviewWidget extends WidgetType {
   }
 }
 
+class InlineMathPreviewWidget extends WidgetType {
+  constructor(private readonly source: string) {
+    super();
+  }
+
+  eq(widget: InlineMathPreviewWidget) {
+    return widget.source === this.source;
+  }
+
+  toDOM() {
+    const wrapper = document.createElement("span");
+    wrapper.className = "vault-cm-math-inline-preview";
+
+    try {
+      katex.render(this.source, wrapper, {
+        displayMode: false,
+        output: "html",
+        throwOnError: false,
+        trust: false,
+        strict: "ignore",
+      });
+    } catch {
+      wrapper.textContent = this.source;
+    }
+
+    return wrapper;
+  }
+}
+
 class WikiImagePreviewWidget extends WidgetType {
   constructor(
     private readonly src: string,
@@ -2983,9 +3013,15 @@ function addInlinePreviewDecorations(
     from: lineFrom + from,
     to: lineFrom + to,
   }));
+  const inlineMathRanges = getInlineMathRanges(text).map(({ from, to }) => ({
+    from: lineFrom + from,
+    to: lineFrom + to,
+  }));
+  const protectedInlineRanges = [...inlineCodeRanges, ...inlineMathRanges];
 
   addInlineHtmlDecorations(ranges, lineFrom, text, activePositions);
   addWikiImageDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
+  addInlineMathDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
   addRegexDecorations(
     ranges,
     lineFrom,
@@ -2997,6 +3033,7 @@ function addInlinePreviewDecorations(
       [-1, 0],
     ],
     activePositions,
+    inlineMathRanges,
   );
   addRegexDecorations(
     ranges,
@@ -3009,7 +3046,7 @@ function addInlinePreviewDecorations(
       [-2, 0],
     ],
     activePositions,
-    inlineCodeRanges,
+    protectedInlineRanges,
   );
   addRegexDecorations(
     ranges,
@@ -3022,10 +3059,101 @@ function addInlinePreviewDecorations(
       [-1, 0],
     ],
     activePositions,
-    inlineCodeRanges,
+    protectedInlineRanges,
   );
-  addLinkDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
-  addWikiLinkDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
+  addLinkDecorations(ranges, lineFrom, text, activePositions, protectedInlineRanges);
+  addWikiLinkDecorations(ranges, lineFrom, text, activePositions, protectedInlineRanges);
+}
+
+function addInlineMathDecorations(
+  ranges: RangeLike[],
+  lineFrom: number,
+  text: string,
+  activePositions: number[],
+  protectedRanges: Array<{ from: number; to: number }> = [],
+) {
+  for (const match of getInlineMathRanges(text)) {
+    const from = lineFrom + match.from;
+    const to = lineFrom + match.to;
+
+    if (
+      hasActivePositionInRange(activePositions, from, to) ||
+      overlapsAnyRange(from, to, protectedRanges)
+    ) {
+      continue;
+    }
+
+    ranges.push(
+      Decoration.replace({
+        widget: new InlineMathPreviewWidget(match.source),
+      }).range(from, to),
+    );
+  }
+}
+
+function getInlineMathRanges(text: string) {
+  const ranges: Array<{ from: number; to: number; source: string }> = [];
+  let index = 0;
+
+  while (index < text.length) {
+    const open = findNextInlineMathDelimiter(text, index);
+
+    if (open < 0) {
+      break;
+    }
+
+    const close = findNextInlineMathDelimiter(text, open + 1);
+
+    if (close < 0) {
+      break;
+    }
+
+    const source = text.slice(open + 1, close).trim();
+
+    if (source) {
+      ranges.push({
+        from: open,
+        to: close + 1,
+        source,
+      });
+    }
+
+    index = close + 1;
+  }
+
+  return ranges;
+}
+
+function findNextInlineMathDelimiter(text: string, start: number) {
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] !== "$") {
+      continue;
+    }
+
+    if (
+      text[index - 1] === "$" ||
+      text[index + 1] === "$" ||
+      hasOddBackslashRun(text, index)
+    ) {
+      continue;
+    }
+
+    return index;
+  }
+
+  return -1;
+}
+
+function hasOddBackslashRun(text: string, index: number) {
+  let count = 0;
+  let cursor = index - 1;
+
+  while (cursor >= 0 && text[cursor] === "\\") {
+    count += 1;
+    cursor -= 1;
+  }
+
+  return count % 2 === 1;
 }
 
 function getInlineCodeRanges(text: string) {

@@ -1,6 +1,6 @@
 import type { CompletionSource } from "@codemirror/autocomplete";
-import type { EditorState, Extension, StateEffect } from "@codemirror/state";
-import type { KeyBinding, WidgetType } from "@codemirror/view";
+import type { EditorState, Extension, Range, StateEffect } from "@codemirror/state";
+import type { Decoration, KeyBinding, WidgetType } from "@codemirror/view";
 import type { ZodType } from "zod";
 
 import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
@@ -90,6 +90,11 @@ export type LiveBlockSpec<
   scan: (state: EditorState, context: LiveBlockScanContext) => TBlock[];
   isActive?: (state: EditorState, block: TBlock) => boolean;
   widget: (block: TBlock, context: TContext) => WidgetType;
+  activeDecorations?: (
+    state: EditorState,
+    block: TBlock,
+    context: TContext,
+  ) => Range<Decoration>[];
   activeExtensions?: (state: EditorState, block: TBlock, context: TContext) => Extension[];
   effects?: (state: EditorState, block: TBlock, context: TContext) => StateEffect<unknown>[];
 };

@@ -239,6 +239,12 @@ Current editor behavior:
 - GFM Markdown tables render through the specialized Live block registry when
   inactive, using the same `MarkdownDocument` table renderer as Read mode. The
   table source is revealed again when the cursor or selection enters the table.
+- Core math rendering supports `$inline$` and `$$block$$` syntax through
+  `remark-math` and `rehype-katex` in the shared `MarkdownDocument` pipeline.
+  Inactive Live-mode block math renders through the Live block registry and
+  reveals the raw TeX source when the cursor or selection enters the block.
+  Inactive Live-mode inline math renders through a KaTeX inline widget while
+  preserving `$...$` source reveal when the cursor enters the range.
 
 ### Specialized CodeMirror Live Preview Plan
 
@@ -266,12 +272,20 @@ type LiveBlock =
   | { kind: "assetGroup"; from: number; to: number; startLine: number; endLine: number }
   | { kind: "callout"; from: number; to: number; startLine: number; endLine: number }
   | { kind: "documentEmbed"; from: number; to: number }
-  | { kind: "table"; from: number; to: number; startLine: number; endLine: number };
+  | { kind: "table"; from: number; to: number; startLine: number; endLine: number }
+  | { kind: "mathBlock"; from: number; to: number; startLine: number; endLine: number };
 ```
 
 - Move vertical-layout-changing Live behavior into direct CodeMirror decoration
   sources, preferably `StateField<DecorationSet>` providers, so block widgets and
   multi-line replacements are known before viewport layout is computed.
+- Keep the CodeMirror carrier lines around those direct block widgets measurable.
+  Do not use zero-height `.cm-line` styling to hide source carrier lines; that
+  corrupts CodeMirror's coordinate mapping and vertical cursor movement. Do not
+  put external margins on block widget containers either; use internal padding
+  for visual spacing so CodeMirror's height map stays aligned with the DOM. If
+  a rendered inactive block needs special arrow-key entry into source, handle
+  that with an editor keymap against the underlying source ranges instead.
 - Keep the existing view-plugin decoration path for cheap viewport-only inline
   styling, active-source reveal, drag-selection protection, and simple
   single-line widgets.
@@ -296,7 +310,9 @@ Ideal implementation order:
    embeds.
 7. Move GFM tables into the same block registry after the shared renderer path
    is stable. Completed for inactive Live-mode tables.
-8. Consider nested editors only for genuinely editable rich blocks; do not start
+8. Move display math into the same block registry after core math read rendering
+   is stable. Completed for inactive Live-mode `$$...$$` blocks.
+9. Consider nested editors only for genuinely editable rich blocks; do not start
    there.
 
 Definition of done for the first major slice:

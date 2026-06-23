@@ -7,6 +7,7 @@ import {
 
 import { ThemeProvider } from "@/components/theme-provider";
 
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 const uiFont = Bricolage_Grotesque({
