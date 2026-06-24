@@ -89,6 +89,18 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-5 text-xs text-muted-foreground">
+          <span>Private by default. Public only when you publish.</span>
+          <div className="flex items-center gap-4">
+            <Link href="/terms" className="transition hover:text-foreground">
+              Terms
+            </Link>
+            <Link href="/privacy" className="transition hover:text-foreground">
+              Privacy
+            </Link>
+          </div>
+        </footer>
       </section>
     </main>
   );

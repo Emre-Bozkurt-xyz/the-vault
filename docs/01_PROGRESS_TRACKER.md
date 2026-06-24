@@ -148,6 +148,7 @@ Users can become friends and share docs with friends.
 | [x] | Add copy public link button | Nice polish |
 | [x] | Credit published-note owners | Public pages show owner nickname/name, username, and avatar without exposing email |
 | [x] | Add public share previews | `/public/[slug]` emits per-document OpenGraph/Twitter metadata and a generated social-card image |
+| [x] | Add crawler metadata | `/robots.txt` and `/sitemap.xml` advertise only public home/docs/terms/privacy/published-note routes and keep workspace/share/private surfaces out of indexing |
 
 Exit criteria:
 
@@ -264,6 +265,7 @@ Legacy ProseMirror JSON is no longer required.
 | [x] | Add repo-backed canonical docs | `content/docs/**/*.md` merges into the same public/admin docs lists as read-only canonical docs |
 | [x] | Seed first official user docs | Added Markdown basics, wiki links/embeds, callouts, snippets, safe HTML/embeds, and sharing/permissions |
 | [x] | Add terms page and login acceptance copy | `/terms` renders `content/legal/terms.md`; login links terms before OAuth/dev sign-in |
+| [x] | Add privacy policy | `/privacy` renders `content/legal/privacy.md`; login and public landing page link the policy, and crawler metadata includes it |
 
 Exit criteria:
 

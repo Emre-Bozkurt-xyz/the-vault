@@ -1,16 +1,25 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { getPrivacyPage } from "@/lib/repo-docs";
 import { cn } from "@/lib/utils";
-import { getTermsPage } from "@/lib/repo-docs";
 
-export default async function TermsPage() {
-  const page = await getTermsPage();
+export const metadata: Metadata = {
+  title: "Privacy Policy · Vault",
+  description: "How Vault handles accounts, documents, assets, sharing, and public content.",
+  alternates: {
+    canonical: "/privacy",
+  },
+};
+
+export default async function PrivacyPage() {
+  const page = await getPrivacyPage();
 
   if (!page) {
     notFound();
@@ -29,20 +38,20 @@ export default async function TermsPage() {
           </Link>
           <div className="flex items-center gap-2">
             <Link
-              href="/privacy"
+              href="/terms"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1")}
             >
-              Privacy
+              Terms
             </Link>
             <ThemeToggle />
-            <Badge variant="outline">Terms</Badge>
+            <Badge variant="outline">Privacy</Badge>
           </div>
         </nav>
 
         <article className="rounded-3xl border border-border/60 bg-card/80 p-6 text-card-foreground shadow-[0_25px_90px_-70px_rgba(0,0,0,0.6)] sm:p-8">
           <header className="border-b border-border/60 pb-6">
             <Badge variant="outline" className="mb-5">
-              <FileText className="size-3" />
+              <ShieldCheck className="size-3" />
               Legal
             </Badge>
             <h1 className="text-5xl font-semibold tracking-tight vault-display">

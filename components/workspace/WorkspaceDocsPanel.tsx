@@ -14,7 +14,7 @@ export function WorkspaceDocsPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/70 px-3 py-3">
-        <Link href="/docs" className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <BookOpen className="size-4 text-muted-foreground" />
           <span>
             <span className="block text-sm font-semibold">Vault Docs</span>
@@ -22,7 +22,7 @@ export function WorkspaceDocsPanel({
               Official guides
             </span>
           </span>
-        </Link>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">

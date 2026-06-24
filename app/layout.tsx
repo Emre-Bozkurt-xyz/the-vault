@@ -6,6 +6,7 @@ import {
 } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { getSiteUrl } from "@/lib/site-url";
 
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -26,7 +27,7 @@ const monoFont = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = new URL(process.env.NEXTAUTH_URL ?? "http://localhost:3000");
+const siteUrl = new URL(getSiteUrl());
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,

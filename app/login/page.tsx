@@ -95,6 +95,10 @@ export default async function LoginPage({
               By signing in, you agree to the{" "}
               <Link href="/terms" className="text-primary underline-offset-4 hover:underline">
                 Terms and Conditions
+              </Link>{" "}
+              and acknowledge the{" "}
+              <Link href="/privacy" className="text-primary underline-offset-4 hover:underline">
+                Privacy Policy
               </Link>
               .
             </p>

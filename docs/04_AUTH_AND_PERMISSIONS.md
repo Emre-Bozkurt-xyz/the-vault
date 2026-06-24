@@ -122,9 +122,10 @@ Do not enable global `allowDangerousEmailAccountLinking` without a specific
 security review. The settings-page linking flow is safer because the user has
 already proven control of the existing Vault session.
 
-The login page links to `/terms` and states that signing in means accepting the
-Terms and Conditions. Terms content is repo-backed Markdown at
-`content/legal/terms.md`.
+The login page links to `/terms` and `/privacy`, states that signing in means
+accepting the Terms and Conditions, and points users to the Privacy Policy.
+Legal content is repo-backed Markdown at `content/legal/terms.md` and
+`content/legal/privacy.md`.
 
 ---
 
@@ -160,6 +161,7 @@ Public routes:
 /
 /login
 /terms
+/privacy
 /docs
 /docs/guides/*
 /public/*

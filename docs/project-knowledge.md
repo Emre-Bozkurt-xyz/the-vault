@@ -137,8 +137,11 @@ vault/
     docs/[docId]/
     healthz/
     login/
+    privacy/
     public/[slug]/
+    robots.txt
     share/[token]/
+    sitemap.xml
   components/
     markdown/
     theme-provider.tsx
@@ -160,6 +163,8 @@ Add notes as real files appear:
 | Path | Purpose |
 |---|---|
 | `app/` | Next.js routes |
+| `app/robots.ts` | Generated `robots.txt`; allows public home/docs/guides/published-note routes and public asset content fetches while disallowing workspace, dashboard, asset-library, auth/onboarding, health, share-link, and general API crawling |
+| `app/sitemap.ts` | Dynamic `sitemap.xml`; lists the homepage, official docs index, terms/privacy pages, published official guide pages, and user-published `/public/[slug]` documents only |
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js route handlers |
 | `app/api/health/route.ts` | App/database health check route |
 | `app/api/assets/route.ts` | Authenticated asset list/upload API; upload validates file signatures, reserves quota, writes private R2 bytes, stores metadata, and optionally links to a document |
@@ -183,6 +188,7 @@ Add notes as real files appear:
 | `app/assets/page.tsx` | Workspace asset library page for browsing owned uploads, editing metadata, copying embeds, and toggling public/private visibility |
 | `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub/Google OAuth sign-in page |
+| `app/privacy/page.tsx` | Public Privacy Policy route rendered from repo Markdown |
 | `app/public/[slug]/page.tsx` | Anonymous public read-only document route |
 | `app/share/[token]/page.tsx` | Copyable document share-link route with read-only anonymous access and signed-in member edit handoff |
 | `app/workspace/page.tsx` | Protected Obsidian-like workspace new-tab route with persistent tabs and file browser |
@@ -229,6 +235,7 @@ Add notes as real files appear:
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
 | `lib/markdown.ts` | Shared Markdown limits |
+| `lib/site-url.ts` | Shared canonical site-origin helper used by metadata, robots, and sitemap generation; prefers `NEXTAUTH_URL`, then `NEXT_PUBLIC_APP_URL`, then production `https://vault.ems-place.com` |
 | `lib/repo-docs.ts` | Filesystem loader for repo-backed docs and legal Markdown content |
 | `lib/permissions.ts` | Server-side document access helpers |
 | `lib/slug.ts` | Public slug generation helper |
@@ -247,6 +254,7 @@ Add notes as real files appear:
 | `server/official-docs.ts` | Official documentation queries and admin save/create actions |
 | `content/docs/` | Repo-backed canonical user documentation rendered with the same docs UI as DB docs; includes getting started, collaboration, customization, security, and asset guides |
 | `content/legal/terms.md` | Repo-backed Terms and Conditions copy shown on `/terms` |
+| `content/legal/privacy.md` | Repo-backed Privacy Policy copy shown on `/privacy` |
 | `server/friends.ts` | Friend request and friendship server actions/queries |
 | `server/profile.ts` | Profile completion, profile gate, and user search helpers |
 | `server/workspace.ts` | Authenticated workspace data loader for the shell and sidebar document lists |
@@ -482,7 +490,7 @@ Known auth caveats:
 - `requireActiveUser()` reads the current `users` row and redirects active bans to `/banned`; document, friend, profile, and official-doc mutations use this gate or `requireAdmin()`.
 - `requireAdmin()` reads `users.role` from the database on each request. Admin role changes do not depend on session refresh.
 - Admins cannot ban themselves or demote their own account through the admin UI actions.
-- `/login` states that signing in accepts the Terms and Conditions and links to `/terms`, which renders `content/legal/terms.md`.
+- `/login` states that signing in accepts the Terms and Conditions, links to `/terms`, and points to `/privacy`; legal pages render `content/legal/terms.md` and `content/legal/privacy.md`.
 ```
 
 Manual auth tests performed:
@@ -1348,3 +1356,6 @@ Use this as a compact implementation log.
 | 2026-06-24 | Added settings modal extension browser slice | Workspace settings icon now opens the modal over the current tab; local extension catalog, `vault.stickers` preflight manifest, extension settings actions, and modal extension browser/installed sections are wired with build-passing enable/disable/reset flows |
 | 2026-06-24 | Made settings modal-only and added preference sections | Removed the old settings utility sidebar path, moved the workspace settings button to the bottom of the icon rail, added persisted modal sections for appearance/workspace/editor/files-assets/hotkeys/core-features/advanced settings, and added named theme runtime support |
 | 2026-06-24 | Converted preferences to autosave rows | Replaced submit-form preference sections with vertical setting rows and right-aligned controls that autosave on change, matching mature editor settings patterns |
+| 2026-06-24 | Adjusted docs rail and tab behavior | The workspace Docs rail button now only opens the docs sidebar instead of navigating to `/docs`, the docs panel header is no longer a link, and middle-clicking a workspace tab closes it |
+| 2026-06-24 | Added crawler metadata | Added generated `robots.txt`, dynamic `sitemap.xml`, and a shared site URL helper so search engines discover only public home/docs/terms/privacy/published-note pages while private workspace/share/API surfaces stay unlisted or disallowed |
+| 2026-06-24 | Added privacy policy | Added repo-backed `/privacy`, linked it from login/home/terms, included it in robots/sitemap, and updated legal docs so account sign-in points users to both terms and privacy information |

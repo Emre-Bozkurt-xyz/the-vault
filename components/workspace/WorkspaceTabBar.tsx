@@ -161,6 +161,17 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
             <div
               key={tab.href}
               draggable
+              onAuxClick={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                  closeTab(tab);
+                }
+              }}
+              onMouseDown={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                }
+              }}
               onDragStart={(event) => handleDragStart(event, tab)}
               onDragOver={(event) => handleDragOver(event, tab)}
               onDrop={handleDrop}
@@ -173,7 +184,15 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
                 draggedHref === tab.href && "opacity-55",
               )}
             >
-              <Link href={tab.href} className="flex min-w-0 flex-1 items-center gap-2">
+              <Link
+                href={tab.href}
+                onAuxClick={(event) => {
+                  if (event.button === 1) {
+                    event.preventDefault();
+                  }
+                }}
+                className="flex min-w-0 flex-1 items-center gap-2"
+              >
                 <Icon className="size-3.5 shrink-0" />
                 <span className="truncate">{tab.title}</span>
               </Link>

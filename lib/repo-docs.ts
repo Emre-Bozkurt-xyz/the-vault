@@ -48,14 +48,25 @@ export async function getRepoDocSlugSet() {
 }
 
 export async function getTermsPage(): Promise<RepoMarkdownPage | null> {
-  const filePath = path.join(legalRoot, "terms.md");
+  return getLegalMarkdownPage("terms.md", "Terms and Conditions");
+}
+
+export async function getPrivacyPage(): Promise<RepoMarkdownPage | null> {
+  return getLegalMarkdownPage("privacy.md", "Privacy Policy");
+}
+
+async function getLegalMarkdownPage(
+  filename: string,
+  fallbackTitle: string,
+): Promise<RepoMarkdownPage | null> {
+  const filePath = path.join(legalRoot, filename);
 
   try {
     const [raw, metadata] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
     const { frontmatter, body } = parseFrontmatter(raw);
 
     return {
-      title: frontmatter.title ?? "Terms and Conditions",
+      title: frontmatter.title ?? fallbackTitle,
       markdown: body.trim(),
       updatedAt: metadata.mtime,
       filePath: path.relative(process.cwd(), filePath),
