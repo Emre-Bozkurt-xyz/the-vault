@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import { cn } from "@/lib/utils";
 import { WorkspaceIconRail } from "@/components/workspace/WorkspaceIconRail";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
@@ -34,7 +35,6 @@ type VaultWorkspaceShellProps = {
   searchPanel?: ReactNode;
   galleryPanel?: ReactNode;
   assetsPanel?: ReactNode;
-  settingsPanel?: ReactNode;
   adminPanel?: ReactNode;
   defaultPanelMode?: WorkspacePanelMode;
   contentClassName?: string;
@@ -62,7 +62,6 @@ export function VaultWorkspaceShell({
   searchPanel,
   galleryPanel,
   assetsPanel,
-  settingsPanel,
   adminPanel,
   defaultPanelMode = "files",
   contentClassName,
@@ -172,11 +171,9 @@ export function VaultWorkspaceShell({
             ? galleryPanel
             : panelMode === "assets"
               ? assetsPanel
-              : panelMode === "settings"
-                ? settingsPanel
-                : panelMode === "admin"
-                  ? adminPanel
-                  : null;
+              : panelMode === "admin"
+                ? adminPanel
+                : null;
 
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground">
@@ -301,6 +298,16 @@ export function VaultWorkspaceShell({
         )}
       </button>
 
+      <button
+        type="button"
+        onClick={() => openWorkspaceSettings("account")}
+        aria-label="Settings"
+        title="Settings"
+        className="fixed bottom-14 left-3 hidden size-8 items-center justify-center rounded-md border border-border/70 bg-background/90 text-muted-foreground shadow-sm transition hover:bg-muted hover:text-foreground md:flex"
+      >
+        <Settings className="size-4" />
+      </button>
+
       {mobilePanelOpen ? (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm md:hidden">
           <div className="flex h-full w-[min(20rem,86vw)] flex-col border-r border-border/70 bg-sidebar text-sidebar-foreground shadow-2xl">
@@ -316,7 +323,9 @@ export function VaultWorkspaceShell({
                       type="button"
                       title={item.label}
                       aria-label={item.label}
-                      onClick={() => changeMode(item.mode)}
+                      onClick={() => {
+                        changeMode(item.mode);
+                      }}
                       className={cn(
                         "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                         active && "bg-sidebar-accent text-sidebar-accent-foreground",
@@ -376,7 +385,6 @@ function mobilePanelItems(isAdmin: boolean) {
     { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid },
     { label: "Assets", mode: "assets" as const, icon: ImageIcon },
     { label: "Docs", mode: "docs" as const, icon: BookOpen },
-    { label: "Settings", mode: "settings" as const, icon: Settings },
     ...(isAdmin
       ? [{ label: "Admin", mode: "admin" as const, icon: ShieldCheck }]
       : []),
@@ -415,7 +423,6 @@ function PlaceholderPanel({ mode }: { mode: WorkspacePanelMode }) {
     gallery: { title: "Gallery", body: "Public content browsing is next." },
     assets: { title: "Assets", body: "Uploaded images and files live here." },
     docs: { title: "Docs", body: "Official guide navigation will land here." },
-    settings: { title: "Settings", body: "Account and workspace controls." },
     admin: { title: "Admin", body: "Moderation and docs publishing tools." },
   };
   const label = labels[mode];
@@ -486,7 +493,6 @@ function isPanelMode(value: string | null): value is WorkspacePanelMode {
     value === "gallery" ||
     value === "assets" ||
     value === "docs" ||
-    value === "settings" ||
     value === "admin"
   );
 }

@@ -426,6 +426,11 @@ Make these extensions:
 - Render only inside authenticated workspace first.
 - Add public rendering later only if `visibility=public`.
 
+Do not start the real stickers prototype until the settings modal and extension
+browser checkpoint in `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` is
+complete. Stickers should be registered, enabled, configured, and mounted as a
+normal built-in extension, not as one-off workspace/editor code.
+
 ### Slice 6: Verified Plugin Design
 
 - Add extension manifests.

@@ -242,9 +242,14 @@ Current editor behavior:
 - Core math rendering supports `$inline$` and `$$block$$` syntax through
   `remark-math` and `rehype-katex` in the shared `MarkdownDocument` pipeline.
   Inactive Live-mode block math renders through the Live block registry and
-  reveals the raw TeX source when the cursor or selection enters the block.
+  reveals the raw TeX source when the cursor or selection enters the block. When
+  the block source is active, Live mode inserts a measured KaTeX preview frame
+  directly underneath the source so authors can edit TeX while seeing the block
+  output grow with the rendered content.
   Inactive Live-mode inline math renders through a KaTeX inline widget while
-  preserving `$...$` source reveal when the cursor enters the range.
+  preserving `$...$` source reveal when the cursor enters the range. Active
+  inline math shows a floating KaTeX tooltip over the source without changing
+  document layout.
 
 ### Specialized CodeMirror Live Preview Plan
 

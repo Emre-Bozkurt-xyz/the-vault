@@ -6,13 +6,11 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  UserRound,
-  UsersRound,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-type UtilityPanelMode = "search" | "gallery" | "assets" | "settings" | "admin";
+type UtilityPanelMode = "search" | "gallery" | "assets" | "admin";
 
 type UtilityPanelItem = {
   label: string;
@@ -96,25 +94,6 @@ const panelContent: Record<
         href: "/gallery",
         description: "See public content.",
         icon: LayoutGrid,
-      },
-    ],
-  },
-  settings: {
-    label: "Account",
-    title: "Settings",
-    description: "Account and relationship controls.",
-    items: [
-      {
-        label: "Profile",
-        href: "/dashboard/settings",
-        description: "Nickname, username, OAuth providers, and sign-out.",
-        icon: UserRound,
-      },
-      {
-        label: "Friends",
-        href: "/dashboard/friends",
-        description: "Manage friends for faster document sharing.",
-        icon: UsersRound,
       },
     ],
   },

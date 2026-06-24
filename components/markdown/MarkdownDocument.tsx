@@ -348,6 +348,10 @@ function styledProps(
   };
 }
 
+function hasMarkdownClass(className: unknown, targetClassName: string) {
+  return typeof className === "string" && className.split(/\s+/).includes(targetClassName);
+}
+
 function safeIframeSrc(src: unknown) {
   if (typeof src !== "string") {
     return null;
@@ -599,8 +603,12 @@ function createMarkdownComponents(
     return <em {...styledProps("vault-md-em", className, style)}>{children}</em>;
   },
   a({ href, children, className, style, target, rel }) {
+    const isAssetFileCard = hasMarkdownClass(className, "vault-asset-embed--file");
+    const isAssetFileAction = hasMarkdownClass(className, "vault-asset-file-action");
+    const baseClassName = isAssetFileCard || isAssetFileAction ? "" : "vault-md-link";
+
     if (disableLinks) {
-      return <span {...styledProps("vault-md-link", className, style)}>{children}</span>;
+      return <span {...styledProps(baseClassName, className, style)}>{children}</span>;
     }
 
     const safeHref = href && allowedLinkProtocol.test(href) ? href : "#";
@@ -614,7 +622,7 @@ function createMarkdownComponents(
         href={safeHref}
         rel={linkTarget === "_blank" ? (rel || "noreferrer") : undefined}
         target={linkTarget}
-        {...styledProps("vault-md-link", className, style)}
+        {...styledProps(baseClassName, className, style)}
       >
         {children}
       </a>

@@ -339,9 +339,9 @@ function renderAssetEmbedHtml(
     const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
 
     return [
-      `<a class="vault-asset-embed vault-asset-embed--file vault-asset-embed--${escapeHtml(
+      `<span class="vault-asset-embed vault-asset-embed--file vault-asset-embed--${escapeHtml(
         asset.kind,
-      )}" href="${escapeHtml(asset.url)}" target="_blank" rel="noreferrer">`,
+      )}" role="group">`,
       `<span class="vault-asset-file-icon" aria-hidden="true">${kindLabel}</span>`,
       `<span class="vault-asset-file-body">`,
       `<span class="vault-asset-file-title">${escapeHtml(label)}</span>`,
@@ -349,8 +349,10 @@ function renderAssetEmbedHtml(
         [kindLabel, formatAssetFileSize(asset.sizeBytes)].filter(Boolean).join(" - "),
       )}</span>`,
       `</span>`,
-      `<span class="vault-asset-file-action">Open</span>`,
-      `</a>`,
+      `<a class="vault-asset-file-action" href="${escapeHtml(
+        asset.url,
+      )}" target="_blank" rel="noreferrer">Open</a>`,
+      `</span>`,
     ].join("");
   }
 

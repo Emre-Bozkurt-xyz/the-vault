@@ -21,13 +21,20 @@ import {
 } from "@codemirror/autocomplete";
 import { html, htmlCompletionSource } from "@codemirror/lang-html";
 import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
-import { EditorSelection, type EditorState, Prec } from "@codemirror/state";
+import {
+  EditorSelection,
+  type EditorState,
+  Prec,
+  StateField,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
   keymap,
   type KeyBinding,
+  showTooltip,
+  type Tooltip,
   ViewPlugin,
   type ViewUpdate,
   WidgetType,
@@ -686,6 +693,7 @@ export function MarkdownEditor({
             wikiLinks: wikiLinkMap,
             onConfigureAssetGroup: configureAssetGroup,
           }),
+          createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
         );
       }
@@ -1936,6 +1944,88 @@ class InlineMathPreviewWidget extends WidgetType {
   }
 }
 
+function createInlineMathTooltipExtension() {
+  return StateField.define<Tooltip | null>({
+    create(state) {
+      return getInlineMathTooltip(state);
+    },
+    update(tooltips, transaction) {
+      if (!transaction.docChanged && !transaction.selection) {
+        return tooltips;
+      }
+
+      return getInlineMathTooltip(transaction.state);
+    },
+    provide(field) {
+      return showTooltip.from(field);
+    },
+  });
+}
+
+function getInlineMathTooltip(state: EditorState): Tooltip | null {
+  const selection = state.selection.main;
+
+  if (!selection.empty) {
+    return null;
+  }
+
+  const match = getInlineMathAtPosition(state, selection.head);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    pos: match.from,
+    end: match.to,
+    above: true,
+    strictSide: false,
+    arrow: true,
+    create() {
+      const dom = document.createElement("div");
+      dom.className = "vault-cm-math-tooltip";
+
+      try {
+        katex.render(match.source, dom, {
+          displayMode: false,
+          output: "html",
+          throwOnError: false,
+          trust: false,
+          strict: "ignore",
+        });
+      } catch {
+        dom.textContent = match.source;
+      }
+
+      return { dom };
+    },
+  };
+}
+
+function getInlineMathAtPosition(state: EditorState, position: number) {
+  const line = state.doc.lineAt(position);
+  const localPosition = position - line.from;
+  const inlineCodeRanges = getInlineCodeRanges(line.text);
+
+  for (const match of getInlineMathRanges(line.text)) {
+    if (
+      localPosition < match.from ||
+      localPosition > match.to ||
+      overlapsAnyRange(match.from, match.to, inlineCodeRanges)
+    ) {
+      continue;
+    }
+
+    return {
+      from: line.from + match.from,
+      to: line.from + match.to,
+      source: match.source,
+    };
+  }
+
+  return null;
+}
+
 class WikiImagePreviewWidget extends WidgetType {
   constructor(
     private readonly src: string,
@@ -2055,15 +2145,13 @@ function createAssetFileCard(
   label: string | null,
 ) {
   const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
-  const link = document.createElement("a");
-  link.className = [
+  const card = document.createElement("span");
+  card.className = [
     "vault-asset-embed",
     "vault-asset-embed--file",
     `vault-asset-embed--${asset.kind}`,
   ].join(" ");
-  link.href = asset.url;
-  link.target = "_blank";
-  link.rel = "noreferrer";
+  card.setAttribute("role", "group");
 
   const icon = document.createElement("span");
   icon.className = "vault-asset-file-icon";
@@ -2083,14 +2171,17 @@ function createAssetFileCard(
     .filter(Boolean)
     .join(" - ");
 
-  const action = document.createElement("span");
+  const action = document.createElement("a");
   action.className = "vault-asset-file-action";
+  action.href = asset.url;
+  action.target = "_blank";
+  action.rel = "noreferrer";
   action.textContent = "Open";
 
   body.append(title, meta);
-  link.append(icon, body, action);
+  card.append(icon, body, action);
 
-  return link;
+  return card;
 }
 
 function formatAssetFileSize(sizeBytes: number) {

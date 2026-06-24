@@ -5,6 +5,7 @@ import { BookOpen, Home } from "lucide-react";
 import { auth } from "@/auth";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
@@ -58,6 +59,7 @@ export default async function OfficialDocPage({
     const workspace = await getWorkspaceData();
 
     return (
+      <>
       <VaultWorkspaceShell
         activePage={{
           type: "guide",
@@ -95,12 +97,6 @@ export default async function OfficialDocPage({
             activeHref={`/docs/guides/${doc.slug}`}
           />
         }
-        settingsPanel={
-          <WorkspaceUtilityPanel
-            mode="settings"
-            activeHref={`/docs/guides/${doc.slug}`}
-          />
-        }
         adminPanel={
           <WorkspaceUtilityPanel
             mode="admin"
@@ -111,6 +107,8 @@ export default async function OfficialDocPage({
       >
         <GuideContent doc={doc} wikiLinks={wikiLinks} />
       </VaultWorkspaceShell>
+      <WorkspaceSettingsModalMount profile={workspace.profile} />
+      </>
     );
   }
 

@@ -13,13 +13,13 @@ Update this file whenever the codebase changes in a meaningful way.
 Last updated:
 
 ```txt
-2026-06-17
+2026-06-24
 ```
 
 Current phase:
 
 ```txt
-Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library; Phase 12 - Extension registry foundation
+Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library; Phase 12 - Extension registry foundation; Phase 13 - Settings modal and extension browser planning
 ```
 
 Current deployment status:
@@ -43,7 +43,7 @@ Vault currently has a runnable dark-first Next.js app shell, switchable theming,
 Planned direction:
 
 ```txt
-The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. Private-by-default uploaded asset storage and the asset library are implemented from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; remaining asset work should be follow-up polish rather than initial architecture. Extension architecture planning lives in `docs/12_EXTENSION_REGISTRY_PLAN.md`; LaTeX/math should remain a core editor feature, while optional capabilities such as stickers, drawings, calendars, and widgets should register through trusted built-in extension APIs. Initial registry types, live-block specs, and document extension state storage exist.
+The Markdown-native pivot documented in `docs/09_MARKDOWN_PIVOT_PLAN.md` is active and production-confirmed. The workspace UI revamp documented in `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` is active. Private-by-default uploaded asset storage and the asset library are implemented from `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`; remaining asset work should be follow-up polish rather than initial architecture. Extension architecture planning lives in `docs/12_EXTENSION_REGISTRY_PLAN.md`; LaTeX/math should remain a core editor feature, while optional capabilities such as stickers, drawings, calendars, and widgets should register through trusted built-in extension APIs. Initial registry types, live-block specs, and document extension state storage exist. The settings modal and extension browser path in `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` is the prerequisite checkpoint before implementing the real stickers extension.
 ```
 
 ---
@@ -109,7 +109,7 @@ Notes:
 ```txt
 - `next.config.ts` enables standalone output for the future production Dockerfile.
 - `shadcn@4.8.0` initialized with the default Base/Nova preset, which uses Base UI primitives. Its Button does not support `asChild`; use `buttonVariants()` for styled links.
-- Theme behavior is dark-first and switchable. `components/theme-provider.tsx` owns a small local dark/light provider using the `theme` localStorage key, while `app/layout.tsx` renders dark by default to avoid theme flash; page styling should use shadcn/Tailwind theme tokens instead of hard-coded light/dark colors.
+- Theme behavior is dark-first and switchable. `components/theme-provider.tsx` owns localStorage-backed named themes using the `theme` key, applies `data-theme`, and keeps `.dark` compatibility for dark-like themes; workspace routes mirror the signed-in server preference back to localStorage for first paint.
 - Auth uses `next-auth@5.0.0-beta.31` because the current App Router API exposes `auth`, `handlers`, `signIn`, and `signOut` from the root `auth.ts`.
 ```
 
@@ -172,7 +172,7 @@ Add notes as real files appear:
 | `app/dashboard/admin/docs/page.tsx` | Workspace-native admin-only official docs list/create page |
 | `app/dashboard/admin/docs/[docId]/page.tsx` | Admin-only manual official docs editor |
 | `app/dashboard/friends/page.tsx` | Workspace-native protected friend request/friend list page |
-| `app/dashboard/settings/page.tsx` | Workspace-native protected account/settings page |
+| `app/dashboard/settings/page.tsx` | Workspace-native protected settings route that opens the shared settings modal for direct navigation and OAuth/profile redirects |
 | `app/banned/page.tsx` | Logged-in banned-account explanation and sign-out page |
 | `app/terms/page.tsx` | Public Terms and Conditions route rendered from repo Markdown |
 | `app/docs/page.tsx` | Official documentation index; signed-in users see it inside the workspace shell, anonymous users see the public docs layout |
@@ -199,6 +199,12 @@ Add notes as real files appear:
 | `components/document-publish-control.tsx` | Client-side publish confirmation gate that warns when publishing a document with linked private asset embeds |
 | `components/document-archive-form.tsx` | Client-side archive form wrapper that notifies workspace chrome to remove archived document tabs/lists before the server action redirect completes |
 | `components/document-share-dialog.tsx` | Document sharing modal with direct user sharing, friend-prioritized autocomplete, thin access rows, and link-sharing controls |
+| `components/settings/SettingsModal.tsx` | Large workspace settings modal shell with section navigation for account, workspace, editor, appearance, files/assets, hotkeys, core features, extension browser, installed extensions, and advanced settings |
+| `components/settings/SettingsModalController.tsx` | Client controller mounted by workspace shells; listens for workspace settings-open events and opens the settings modal over the current tab |
+| `components/settings/WorkspaceSettingsModalMount.tsx` | Server component that assembles account settings, preference sections, extension browser sections, and installed-extension sections for workspace shells |
+| `components/settings/AccountSettingsSection.tsx` | Reusable account settings section containing the existing profile, OAuth provider, theme toggle, sign-out, and privacy model controls |
+| `components/settings/PreferenceSettingsSections.tsx` | Obsidian-style modal preference sections for appearance, workspace, editor, files/assets, hotkeys, core features, commands, and advanced settings; controls autosave on change through `user_settings` server actions |
+| `components/settings/ExtensionBrowserSection.tsx` | Server-rendered local extension browser/installed-extension section with permissions, contribution metadata, enable/disable, reset, and current settings display |
 | `components/extensions/DocumentOverlayHost.tsx` | Pointer-safe document overlay host and overlay item primitive for trusted document-state extensions such as stickers or page annotations |
 | `components/extensions/use-document-extension-state.ts` | Client hook for authenticated workspace extensions to load object-shaped document extension state and debounce writes through server actions |
 | `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
@@ -206,19 +212,20 @@ Add notes as real files appear:
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax, opens the asset upload picker, and can create/wrap `:::assets` groups |
 | `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist and permission-resolved asset embed rendering, including controlled image layout attributes |
-| `components/theme-provider.tsx` | Root client theme provider using localStorage-backed dark/light class switching |
+| `components/theme-provider.tsx` | Root client theme provider using localStorage-backed named themes, `data-theme`, and dark-class compatibility |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
 | `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
 | `components/document-workspace.tsx` | Client wrapper for the document editor workspace and collapsible right-side action panel |
-| `components/workspace/` | Workspace shell, draggable tab bar, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, document-state sync helpers, and new-tab components for Phase 10 |
+| `components/workspace/` | Workspace shell, draggable tab bar, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, document-state sync helpers, and new-tab components for Phase 10; settings is modal-only and no longer has a utility sidebar |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
-| `db/schema.ts` | Auth, document, permission, collaboration, friend, official docs, and uploaded asset schema |
+| `db/schema.ts` | Auth, document, permission, collaboration, friend, official docs, uploaded asset, document extension state, and user settings schema |
 | `lib/` | Shared helpers |
-| `lib/extensions/types.ts` | Trusted built-in extension registry types for Markdown live blocks, renderer/preprocessor hooks, document state overlays, workspace contributions, permissions, and command metadata |
-| `lib/extensions/registry.ts` | Shared registry helper that stores ordered Vault extensions and exposes Markdown contribution selectors |
+| `lib/extensions/types.ts` | Trusted built-in extension registry types for Markdown live blocks, renderer/preprocessor hooks, document state overlays, workspace contributions, permissions, command metadata, categories, and generated settings metadata |
+| `lib/extensions/registry.ts` | Shared registry helper that stores ordered Vault extensions and exposes Markdown, document-state, workspace, command, settings, and enabled-extension selectors |
+| `lib/extensions/catalog.ts` | Server-safe local built-in extension catalog; currently includes disabled-by-default `vault.stickers` preflight metadata and settings schema |
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
 | `lib/markdown.ts` | Shared Markdown limits |
@@ -232,6 +239,8 @@ Add notes as real files appear:
 | `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, editor autocomplete, explicit document linking, publish-warning analysis, stale document-link cleanup, public asset listing, owner metadata updates, document links, and read authorization |
 | `server/document-extensions.ts` | Permission-checked CRUD helpers for `document_extension_states`; editors can write, readers can read public extension state, explicit collaborators can read private state, and editor-only state requires edit access |
 | `server/document-extension-actions.ts` | Server actions that expose sanitized extension-state records to authenticated workspace clients without leaking raw database rows |
+| `server/user-settings.ts` | Validated server helpers for `user_settings` and `user_extension_settings`, including per-user extension enablement/reset helpers |
+| `server/user-settings-actions.ts` | Server actions for modal preferences, extension enablement, reset, and schema-validated extension settings writes |
 | `server/admin.ts` | Admin user listing/search, role changes, bans, and unbans |
 | `server/authz.ts` | DB-backed active-user and admin guards; active bans redirect to `/banned` |
 | `server/dev-auth.ts` | Dev-only local sign-in action that creates Auth.js database sessions |
@@ -249,6 +258,8 @@ Add notes as real files appear:
 | `docs/09_MARKDOWN_PIVOT_PLAN.md` | Structured plan and status notes for the Markdown backbone pivot |
 | `docs/10_WORKSPACE_UI_REVAMP_PLAN.md` | Structured plan for replacing the dashboard-centric UI with an Obsidian-like workspace shell |
 | `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` | Private-by-default uploaded asset storage, asset library, explicit asset publishing, and gallery integration plan |
+| `docs/12_EXTENSION_REGISTRY_PLAN.md` | Trusted built-in extension registry, document extension state, overlay, and future verified plugin plan |
+| `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` | Settings modal, user settings storage, extension settings, local extension browser, runtime enablement, and stickers-ready checkpoint plan |
 | `docker-compose.yml` | Local Postgres service |
 | `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
@@ -354,10 +365,14 @@ Current tables:
 | `document_share_links` | Yes | Revocable copyable document share links |
 | `document_collab_states` | Yes | Durable Yjs CRDT snapshots for collaboration room reload/reconnect safety |
 | `document_extension_states` | Yes | Permission-scoped JSON state for trusted built-in document extensions |
+| `user_settings` | Yes | Per-user workspace, editor, appearance, files/assets, hotkey, and advanced settings JSON |
+| `user_extension_settings` | Yes | Per-user trusted built-in extension enablement and settings JSON |
 | `document_versions` | Yes | Batched Markdown restore checkpoints |
 | `friend_requests` | Yes | Friend request workflow |
 | `friendships` | Yes | Accepted friendships |
 | `official_docs` | Yes | Admin-authored public user documentation |
+| `assets` | Yes | Uploaded asset metadata for private R2-backed images and PDFs |
+| `document_assets` | Yes | Links between documents and embedded uploaded assets |
 
 Current migrations:
 
@@ -376,11 +391,12 @@ Current migrations:
 | `0010_fast_phantom_reporter.sql` | Adds `document_collab_states` for durable Yjs room state | Generated | No |
 | `0011_tiresome_ultimates.sql` | Adds user storage quota fields, `assets`, and `document_assets` for private uploaded asset metadata | Generated | No |
 | `0012_tiny_tana_nile.sql` | Adds `document_extension_states` for trusted extension state keyed by document, extension, and state key | Generated | No |
+| `0013_majestic_fabian_cortez.sql` | Adds `user_settings` and `user_extension_settings` for modal preferences and per-user extension enablement/configuration | Generated | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_extension_states, document_versions, friend_requests, friendships, official_docs, assets, and document_assets.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_extension_states, user_settings, user_extension_settings, document_versions, friend_requests, friendships, official_docs, assets, and document_assets.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion; `users.role` supports `user`/`admin`.
 - `users.banned_at`, `users.banned_until`, and `users.ban_reason` store moderation state. `banned_at` with no `banned_until` is treated as permanent.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
@@ -389,6 +405,10 @@ Schema notes:
 - `document_collab_states.yjs_state` stores compact binary Yjs state for collaboration rooms. The collab service loads this before falling back to `documents.markdown`, which prevents reconnects from merging identical plain text as separate CRDT items and duplicating the document.
 - Non-collab Markdown overwrites and restores delete the corresponding `document_collab_states` row so future collab sessions reseed from the latest Markdown instead of stale Yjs state.
 - `document_extension_states` stores non-Markdown trusted extension state keyed by `(document_id, extension_id, state_key)`. State rows are JSONB with `private`, `public`, or `editor-only` visibility. Use `server/document-extensions.ts` for permission checks; do not query these rows directly from UI routes.
+- `user_settings` stores signed-in user app preferences by `(user_id, namespace, key)`. Accepted namespaces are `appearance`, `editor`, `workspace`, `files-assets`, `hotkeys`, and `advanced`; values are object-shaped JSON and must go through `server/user-settings.ts`.
+- Current modal preference keys are `appearance/theme`, `workspace/defaults`, `editor/defaults`, `files-assets/defaults`, `hotkeys/defaults`, `workspace/core-features`, and `advanced/defaults`.
+- `user_extension_settings` stores per-user trusted built-in extension enablement and settings by `(user_id, extension_id)`. Extension ids are validated server-side; registry-backed schema validation will be added with the extension browser.
+- `server/user-settings-actions.ts` validates local extension ids against `lib/extensions/catalog.ts` and validates extension settings through the registered schema before writes.
 - Authenticated client extensions should use `components/extensions/use-document-extension-state.ts`, which reads through `server/document-extension-actions.ts` and debounces object-shaped JSON writes. The first runtime is non-realtime; future collaborative extension state should use an explicit Yjs-owned design instead of ad hoc polling.
 - `MarkdownEditor` wraps the editor column in `DocumentOverlayHost`, giving trusted document-state extensions a stable absolute-positioned overlay layer while keeping the Markdown editor and toolbar layout unchanged.
 - `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
@@ -708,7 +728,7 @@ Known editor caveats:
 - Asset groups use `:::assets {layout=grid align=center width=full gap=medium columns=2 caption="Comparison"}` fences containing one asset embed per line. Read mode renders them as responsive grids; inactive Live mode renders the group through `components/markdown/live-blocks.ts` as a direct `StateField` block widget, and cursor/selection entry reveals the literal Markdown source. The toolbar Asset group button inserts a scaffold or wraps selected standalone asset embed lines. Rendered Live groups expose an icon-only top-right configure button that opens a panel for columns, gap, alignment, width, and shared caption; edits rewrite only the opening fence line. Fixed `columns=2|3|4` collapse to one column on mobile. Group attributes are deliberately limited to grid layout, alignment, width, gap, columns, and shared caption.
 - Inactive Live-mode callouts are now also owned by `components/markdown/live-blocks.ts`. They render through `MarkdownDocument`, the same renderer used by Read mode, so callout icons, colors, title/body parsing, and nested Markdown stay matched instead of relying on per-line CodeMirror styling. Moving the cursor or a selection into the callout reveals the raw blockquote source.
 - Inactive Live-mode GFM tables are owned by `components/markdown/live-blocks.ts` as direct block widgets. They render through `MarkdownDocument`, matching Read-mode table styling, while cursor or selection entry reveals the raw table source. Table detection requires a header row followed by a valid delimiter row and ignores matching text inside fenced code or other higher-priority live blocks.
-- Core math rendering uses `remark-math` and `rehype-katex` in `MarkdownDocument`. Read mode, public pages, official docs, share views, and document embeds support `$inline$` and `$$block$$` math without loading remote math scripts. Inactive Live-mode display math is a core LiveBlockSpec that renders through `MarkdownDocument` and reveals raw TeX source when active. Inactive Live-mode inline math renders through a KaTeX inline widget, ignores escaped dollars and inline-code spans, and reveals the `$...$` source when the cursor enters the range.
+- Core math rendering uses `remark-math` and `rehype-katex` in `MarkdownDocument`. Read mode, public pages, official docs, share views, and document embeds support `$inline$` and `$$block$$` math without loading remote math scripts. Inactive Live-mode display math is a core LiveBlockSpec that renders through `MarkdownDocument`; when active, the raw TeX source remains editable and a measured KaTeX preview frame is inserted directly underneath the source. Inactive Live-mode inline math renders through a KaTeX inline widget, ignores escaped dollars and inline-code spans, and reveals the `$...$` source when the cursor enters the range. Active inline math shows a floating KaTeX tooltip preview without changing document layout.
 - The Markdown editor shows a compact floating asset inspector when the cursor is inside an asset embed source. Layout, alignment, width, caption, and alt controls rewrite the embed's Markdown attribute block in place without changing document layout; no separate asset-layout table or hidden metadata exists.
 - Markdown image rendering uses a stable responsive frame so slow or broken image loads do not repeatedly change document layout height.
 - Document titles are intentionally not unique; document identity remains `documents.id`, and public route identity remains `public_slug`.
@@ -969,6 +989,7 @@ Current workspace behavior:
 - `/workspace` is a raw new-tab surface: greeting title, underline document search, New document action, and one list that shows recent documents until a search query filters owned/shared documents.
 - Workspace tabs have a mobile-safe minimum width and live inside a horizontal scroll container rather than shrinking to fit. On mobile, the workspace exposes a Panel drawer with the same mode choices as the desktop icon rail, and document routes expose a Context drawer for right-panel actions.
 - The left workspace panel has real modes for files, docs, search, gallery, settings, and admin. Files/docs/search/gallery use richer panels; settings/admin still use compact utility panels.
+- `/dashboard/settings` now opens the reusable `SettingsModal` with the account section selected. The modal shell and account section are in place, but the icon rail still navigates to the settings route; the follow-up is to open the same modal over the current workspace tab without replacing it.
 - The workspace search panel filters owned docs, shared docs, public docs, and official guides client-side and opens the matching route in the current tab stack.
 - The workspace gallery panel filters public docs inline by title, owner display name, username, and public slug, with a link into the full `/gallery?q=...` route for the complete gallery view.
 - The full `/gallery` workspace page uses a grid of rendered document preview cards via `WorkspaceDocumentPreviewCard`, reusing the `.vault-doc-preview-*` visual language from the old dashboard previews.
@@ -1195,9 +1216,9 @@ Current invariants:
 Keep this short and current.
 
 ```txt
-1. Add robust source reveal and drag-selection tests for Live block widgets.
-2. Evaluate whether standalone asset embeds should move from the viewport plugin into the Live block registry after selected-asset formatting remains stable.
-3. Continue the final workspace visual consistency pass across less-used routes.
+1. Work through `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` until the settings modal, user settings storage, extension settings storage, local extension browser, runtime gating, and no-op stickers manifest are complete.
+2. Add robust source reveal and drag-selection tests for Live block widgets.
+3. Evaluate whether standalone asset embeds should move from the viewport plugin into the Live block registry after selected-asset formatting remains stable.
 4. Add focused tests around asset privacy: owner, collaborator, public asset, private embedded asset in public document, and deleted asset cases.
 5. Add richer gallery filters for public documents and public assets after tags/categories are designed.
 ```
@@ -1318,5 +1339,12 @@ Use this as a compact implementation log.
 | 2026-06-22 | Added extension state runtime API | Added sanitized server actions and a debounced client hook for authenticated built-in extensions to read and write object-shaped document extension state |
 | 2026-06-23 | Fixed Live block cursor geometry | Removed zero-height CodeMirror carrier-line styling and external block-widget margins for rendered Live block widgets, then added adjacent-block ArrowUp/ArrowDown source entry so math/table/block widgets do not break click mapping or vertical cursor navigation |
 | 2026-06-23 | Added Live inline math rendering | Inactive Live-mode `$...$` spans now render with KaTeX inline widgets while preserving source reveal and skipping escaped dollars and inline code |
+| 2026-06-23 | Added active Live math previews | Active `$$...$$` blocks now show a measured KaTeX preview frame under the editable source, and active `$...$` inline math shows a floating KaTeX tooltip |
 | 2026-06-23 | Closed workspace tabs on archive | Archiving a document now dispatches a workspace removal event so sidebars and all open tabs for that document disappear immediately; active archived tabs move left-first |
 | 2026-06-23 | Made share links persistent and previewable | Share-link settings now update one stable URL per document, and anonymous-readable `/share/:token` pages emit OpenGraph/Twitter metadata plus generated preview images |
+| 2026-06-24 | Planned settings modal and extension browser checkpoint | Added `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` and tracker entries for modal settings, user settings persistence, extension settings, local extension browser, runtime gating, and no-op stickers preflight before real sticker placement |
+| 2026-06-24 | Started settings modal implementation | Extracted reusable account settings UI and changed `/dashboard/settings` to open a large sectioned `SettingsModal`; remaining modal work is current-tab overlay opening and real persistence-backed sections |
+| 2026-06-24 | Added settings persistence schema | Added migration `0013_majestic_fabian_cortez.sql`, `user_settings`, `user_extension_settings`, and `server/user-settings.ts` helpers for validated user preferences and per-user extension enablement/settings |
+| 2026-06-24 | Added settings modal extension browser slice | Workspace settings icon now opens the modal over the current tab; local extension catalog, `vault.stickers` preflight manifest, extension settings actions, and modal extension browser/installed sections are wired with build-passing enable/disable/reset flows |
+| 2026-06-24 | Made settings modal-only and added preference sections | Removed the old settings utility sidebar path, moved the workspace settings button to the bottom of the icon rail, added persisted modal sections for appearance/workspace/editor/files-assets/hotkeys/core-features/advanced settings, and added named theme runtime support |
+| 2026-06-24 | Converted preferences to autosave rows | Replaced submit-form preference sections with vertical setting rows and right-aligned controls that autosave on change, matching mature editor settings patterns |

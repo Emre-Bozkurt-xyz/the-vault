@@ -3,6 +3,7 @@ import { ArrowRight, BookOpen, FileText, Home } from "lucide-react";
 
 import { auth } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
@@ -30,6 +31,7 @@ export default async function OfficialDocsIndexPage() {
     const workspace = await getWorkspaceData();
 
     return (
+      <>
       <VaultWorkspaceShell
         activePage={{ type: "guide", title: "Vault Docs", href: "/docs" }}
         isAdmin={workspace.profile.role === "admin"}
@@ -58,7 +60,6 @@ export default async function OfficialDocsIndexPage() {
             activeHref="/docs"
           />
         }
-        settingsPanel={<WorkspaceUtilityPanel mode="settings" activeHref="/docs" />}
         adminPanel={
           <WorkspaceUtilityPanel
             mode="admin"
@@ -69,6 +70,8 @@ export default async function OfficialDocsIndexPage() {
       >
         <DocsIndexContent docs={docs} groupedDocs={groupedDocs} />
       </VaultWorkspaceShell>
+      <WorkspaceSettingsModalMount profile={workspace.profile} />
+      </>
     );
   }
 

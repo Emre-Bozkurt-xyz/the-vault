@@ -345,10 +345,10 @@ Reference plan: `docs/12_EXTENSION_REGISTRY_PLAN.md`
 | [x] | Add document extension state schema | Added migration `0012_tiny_tana_nile.sql`, `document_extension_states`, and permission-checked server helpers for non-Markdown extension data such as stickers and overlays |
 | [x] | Add document overlay host | Added `DocumentOverlayHost` around the editor column with a pointer-safe absolute overlay layer for future trusted extension visuals |
 | [x] | Flesh out registry groundwork | `docs/12_EXTENSION_REGISTRY_PLAN.md` now defines the next registry runtime, LiveBlockSpec migration, core math slice, extension state runtime, overlay mounting, workspace contribution slots, and prototype order |
-| [x] | Add core math rendering | `remark-math` and `rehype-katex` now run in the shared Markdown pipeline; Live mode renders inactive `$$...$$` block math through the Live block registry |
+| [x] | Add core math rendering | `remark-math` and `rehype-katex` now run in the shared Markdown pipeline; Live mode renders inactive `$$...$$` block math through the Live block registry, active block math previews underneath source, and active inline math tooltips |
 | [~] | Move Live block specs into registry | Added `lib/extensions/registry.ts` and route current core LiveBlockSpecs through a `VaultExtension`; splitting specs into separate registry-owned modules remains |
 | [x] | Add extension state runtime API | Added permission-checked server actions and a debounced client hook for object-shaped document extension state |
-| [ ] | Prototype stickers extension | Built-in extension using uploaded assets and document-relative state, authenticated workspace-only first |
+| [ ] | Prototype stickers extension | Built-in extension using uploaded assets and document-relative state, authenticated workspace-only first; wait until the settings/extension-browser checkpoint in `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` is complete |
 | [ ] | Prototype calendar extension | Workspace/page contribution first; optional Markdown block after the workspace flow proves useful |
 
 Exit criteria:
@@ -356,6 +356,33 @@ Exit criteria:
 ```txt
 Optional Vault features can register editor blocks, workspace UI, and document
 overlay state without becoming hardcoded core editor branches.
+```
+
+---
+
+## Phase 13 - Settings Modal and Extension Browser
+
+Reference plan: `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write settings and extension browser plan | Defines the modal settings UX, user settings storage, extension settings storage, registry metadata additions, extension browser, runtime gating, and stickers-ready checkpoint |
+| [x] | Extract existing settings UI | Account/profile/OAuth content now lives in reusable settings components; future sections can be added independently |
+| [x] | Add settings modal shell | The workspace settings rail opens a large sectioned modal over the current tab; `/dashboard/settings` remains a direct route that opens the same modal |
+| [x] | Add user settings persistence | Migration `0013_majestic_fabian_cortez.sql` adds `user_settings`; server helpers/actions plus modal sections now persist appearance, workspace, editor, files/assets, hotkeys, core features, and advanced preferences |
+| [x] | Add named theme runtime | Theme provider supports dark, light, midnight, graphite, paper, and system through `data-theme`, dark-class compatibility, localStorage first-paint mirror, and server persistence |
+| [~] | Extend extension registry metadata | Registry types now include descriptions, categories, default enablement, settings metadata, command metadata, contribution selectors, and enabled-extension filtering; remaining work is moving all runtime contribution consumers onto the selectors |
+| [x] | Add user extension settings persistence | Migration `0013_majestic_fabian_cortez.sql` adds `user_extension_settings`; server helpers and actions persist per-user enablement/settings, validate extension ids against the local catalog, and validate settings through registered schemas |
+| [~] | Add local extension browser | Settings modal lists local built-ins, permissions, contribution types, current setting values, enable/disable, reset, and installed extensions; generated editable forms still remain |
+| [~] | Gate runtime contributions by enablement | Registry has enabled-extension selectors; workspace panels, document overlays, and command consumers still need to consume them |
+| [~] | Add stickers preflight manifest | Disabled-by-default `vault.stickers` local built-in is registered with settings, permissions, commands, and overlay metadata; placeholder gated overlay still remains |
+
+Exit criteria:
+
+```txt
+The settings modal and extension browser can enable and configure trusted
+built-in extensions, and a no-op stickers extension can be toggled without
+hardcoded settings or overlay wiring.
 ```
 
 ---

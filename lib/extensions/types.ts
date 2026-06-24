@@ -7,6 +7,12 @@ import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
 import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
 
 export type VaultExtensionKind = "core" | "built-in";
+export type VaultExtensionCategory =
+  | "editor"
+  | "document"
+  | "workspace"
+  | "assets"
+  | "visual";
 
 export type ExtensionPermission =
   | "document:read"
@@ -145,15 +151,63 @@ export type WorkspacePanelContribution = {
 export type CommandContribution = {
   id: string;
   label: string;
+  description?: string;
+  sourceExtensionId?: string;
+  defaultKeymap?: KeyBinding[];
   keymap?: KeyBinding[];
 };
+
+export type ExtensionSettingsSection = {
+  id: string;
+  label: string;
+  fields: ExtensionSettingsField[];
+};
+
+export type ExtensionSettingsField =
+  | {
+      type: "toggle";
+      key: string;
+      label: string;
+      description?: string;
+    }
+  | {
+      type: "select";
+      key: string;
+      label: string;
+      description?: string;
+      options: Array<{ label: string; value: string }>;
+    }
+  | {
+      type: "number";
+      key: string;
+      label: string;
+      description?: string;
+      min?: number;
+      max?: number;
+      step?: number;
+    }
+  | {
+      type: "text";
+      key: string;
+      label: string;
+      description?: string;
+      placeholder?: string;
+    };
 
 export type VaultExtension = {
   id: string;
   name: string;
   version: number;
   kind: VaultExtensionKind;
+  description?: string;
+  category?: VaultExtensionCategory;
   permissions?: ExtensionPermission[];
+  defaultEnabled?: boolean;
+  settings?: {
+    schema?: ZodType<Record<string, unknown>>;
+    defaults?: Record<string, unknown>;
+    sections?: ExtensionSettingsSection[];
+  };
   markdown?: {
     liveBlocks?: LiveBlockSpec[];
     preprocessors?: MarkdownPreprocessor[];

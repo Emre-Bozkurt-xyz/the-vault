@@ -9,7 +9,13 @@ import {
   type ReactNode,
 } from "react";
 
-type Theme = "dark" | "light";
+export type Theme =
+  | "dark"
+  | "light"
+  | "midnight"
+  | "graphite"
+  | "paper"
+  | "system";
 
 type ThemeContextValue = {
   resolvedTheme: Theme;
@@ -60,11 +66,34 @@ export function useVaultTheme() {
 function readStoredTheme(): Theme {
   const stored = window.localStorage.getItem(themeStorageKey);
 
-  return stored === "light" ? "light" : "dark";
+  return isTheme(stored) ? stored : "dark";
 }
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.style.colorScheme = theme;
+  const effectiveTheme =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark"
+      : theme;
+  const darkMode =
+    effectiveTheme === "dark" ||
+    effectiveTheme === "midnight" ||
+    effectiveTheme === "graphite";
+
+  root.dataset.theme = theme;
+  root.classList.toggle("dark", darkMode);
+  root.style.colorScheme = darkMode ? "dark" : "light";
+}
+
+function isTheme(value: string | null): value is Theme {
+  return (
+    value === "dark" ||
+    value === "light" ||
+    value === "midnight" ||
+    value === "graphite" ||
+    value === "paper" ||
+    value === "system"
+  );
 }

@@ -2,6 +2,7 @@ import type { AdapterAccountType } from "@auth/core/adapters";
 import { relations, sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   customType,
   index,
   integer,
@@ -26,6 +27,13 @@ export type DocumentExtensionStateVisibility =
   | "private"
   | "public"
   | "editor-only";
+export type UserSettingNamespace =
+  | "appearance"
+  | "editor"
+  | "workspace"
+  | "files-assets"
+  | "hotkeys"
+  | "advanced";
 export type OfficialDocStatus = "draft" | "published" | "archived";
 export type FriendRequestStatus =
   | "pending"
@@ -317,6 +325,66 @@ export const documentExtensionStates = pgTable(
   ],
 );
 
+export const userSettings = pgTable(
+  "user_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    namespace: text("namespace").$type<UserSettingNamespace>().notNull(),
+    key: text("key").notNull(),
+    value: jsonb("value").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("user_settings_user_namespace_key_unique").on(
+      table.userId,
+      table.namespace,
+      table.key,
+    ),
+    index("user_settings_user_id_idx").on(table.userId),
+    index("user_settings_namespace_idx").on(table.namespace),
+  ],
+);
+
+export const userExtensionSettings = pgTable(
+  "user_extension_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    extensionId: text("extension_id").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    settings: jsonb("settings")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("user_extension_settings_user_extension_unique").on(
+      table.userId,
+      table.extensionId,
+    ),
+    index("user_extension_settings_user_id_idx").on(table.userId),
+    index("user_extension_settings_extension_id_idx").on(table.extensionId),
+    index("user_extension_settings_enabled_idx").on(table.enabled),
+  ],
+);
+
 export const assets = pgTable(
   "assets",
   {
@@ -472,6 +540,23 @@ export const documentExtensionStatesRelations = relations(
     }),
     updater: one(users, {
       fields: [documentExtensionStates.updatedBy],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const userSettingsRelations = relations(userSettings, ({ one }) => ({
+  user: one(users, {
+    fields: [userSettings.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userExtensionSettingsRelations = relations(
+  userExtensionSettings,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [userExtensionSettings.userId],
       references: [users.id],
     }),
   }),

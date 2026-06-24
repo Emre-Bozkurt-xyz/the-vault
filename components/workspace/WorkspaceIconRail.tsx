@@ -7,7 +7,6 @@ import {
   ImageIcon,
   LayoutGrid,
   Search,
-  Settings,
   ShieldCheck,
 } from "lucide-react";
 
@@ -31,7 +30,6 @@ export function WorkspaceIconRail({
     { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid, href: "/gallery" },
     { label: "Assets", mode: "assets" as const, icon: ImageIcon, href: "/assets" },
     { label: "Docs", mode: "docs" as const, icon: BookOpen, href: "/docs" },
-    { label: "Settings", mode: "settings" as const, icon: Settings, href: "/dashboard/settings" },
     ...(isAdmin
       ? [{ label: "Admin", mode: "admin" as const, icon: ShieldCheck, href: "/dashboard/admin" }]
       : []),
@@ -39,42 +37,44 @@ export function WorkspaceIconRail({
 
   return (
     <nav className="hidden w-12 shrink-0 flex-col items-center border-r border-border/70 bg-sidebar py-2 text-sidebar-foreground md:flex">
-      {items.map((item) => {
-        const Icon = item.icon;
-        const active = mode === item.mode;
-        const className = cn(
-          "mb-1 flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          active && "bg-sidebar-accent text-sidebar-accent-foreground",
-        );
+      <div className="flex flex-col items-center">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const active = mode === item.mode;
+          const className = cn(
+            "mb-1 flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            active && "bg-sidebar-accent text-sidebar-accent-foreground",
+          );
 
-        if (item.href) {
+          if ("href" in item && item.href) {
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                title={item.label}
+                aria-label={item.label}
+                onClick={() => onModeChange(item.mode)}
+                className={className}
+              >
+                <Icon className="size-4" />
+              </Link>
+            );
+          }
+
           return (
-            <Link
+            <button
               key={item.label}
-              href={item.href}
+              type="button"
               title={item.label}
               aria-label={item.label}
               onClick={() => onModeChange(item.mode)}
               className={className}
             >
               <Icon className="size-4" />
-            </Link>
+            </button>
           );
-        }
-
-        return (
-          <button
-            key={item.label}
-            type="button"
-            title={item.label}
-            aria-label={item.label}
-            onClick={() => onModeChange(item.mode)}
-            className={className}
-          >
-            <Icon className="size-4" />
-          </button>
-        );
-      })}
+        })}
+      </div>
     </nav>
   );
 }

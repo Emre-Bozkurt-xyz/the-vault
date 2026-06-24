@@ -127,6 +127,84 @@
     linear-gradient(180deg, oklch(0.16 0 0), oklch(0.12 0 0));
 }
 
+[data-theme="midnight"] {
+  --background: oklch(0.11 0.03 262);
+  --foreground: oklch(0.95 0.015 260);
+  --card: oklch(0.16 0.035 262);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.16 0.035 262);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.84 0.08 250);
+  --primary-foreground: oklch(0.13 0.035 262);
+  --secondary: oklch(0.22 0.04 262);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.2 0.035 262);
+  --muted-foreground: oklch(0.72 0.025 258);
+  --accent: oklch(0.24 0.055 250);
+  --accent-foreground: var(--foreground);
+  --border: oklch(1 0 0 / 15%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.78 0.08 250);
+  --sidebar: oklch(0.135 0.03 262);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(0.21 0.04 262);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --app-bg: linear-gradient(180deg, oklch(0.13 0.035 262), oklch(0.095 0.025 262));
+}
+
+[data-theme="graphite"] {
+  --background: oklch(0.15 0.006 250);
+  --foreground: oklch(0.93 0 0);
+  --card: oklch(0.2 0.006 250);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.2 0.006 250);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.88 0.015 80);
+  --primary-foreground: oklch(0.15 0.006 250);
+  --secondary: oklch(0.26 0.006 250);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.24 0.006 250);
+  --muted-foreground: oklch(0.68 0 0);
+  --accent: oklch(0.3 0.006 250);
+  --accent-foreground: var(--foreground);
+  --border: oklch(1 0 0 / 16%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.75 0.015 80);
+  --sidebar: oklch(0.17 0.006 250);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(0.26 0.006 250);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --app-bg: linear-gradient(180deg, oklch(0.17 0.006 250), oklch(0.12 0.006 250));
+}
+
+[data-theme="paper"] {
+  --background: oklch(0.985 0.011 86);
+  --foreground: oklch(0.22 0.02 70);
+  --card: oklch(0.995 0.006 86);
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.28 0.04 70);
+  --primary-foreground: oklch(0.985 0.011 86);
+  --secondary: oklch(0.93 0.018 86);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.94 0.016 86);
+  --muted-foreground: oklch(0.5 0.025 70);
+  --accent: oklch(0.91 0.025 86);
+  --accent-foreground: var(--foreground);
+  --border: oklch(0.82 0.02 86);
+  --input: oklch(0.82 0.02 86);
+  --ring: oklch(0.45 0.035 70);
+  --sidebar: oklch(0.965 0.014 86);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(0.91 0.025 86);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --app-bg: linear-gradient(180deg, oklch(0.99 0.012 86), oklch(0.95 0.018 86));
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -940,6 +1018,16 @@
     padding: 0.6rem 0;
   }
 
+  .vault-cm-math-tooltip {
+    max-width: min(34rem, calc(100vw - 2rem));
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.42rem 0.7rem;
+    color: var(--foreground);
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+
   .vault-md-wiki-link {
     border-radius: 0.35rem;
     padding: 0.05rem 0.25rem;
@@ -1213,12 +1301,16 @@
   }
 
   .vault-asset-file-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
     border-radius: 999px;
     padding: 0.28rem 0.58rem;
     color: var(--muted-foreground);
     font-size: 0.72rem;
     font-weight: 650;
+    text-decoration: none;
   }
 
   .vault-asset-embed--file:hover .vault-asset-file-action,
@@ -1508,6 +1600,31 @@
     white-space: normal;
     pointer-events: none;
     user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-active-preview {
+    display: block;
+    width: 100%;
+    line-height: normal;
+    white-space: normal;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-active-preview-frame {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 1.75rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 0.35rem;
+    background: color-mix(in oklab, var(--foreground) 3%, transparent);
+    padding: 0.45rem 0.85rem;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-active-preview-frame .katex-display {
+    margin: 0;
   }
 
   .vault-markdown-editor-live .vault-cm-callout-rendered-markdown {

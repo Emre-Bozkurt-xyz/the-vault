@@ -28,7 +28,13 @@ import type {
 } from "@/components/workspace/workspace-types";
 
 type WorkspaceChromeData = {
-  profile: { role?: string | null };
+  profile: {
+    email?: string | null;
+    image?: string | null;
+    nickname?: string | null;
+    role?: string | null;
+    username?: string | null;
+  };
   owned: WorkspaceDocumentItem[];
   shared: WorkspaceDocumentItem[];
   published: WorkspaceDocumentItem[];
@@ -151,7 +157,6 @@ export function WorkspaceChrome({
           />
         }
         assetsPanel={<WorkspaceUtilityPanel mode="assets" activeHref={currentHref} />}
-        settingsPanel={<WorkspaceUtilityPanel mode="settings" activeHref={currentHref} />}
         adminPanel={
           <WorkspaceUtilityPanel
             mode="admin"
@@ -372,10 +377,6 @@ function defaultPanelModeForHref(href: string) {
 
   if (pathname.startsWith("/dashboard/admin")) {
     return "admin";
-  }
-
-  if (pathname === "/dashboard/settings" || pathname === "/dashboard/friends") {
-    return "settings";
   }
 
   if (pathname === "/gallery") {

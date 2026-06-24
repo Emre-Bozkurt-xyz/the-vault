@@ -93,6 +93,76 @@ verification_tokens
 
 ---
 
+### user_settings
+
+User-level preferences that apply across the workspace. These settings are for
+the app shell, editor defaults, appearance, and other per-user preferences. Do
+not use `document_extension_states` for this kind of data.
+
+```txt
+user_settings
+  id UUID PRIMARY KEY
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+  namespace TEXT NOT NULL
+  key TEXT NOT NULL
+  value JSONB NOT NULL
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+
+  UNIQUE(user_id, namespace, key)
+```
+
+Initial namespaces accepted by server helpers:
+
+```txt
+appearance
+editor
+workspace
+files-assets
+hotkeys
+advanced
+```
+
+Rules:
+
+- Use `server/user-settings.ts` for all reads and writes.
+- Unknown namespaces are rejected server-side.
+- Values are object-shaped JSON only.
+- LocalStorage can still mirror selected settings for first-paint behavior, but
+  signed-in user preferences should persist here.
+
+### user_extension_settings
+
+Per-user enablement and configuration for trusted built-in extensions.
+
+```txt
+user_extension_settings
+  id UUID PRIMARY KEY
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+  extension_id TEXT NOT NULL
+  enabled BOOLEAN NOT NULL DEFAULT false
+  settings JSONB NOT NULL DEFAULT '{}'
+  version INTEGER NOT NULL DEFAULT 1
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+
+  UNIQUE(user_id, extension_id)
+```
+
+Rules:
+
+- Use `server/user-settings.ts` for all reads and writes.
+- Extension ids are normalized and validated server-side.
+- The registry will become the source of allowed extension ids and settings
+  schemas as the extension browser work continues.
+- Disabling an extension does not delete its document-scoped
+  `document_extension_states`.
+
+Implemented schema additions in migration
+`0013_majestic_fabian_cortez.sql`.
+
+---
+
 ## 2. Documents
 
 ### documents
