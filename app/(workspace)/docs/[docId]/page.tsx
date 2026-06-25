@@ -31,6 +31,7 @@ import {
 import { listFriendsForUser } from "@/server/friends";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
+import { getUserExtensionSetting } from "@/server/user-settings";
 
 export default async function DocumentPage({
   params,
@@ -68,6 +69,7 @@ export default async function DocumentPage({
     versions,
     assetLinks,
     privateEmbeddedAssets,
+    stickersExtSetting,
   ] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -92,7 +94,11 @@ export default async function DocumentPage({
             markdown: document.markdown,
           })
         : Promise.resolve([]),
+      document.access.canEdit
+        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.stickers" })
+        : Promise.resolve(null),
     ]);
+  const stickersEnabled = stickersExtSetting?.enabled ?? false;
   const wikiLinks = {
     ...readableWikiLinks,
     ...publicWikiLinks,
@@ -168,6 +174,7 @@ export default async function DocumentPage({
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
+            stickersEnabled={stickersEnabled}
             collaboration={
               collabToken && collabUrl
                 ? {

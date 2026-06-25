@@ -6,12 +6,12 @@ import { signIn, auth } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { devSignInAction, isDevLoginEnabled } from "@/server/dev-auth";
+import { devSignInAction, devSignInAsEmailAction, isDevLoginEnabled } from "@/server/dev-auth";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; devError?: string }>;
 }) {
   const session = await auth();
 
@@ -20,7 +20,7 @@ export default async function LoginPage({
   }
 
   const showDevLogin = isDevLoginEnabled();
-  const { error } = await searchParams;
+  const { error, devError } = await searchParams;
   const accountNotLinked = error === "OAuthAccountNotLinked";
 
   return (
@@ -122,6 +122,21 @@ export default async function LoginPage({
                     </Button>
                   </form>
                 </div>
+                <form action={devSignInAsEmailAction} className="mt-2 flex gap-2">
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="Sign in as existing user…"
+                    required
+                    className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+                  />
+                  <Button type="submit" variant="outline" size="sm" className="shrink-0">
+                    Go
+                  </Button>
+                </form>
+                {devError ? (
+                  <p className="mt-2 text-xs text-destructive">{devError}</p>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -9,6 +9,21 @@ const stickersSettingsSchema = z.object({
   snapToGrid: z.boolean().default(false),
 });
 
+const stickerItemSchema = z.object({
+  assetId: z.string(),
+  left: z.number(),
+  top: z.number(),
+  width: z.number().default(120),
+  rotation: z.number().default(0),
+});
+
+export const stickersStateSchema = z.object({
+  items: z.record(z.string(), stickerItemSchema).default({}),
+});
+
+export type StickerItem = z.infer<typeof stickerItemSchema>;
+export type StickersState = z.infer<typeof stickersStateSchema>;
+
 export const localBuiltInExtensions: VaultExtension[] = [
   {
     id: "vault.stickers",
@@ -68,7 +83,14 @@ export const localBuiltInExtensions: VaultExtension[] = [
       ],
     },
     documentState: {
-      schemas: [],
+      schemas: [
+        {
+          extensionId: "vault.stickers",
+          stateKey: "layout",
+          version: 1,
+          schema: stickersStateSchema,
+        },
+      ],
       overlays: [{ id: "vault.stickers.overlay" }],
     },
     workspace: {

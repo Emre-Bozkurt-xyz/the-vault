@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
+import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 import { recordContentView } from "@/server/content-interactions";
 import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
+import { getPublicStickerItems } from "@/server/sticker-state";
 
 type WorkspacePublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -40,11 +42,13 @@ export default async function WorkspacePublicDocumentPage({
   });
   const stats = viewedStats ?? document.stats;
 
-  const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
-    listPublicWikiLinkResolutions({ workspaceHrefs: true }),
-    listOfficialDocWikiLinkResolutions(),
-    listAssetResolutionsForDocument(document.id, null),
-  ]);
+  const [publicWikiLinks, guideWikiLinks, assetLinks, stickerItems] =
+    await Promise.all([
+      listPublicWikiLinkResolutions({ workspaceHrefs: true }),
+      listOfficialDocWikiLinkResolutions(),
+      listAssetResolutionsForDocument(document.id, null),
+      getPublicStickerItems(document.id),
+    ]);
   const wikiLinks = {
     ...publicWikiLinks,
     ...guideWikiLinks,
@@ -106,13 +110,15 @@ export default async function WorkspacePublicDocumentPage({
         </header>
 
         <div className="border-t border-border/55 pt-6">
-          <MarkdownDocument
-            markdown={document.markdown}
-            className="vault-public-markdown"
-            wikiLinks={wikiLinks}
-            assetLinks={assetLinks}
-            contained={false}
-          />
+          <PublicStickerDisplay items={stickerItems}>
+            <MarkdownDocument
+              markdown={document.markdown}
+              className="vault-public-markdown"
+              wikiLinks={wikiLinks}
+              assetLinks={assetLinks}
+              contained={false}
+            />
+          </PublicStickerDisplay>
         </div>
       </article>
     </>

@@ -52,6 +52,7 @@ import {
   Loader2,
   SlidersHorizontal,
   Save,
+  Sticker,
   Tags,
   X,
 } from "lucide-react";
@@ -59,6 +60,8 @@ import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 
 import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
+import { StickerLayer } from "@/components/extensions/StickerLayer";
+import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   createLiveBlockDecorationExtension,
@@ -106,6 +109,7 @@ import {
   saveDocumentTitleAction,
   saveMarkdownDocumentAction,
 } from "@/server/documents";
+import type { PickerAsset } from "@/server/asset-picker-actions";
 
 type MarkdownEditorProps = {
   documentId: string;
@@ -123,6 +127,7 @@ type MarkdownEditorProps = {
   } | null;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
+  stickersEnabled?: boolean;
 };
 
 type EditorMode = "source" | "live" | "read";
@@ -191,7 +196,10 @@ export function MarkdownEditor({
   collaboration = null,
   wikiLinks,
   assetLinks,
+  stickersEnabled = false,
 }: MarkdownEditorProps) {
+  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
   const [dirty, setDirty] = useState(false);
@@ -1126,14 +1134,20 @@ export function MarkdownEditor({
       onSubmit={handleSubmit}
       className="vault-editor-canvas min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10"
     >
-      <DocumentOverlayHost
-        documentId={documentId}
-        className="vault-editor-column mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5"
-      >
+      <div className="vault-editor-column mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5">
         <div className="vault-editor-toolbar-row flex items-center gap-3">
           {editorMode !== "read" ? (
             <div className="min-w-0 flex-1">
-              <MarkdownToolbar onFormat={applyFormat} />
+              <MarkdownToolbar
+                onFormat={applyFormat}
+                extensionItems={
+                  stickersEnabled ? (
+                    <StickerToolbarGroup
+                      onAddSticker={() => setStickerPickerOpen(true)}
+                    />
+                  ) : undefined
+                }
+              />
               <input
                 ref={assetInputRef}
                 type="file"
@@ -1205,6 +1219,22 @@ export function MarkdownEditor({
             onChange={applyDocumentMetadata}
           />
         ) : null}
+        {/* Overlay host wraps only the content region so sticker coordinates
+            track the document body, not the toolbar/title/properties chrome
+            above it. */}
+        <DocumentOverlayHost
+          documentId={documentId}
+          overlays={
+            stickersEnabled ? (
+              <StickerLayer
+                documentId={documentId}
+                canEdit
+                pendingAsset={pendingStickerAsset}
+                onPendingAssetPlaced={() => setPendingStickerAsset(null)}
+              />
+            ) : undefined
+          }
+        >
         <div
           className={cn(
             "vault-markdown-editor min-h-[calc(100svh-12rem)] overflow-visible bg-transparent text-card-foreground",
@@ -1261,6 +1291,7 @@ export function MarkdownEditor({
             ) : null}
           </div>
         </div>
+        </DocumentOverlayHost>
         <p className="sr-only" aria-live="polite">
           {statusText}. {collaborationStatusText}.
         </p>
@@ -1282,8 +1313,39 @@ export function MarkdownEditor({
             </Button>
           </div>
         ) : null}
-      </DocumentOverlayHost>
+      </div>
+      {stickersEnabled && (
+        <ContentPickerDialog
+          open={stickerPickerOpen}
+          onOpenChange={setStickerPickerOpen}
+          filter={{ kinds: ["image"] }}
+          title="Pick a sticker"
+          onSelect={(asset) => {
+            setPendingStickerAsset(asset);
+            setStickerPickerOpen(false);
+          }}
+        />
+      )}
     </form>
+  );
+}
+
+function StickerToolbarGroup({ onAddSticker }: { onAddSticker: () => void }) {
+  return (
+    <div
+      data-slot="button-group"
+      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
+    >
+      <button
+        type="button"
+        title="Add sticker"
+        aria-label="Add sticker"
+        onClick={onAddSticker}
+        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
+      >
+        <Sticker className="size-4" />
+      </button>
+    </div>
   );
 }
 
@@ -1552,12 +1614,7 @@ function DocumentPropertiesControls({
   onChange: (metadata: ParsedDocumentMetadata) => void;
 }) {
   const metadata = useMemo(() => parseDocumentMetadata(markdown), [markdown]);
-  const [expanded, setExpanded] = useState(
-    () =>
-      metadata.tags.length > 0 ||
-      metadata.aliases.length > 0 ||
-      Boolean(metadata.summary || metadata.status || metadata.project),
-  );
+  const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState(() => toMetadataDraft(metadata));
 
   useEffect(() => {

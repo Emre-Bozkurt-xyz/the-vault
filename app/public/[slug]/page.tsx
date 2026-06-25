@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
+import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createMarkdownExcerpt } from "@/lib/markdown";
@@ -14,6 +15,7 @@ import {
 import { recordContentView } from "@/server/content-interactions";
 import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
+import { getPublicStickerItems } from "@/server/sticker-state";
 
 type PublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -88,11 +90,13 @@ export default async function PublicDocumentPage({
   });
   const stats = viewedStats ?? document.stats;
 
-  const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
-    listPublicWikiLinkResolutions(),
-    listOfficialDocWikiLinkResolutions(),
-    listAssetResolutionsForDocument(document.id, null),
-  ]);
+  const [publicWikiLinks, guideWikiLinks, assetLinks, stickerItems] =
+    await Promise.all([
+      listPublicWikiLinkResolutions(),
+      listOfficialDocWikiLinkResolutions(),
+      listAssetResolutionsForDocument(document.id, null),
+      getPublicStickerItems(document.id),
+    ]);
   const wikiLinks = {
     ...publicWikiLinks,
     ...guideWikiLinks,
@@ -141,12 +145,14 @@ export default async function PublicDocumentPage({
             className="mt-5"
           />
           <div className="mt-7 border-t border-border/50 pt-5 sm:mt-8 sm:pt-7">
-            <MarkdownDocument
-              markdown={document.markdown}
-              className="vault-public-markdown"
-              wikiLinks={wikiLinks}
-              assetLinks={assetLinks}
-            />
+            <PublicStickerDisplay items={stickerItems}>
+              <MarkdownDocument
+                markdown={document.markdown}
+                className="vault-public-markdown"
+                wikiLinks={wikiLinks}
+                assetLinks={assetLinks}
+              />
+            </PublicStickerDisplay>
           </div>
         </article>
       </div>

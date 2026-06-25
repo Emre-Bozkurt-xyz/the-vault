@@ -350,7 +350,7 @@ Reference plan: `docs/12_EXTENSION_REGISTRY_PLAN.md`
 | [x] | Add core math rendering | `remark-math` and `rehype-katex` now run in the shared Markdown pipeline; Live mode renders inactive `$$...$$` block math through the Live block registry, active block math previews underneath source, and active inline math tooltips |
 | [~] | Move Live block specs into registry | Added `lib/extensions/registry.ts` and route current core LiveBlockSpecs through a `VaultExtension`; splitting specs into separate registry-owned modules remains |
 | [x] | Add extension state runtime API | Added permission-checked server actions and a debounced client hook for object-shaped document extension state |
-| [ ] | Prototype stickers extension | Built-in extension using uploaded assets and document-relative state, authenticated workspace-only first; wait until the settings/extension-browser checkpoint in `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` is complete |
+| [x] | Prototype stickers extension | `vault.stickers` extension: `ContentPickerDialog` reusable asset picker (debounced search, kind tabs, persisted "include public" toggle), `StickerLayer` overlay with pointer-capture drag and delete, sticker button injected via `MarkdownToolbar.extensionItems`, `stickersEnabled` fetched from `userExtensionSettings` at doc load |
 | [ ] | Prototype calendar extension | Workspace/page contribution first; optional Markdown block after the workspace flow proves useful |
 
 Exit criteria:

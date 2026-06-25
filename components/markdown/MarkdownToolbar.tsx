@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactNode, JSX } from "react";
 import {
   Bold,
   Braces,
@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 
 type MarkdownToolbarProps = {
   onFormat: (format: MarkdownFormat) => void;
+  extensionItems?: JSX.Element;
 };
 
 export type MarkdownFormat =
@@ -45,7 +46,7 @@ export type MarkdownFormat =
   | "region"
   | "horizontalRule";
 
-export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
+export function MarkdownToolbar({ onFormat, extensionItems }: MarkdownToolbarProps) {
   return (
     <div className="vault-editor-toolbar -mx-1 flex w-full items-center gap-1.5 overflow-x-auto px-1 py-1 sm:flex-wrap sm:gap-2">
       <ToolbarGroup>
@@ -73,6 +74,7 @@ export function MarkdownToolbar({ onFormat }: MarkdownToolbarProps) {
         <ToolbarButton label="Vault region" shortcut="Ctrl+Alt+R" icon={Braces} onClick={() => onFormat("region")} />
         <ToolbarButton label="Horizontal rule" icon={Minus} onClick={() => onFormat("horizontalRule")} />
       </ToolbarGroup>
+      {extensionItems}
     </div>
   );
 }
