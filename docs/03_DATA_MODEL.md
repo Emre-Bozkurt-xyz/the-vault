@@ -210,6 +210,102 @@ Document titles are intentionally not unique. Document identity stays on
 should use stable document IDs internally when possible, while title-only wiki
 links are a convenience layer that may become ambiguous.
 
+### document_metadata
+
+Vault mirrors supported YAML frontmatter fields into `document_metadata` for
+search and gallery indexing.
+
+```txt
+document_metadata
+  document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE
+  aliases JSONB NOT NULL DEFAULT '[]'
+  summary TEXT
+  status TEXT
+  project TEXT
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+```
+
+Indexed frontmatter fields in V1:
+
+```txt
+tags
+aliases
+summary
+status
+project
+```
+
+Rules:
+
+- `tags` are synced through `document_tags`, not stored directly in
+  `document_metadata`.
+- Tag input is space-separated. Example: `forest research pine_forest`.
+- Multi-word tags use underscores.
+- Unknown frontmatter keys are preserved in Markdown but not indexed in V1.
+- The Live-mode Properties UI rewrites supported YAML fields and hides the
+  leading frontmatter block. Source mode keeps raw frontmatter editable for
+  advanced/unknown keys, and rendered Markdown strips the frontmatter block
+  before display.
+- Metadata sync runs after normal document saves, restores, and collaboration
+  stores.
+
+### tags, tag_aliases, document_tags, asset_tags
+
+Documents and assets use one shared tag vocabulary.
+
+```txt
+tags
+  id UUID PRIMARY KEY
+  slug TEXT UNIQUE NOT NULL
+  display_name TEXT NOT NULL
+  category TEXT NOT NULL DEFAULT 'general'
+  description TEXT
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+
+tag_aliases
+  id UUID PRIMARY KEY
+  alias_slug TEXT UNIQUE NOT NULL
+  tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+
+document_tags
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE
+  tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  PRIMARY KEY(document_id, tag_id)
+
+asset_tags
+  asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE
+  tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+  PRIMARY KEY(asset_id, tag_id)
+```
+
+Allowed tag categories in V1:
+
+```txt
+general
+topic
+person
+place
+project
+technical
+```
+
+Alias creation and tag merge tools are admin-only in V1. Public search must only
+show counts for public content; authenticated search must only count readable
+content.
+
+Normal autocomplete hides zero-use canonical tags so stale vocabulary is not
+encouraged. Admin tag management exposes unused tags and only deletes them when
+they have no document links, asset links, or aliases.
+
+The asset library can edit asset tags through the same space-separated input
+format used by document Properties.
+
 ---
 
 ## 3. Document Permissions
@@ -500,6 +596,41 @@ documents.public_slug
 Document share links use `document_share_links` and are private-link access,
 not public publishing. Public publishing is indexed/discoverable inside Vault;
 share links are copyable URL grants controlled by the document owner.
+
+### content_likes and content_views
+
+Public documents and public assets can collect popularity signals.
+
+```txt
+content_likes
+  id UUID PRIMARY KEY
+  target_kind TEXT NOT NULL -- document | asset
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE
+  asset_id UUID REFERENCES assets(id) ON DELETE CASCADE
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+
+content_views
+  id UUID PRIMARY KEY
+  target_kind TEXT NOT NULL -- document | asset
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE
+  asset_id UUID REFERENCES assets(id) ON DELETE CASCADE
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL
+  anonymous_hash TEXT
+  view_day TEXT NOT NULL
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+```
+
+Rules:
+
+- Likes are signed-in only.
+- Views are daily unique-ish by signed-in user or anonymous hash.
+- Popularity is public only for public documents/assets.
+- Current all-time score is `likes * 4 + views`.
+- Current trending score is seven-day recent activity: `recent_likes * 5 +
+  recent_views`.
+- `sort:score` uses all-time score; `sort:trending` uses seven-day trending
+  score.
 
 ---
 

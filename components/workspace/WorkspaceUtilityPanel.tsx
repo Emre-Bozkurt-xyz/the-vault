@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   BookOpen,
+  Hash,
   ImageIcon,
   LayoutGrid,
   Search,
@@ -113,6 +114,12 @@ const panelContent: Record<
         href: "/dashboard/admin/docs",
         description: "Publish user-facing Markdown documentation.",
         icon: BookOpen,
+      },
+      {
+        label: "Tags",
+        href: "/dashboard/admin/tags",
+        description: "Canonical tags, aliases, and cleanup.",
+        icon: Hash,
       },
     ],
   },

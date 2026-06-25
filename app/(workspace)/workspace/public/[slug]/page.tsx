@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ExternalLink, Globe2 } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
+import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import {
   getPublicDocumentBySlug,
   listPublicWikiLinkResolutions,
 } from "@/server/documents";
+import { recordContentView } from "@/server/content-interactions";
+import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 
 type WorkspacePublicDocumentPageProps = {
@@ -22,11 +25,20 @@ export default async function WorkspacePublicDocumentPage({
   params,
 }: WorkspacePublicDocumentPageProps) {
   const { slug } = await params;
-  const document = await getPublicDocumentBySlug(slug);
+  const viewer = await getCurrentContentViewerIdentity();
+  const document = await getPublicDocumentBySlug(slug, {
+    userId: viewer.userId,
+  });
 
   if (!document) {
     notFound();
   }
+
+  const viewedStats = await recordContentView({
+    target: { kind: "document", id: document.id },
+    viewer,
+  });
+  const stats = viewedStats ?? document.stats;
 
   const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
     listPublicWikiLinkResolutions({ workspaceHrefs: true }),
@@ -57,6 +69,8 @@ export default async function WorkspacePublicDocumentPage({
             ownerName={ownerName}
             ownerHandle={ownerHandle}
             updatedAt={document.updatedAt}
+            documentId={document.id}
+            stats={stats}
           />
         }
       />
@@ -83,6 +97,12 @@ export default async function WorkspacePublicDocumentPage({
               </p>
             </div>
           </div>
+          <ContentInteractionControl
+            targetKind="document"
+            targetId={document.id}
+            initialStats={stats}
+            canLike={Boolean(viewer.userId)}
+          />
         </header>
 
         <div className="border-t border-border/55 pt-6">
@@ -104,28 +124,35 @@ function PublicDocumentContextPanel({
   ownerName,
   ownerHandle,
   updatedAt,
+  documentId,
+  stats,
 }: {
   publicHref: string;
   ownerName: string;
   ownerHandle: string | null;
   updatedAt: Date;
+  documentId: string;
+  stats: {
+    likeCount: number;
+    viewCount: number;
+    viewerHasLiked: boolean;
+    score: number;
+    trendingScore: number;
+  };
 }) {
   return (
     <div className="flex h-full flex-col overflow-y-auto px-3 py-3 text-sm">
       <section className="border-b border-border/70 pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Public
-            </p>
-            <h2 className="mt-2 font-medium">Read-only document</h2>
-          </div>
-          <Globe2 className="size-4 text-muted-foreground" />
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          This workspace view is for signed-in browsing. Use the public page when
-          sharing outside Vault.
+        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          Public stats
         </p>
+        <ContentInteractionControl
+          targetKind="document"
+          targetId={documentId}
+          initialStats={stats}
+          readOnly
+          className="mt-3"
+        />
       </section>
 
       <section className="border-b border-border/70 py-3">

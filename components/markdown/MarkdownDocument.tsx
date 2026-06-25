@@ -33,6 +33,7 @@ import {
   transformAssetEmbeds,
   type AssetEmbedResolutionMap,
 } from "@/lib/asset-embeds";
+import { stripDocumentFrontmatter } from "@/lib/content-metadata";
 import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
@@ -957,8 +958,11 @@ export function MarkdownDocument({
   embedDepth = 0,
   embedTrail = [],
 }: MarkdownDocumentProps) {
+  const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
+    ? stripDocumentFrontmatter(markdown || "")
+    : "_No content yet._";
   const sourceMarkdown = transformAssetEmbeds(
-    normalizeSelfClosingIframes(markdown || "_No content yet._"),
+    normalizeSelfClosingIframes(bodyMarkdown),
     assetLinks,
   );
   const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);

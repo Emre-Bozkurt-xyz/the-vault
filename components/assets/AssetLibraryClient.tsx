@@ -17,8 +17,14 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  getContentSearchSummary,
+  matchesContentSearchQuery,
+  parseContentSearchQuery,
+} from "@/lib/content-search-query";
 import { cn } from "@/lib/utils";
 
 export type AssetLibraryItem = {
@@ -31,6 +37,7 @@ export type AssetLibraryItem = {
   sizeBytes: number;
   visibility: "private" | "public";
   createdAt: Date | string;
+  tags: string[];
   url: string;
   markdown: string;
 };
@@ -40,6 +47,7 @@ type AssetDraft = {
   altText: string;
   description: string;
   visibility: "private" | "public";
+  tags: string;
 };
 type KindFilter = "all" | "image" | "pdf";
 type VisibilityFilter = "all" | "private" | "public";
@@ -65,15 +73,20 @@ export function AssetLibraryClient({
     useState<VisibilityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const storage = useMemo(() => summarizeStorage(assets), [assets]);
+  const parsedQuery = useMemo(() => parseContentSearchQuery(query), [query]);
+  const querySummary = useMemo(
+    () => getContentSearchSummary(parsedQuery),
+    [parsedQuery],
+  );
   const visibleAssets = useMemo(
     () =>
       filterAndSortAssets(assets, {
-        query,
+        query: parsedQuery,
         kind: kindFilter,
         visibility: visibilityFilter,
         sort: sortMode,
       }),
-    [assets, kindFilter, query, sortMode, visibilityFilter],
+    [assets, kindFilter, parsedQuery, sortMode, visibilityFilter],
   );
 
   function selectAsset(asset: AssetLibraryItem) {
@@ -101,7 +114,13 @@ export function AssetLibraryClient({
       const response = await fetch(`/api/assets/${selected.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({
+          ...draft,
+          tags: draft.tags
+            .split(/\s+/)
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        }),
       });
       const payload = (await response.json()) as {
         asset?: AssetLibraryItem;
@@ -198,7 +217,7 @@ export function AssetLibraryClient({
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search name, alt text, description..."
+                placeholder="Search title, tags, @user, kind:image..."
                 className="pl-9"
               />
             </label>
@@ -235,6 +254,18 @@ export function AssetLibraryClient({
               <option value="name">Name</option>
               <option value="size">Size</option>
             </select>
+          </div>
+        ) : null}
+        {querySummary.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            {querySummary.map((summary) => (
+              <span
+                key={summary}
+                className="rounded-full border border-border/70 bg-card px-2 py-1"
+              >
+                {summary}
+              </span>
+            ))}
           </div>
         ) : null}
 
@@ -342,6 +373,23 @@ export function AssetLibraryClient({
                     }))
                   }
                 />
+              </label>
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">Tags</span>
+                <TagAutocompleteInput
+                  value={draft.tags}
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      tags: value,
+                    }))
+                  }
+                  placeholder="tag1 tag2 ..."
+                  inputClassName="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                />
+                <span className="text-xs text-muted-foreground">
+                  Separate tags with spaces. Use underscores for multi-word tags.
+                </span>
               </label>
               <label className="grid gap-1.5 text-sm">
                 <span className="font-medium">Description</span>
@@ -494,6 +542,7 @@ function toDraft(asset: AssetLibraryItem | null): AssetDraft {
     altText: asset?.altText ?? "",
     description: asset?.description ?? "",
     visibility: asset?.visibility ?? "private",
+    tags: asset?.tags?.join(" ") ?? "",
   };
 }
 
@@ -506,14 +555,12 @@ function summarizeStorage(assets: AssetLibraryItem[]) {
 function filterAndSortAssets(
   assets: AssetLibraryItem[],
   filters: {
-    query: string;
+    query: ReturnType<typeof parseContentSearchQuery>;
     kind: KindFilter;
     visibility: VisibilityFilter;
     sort: SortMode;
   },
 ) {
-  const normalizedQuery = filters.query.trim().toLowerCase();
-
   return assets
     .filter((asset) => {
       if (filters.kind !== "all" && asset.kind !== filters.kind) {
@@ -527,18 +574,18 @@ function filterAndSortAssets(
         return false;
       }
 
-      if (!normalizedQuery) {
-        return true;
-      }
-
-      return [
-        asset.displayName,
-        asset.altText,
-        asset.description,
-        asset.mimeType,
-      ]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(normalizedQuery));
+      return matchesContentSearchQuery(
+        {
+          title: asset.displayName,
+          altText: asset.altText,
+          description: asset.description,
+          mimeType: asset.mimeType,
+          kind: asset.kind,
+          visibility: asset.visibility,
+          tags: asset.tags,
+        },
+        filters.query,
+      );
     })
     .sort((first, second) => {
       if (filters.sort === "oldest") {

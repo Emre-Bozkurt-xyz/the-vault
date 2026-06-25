@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import { cn } from "@/lib/utils";
 import { WorkspaceIconRail } from "@/components/workspace/WorkspaceIconRail";
+import { WorkspaceCommandPalette } from "@/components/workspace/WorkspaceCommandPalette";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import type {
   WorkspacePageDescriptor,
@@ -374,6 +375,8 @@ export function VaultWorkspaceShell({
           </div>
         </div>
       ) : null}
+
+      <WorkspaceCommandPalette />
     </div>
   );
 }

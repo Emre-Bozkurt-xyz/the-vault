@@ -36,11 +36,12 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
     return query ? `${pathname}?${query}` : pathname;
   }, [pathname, searchParams]);
   const activeHref = activePage.href || currentHref;
+  const canonicalActiveHref = canonicalWorkspaceTabHref(activeHref, activePage.type);
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() =>
     mergeActiveTab([], {
       ...activePage,
-      href: activeHref,
-      id: activeHref,
+      href: canonicalActiveHref,
+      id: canonicalActiveHref,
     }),
   );
   const [draggedHref, setDraggedHref] = useState<string | null>(null);
@@ -48,7 +49,11 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setTabs((currentTabs) => {
-        const activeTab = { ...activePage, href: activeHref, id: activeHref };
+        const activeTab = {
+          ...activePage,
+          href: canonicalActiveHref,
+          id: canonicalActiveHref,
+        };
         const baseTabs = currentTabs.length <= 1 ? readStoredTabs() : currentTabs;
         const nextTabs = mergeActiveTab(baseTabs, activeTab);
 
@@ -58,7 +63,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
     }, 0);
 
     return () => window.clearTimeout(timeout);
-  }, [activeHref, activePage]);
+  }, [activePage, canonicalActiveHref]);
 
   useEffect(() => {
     return subscribeToWorkspaceDocumentRemovals(({ id }) => {
@@ -74,7 +79,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
         const nextTabs = currentTabs.filter((tab) => !isDocumentTabForId(tab, id));
         window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
 
-        if (isDocumentHrefForId(activeHref, id)) {
+        if (isDocumentHrefForId(canonicalActiveHref, id)) {
           const nextActive =
             nextTabs[Math.max(0, firstRemovedIndex - 1)] ??
             nextTabs[firstRemovedIndex] ??
@@ -86,7 +91,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
         return nextTabs;
       });
     });
-  }, [activeHref, router]);
+  }, [canonicalActiveHref, router]);
 
   function closeTab(tab: WorkspaceTab) {
     setTabs((currentTabs) => {
@@ -94,7 +99,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
       const nextTabs = currentTabs.filter((candidate) => candidate.href !== tab.href);
       window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
 
-      if (tab.href === activeHref) {
+      if (tab.href === canonicalActiveHref) {
         const nextActive = nextTabs[Math.max(0, index - 1)] ?? nextTabs[0];
         router.push(nextActive?.href ?? "/workspace");
       }
@@ -155,7 +160,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
       <div className="flex min-w-max items-end px-1">
         {tabs.map((tab) => {
           const Icon = iconByType[tab.type] ?? FileText;
-          const active = tab.href === activeHref;
+          const active = tab.href === canonicalActiveHref;
 
           return (
             <div
@@ -223,11 +228,17 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
 }
 
 function mergeActiveTab(tabs: WorkspaceTab[], activeTab: WorkspaceTab) {
-  const existingIndex = tabs.findIndex((tab) => tab.href === activeTab.href);
+  const normalizedActiveTab = normalizeWorkspaceTab(activeTab);
+  const normalizedTabs = dedupeWorkspaceTabs(tabs.map(normalizeWorkspaceTab));
+  const existingIndex = normalizedTabs.findIndex(
+    (tab) => tab.href === normalizedActiveTab.href,
+  );
 
   return existingIndex >= 0
-    ? tabs.map((tab, index) => (index === existingIndex ? activeTab : tab))
-    : [...tabs, activeTab].slice(-maxTabs);
+    ? normalizedTabs.map((tab, index) =>
+        index === existingIndex ? normalizedActiveTab : tab,
+      )
+    : [...normalizedTabs, normalizedActiveTab].slice(-maxTabs);
 }
 
 function readStoredTabs() {
@@ -244,12 +255,53 @@ function readStoredTabs() {
   try {
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
-      ? parsed.filter(isWorkspaceTab).slice(0, maxTabs)
+      ? dedupeWorkspaceTabs(parsed.filter(isWorkspaceTab).map(normalizeWorkspaceTab))
+          .slice(0, maxTabs)
       : [];
   } catch {
     window.localStorage.removeItem(storageKey);
     return [];
   }
+}
+
+function normalizeWorkspaceTab(tab: WorkspaceTab): WorkspaceTab {
+  const href = canonicalWorkspaceTabHref(tab.href, tab.type);
+
+  return {
+    ...tab,
+    href,
+    id: href,
+  };
+}
+
+function canonicalWorkspaceTabHref(href: string, type: WorkspacePageType) {
+  const pathname = href.split("?")[0] ?? href;
+
+  if (type === "gallery" && pathname === "/gallery") {
+    return pathname;
+  }
+
+  if (type === "assets" && pathname === "/assets") {
+    return pathname;
+  }
+
+  return href;
+}
+
+function dedupeWorkspaceTabs(tabs: WorkspaceTab[]) {
+  const seen = new Set<string>();
+  const next: WorkspaceTab[] = [];
+
+  for (const tab of tabs) {
+    if (seen.has(tab.href)) {
+      continue;
+    }
+
+    seen.add(tab.href);
+    next.push(tab);
+  }
+
+  return next;
 }
 
 function isWorkspaceTab(value: unknown): value is WorkspaceTab {

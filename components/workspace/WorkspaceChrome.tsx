@@ -342,11 +342,11 @@ function inferWorkspacePage(
   }
 
   if (pathname === "/gallery") {
-    return { type: "gallery", title: "Gallery", href };
+    return { type: "gallery", title: "Gallery", href: pathname };
   }
 
   if (pathname === "/assets") {
-    return { type: "assets", title: "Assets", href };
+    return { type: "assets", title: "Assets", href: pathname };
   }
 
   if (pathname === "/dashboard/settings") {
@@ -363,6 +363,10 @@ function inferWorkspacePage(
 
   if (pathname === "/dashboard/admin/docs") {
     return { type: "admin", title: "Official docs", href };
+  }
+
+  if (pathname === "/dashboard/admin/tags") {
+    return { type: "admin", title: "Tags", href };
   }
 
   if (pathname?.startsWith("/dashboard/admin/docs/")) {

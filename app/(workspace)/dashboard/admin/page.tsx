@@ -1,4 +1,11 @@
-import { Ban, BookOpen, ShieldCheck, ShieldOff, UserRoundCog } from "lucide-react";
+import {
+  Ban,
+  BookOpen,
+  Hash,
+  ShieldCheck,
+  ShieldOff,
+  UserRoundCog,
+} from "lucide-react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -38,13 +45,28 @@ export default async function AdminPage({
               Admin
             </h1>
           </div>
-          <Link
-            href="/dashboard/admin/docs"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2")}
-          >
-            <BookOpen className="size-4" />
-            Official docs
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/admin/tags"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "gap-2",
+              )}
+            >
+              <Hash className="size-4" />
+              Tags
+            </Link>
+            <Link
+              href="/dashboard/admin/docs"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "gap-2",
+              )}
+            >
+              <BookOpen className="size-4" />
+              Official docs
+            </Link>
+          </div>
         </header>
 
         <section className="border border-border/60 bg-card/45 p-4 text-card-foreground">

@@ -4,7 +4,9 @@ import { PublicAssetGallery } from "@/components/assets/PublicAssetGallery";
 import { Button } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { WorkspaceDocumentPreviewCard } from "@/components/workspace/WorkspaceDocumentPreviewCard";
+import { parseContentSearchQuery } from "@/lib/content-search-query";
 import { listPublicAssets } from "@/server/assets";
+import { listPublicDocuments } from "@/server/documents";
 import { getWorkspaceData } from "@/server/workspace";
 
 export default async function GalleryPage({
@@ -12,38 +14,28 @@ export default async function GalleryPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const [workspace, publicAssets] = await Promise.all([
-    getWorkspaceData(),
-    listPublicAssets(),
-  ]);
+  const workspace = await getWorkspaceData();
   const { q } = await searchParams;
   const query = q?.trim() ?? "";
-  const normalizedQuery = query.toLowerCase().replace(/^@/, "");
-  const publicDocuments = normalizedQuery
-    ? workspace.publicDocuments.filter((document) =>
-        [
-          document.title,
-          document.ownerName,
-          document.ownerUsername,
-          document.publicSlug,
-        ]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(normalizedQuery)),
-      )
-    : workspace.publicDocuments;
-  const visibleAssets = normalizedQuery
-    ? publicAssets.filter((asset) =>
-        [
-          asset.displayName,
-          asset.description,
-          asset.ownerName,
-          asset.ownerUsername,
-          asset.mimeType,
-        ]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(normalizedQuery)),
-      )
-    : publicAssets;
+  const parsedQuery = parseContentSearchQuery(query);
+  const [publicDocuments, filteredAssets] = await Promise.all([
+    listPublicDocuments({
+      userId: workspace.profile.id,
+      query: parsedQuery,
+    }),
+    listPublicAssets({
+      userId: workspace.profile.id,
+      query: parsedQuery,
+    }),
+  ]);
+  const publicDocumentsSorted = sortByRequestedScore(
+    publicDocuments,
+    parsedQuery.filters.sort,
+  );
+  const visibleAssets = sortByRequestedScore(
+    filteredAssets,
+    parsedQuery.filters.sort,
+  );
 
   return (
     <>
@@ -70,7 +62,7 @@ export default async function GalleryPage({
                 name="q"
                 defaultValue={query}
                 type="search"
-                placeholder="Title or @user"
+                placeholder="Search title, tags, @user, kind:image..."
                 autoComplete="off"
                 className="h-9 w-full border border-border/70 bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary/60"
               />
@@ -82,15 +74,21 @@ export default async function GalleryPage({
         </div>
 
         <div className="mt-6 grid gap-6">
-          {publicDocuments.length > 0 || visibleAssets.length > 0 ? (
+          {publicDocumentsSorted.length > 0 || visibleAssets.length > 0 ? (
             <PublicAssetGallery assets={visibleAssets}>
-              {publicDocuments.map((document) => (
+              {publicDocumentsSorted.map((document) => (
                 <WorkspaceDocumentPreviewCard
                   key={document.id}
-                  href={document.href}
+                  href={
+                    document.publicSlug
+                      ? `/workspace/public/${document.publicSlug}`
+                      : "/gallery"
+                  }
+                  targetId={document.id}
                   title={document.title}
                   markdown={document.markdown}
                   meta={`@${document.ownerUsername ?? "unknown"} - ${document.updatedAt.toLocaleDateString()}`}
+                  stats={document.stats}
                 />
               ))}
             </PublicAssetGallery>
@@ -105,4 +103,23 @@ export default async function GalleryPage({
       </section>
     </>
   );
+}
+
+function sortByRequestedScore<
+  T extends { stats?: { score: number; trendingScore?: number } },
+>(
+  items: T[],
+  sort: string | undefined,
+) {
+  if (sort !== "score" && sort !== "trending") {
+    return items;
+  }
+
+  const statKey = sort === "trending" ? "trendingScore" : "score";
+
+  return [...items].sort((first, second) => {
+    const firstScore = first.stats?.[statKey] ?? 0;
+    const secondScore = second.stats?.[statKey] ?? 0;
+    return secondScore - firstScore;
+  });
 }

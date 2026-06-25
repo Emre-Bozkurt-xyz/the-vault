@@ -34,6 +34,14 @@ export type WorkspacePublicDocumentItem = {
   updatedAt: Date;
   ownerName: string | null;
   ownerUsername: string | null;
+  tags: string[];
+  stats: {
+    likeCount: number;
+    viewCount: number;
+    viewerHasLiked: boolean;
+    score: number;
+    trendingScore: number;
+  };
 };
 
 export type WorkspaceGuideItem = {

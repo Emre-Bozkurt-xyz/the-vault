@@ -23,6 +23,14 @@ export type UserRole = "user" | "admin";
 export type AssetKind = "image" | "pdf";
 export type AssetVisibility = "private" | "public";
 export type AssetStatus = "pending" | "ready" | "failed" | "deleted";
+export type TagCategory =
+  | "general"
+  | "topic"
+  | "person"
+  | "place"
+  | "project"
+  | "technical";
+export type ContentTargetKind = "document" | "asset";
 export type DocumentExtensionStateVisibility =
   | "private"
   | "public"
@@ -459,6 +467,187 @@ export const documentAssets = pgTable(
   ],
 );
 
+export const tags = pgTable(
+  "tags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    displayName: text("display_name").notNull(),
+    category: text("category").$type<TagCategory>().notNull().default("general"),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("tags_slug_unique").on(table.slug),
+    index("tags_category_idx").on(table.category),
+  ],
+);
+
+export const tagAliases = pgTable(
+  "tag_aliases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    aliasSlug: text("alias_slug").notNull(),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("tag_aliases_alias_slug_unique").on(table.aliasSlug),
+    index("tag_aliases_tag_id_idx").on(table.tagId),
+  ],
+);
+
+export const documentMetadata = pgTable(
+  "document_metadata",
+  {
+    documentId: uuid("document_id")
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    aliases: jsonb("aliases")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    summary: text("summary"),
+    status: text("status"),
+    project: text("project"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("document_metadata_status_idx").on(table.status),
+    index("document_metadata_project_idx").on(table.project),
+  ],
+);
+
+export const documentTags = pgTable(
+  "document_tags",
+  {
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.documentId, table.tagId] }),
+    index("document_tags_tag_id_idx").on(table.tagId),
+  ],
+);
+
+export const assetTags = pgTable(
+  "asset_tags",
+  {
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.assetId, table.tagId] }),
+    index("asset_tags_tag_id_idx").on(table.tagId),
+  ],
+);
+
+export const contentLikes = pgTable(
+  "content_likes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetKind: text("target_kind").$type<ContentTargetKind>().notNull(),
+    documentId: uuid("document_id").references(() => documents.id, {
+      onDelete: "cascade",
+    }),
+    assetId: uuid("asset_id").references(() => assets.id, {
+      onDelete: "cascade",
+    }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("content_likes_document_user_unique").on(
+      table.documentId,
+      table.userId,
+    ),
+    uniqueIndex("content_likes_asset_user_unique").on(table.assetId, table.userId),
+    index("content_likes_target_kind_idx").on(table.targetKind),
+    index("content_likes_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const contentViews = pgTable(
+  "content_views",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetKind: text("target_kind").$type<ContentTargetKind>().notNull(),
+    documentId: uuid("document_id").references(() => documents.id, {
+      onDelete: "cascade",
+    }),
+    assetId: uuid("asset_id").references(() => assets.id, {
+      onDelete: "cascade",
+    }),
+    userId: uuid("user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    anonymousHash: text("anonymous_hash"),
+    viewDay: text("view_day").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("content_views_document_user_day_unique").on(
+      table.documentId,
+      table.userId,
+      table.viewDay,
+    ),
+    uniqueIndex("content_views_document_anon_day_unique").on(
+      table.documentId,
+      table.anonymousHash,
+      table.viewDay,
+    ),
+    uniqueIndex("content_views_asset_user_day_unique").on(
+      table.assetId,
+      table.userId,
+      table.viewDay,
+    ),
+    uniqueIndex("content_views_asset_anon_day_unique").on(
+      table.assetId,
+      table.anonymousHash,
+      table.viewDay,
+    ),
+    index("content_views_target_kind_idx").on(table.targetKind),
+    index("content_views_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const documentsRelations = relations(documents, ({ one, many }) => ({
   owner: one(users, {
     fields: [documents.ownerId],
@@ -473,6 +662,11 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
   shareLinks: many(documentShareLinks),
   extensionStates: many(documentExtensionStates),
   assets: many(documentAssets),
+  metadata: one(documentMetadata, {
+    fields: [documents.id],
+    references: [documentMetadata.documentId],
+  }),
+  tags: many(documentTags),
 }));
 
 export const documentPermissionsRelations = relations(

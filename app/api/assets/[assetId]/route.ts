@@ -45,6 +45,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       altText: body.altText,
       description: body.description,
       visibility: body.visibility,
+      tags: body.tags,
     });
 
     return NextResponse.json({ asset });
@@ -73,6 +74,7 @@ function isAssetUpdateBody(value: unknown): value is {
   altText?: string | null;
   description?: string | null;
   visibility: "private" | "public";
+  tags?: string[];
 } {
   if (!value || typeof value !== "object") {
     return false;
@@ -87,7 +89,10 @@ function isAssetUpdateBody(value: unknown): value is {
       typeof body.altText === "string") &&
     (body.description === undefined ||
       body.description === null ||
-      typeof body.description === "string")
+      typeof body.description === "string") &&
+    (body.tags === undefined ||
+      (Array.isArray(body.tags) &&
+        body.tags.every((tag) => typeof tag === "string")))
   );
 }
 

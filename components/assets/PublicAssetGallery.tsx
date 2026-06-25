@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 
+import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -33,9 +34,19 @@ export type PublicGalleryAsset = {
   createdAt: Date | string;
   ownerName: string | null;
   ownerUsername: string | null;
+  tags: string[];
   url: string;
   markdown: string;
+  stats: {
+    likeCount: number;
+    viewCount: number;
+    viewerHasLiked: boolean;
+    score: number;
+    trendingScore: number;
+  };
 };
+
+type PublicGalleryAssetStats = PublicGalleryAsset["stats"];
 
 export function PublicAssetGallery({
   assets,
@@ -47,11 +58,17 @@ export function PublicAssetGallery({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
   const [copied, setCopied] = useState<"embed" | "id" | null>(null);
+  const [statsByAssetId, setStatsByAssetId] = useState<
+    Record<string, PublicGalleryAssetStats>
+  >({});
   const panelRef = useRef<HTMLElement | null>(null);
   const selected = useMemo(
     () => assets.find((asset) => asset.id === selectedId) ?? null,
     [assets, selectedId],
   );
+  const selectedStats = selected
+    ? statsByAssetId[selected.id] ?? selected.stats
+    : null;
 
   useEffect(() => {
     if (!selectedId) {
@@ -88,6 +105,17 @@ export function PublicAssetGallery({
     await navigator.clipboard.writeText(value);
     setCopied(kind);
     window.setTimeout(() => setCopied(null), 1800);
+  }
+
+  function getAssetStats(asset: PublicGalleryAsset) {
+    return statsByAssetId[asset.id] ?? asset.stats;
+  }
+
+  function updateAssetStats(assetId: string, stats: PublicGalleryAssetStats) {
+    setStatsByAssetId((current) => ({
+      ...current,
+      [assetId]: stats,
+    }));
   }
 
   if (assets.length === 0) {
@@ -147,6 +175,26 @@ export function PublicAssetGallery({
               <span className="mt-1 block text-xs text-muted-foreground">
                 @{asset.ownerUsername ?? "unknown"} - {formatDate(asset.createdAt)}
               </span>
+              <ContentInteractionControl
+                targetKind="asset"
+                targetId={asset.id}
+                initialStats={getAssetStats(asset)}
+                compact
+                readOnly
+                className="mt-3"
+              />
+              {asset.tags.length > 0 ? (
+                <span className="mt-3 flex flex-wrap gap-1">
+                  {asset.tags.slice(0, 4).map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-border/70 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </span>
+              ) : null}
             </span>
           </button>
         ))}
@@ -191,6 +239,27 @@ export function PublicAssetGallery({
                   {selected.description}
                 </p>
               ) : null}
+
+              {selected.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {selected.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-border/70 bg-background px-2 py-1 text-xs text-muted-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              <ContentInteractionControl
+                targetKind="asset"
+                targetId={selected.id}
+                initialStats={selectedStats ?? selected.stats}
+                recordView
+                onStatsChange={(stats) => updateAssetStats(selected.id, stats)}
+              />
 
               <dl className="grid gap-2 border-y border-border/70 py-3 text-xs">
                 <InfoRow label="Kind" value={selected.kind} />

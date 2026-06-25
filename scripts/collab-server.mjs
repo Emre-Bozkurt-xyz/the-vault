@@ -121,6 +121,7 @@ const server = new Server({
       `;
 
       await reconcileDocumentAssetLinks(tx, documentName, markdown);
+      await syncDocumentMetadata(tx, documentName, markdown);
 
       await tx`
         insert into document_collab_states (document_id, yjs_state)
@@ -281,4 +282,218 @@ function extractAssetEmbedIds(markdown) {
       match[1].toLowerCase(),
     ),
   )];
+}
+
+async function syncDocumentMetadata(tx, documentId, markdown) {
+  const metadata = parseDocumentMetadata(markdown);
+
+  await tx`
+    insert into document_metadata (
+      document_id,
+      aliases,
+      summary,
+      status,
+      project
+    )
+    values (
+      ${documentId},
+      ${JSON.stringify(metadata.aliases)}::jsonb,
+      ${metadata.summary},
+      ${metadata.status},
+      ${metadata.project}
+    )
+    on conflict (document_id) do update
+    set aliases = excluded.aliases,
+        summary = excluded.summary,
+        status = excluded.status,
+        project = excluded.project,
+        updated_at = now()
+  `;
+
+  await tx`
+    delete from document_tags
+    where document_id = ${documentId}
+  `;
+
+  if (metadata.tags.length === 0) {
+    return;
+  }
+
+  const tagRows = metadata.tags.map((slug) => ({
+    slug,
+    display_name: tagDisplayName(slug),
+  }));
+
+  await tx`
+    insert into tags ${tx(tagRows, "slug", "display_name")}
+    on conflict (slug) do nothing
+  `;
+
+  const existingTags = await tx`
+    select id, slug
+    from tags
+    where slug in ${tx(metadata.tags)}
+  `;
+  const tagIds = metadata.tags
+    .map((slug) => existingTags.find((tag) => tag.slug === slug)?.id)
+    .filter(Boolean);
+
+  if (tagIds.length === 0) {
+    return;
+  }
+
+  await tx`
+    insert into document_tags ${tx(
+      tagIds.map((tagId) => ({ document_id: documentId, tag_id: tagId })),
+      "document_id",
+      "tag_id",
+    )}
+    on conflict do nothing
+  `;
+}
+
+function parseDocumentMetadata(markdown) {
+  const frontmatter = String(markdown ?? "").match(
+    /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/,
+  )?.[1];
+
+  if (!frontmatter) {
+    return emptyDocumentMetadata();
+  }
+
+  const fields = parseSimpleYamlFields(frontmatter);
+  return {
+    tags: normalizeTagList(fields.get("tags")),
+    aliases: normalizeStringList(fields.get("aliases"), 160).slice(0, 32),
+    summary: normalizeOptionalString(fields.get("summary"), 500),
+    status: normalizeOptionalString(fields.get("status"), 80),
+    project: normalizeOptionalString(fields.get("project"), 80),
+  };
+}
+
+function emptyDocumentMetadata() {
+  return {
+    tags: [],
+    aliases: [],
+    summary: null,
+    status: null,
+    project: null,
+  };
+}
+
+function normalizeTagList(value) {
+  const rawTags = Array.isArray(value)
+    ? value.flatMap((item) => splitTagInput(String(item ?? "")))
+    : splitTagInput(String(value ?? ""));
+
+  return [...new Set(
+    rawTags
+      .map((tag) =>
+        tag
+          .trim()
+          .toLowerCase()
+          .replace(/,/g, " ")
+          .replace(/\s+/g, " ")
+          .split(" ")
+          .filter(Boolean)
+          .map((part) =>
+            part
+              .replace(/-/g, "_")
+              .replace(/[^a-z0-9_]/g, "")
+              .replace(/_+/g, "_")
+              .replace(/^_+|_+$/g, "")
+              .slice(0, 64),
+          )
+          .filter(Boolean)
+          .join(" "),
+      )
+      .flatMap(splitTagInput)
+      .filter(Boolean),
+  )].slice(0, 64);
+}
+
+function splitTagInput(value) {
+  return value
+    .split(/\s+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function normalizeStringList(value, maxLength) {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return [...new Set(
+    values
+      .map((item) => String(item ?? "").trim().slice(0, maxLength))
+      .filter(Boolean),
+  )];
+}
+
+function normalizeOptionalString(value, maxLength) {
+  const normalized = Array.isArray(value)
+    ? String(value[0] ?? "").trim()
+    : String(value ?? "").trim();
+
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function parseSimpleYamlFields(raw) {
+  const fields = new Map();
+  const lines = raw.split(/\r?\n/);
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+
+    if (!line.trim() || line.trim().startsWith("#")) {
+      index += 1;
+      continue;
+    }
+
+    const match = line.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
+
+    if (!match) {
+      index += 1;
+      continue;
+    }
+
+    const key = match[1].trim();
+    const inlineValue = stripYamlQuotes(match[2].trim());
+
+    if (inlineValue) {
+      fields.set(key, inlineValue);
+      index += 1;
+      continue;
+    }
+
+    const list = [];
+    let cursor = index + 1;
+
+    while (cursor < lines.length) {
+      const listMatch = (lines[cursor] ?? "").match(/^\s*-\s*(.+)$/);
+
+      if (!listMatch) {
+        break;
+      }
+
+      list.push(stripYamlQuotes(listMatch[1].trim()));
+      cursor += 1;
+    }
+
+    fields.set(key, list.length > 0 ? list : "");
+    index = cursor;
+  }
+
+  return fields;
+}
+
+function stripYamlQuotes(value) {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+function tagDisplayName(slug) {
+  return slug
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1))
+    .join(" ");
 }

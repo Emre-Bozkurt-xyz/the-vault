@@ -50,7 +50,9 @@ import {
   FileCode2,
   Grid3x3,
   Loader2,
+  SlidersHorizontal,
   Save,
+  Tags,
   X,
 } from "lucide-react";
 import * as Y from "yjs";
@@ -68,6 +70,7 @@ import {
   MarkdownToolbar,
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
+import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
 import { dispatchWorkspaceDocumentChanged } from "@/components/workspace/workspace-events";
 import {
@@ -86,6 +89,12 @@ import {
   type AssetGroupWidth,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
+import {
+  formatTagInput,
+  parseDocumentMetadata,
+  updateDocumentMetadataFrontmatter,
+  type ParsedDocumentMetadata,
+} from "@/lib/content-metadata";
 import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
@@ -406,6 +415,37 @@ export function MarkdownEditor({
     );
   }, [documentId, isCollaborative, shareLinkId]);
 
+  const applyDocumentMetadata = useCallback(
+    (metadata: ParsedDocumentMetadata) => {
+      const currentMarkdown = markdownValueRef.current;
+      const nextMarkdown = updateDocumentMetadataFrontmatter(
+        currentMarkdown,
+        metadata,
+      );
+
+      if (nextMarkdown === currentMarkdown) {
+        return;
+      }
+
+      const view = viewRef.current;
+
+      if (view) {
+        view.dispatch({
+          changes: {
+            from: 0,
+            to: view.state.doc.length,
+            insert: nextMarkdown,
+          },
+        });
+      } else {
+        markdownValueRef.current = nextMarkdown;
+        setMarkdownValue(nextMarkdown);
+        setDirty(true);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (editorMode !== "read" || !isCollaborative || !collabSession) {
       return;
@@ -688,6 +728,7 @@ export function MarkdownEditor({
 
       if (editorMode === "live") {
         baseExtensions.push(
+          createHiddenFrontmatterExtension(),
           createLiveBlockDecorationExtension({
             assetLinks: assetLinkMap,
             wikiLinks: wikiLinkMap,
@@ -1158,6 +1199,12 @@ export function MarkdownEditor({
             aria-label="Document title"
           />
         )}
+        {editorMode === "live" ? (
+          <DocumentPropertiesControls
+            markdown={markdownValue}
+            onChange={applyDocumentMetadata}
+          />
+        ) : null}
         <div
           className={cn(
             "vault-markdown-editor min-h-[calc(100svh-12rem)] overflow-visible bg-transparent text-card-foreground",
@@ -1497,6 +1544,176 @@ function AssetFormatSegment<TValue extends string>({
   );
 }
 
+function DocumentPropertiesControls({
+  markdown,
+  onChange,
+}: {
+  markdown: string;
+  onChange: (metadata: ParsedDocumentMetadata) => void;
+}) {
+  const metadata = useMemo(() => parseDocumentMetadata(markdown), [markdown]);
+  const [expanded, setExpanded] = useState(
+    () =>
+      metadata.tags.length > 0 ||
+      metadata.aliases.length > 0 ||
+      Boolean(metadata.summary || metadata.status || metadata.project),
+  );
+  const [draft, setDraft] = useState(() => toMetadataDraft(metadata));
+
+  useEffect(() => {
+    setDraft(toMetadataDraft(metadata));
+  }, [metadata]);
+
+  function applyDraft(nextDraft = draft) {
+    onChange({
+      tags: nextDraft.tags
+        .split(/\s+/)
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      aliases: nextDraft.aliases
+        .split(/\r?\n/)
+        .map((alias) => alias.trim())
+        .filter(Boolean),
+      summary: nextDraft.summary.trim() || null,
+      status: nextDraft.status.trim() || null,
+      project: nextDraft.project.trim() || null,
+    });
+  }
+
+  return (
+    <section className="rounded-md border border-border/70 bg-card/45 text-sm text-card-foreground">
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+      >
+        <span className="flex items-center gap-2 font-medium">
+          <SlidersHorizontal className="size-4 text-muted-foreground" />
+          Properties
+        </span>
+        <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          {metadata.tags.length > 0 ? (
+            <span className="hidden min-w-0 truncate sm:inline">
+              {metadata.tags.slice(0, 4).join(" ")}
+            </span>
+          ) : (
+            <span>Frontmatter</span>
+          )}
+          <span aria-hidden="true">{expanded ? "-" : "+"}</span>
+        </span>
+      </button>
+
+      {expanded ? (
+        <div className="grid gap-3 border-t border-border/60 p-3">
+          <label className="grid gap-1.5">
+            <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <Tags className="size-3.5" />
+              Tags
+            </span>
+            <TagAutocompleteInput
+              value={draft.tags}
+              onChange={(value) =>
+                setDraft((current) => ({ ...current, tags: value }))
+              }
+              onCommit={(value) => applyDraft({ ...draft, tags: value })}
+              placeholder="tag1 tag2 ..."
+              inputClassName="h-9 w-full rounded-md border border-border/70 bg-background px-3 font-mono text-sm outline-none transition focus:border-primary/60"
+            />
+            <span className="text-xs text-muted-foreground">
+              Separate tags with spaces. Use underscores for multi-word tags.
+            </span>
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Status
+              </span>
+              <input
+                value={draft.status}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    status: event.target.value,
+                  }))
+                }
+                onBlur={() => applyDraft()}
+                placeholder="draft"
+                className="h-9 rounded-md border border-border/70 bg-background px-3 text-sm outline-none transition focus:border-primary/60"
+              />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Project
+              </span>
+              <input
+                value={draft.project}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    project: event.target.value,
+                  }))
+                }
+                onBlur={() => applyDraft()}
+                placeholder="vault"
+                className="h-9 rounded-md border border-border/70 bg-background px-3 text-sm outline-none transition focus:border-primary/60"
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              Summary
+            </span>
+            <textarea
+              value={draft.summary}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  summary: event.target.value,
+                }))
+              }
+              onBlur={() => applyDraft()}
+              rows={2}
+              placeholder="Short searchable description"
+              className="resize-none rounded-md border border-border/70 bg-background px-3 py-2 text-sm outline-none transition focus:border-primary/60"
+            />
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              Aliases
+            </span>
+            <textarea
+              value={draft.aliases}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  aliases: event.target.value,
+                }))
+              }
+              onBlur={() => applyDraft()}
+              rows={2}
+              placeholder="One alias per line"
+              className="resize-none rounded-md border border-border/70 bg-background px-3 py-2 text-sm outline-none transition focus:border-primary/60"
+            />
+          </label>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function toMetadataDraft(metadata: ParsedDocumentMetadata) {
+  return {
+    tags: formatTagInput(metadata.tags),
+    aliases: metadata.aliases.join("\n"),
+    summary: metadata.summary ?? "",
+    status: metadata.status ?? "",
+    project: metadata.project ?? "",
+  };
+}
+
 function EditorModeSwitch({
   mode,
   onChange,
@@ -1719,6 +1936,63 @@ const previewHeading6 = Decoration.line({ class: "vault-cm-preview-heading-6" })
 const previewQuote = Decoration.line({ class: "vault-cm-preview-quote" });
 const previewCodeBlock = Decoration.line({ class: "vault-cm-preview-codeblock" });
 const previewList = Decoration.line({ class: "vault-cm-preview-list" });
+const hiddenFrontmatterLine = Decoration.line({
+  class: "vault-cm-hidden-frontmatter-line",
+});
+
+function createHiddenFrontmatterExtension() {
+  const field = StateField.define<DecorationSet>({
+    create(state) {
+      return getHiddenFrontmatterDecorations(state);
+    },
+    update(decorations, transaction) {
+      if (!transaction.docChanged) {
+        return decorations;
+      }
+
+      return getHiddenFrontmatterDecorations(transaction.state);
+    },
+    provide(fieldValue) {
+      return EditorView.decorations.from(fieldValue);
+    },
+  });
+
+  return [
+    field,
+    EditorView.theme({
+      ".vault-cm-hidden-frontmatter-line": {
+        display: "none",
+      },
+    }),
+  ];
+}
+
+function getHiddenFrontmatterDecorations(state: EditorState) {
+  if (state.doc.lines < 2 || state.doc.line(1).text.trim() !== "---") {
+    return Decoration.none;
+  }
+
+  let closingLineNumber: number | null = null;
+
+  for (let lineNumber = 2; lineNumber <= state.doc.lines; lineNumber += 1) {
+    if (state.doc.line(lineNumber).text.trim() === "---") {
+      closingLineNumber = lineNumber;
+      break;
+    }
+  }
+
+  if (!closingLineNumber) {
+    return Decoration.none;
+  }
+
+  const ranges = [];
+
+  for (let lineNumber = 1; lineNumber <= closingLineNumber; lineNumber += 1) {
+    ranges.push(hiddenFrontmatterLine.range(state.doc.line(lineNumber).from));
+  }
+
+  return Decoration.set(ranges);
+}
 
 const calloutAliases = new Map<string, string>([
   ["summary", "abstract"],

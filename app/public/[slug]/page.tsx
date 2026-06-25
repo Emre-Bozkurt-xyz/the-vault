@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createMarkdownExcerpt } from "@/lib/markdown";
@@ -10,6 +11,8 @@ import {
   getPublicDocumentBySlug,
   listPublicWikiLinkResolutions,
 } from "@/server/documents";
+import { recordContentView } from "@/server/content-interactions";
+import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 
 type PublicDocumentPageProps = {
@@ -70,11 +73,20 @@ export default async function PublicDocumentPage({
   params,
 }: PublicDocumentPageProps) {
   const { slug } = await params;
-  const document = await getPublicDocumentBySlug(slug);
+  const viewer = await getCurrentContentViewerIdentity();
+  const document = await getPublicDocumentBySlug(slug, {
+    userId: viewer.userId,
+  });
 
   if (!document) {
     notFound();
   }
+
+  const viewedStats = await recordContentView({
+    target: { kind: "document", id: document.id },
+    viewer,
+  });
+  const stats = viewedStats ?? document.stats;
 
   const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
     listPublicWikiLinkResolutions(),
@@ -121,6 +133,13 @@ export default async function PublicDocumentPage({
               </p>
             </div>
           </div>
+          <ContentInteractionControl
+            targetKind="document"
+            targetId={document.id}
+            initialStats={stats}
+            canLike={Boolean(viewer.userId)}
+            className="mt-5"
+          />
           <div className="mt-7 border-t border-border/50 pt-5 sm:mt-8 sm:pt-7">
             <MarkdownDocument
               markdown={document.markdown}

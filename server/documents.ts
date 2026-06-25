@@ -1,6 +1,17 @@
 "use server";
 
-import { and, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
@@ -8,11 +19,14 @@ import { z } from "zod";
 import { db } from "@/db";
 import {
   documentCollabStates,
+  documentMetadata,
   documentPermissions,
   documentShareLinks,
+  documentTags,
   documentVersions,
   documents,
   friendships,
+  tags,
   users,
 } from "@/db/schema";
 import {
@@ -23,6 +37,11 @@ import {
   getDocumentAccess,
 } from "@/lib/permissions";
 import { maxMarkdownLength } from "@/lib/markdown";
+import {
+  type ContentSearchQuery,
+  contentSearchIsEmpty,
+} from "@/lib/content-search-query";
+import { normalizeTagSlug } from "@/lib/content-metadata";
 import { slugify } from "@/lib/slug";
 import {
   extractMarkdownAnchorOptions,
@@ -35,6 +54,8 @@ import {
 } from "@/lib/wiki-links";
 import { requireActiveUser } from "@/server/authz";
 import { reconcileDocumentAssetLinks } from "@/server/assets";
+import { syncDocumentMetadata } from "@/server/content-metadata";
+import { getDocumentContentStats } from "@/server/content-interactions";
 
 const documentIdSchema = z.string().uuid();
 const initialMarkdownContent = "# Untitled document\n\nStart writing...\n";
@@ -197,6 +218,10 @@ export async function saveMarkdownDocumentAction(
       .where(eq(documentCollabStates.documentId, parsed.data.documentId));
   });
   await reconcileDocumentAssetLinks({
+    documentId: parsed.data.documentId,
+    markdown: parsed.data.markdown,
+  });
+  await syncDocumentMetadata({
     documentId: parsed.data.documentId,
     markdown: parsed.data.markdown,
   });
@@ -381,6 +406,10 @@ export async function restoreDocumentVersionAction(formData: FormData) {
       .where(eq(documentCollabStates.documentId, input.documentId));
   });
   await reconcileDocumentAssetLinks({
+    documentId: input.documentId,
+    markdown: restoredMarkdown,
+  });
+  await syncDocumentMetadata({
     documentId: input.documentId,
     markdown: restoredMarkdown,
   });
@@ -771,8 +800,19 @@ export async function listSharedDocumentsForUser(userId: string) {
     .orderBy(desc(documents.updatedAt));
 }
 
-export async function listPublicDocuments() {
-  return db
+export async function listPublicDocuments(
+  options: {
+    userId?: string | null;
+    query?: ContentSearchQuery;
+    limit?: number;
+  } = {},
+) {
+  const where = buildPublicDocumentSearchWhere(options.query);
+  const textTerms = options.query?.textTerms ?? [];
+  const sort = options.query?.filters.sort;
+  const useRelevanceSort = textTerms.length > 0 && sort !== "score" && sort !== "trending";
+
+  const baseQuery = db
     .select({
       id: documents.id,
       title: documents.title,
@@ -789,9 +829,159 @@ export async function listPublicDocuments() {
         eq(documents.visibility, "public"),
         isNotNull(documents.publicSlug),
         isNull(documents.deletedAt),
+        where,
       ),
-    )
-    .orderBy(desc(documents.updatedAt));
+    );
+
+  const rows = await (useRelevanceSort
+    ? baseQuery.orderBy(desc(buildDocumentRelevanceScore(textTerms)), desc(documents.updatedAt))
+    : baseQuery.orderBy(desc(documents.updatedAt)));
+
+  const limitedRows = options.limit ? rows.slice(0, options.limit) : rows;
+
+  const documentIds = limitedRows.map((document) => document.id);
+  const [tagMap, statsMap] = await Promise.all([
+    listTagsForDocumentIds(documentIds),
+    getDocumentContentStats(documentIds, options.userId),
+  ]);
+
+  return limitedRows.map((document) => ({
+    ...document,
+    tags: tagMap.get(document.id) ?? [],
+    stats: statsMap.get(document.id) ?? {
+      likeCount: 0,
+      viewCount: 0,
+      viewerHasLiked: false,
+      score: 0,
+      trendingScore: 0,
+    },
+  }));
+}
+
+function buildDocumentRelevanceScore(textTerms: string[]): SQL<number> {
+  const termScores = textTerms.map((term) => {
+    const pattern = `%${escapeLike(term)}%`;
+    const tagSlug = normalizeTagSlug(term);
+    const tagBoost = tagSlug
+      ? sql<number>`case when ${publicDocumentHasTag(tagSlug)} then 3 else 0 end`
+      : sql<number>`0`;
+
+    return sql<number>`(case
+      when lower(${documents.title}) = ${term} then 8
+      when lower(${documents.title}) like ${pattern} escape '\\' then 4
+      else 0
+    end + ${tagBoost}
+    + case when exists (
+        select 1 from ${documentMetadata}
+        where ${documentMetadata.documentId} = ${documents.id}
+        and lower(coalesce(${documentMetadata.summary}, '')) like ${pattern} escape '\\'
+      ) then 2 else 0 end
+    + case when
+        lower(coalesce(${users.name}, '')) like ${pattern} escape '\\'
+        or lower(coalesce(${users.username}, '')) like ${pattern} escape '\\'
+      then 1 else 0 end)`;
+  });
+
+  return termScores.length === 1
+    ? termScores[0]!
+    : sql<number>`(${sql.join(termScores, sql` + `)})`;
+}
+
+function buildPublicDocumentSearchWhere(query?: ContentSearchQuery) {
+  if (!query || contentSearchIsEmpty(query)) {
+    return undefined;
+  }
+
+  const conditions: SQL[] = [];
+
+  if (
+    query.filters.kind &&
+    !["document", "doc", "note", "public"].includes(query.filters.kind)
+  ) {
+    conditions.push(sql`false`);
+  }
+
+  if (query.filters.visibility && query.filters.visibility !== "public") {
+    conditions.push(sql`false`);
+  }
+
+  if (query.filters.owner) {
+    const ownerPattern = `%${escapeLike(query.filters.owner)}%`;
+    conditions.push(sql`(
+      lower(coalesce(${users.name}, '')) like ${ownerPattern} escape '\\'
+      or lower(coalesce(${users.username}, '')) like ${ownerPattern} escape '\\'
+    )`);
+  }
+
+  for (const tag of query.tagTerms) {
+    conditions.push(publicDocumentHasTag(tag));
+  }
+
+  for (const term of query.textTerms) {
+    const pattern = `%${escapeLike(term)}%`;
+    const tagSlug = normalizeTagSlug(term);
+    conditions.push(sql`(
+      lower(${documents.title}) like ${pattern} escape '\\'
+      or lower(${documents.markdown}) like ${pattern} escape '\\'
+      or lower(coalesce(${documents.publicSlug}, '')) like ${pattern} escape '\\'
+      or lower(coalesce(${users.name}, '')) like ${pattern} escape '\\'
+      or lower(coalesce(${users.username}, '')) like ${pattern} escape '\\'
+      or exists (
+        select 1 from ${documentMetadata}
+        where ${documentMetadata.documentId} = ${documents.id}
+        and (
+          lower(coalesce(${documentMetadata.summary}, '')) like ${pattern} escape '\\'
+          or lower(coalesce(${documentMetadata.status}, '')) like ${pattern} escape '\\'
+          or lower(coalesce(${documentMetadata.project}, '')) like ${pattern} escape '\\'
+          or lower(${documentMetadata.aliases}::text) like ${pattern} escape '\\'
+        )
+      )
+      or ${tagSlug ? publicDocumentHasTag(tagSlug) : sql`false`}
+    )`);
+  }
+
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function publicDocumentHasTag(tag: string) {
+  return sql`exists (
+    select 1
+    from ${documentTags}
+    inner join ${tags} on ${tags.id} = ${documentTags.tagId}
+    where ${documentTags.documentId} = ${documents.id}
+    and ${tags.slug} = ${tag}
+  )`;
+}
+
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+async function listTagsForDocumentIds(documentIds: string[]) {
+  const tagMap = new Map<string, string[]>();
+  const uniqueDocumentIds = [...new Set(documentIds)];
+
+  if (uniqueDocumentIds.length === 0) {
+    return tagMap;
+  }
+
+  const rows = await db
+    .select({
+      documentId: documentTags.documentId,
+      slug: tags.slug,
+    })
+    .from(documentTags)
+    .innerJoin(tags, eq(documentTags.tagId, tags.id))
+    .where(inArray(documentTags.documentId, uniqueDocumentIds));
+
+  for (const row of rows) {
+    tagMap.set(row.documentId, [
+      ...(tagMap.get(row.documentId) ?? []),
+      row.slug,
+    ]);
+  }
+
+  return tagMap;
 }
 
 export async function listWikiLinkResolutionsForUser(
@@ -1128,7 +1318,10 @@ export async function getDocumentForUser(userId: string, documentId: string) {
   };
 }
 
-export async function getPublicDocumentBySlug(slug: string) {
+export async function getPublicDocumentBySlug(
+  slug: string,
+  options: { userId?: string | null } = {},
+) {
   const [document] = await db
     .select({
       id: documents.id,
@@ -1150,7 +1343,22 @@ export async function getPublicDocumentBySlug(slug: string) {
     )
     .limit(1);
 
-  return document ?? null;
+  if (!document) {
+    return null;
+  }
+
+  const statsMap = await getDocumentContentStats([document.id], options.userId);
+
+  return {
+    ...document,
+    stats: statsMap.get(document.id) ?? {
+      likeCount: 0,
+      viewCount: 0,
+      viewerHasLiked: false,
+      score: 0,
+      trendingScore: 0,
+    },
+  };
 }
 
 async function createUniquePublicSlug(title: string) {

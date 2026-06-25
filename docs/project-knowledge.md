@@ -19,7 +19,7 @@ Last updated:
 Current phase:
 
 ```txt
-Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library; Phase 12 - Extension registry foundation; Phase 13 - Settings modal and extension browser planning
+Phase 10 - Workspace UI revamp; Phase 11 - Asset storage and library; Phase 12 - Extension registry foundation; Phase 13 - Settings modal and extension browser planning; Phase 14 - Metadata, tags, search, and popularity foundation
 ```
 
 Current deployment status:
@@ -172,10 +172,14 @@ Add notes as real files appear:
 | `app/api/assets/[assetId]/route.ts` | Owner-only asset metadata reads, metadata updates, public/private visibility updates, and soft delete |
 | `app/api/assets/[assetId]/link/route.ts` | Authenticated route that links an owned or already document-linked asset to the current editable document before editor insertion |
 | `app/api/assets/[assetId]/content/route.ts` | Permission-checked private asset content stream from R2 with `GET`, `HEAD`, and byte Range support; returns 404 for inaccessible private assets |
+| `app/api/content/search/route.ts` | Authenticated Ctrl/Cmd+K content search API for readable docs, shared docs, owned assets, public content, and official guides using the shared metadata query parser |
+| `app/api/content/like/route.ts` | Authenticated public document/asset like toggle API |
+| `app/api/content/view/route.ts` | Public document/asset daily unique-ish view recording API |
 | `app/dashboard/page.tsx` | Compatibility route that redirects to `/workspace` |
 | `app/dashboard/admin/page.tsx` | Workspace-native admin-only user moderation page with user search, role changes, bans, and unbans |
 | `app/dashboard/admin/docs/page.tsx` | Workspace-native admin-only official docs list/create page |
 | `app/dashboard/admin/docs/[docId]/page.tsx` | Admin-only manual official docs editor |
+| `app/dashboard/admin/tags/page.tsx` | Admin-only canonical tag management page for authoring tags, aliases, usage review, unused filtering, bulk safe orphan cleanup, and per-tag management |
 | `app/dashboard/friends/page.tsx` | Workspace-native protected friend request/friend list page |
 | `app/dashboard/settings/page.tsx` | Workspace-native protected settings route that opens the shared settings modal for direct navigation and OAuth/profile redirects |
 | `app/banned/page.tsx` | Logged-in banned-account explanation and sign-out page |
@@ -184,7 +188,7 @@ Add notes as real files appear:
 | `app/docs/guides/[slug]/page.tsx` | Official documentation guide route; signed-in users see it inside the workspace shell, anonymous users see the public docs layout |
 | `app/onboarding/page.tsx` | First-run profile completion page for username and nickname |
 | `app/docs/[docId]/page.tsx` | Protected document edit/view route rendered inside the workspace shell with file browser tabs, an editor-first canvas, and a workspace right context panel for document actions; route-level permission checks and collaboration token creation remain server-side |
-| `app/gallery/page.tsx` | Workspace gallery page that lists and searches public documents by title, owner name, username, and slug |
+| `app/gallery/page.tsx` | Workspace gallery page that lists and searches public documents/assets with metadata-aware query parsing, public stats, and score/trending sort aliases |
 | `app/assets/page.tsx` | Workspace asset library page for browsing owned uploads, editing metadata, copying embeds, and toggling public/private visibility |
 | `app/healthz/route.ts` | Lightweight app-only health route |
 | `app/login/page.tsx` | GitHub/Google OAuth sign-in page |
@@ -199,8 +203,10 @@ Add notes as real files appear:
 | `app/not-found.tsx` | Global not-found page for missing/private/unpublished docs |
 | `app/error.tsx` | Global recoverable error page |
 | `components/` | Shared UI components |
-| `components/assets/AssetLibraryClient.tsx` | Client-side asset library masonry grid, search/filter/sort controls, owner configuration panel, copy embed, and delete action |
+| `components/assets/AssetLibraryClient.tsx` | Client-side asset library masonry grid, search/filter/sort controls, owner configuration panel, tag editor/search, copy embed, and delete action |
 | `components/assets/PublicAssetGallery.tsx` | Client-side public gallery asset grid and details panel with open, copy embed, and copy asset ID actions |
+| `components/content-interaction-control.tsx` | Client-side like/view counter control for public documents and assets; records views when requested and only shows an active like button when signed in |
+| `components/tag-autocomplete-input.tsx` | Shared cursor-aware space-separated tag input with scoped `/api/tags/completions` suggestions, keyboard navigation, and document/asset usage counts |
 | `components/copy-public-link.tsx` | Client-side copy public URL button |
 | `components/document-publish-control.tsx` | Client-side publish confirmation gate that warns when publishing a document with linked private asset embeds |
 | `components/document-archive-form.tsx` | Client-side archive form wrapper that notifies workspace chrome to remove archived document tabs/lists before the server action redirect completes |
@@ -213,27 +219,30 @@ Add notes as real files appear:
 | `components/settings/ExtensionBrowserSection.tsx` | Server-rendered local extension browser/installed-extension section with permissions, contribution metadata, enable/disable, reset, and current settings display |
 | `components/extensions/DocumentOverlayHost.tsx` | Pointer-safe document overlay host and overlay item primitive for trusted document-state extensions such as stickers or page annotations |
 | `components/extensions/use-document-extension-state.ts` | Client hook for authenticated workspace extensions to load object-shaped document extension state and debounce writes through server actions |
-| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
+| `components/markdown/MarkdownEditor.tsx` | CodeMirror Markdown editor with live-mode-first UI, autosave, Markdown toolbar, Live-mode Properties/frontmatter controls, toolbar/paste/drop asset upload insertion, and optional Yjs collaboration |
 | `components/markdown/live-blocks.ts` | Syntax-aware CodeMirror Live Preview block scanner and direct decoration field; detects `:::assets` groups, Obsidian-style callouts, standalone document embeds, GFM tables, and display math through registered core `LiveBlockSpec`s while ignoring fenced code blocks, renders inactive blocks through `StateField<DecorationSet>` widgets, and reveals literal source when the cursor enters the block |
 | `components/markdown/OfficialDocEditor.tsx` | CodeMirror-based manual-save Markdown editor for official docs; no collaboration |
 | `components/markdown/MarkdownToolbar.tsx` | Toolbar that inserts Markdown syntax, opens the asset upload picker, and can create/wrap `:::assets` groups |
-| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist and permission-resolved asset embed rendering, including controlled image layout attributes |
+| `components/markdown/MarkdownDocument.tsx` | Safe GFM Markdown renderer with sanitized raw HTML allowlist, frontmatter stripping, and permission-resolved asset embed rendering, including controlled image layout attributes |
 | `components/theme-provider.tsx` | Root client theme provider using localStorage-backed named themes, `data-theme`, and dark-class compatibility |
 | `components/theme-toggle.tsx` | Dark/light icon toggle |
 | `components/profile-settings-form.tsx` | Settings form for nickname and username changes with live availability status |
 | `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
 | `components/document-workspace.tsx` | Client wrapper for the document editor workspace and collapsible right-side action panel |
-| `components/workspace/` | Workspace shell, draggable tab bar, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, document-state sync helpers, and new-tab components for Phase 10; settings is modal-only and no longer has a utility sidebar |
+| `components/workspace/` | Workspace shell, draggable tab bar, Ctrl/Cmd+K command palette, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, document-state sync helpers, and new-tab components for Phase 10; settings is modal-only and no longer has a utility sidebar |
+| `components/workspace/WorkspaceCommandPalette.tsx` | Workspace-wide Ctrl/Cmd+K modal with grouped results, arrow-key navigation, and quick-open search for documents, public content, assets, and official guides |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
-| `db/schema.ts` | Auth, document, permission, collaboration, friend, official docs, uploaded asset, document extension state, and user settings schema |
+| `db/schema.ts` | Auth, document, permission, collaboration, friend, official docs, uploaded asset, document extension state, user settings, metadata/tag, and public interaction schema |
 | `lib/` | Shared helpers |
 | `lib/extensions/types.ts` | Trusted built-in extension registry types for Markdown live blocks, renderer/preprocessor hooks, document state overlays, workspace contributions, permissions, command metadata, categories, and generated settings metadata |
 | `lib/extensions/registry.ts` | Shared registry helper that stores ordered Vault extensions and exposes Markdown, document-state, workspace, command, settings, and enabled-extension selectors |
 | `lib/extensions/catalog.ts` | Server-safe local built-in extension catalog; currently includes disabled-by-default `vault.stickers` preflight metadata and settings schema |
 | `lib/auth.ts` | Re-export of auth helpers for app imports |
 | `lib/collab-token.ts` | Signed room token creation/verification for collaboration |
+| `lib/content-metadata.ts` | Frontmatter and space-separated tag parsing helpers for document/asset metadata indexing |
+| `lib/content-search-query.ts` | Shared content search parser/matcher for bare mixed search plus `tags:`, `kind:`, `owner:`, `visibility:`, and `sort:` tokens |
 | `lib/markdown.ts` | Shared Markdown limits |
 | `lib/site-url.ts` | Shared canonical site-origin helper used by metadata, robots, and sitemap generation; prefers `NEXTAUTH_URL`, then `NEXT_PUBLIC_APP_URL`, then production `https://vault.ems-place.com` |
 | `lib/repo-docs.ts` | Filesystem loader for repo-backed docs and legal Markdown content |
@@ -244,6 +253,10 @@ Add notes as real files appear:
 | `lib/utils.ts` | shadcn utility for class merging |
 | `server/documents.ts` | Document server actions and queries |
 | `server/assets.ts` | Uploaded asset domain helpers for auth, file validation, quota accounting, R2 upload, metadata queries, editor autocomplete, explicit document linking, publish-warning analysis, stale document-link cleanup, public asset listing, owner metadata updates, document links, and read authorization |
+| `server/content-metadata.ts` | Metadata sync helpers that mirror document frontmatter into `document_metadata`/`document_tags`, asset tags into `asset_tags`, and scoped tag suggestions for autocomplete |
+| `server/tags-admin.ts` | Admin-only canonical tag and alias actions plus tag usage listing and safe orphan deletion helpers |
+| `server/content-interactions.ts` | Public document/asset likes, daily unique-ish views, count aggregation, viewer-like state, and simple score calculation |
+| `server/content-viewer.ts` | Server-side viewer identity helper for signed-in user ids or hashed anonymous view identifiers |
 | `server/document-extensions.ts` | Permission-checked CRUD helpers for `document_extension_states`; editors can write, readers can read public extension state, explicit collaborators can read private state, and editor-only state requires edit access |
 | `server/document-extension-actions.ts` | Server actions that expose sanitized extension-state records to authenticated workspace clients without leaking raw database rows |
 | `server/user-settings.ts` | Validated server helpers for `user_settings` and `user_extension_settings`, including per-user extension enablement/reset helpers |
@@ -268,6 +281,7 @@ Add notes as real files appear:
 | `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` | Private-by-default uploaded asset storage, asset library, explicit asset publishing, and gallery integration plan |
 | `docs/12_EXTENSION_REGISTRY_PLAN.md` | Trusted built-in extension registry, document extension state, overlay, and future verified plugin plan |
 | `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` | Settings modal, user settings storage, extension settings, local extension browser, runtime enablement, and stickers-ready checkpoint plan |
+| `docs/14_METADATA_TAGS_SEARCH_PLAN.md` | Shared document/asset metadata, tags, gallery search, Ctrl+K search, likes, views, and trending implementation plan |
 | `docker-compose.yml` | Local Postgres service |
 | `docker-compose.production.yml` | Production web/postgres/migration compose file with `/healthz` container liveness healthcheck |
 | `Dockerfile` | Production standalone Next.js image |
@@ -381,6 +395,13 @@ Current tables:
 | `official_docs` | Yes | Admin-authored public user documentation |
 | `assets` | Yes | Uploaded asset metadata for private R2-backed images and PDFs |
 | `document_assets` | Yes | Links between documents and embedded uploaded assets |
+| `tags` | Yes | Global canonical tag vocabulary for documents and assets |
+| `tag_aliases` | Yes | Admin-managed aliases that point alternate slugs at canonical tags |
+| `document_metadata` | Yes | Frontmatter-derived indexed metadata for documents |
+| `document_tags` | Yes | Many-to-many document/tag links |
+| `asset_tags` | Yes | Many-to-many asset/tag links |
+| `content_likes` | Yes | Signed-in likes for public documents/assets |
+| `content_views` | Yes | Daily unique-ish view events for public documents/assets |
 
 Current migrations:
 
@@ -400,15 +421,18 @@ Current migrations:
 | `0011_tiresome_ultimates.sql` | Adds user storage quota fields, `assets`, and `document_assets` for private uploaded asset metadata | Generated | No |
 | `0012_tiny_tana_nile.sql` | Adds `document_extension_states` for trusted extension state keyed by document, extension, and state key | Generated | No |
 | `0013_majestic_fabian_cortez.sql` | Adds `user_settings` and `user_extension_settings` for modal preferences and per-user extension enablement/configuration | Generated | No |
+| `0014_real_lizard.sql` | Adds shared metadata/tag/search foundation tables plus public content likes/views | Generated | No |
 
 Schema notes:
 
 ```txt
-- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_extension_states, user_settings, user_extension_settings, document_versions, friend_requests, friendships, official_docs, assets, and document_assets.
+- `db/schema.ts` currently defines Auth.js tables, documents, document_permissions, document_share_links, document_collab_states, document_extension_states, user_settings, user_extension_settings, document_versions, friend_requests, friendships, official_docs, assets, document_assets, tags, tag_aliases, document_metadata, document_tags, asset_tags, content_likes, and content_views.
 - `users.name` is used as the free-form nickname; `users.username` is unique and normalized lowercase; `users.profile_completed_at` records onboarding completion; `users.role` supports `user`/`admin`.
 - `users.banned_at`, `users.banned_until`, and `users.ban_reason` store moderation state. `banned_at` with no `banned_until` is treated as permanent.
 - Friendships, document ownership, document permissions, sessions, and accounts all reference `users.id`, not `username`, so username changes do not migrate relationship rows.
 - `documents.markdown` is the canonical editor/viewer/public rendering source.
+- Document frontmatter metadata is parsed by `lib/content-metadata.ts` and mirrored into `document_metadata` plus `document_tags` by `server/content-metadata.ts`. Supported indexed fields are `tags`, `aliases`, `summary`, `status`, and `project`; unknown YAML frontmatter keys stay in Markdown but are not indexed in V1. Live mode exposes these fields through a compact Properties block that rewrites YAML frontmatter and hides the leading frontmatter block, Source mode keeps raw frontmatter editable for advanced/unknown keys, and `MarkdownDocument` strips frontmatter from rendered output.
+- Tags are global canonical records. Tag input is space-separated (`forest research pine_forest`), and multi-word tags use underscores. V1 categories are `general`, `topic`, `person`, `place`, `project`, and `technical`; aliases are stored in `tag_aliases` for admin-managed future merge/alias tools.
 - `documents.content` has been removed from the Drizzle schema and will be dropped by migration `0005_high_captain_midlands.sql`.
 - `document_collab_states.yjs_state` stores compact binary Yjs state for collaboration rooms. The collab service loads this before falling back to `documents.markdown`, which prevents reconnects from merging identical plain text as separate CRDT items and duplicating the document.
 - Non-collab Markdown overwrites and restores delete the corresponding `document_collab_states` row so future collab sessions reseed from the latest Markdown instead of stale Yjs state.
@@ -432,6 +456,13 @@ Schema notes:
 - `users.storage_used_bytes` and `users.storage_quota_bytes` track uploaded asset quota; migration `0011_tiresome_ultimates.sql` defaults existing/new users to 0 used bytes and 256 MiB quota.
 - `assets` stores private-by-default uploaded object metadata, ownership, R2 bucket/key, MIME detection data, size, checksum, visibility, and upload status. R2 stores bytes; Postgres owns identity, quota, and authorization metadata.
 - `document_assets` links assets to documents without duplicating object bytes. The current upload route creates this link when uploading from a document editor; document saves and collaboration stores remove links for assets no longer embedded in the Markdown source.
+- `asset_tags` links assets into the same global tag vocabulary as documents. The asset PATCH route accepts optional tag arrays and syncs them through `server/content-metadata.ts`; the asset library can edit tags and includes tags in local library filtering.
+- Search query parsing lives in `lib/content-search-query.ts`. Bare words are ANDed across searchable text fields and exact tag matches, while `tags:`/`tag:` consumes a space-separated tag run until another known token. Current known tokens are `tags:`, `tag:`, `kind:`, `type:`, `owner:`, `visibility:`, and `sort:`.
+- `/api/tags/completions?q=&scope=mine|public` returns tag suggestions with asset/document counts. `scope=public` only counts public docs/assets. `scope=mine` requires auth and counts owned assets plus owned/shared readable docs. Normal autocomplete hides zero-use canonical tags so stale spam is not encouraged. `components/tag-autocomplete-input.tsx` powers both document Properties tags and asset metadata tags with cursor-local space-separated insertion.
+- `/dashboard/admin/tags` lets admins create/edit canonical tags, add/remove aliases, review document/asset counts, filter deletable unused tags, bulk delete unused tags, and delete tags only when they have no document links, asset links, or aliases.
+- `/api/content/search?q=` backs the workspace Ctrl/Cmd+K palette. It requires an active user, searches owned docs, shared docs, public docs, owned assets, and official guides, and uses the same parser/matcher as gallery and asset-library search. Result priority is owned docs, shared docs, guides, owned assets, then public docs.
+- Public gallery search passes parsed metadata filters into `listPublicDocuments` and `listPublicAssets`, which push public visibility, owner, kind, title/body, frontmatter, and tag checks into SQL before stats are hydrated.
+- Public content interactions live in `content_likes` and `content_views`. Likes require a signed-in user and only attach to public documents/assets. Views are daily unique-ish by signed-in user id or hashed anonymous request headers. `server/content-interactions.ts` scores all-time content as `likes * 4 + views` and trending content as seven-day `recent_likes * 5 + recent_views`; `sort:score` and `sort:trending` use those separate stats.
 ```
 
 ---
@@ -1359,3 +1390,11 @@ Use this as a compact implementation log.
 | 2026-06-24 | Adjusted docs rail and tab behavior | The workspace Docs rail button now only opens the docs sidebar instead of navigating to `/docs`, the docs panel header is no longer a link, and middle-clicking a workspace tab closes it |
 | 2026-06-24 | Added crawler metadata | Added generated `robots.txt`, dynamic `sitemap.xml`, and a shared site URL helper so search engines discover only public home/docs/terms/privacy/published-note pages while private workspace/share/API surfaces stay unlisted or disallowed |
 | 2026-06-24 | Added privacy policy | Added repo-backed `/privacy`, linked it from login/home/terms, included it in robots/sitemap, and updated legal docs so account sign-in points users to both terms and privacy information |
+| 2026-06-24 | Started metadata/tag/search foundation | Added `docs/14_METADATA_TAGS_SEARCH_PLAN.md`, global tag/frontmatter schema in migration `0014_real_lizard.sql`, parser/sync helpers, document metadata sync on save/restore/collab store, and optional asset tag sync in the asset PATCH path |
+| 2026-06-24 | Added metadata editing UI | Added document Properties controls that rewrite YAML frontmatter, stripped frontmatter from rendered Markdown, returned/editable asset tags in the asset library, and included asset tags in local library filtering |
+| 2026-06-24 | Added metadata-aware search parser and tag suggestions | Added shared mixed-query parsing, updated asset library and gallery filtering to match bare words against text/tags and `tags:` runs, added public document tag hydration, and exposed scoped `/api/tags/completions` suggestions |
+| 2026-06-24 | Added public content interactions slice | Added signed-in like toggles, daily unique-ish view recording, public document/asset stats, card/detail counters, and simple score-based gallery ordering for `sort:score`/`sort:trending` |
+| 2026-06-24 | Added workspace command search | Added authenticated `/api/content/search` and a workspace Ctrl/Cmd+K command palette for quick-opening readable documents, public content, owned assets, and official guides |
+| 2026-06-24 | Improved search ranking and command UX | Gallery public document/asset search now pushes metadata filters into SQL, `sort:trending` uses seven-day activity instead of all-time score, and Ctrl/Cmd+K has grouped keyboard-navigable results |
+| 2026-06-24 | Added tag autocomplete UI | Document Properties and asset metadata editors now use a shared space-separated tag autocomplete input backed by `/api/tags/completions` suggestions and usage counts |
+| 2026-06-24 | Added admin tag management | Added `/dashboard/admin/tags` plus admin actions for canonical tag authoring, aliases, usage counts, unused filtering, bulk safe orphan cleanup, and per-tag deletion |

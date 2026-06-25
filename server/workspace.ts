@@ -28,7 +28,7 @@ export async function getWorkspaceData() {
     await Promise.all([
       listDocumentsForUser(session.user.id),
       listSharedDocumentsForUser(session.user.id),
-      listPublicDocuments(),
+      listPublicDocuments({ userId: session.user.id }),
       listPublishedOfficialDocs(),
     ]);
 
@@ -65,6 +65,8 @@ export async function getWorkspaceData() {
       updatedAt: document.updatedAt,
       ownerName: document.ownerName,
       ownerUsername: document.ownerUsername,
+      tags: document.tags,
+      stats: document.stats,
     }),
   );
   const guideGroups = officialDocs.reduce<WorkspaceGuideGroup[]>((groups, doc) => {

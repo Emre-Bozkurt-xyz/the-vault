@@ -389,6 +389,34 @@ hardcoded settings or overlay wiring.
 
 ---
 
+## Phase 14 - Metadata, Tags, Search, and Popularity
+
+Reference plan: `docs/14_METADATA_TAGS_SEARCH_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write metadata/search plan | Documents use frontmatter properties, assets use the same tag vocabulary, tags are global canonical records, tag input is space-separated with underscore multi-word tags, and public content gets likes/views/trending |
+| [x] | Add metadata schema | Migration `0014_real_lizard.sql` adds tags, aliases, document/asset tag joins, document metadata, content likes, and content views |
+| [x] | Add frontmatter/tag parser | `lib/content-metadata.ts` extracts indexed fields and normalizes space-separated tags |
+| [x] | Sync document metadata on saves | Normal saves, restores, and collaboration stores sync frontmatter metadata and document tags |
+| [x] | Sync asset tags | Server/API accept optional asset tag arrays, sync `asset_tags`, return asset tag lists, and expose a tag editor in the asset library |
+| [x] | Add document Properties UI | Compact Obsidian-style top block rewrites YAML frontmatter for tags, aliases, summary, status, and project |
+| [x] | Add tag autocomplete API/UI | `/api/tags/completions?q=&scope=mine|public` returns scoped tag suggestions and counts without leaking private tags; document Properties and asset metadata editors use the shared autocomplete input |
+| [x] | Add tag admin management | Admins can create/edit canonical tags, add/remove aliases, see document/asset usage counts, filter unused tags, bulk delete safe unused orphans, and manage tags from `/dashboard/admin/tags` |
+| [x] | Replace gallery search backend | Shared parser supports bare mixed search plus `tags:`, `kind:`, `owner:`, `visibility:`, and `sort:` tokens; public document/asset gallery searches push metadata filters into SQL and rank by title/tag/summary/owner relevance when text terms are present |
+| [x] | Add likes/views UI and actions | Signed-in like toggle, daily unique-ish view records, public document/asset counts, all-time `sort:score`, and seven-day `sort:trending` gallery ordering are wired |
+| [x] | Add Ctrl+K content search | `Ctrl/Cmd+K` opens a grouped keyboard-navigable command palette backed by `/api/content/search` for readable docs, shared docs, owned assets, public content, and official guides |
+
+Exit criteria:
+
+```txt
+Documents and assets share searchable tags/metadata, public content can be
+ranked by score/trending, and Ctrl+K can search readable content without
+leaking private metadata.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |

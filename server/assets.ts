@@ -2,21 +2,39 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  notInArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { fileTypeFromBuffer } from "file-type";
 
 import { auth } from "@/auth";
 import { db } from "@/db";
 import {
+  assetTags,
   assets,
   documentAssets,
+  tags,
   users,
   type AssetKind,
 } from "@/db/schema";
 import { extractAssetEmbedIds } from "@/lib/asset-embeds";
+import {
+  type ContentSearchQuery,
+  contentSearchIsEmpty,
+} from "@/lib/content-search-query";
+import { normalizeTagSlug } from "@/lib/content-metadata";
 import { canReadDocument } from "@/lib/permissions";
 import { deleteAssetObject, getR2Bucket, putAssetObject } from "@/lib/storage/r2";
 import { isUserBanActive } from "@/server/authz";
+import { syncAssetTags } from "@/server/content-metadata";
+import { getAssetContentStats } from "@/server/content-interactions";
 
 const ALLOWED_MIME_TYPES: Record<string, { kind: AssetKind; extension: string }> = {
   "image/png": { kind: "image", extension: "png" },
@@ -445,15 +463,29 @@ export async function listAssetsForUser(userId: string) {
     )
     .orderBy(desc(assets.createdAt));
 
+  const tagMap = await listTagsForAssetIds(rows.map((asset) => asset.id));
+
   return rows.map((asset) => ({
     ...asset,
+    tags: tagMap.get(asset.id) ?? [],
     url: buildAssetContentUrl(asset.id),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   }));
 }
 
-export async function listPublicAssets() {
-  const rows = await db
+export async function listPublicAssets(
+  options: {
+    userId?: string | null;
+    query?: ContentSearchQuery;
+    limit?: number;
+  } = {},
+) {
+  const where = buildPublicAssetSearchWhere(options.query);
+  const textTerms = options.query?.textTerms ?? [];
+  const sort = options.query?.filters.sort;
+  const useRelevanceSort = textTerms.length > 0 && sort !== "score" && sort !== "trending";
+
+  const baseQuery = db
     .select({
       id: assets.id,
       kind: assets.kind,
@@ -474,15 +506,128 @@ export async function listPublicAssets() {
         eq(assets.visibility, "public"),
         eq(assets.status, "ready"),
         isNull(assets.deletedAt),
+        where,
       ),
-    )
-    .orderBy(desc(assets.publishedAt), desc(assets.createdAt));
+    );
 
-  return rows.map((asset) => ({
+  const rows = await (useRelevanceSort
+    ? baseQuery.orderBy(desc(buildAssetRelevanceScore(textTerms)), desc(assets.createdAt))
+    : baseQuery.orderBy(desc(assets.publishedAt), desc(assets.createdAt)));
+
+  const limitedRows = options.limit ? rows.slice(0, options.limit) : rows;
+
+  const assetIds = limitedRows.map((asset) => asset.id);
+  const [tagMap, statsMap] = await Promise.all([
+    listTagsForAssetIds(assetIds),
+    getAssetContentStats(assetIds, options.userId),
+  ]);
+
+  return limitedRows.map((asset) => ({
     ...asset,
+    tags: tagMap.get(asset.id) ?? [],
+    stats: statsMap.get(asset.id) ?? {
+      likeCount: 0,
+      viewCount: 0,
+      viewerHasLiked: false,
+      score: 0,
+      trendingScore: 0,
+    },
     url: buildAssetContentUrl(asset.id),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   }));
+}
+
+function buildAssetRelevanceScore(textTerms: string[]): SQL<number> {
+  const termScores = textTerms.map((term) => {
+    const pattern = `%${escapeLike(term)}%`;
+    const tagSlug = normalizeTagSlug(term);
+    const tagBoost = tagSlug
+      ? sql<number>`case when ${publicAssetHasTag(tagSlug)} then 3 else 0 end`
+      : sql<number>`0`;
+
+    return sql<number>`(case
+      when lower(${assets.displayName}) = ${term} then 8
+      when lower(${assets.displayName}) like ${pattern} escape '\\' then 4
+      else 0
+    end + ${tagBoost}
+    + case when
+        lower(coalesce(${assets.description}, '')) like ${pattern} escape '\\'
+        or lower(coalesce(${assets.altText}, '')) like ${pattern} escape '\\'
+      then 2 else 0 end
+    + case when
+        lower(coalesce(${users.name}, '')) like ${pattern} escape '\\'
+        or lower(coalesce(${users.username}, '')) like ${pattern} escape '\\'
+      then 1 else 0 end)`;
+  });
+
+  return termScores.length === 1
+    ? termScores[0]!
+    : sql<number>`(${sql.join(termScores, sql` + `)})`;
+}
+
+function buildPublicAssetSearchWhere(query?: ContentSearchQuery) {
+  if (!query || contentSearchIsEmpty(query)) {
+    return undefined;
+  }
+
+  const conditions: SQL[] = [];
+
+  if (
+    query.filters.kind &&
+    !["asset", "image", "pdf"].includes(query.filters.kind)
+  ) {
+    conditions.push(sql`false`);
+  }
+
+  if (query.filters.kind === "image" || query.filters.kind === "pdf") {
+    conditions.push(eq(assets.kind, query.filters.kind));
+  }
+
+  if (query.filters.visibility && query.filters.visibility !== "public") {
+    conditions.push(sql`false`);
+  }
+
+  if (query.filters.owner) {
+    const ownerPattern = `%${escapeLike(query.filters.owner)}%`;
+    conditions.push(sql`(
+      lower(coalesce(${users.name}, '')) like ${ownerPattern} escape '\\'
+      or lower(coalesce(${users.username}, '')) like ${ownerPattern} escape '\\'
+    )`);
+  }
+
+  for (const tag of query.tagTerms) {
+    conditions.push(publicAssetHasTag(tag));
+  }
+
+  for (const term of query.textTerms) {
+    const pattern = `%${escapeLike(term)}%`;
+    const tagSlug = normalizeTagSlug(term);
+    conditions.push(sql`(
+      lower(${assets.displayName}) like ${pattern} escape '\\'
+      or lower(coalesce(${assets.description}, '')) like ${pattern} escape '\\'
+      or lower(coalesce(${assets.altText}, '')) like ${pattern} escape '\\'
+      or lower(${assets.mimeType}) like ${pattern} escape '\\'
+      or lower(coalesce(${users.name}, '')) like ${pattern} escape '\\'
+      or lower(coalesce(${users.username}, '')) like ${pattern} escape '\\'
+      or ${tagSlug ? publicAssetHasTag(tagSlug) : sql`false`}
+    )`);
+  }
+
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function publicAssetHasTag(tag: string) {
+  return sql`exists (
+    select 1
+    from ${assetTags}
+    inner join ${tags} on ${tags.id} = ${assetTags.tagId}
+    where ${assetTags.assetId} = ${assets.id}
+    and ${tags.slug} = ${tag}
+  )`;
+}
+
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
 
 export async function updateAssetForUser(input: {
@@ -492,6 +637,7 @@ export async function updateAssetForUser(input: {
   altText?: string | null;
   description?: string | null;
   visibility: "private" | "public";
+  tags?: string[];
 }) {
   const displayName = input.displayName.trim().slice(0, 160);
 
@@ -533,8 +679,16 @@ export async function updateAssetForUser(input: {
     throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
   }
 
+  if (input.tags) {
+    await syncAssetTags({
+      assetId: asset.id,
+      tags: input.tags,
+    });
+  }
+
   return {
     ...asset,
+    tags: await listTagsForAssetId(asset.id),
     url: buildAssetContentUrl(asset.id),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   };
@@ -570,9 +724,39 @@ export async function getAssetForUser(userId: string, assetId: string) {
 
   return {
     ...asset,
+    tags: await listTagsForAssetId(asset.id),
     url: buildAssetContentUrl(asset.id),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   };
+}
+
+async function listTagsForAssetId(assetId: string) {
+  const tagMap = await listTagsForAssetIds([assetId]);
+  return tagMap.get(assetId) ?? [];
+}
+
+async function listTagsForAssetIds(assetIds: string[]) {
+  const uniqueAssetIds = [...new Set(assetIds)];
+  const tagMap = new Map<string, string[]>();
+
+  if (uniqueAssetIds.length === 0) {
+    return tagMap;
+  }
+
+  const rows = await db
+    .select({
+      assetId: assetTags.assetId,
+      slug: tags.slug,
+    })
+    .from(assetTags)
+    .innerJoin(tags, eq(assetTags.tagId, tags.id))
+    .where(inArray(assetTags.assetId, uniqueAssetIds));
+
+  for (const row of rows) {
+    tagMap.set(row.assetId, [...(tagMap.get(row.assetId) ?? []), row.slug]);
+  }
+
+  return tagMap;
 }
 
 export async function softDeleteAssetForUser(input: {
