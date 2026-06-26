@@ -279,24 +279,8 @@ export function AssetLibraryClient({
               it should be visible outside private docs.
             </p>
           </div>
-          <div className="flex flex-col gap-3 text-sm sm:min-w-72">
-            <Button
-              type="button"
-              onClick={openFilePicker}
-              disabled={uploading}
-              className="w-full sm:w-auto sm:self-end"
-            >
-              {uploading ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Upload data-icon="inline-start" />
-              )}
-              {uploading ? "Uploading..." : "Upload asset"}
-            </Button>
-            <div className="grid grid-cols-2 gap-2">
-              <Metric label="Assets" value={String(assets.length)} />
-              <Metric label="Stored" value={formatBytes(storage.bytes)} />
-            </div>
+          <div className="grid gap-2 text-sm sm:min-w-80 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+            <Metric label="Assets" value={String(assets.length)} />
             <StorageBar used={storage.bytes} quota={storageQuotaBytes} />
           </div>
         </div>
@@ -311,7 +295,7 @@ export function AssetLibraryClient({
         />
 
         {assets.length > 0 ? (
-          <div className="mt-5 grid gap-3 border-b border-border/50 pb-5 lg:grid-cols-[minmax(0,1fr)_9rem_9rem_9rem]">
+          <div className="mt-5 grid gap-3 border-b border-border/50 pb-5 lg:grid-cols-[minmax(0,1fr)_9rem_9rem_9rem_auto]">
             <label className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -354,6 +338,19 @@ export function AssetLibraryClient({
               <option value="name">Name</option>
               <option value="size">Size</option>
             </select>
+            <Button
+              type="button"
+              onClick={openFilePicker}
+              disabled={uploading}
+              className="lg:px-4"
+            >
+              {uploading ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {uploading ? "Uploading..." : "Upload"}
+            </Button>
           </div>
         ) : null}
         {querySummary.length > 0 ? (
