@@ -1,6 +1,8 @@
+import { KeybindingsProvider } from "@/components/shortcuts/KeybindingsProvider";
 import { WorkspaceChrome } from "@/components/workspace/WorkspaceChrome";
 import { WorkspaceHistoryRestore } from "@/components/workspace/WorkspaceHistoryRestore";
 import { buildPreferences } from "@/lib/settings/preferences";
+import { resolveKeybindings } from "@/lib/shortcuts/resolve";
 import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
 import { listUserSettings } from "@/server/user-settings";
 import { getWorkspaceData } from "@/server/workspace";
@@ -42,8 +44,13 @@ export default async function WorkspaceLayout({
         }}
         suppressHydrationWarning
       />
-      <WorkspaceChrome workspace={workspace}>{children}</WorkspaceChrome>
-      <WorkspaceSettingsModalMount profile={workspace.profile} />
+      <KeybindingsProvider
+        bindings={resolveKeybindings(preferences.hotkeys.keybindings)}
+        editorShortcutsEnabled={preferences.hotkeys.editorShortcutsEnabled}
+      >
+        <WorkspaceChrome workspace={workspace}>{children}</WorkspaceChrome>
+        <WorkspaceSettingsModalMount profile={workspace.profile} />
+      </KeybindingsProvider>
     </>
   );
 }

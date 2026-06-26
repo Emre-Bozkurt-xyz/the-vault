@@ -1,12 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { Archive, ChevronDown, Globe2, History, RotateCcw, Save, Share2 } from "lucide-react";
+import { Archive, Globe2, History, RotateCcw, Save, Share2 } from "lucide-react";
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
 import { DocumentArchiveForm } from "@/components/document-archive-form";
 import { DocumentPublishControl } from "@/components/document-publish-control";
 import { DocumentShareDialog } from "@/components/document-share-dialog";
+import { DocumentRestorePoints } from "@/components/document-restore-points";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -177,6 +178,8 @@ export default async function DocumentPage({
           canShare: document.access.canShare,
           canPublish: document.access.canPublish,
           canDelete: document.access.canDelete,
+          calendarEnabled,
+          stickersEnabled,
         }}
         rightPanel={
           showRightPanel ? (
@@ -393,57 +396,50 @@ function DocumentContextPanel({
             </Button>
           </form>
 
-          <details className="group mt-3 border border-border/70 bg-background/35">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
-              <span>Restore points</span>
-              <span className="ml-auto text-muted-foreground">{versions.length}</span>
-              <ChevronDown className="size-3.5 text-muted-foreground transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="grid gap-2 border-t border-border/70 p-2">
-              {versions.length > 0 ? (
-                versions.map((version) => (
-                  <div
-                    key={version.id}
-                    className="border border-border/60 bg-card/30 p-2"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-medium">
-                          {version.title}
-                        </p>
-                        <p className="mt-0.5 text-[0.68rem] text-muted-foreground">
-                          {version.createdAt.toLocaleString()}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-[0.66rem] text-muted-foreground">
-                        {version.markdownLength.toLocaleString()}
-                      </span>
+          <DocumentRestorePoints count={versions.length}>
+            {versions.length > 0 ? (
+              versions.map((version) => (
+                <div
+                  key={version.id}
+                  className="border border-border/60 bg-card/30 p-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium">
+                        {version.title}
+                      </p>
+                      <p className="mt-0.5 text-[0.68rem] text-muted-foreground">
+                        {version.createdAt.toLocaleString()}
+                      </p>
                     </div>
-                    <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[0.68rem] leading-4 text-muted-foreground">
-                      {version.markdownPreview.trim() || "Empty document"}
-                    </p>
-                    <form action={restoreDocumentVersionAction} className="mt-2">
-                      <input type="hidden" name="documentId" value={documentId} />
-                      <input type="hidden" name="versionId" value={version.id} />
-                      <Button
-                        type="submit"
-                        size="xs"
-                        variant="ghost"
-                        className="h-7 w-full gap-1.5"
-                      >
-                        <RotateCcw className="size-3" />
-                        Restore
-                      </Button>
-                    </form>
+                    <span className="shrink-0 text-[0.66rem] text-muted-foreground">
+                      {version.markdownLength.toLocaleString()}
+                    </span>
                   </div>
-                ))
-              ) : (
-                <p className="px-1 py-2 text-xs text-muted-foreground">
-                  No restore points yet.
-                </p>
-              )}
-            </div>
-          </details>
+                  <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[0.68rem] leading-4 text-muted-foreground">
+                    {version.markdownPreview.trim() || "Empty document"}
+                  </p>
+                  <form action={restoreDocumentVersionAction} className="mt-2">
+                    <input type="hidden" name="documentId" value={documentId} />
+                    <input type="hidden" name="versionId" value={version.id} />
+                    <Button
+                      type="submit"
+                      size="xs"
+                      variant="ghost"
+                      className="h-7 w-full gap-1.5"
+                    >
+                      <RotateCcw className="size-3" />
+                      Restore
+                    </Button>
+                  </form>
+                </div>
+              ))
+            ) : (
+              <p className="px-1 py-2 text-xs text-muted-foreground">
+                No restore points yet.
+              </p>
+            )}
+          </DocumentRestorePoints>
         </section>
       ) : null}
 

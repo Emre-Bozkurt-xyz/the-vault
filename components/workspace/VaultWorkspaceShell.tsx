@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   BookOpen,
   Files,
@@ -19,6 +19,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
+import { subscribeToOpenRightPanel } from "@/lib/document-command-events";
 import { cn } from "@/lib/utils";
 import { WorkspaceIconRail } from "@/components/workspace/WorkspaceIconRail";
 import { WorkspaceCommandPalette } from "@/components/workspace/WorkspaceCommandPalette";
@@ -86,6 +87,26 @@ export function VaultWorkspaceShell({
   );
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileRightPanelOpen, setMobileRightPanelOpen] = useState(false);
+
+  // A `/share` or `/history` command needs the context panel visible so its
+  // (otherwise unmounted) contents can receive the command.
+  useEffect(() => {
+    return subscribeToOpenRightPanel(() => {
+      setRightCollapsed((current) => {
+        if (current) {
+          writeWorkspaceLayoutCookie({
+            panelMode,
+            leftCollapsed,
+            leftWidth: leftPanelWidth,
+            rightCollapsed: false,
+            rightWidth: rightPanelWidth,
+          });
+        }
+        return false;
+      });
+      setMobileRightPanelOpen(true);
+    });
+  }, [panelMode, leftCollapsed, leftPanelWidth, rightPanelWidth]);
 
   // Persist the full layout to a cookie so the server can render it on the next
   // load. `overrides` carries the values that just changed, since their state

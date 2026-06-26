@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -57,6 +58,7 @@ type WorkspaceChromeContextValue = {
   upsertDocument: (document: WorkspaceDocumentItem) => void;
   activeDocument: ActiveDocumentCommandContext | null;
   setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
+  recentPages: WorkspacePageDescriptor[];
 };
 
 const WorkspaceChromeContext =
@@ -68,6 +70,11 @@ const WorkspaceChromeContext =
  */
 export function useActiveDocumentCommand(): ActiveDocumentCommandContext | null {
   return useContext(WorkspaceChromeContext)?.activeDocument ?? null;
+}
+
+/** Recently opened workspace pages, most-recent first. Consumed by the palette. */
+export function useRecentWorkspacePages(): WorkspacePageDescriptor[] {
+  return useContext(WorkspaceChromeContext)?.recentPages ?? [];
 }
 
 export function WorkspaceChrome({
@@ -92,7 +99,23 @@ export function WorkspaceChrome({
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [activeDocument, setActiveDocument] =
     useState<ActiveDocumentCommandContext | null>(null);
+  const [recentPages, setRecentPages] = useState<WorkspacePageDescriptor[]>(
+    () => seedRecentPages(workspace.tabs),
+  );
   const [workspaceState, setWorkspaceState] = useState(workspace);
+
+  // The command palette shows these on an empty query. Each navigation moves its
+  // page to the front, so the list reflects last-opened order within the session
+  // (seeded from the persisted tab order on load).
+  const handleSetActivePage = useCallback((page: WorkspacePageDescriptor) => {
+    setActivePage(page);
+    setRecentPages((current) => {
+      const next = dedupePagesByHref([page, ...current]).slice(0, maxRecentPages);
+      // Returning the same reference when nothing changed keeps the context
+      // value stable, so this setter can't feed back into a render loop.
+      return samePageOrder(current, next) ? current : next;
+    });
+  }, []);
   const isAdmin = workspace.profile.role === "admin";
   const baseCurrentHref = currentHref.split("?")[0] ?? currentHref;
 
@@ -134,13 +157,14 @@ export function WorkspaceChrome({
 
   const contextValue = useMemo(
     () => ({
-      setActivePage,
+      setActivePage: handleSetActivePage,
       setRightPanel,
       upsertDocument,
       activeDocument,
       setActiveDocument,
+      recentPages,
     }),
-    [upsertDocument, activeDocument],
+    [handleSetActivePage, upsertDocument, activeDocument, recentPages],
   );
 
   return (
@@ -228,6 +252,52 @@ export function WorkspacePageRegistration({
   }, [context, documentCommand, documentItem, page, rightPanel]);
 
   return null;
+}
+
+const maxRecentPages = 12;
+
+/** Seeds recency from the persisted tabs (last appended = most recently used). */
+function seedRecentPages(tabs: WorkspaceTab[]): WorkspacePageDescriptor[] {
+  return dedupePagesByHref(
+    [...tabs].reverse().map((tab) => ({
+      type: tab.type,
+      title: tab.title,
+      href: tab.href,
+    })),
+  ).slice(0, maxRecentPages);
+}
+
+/** True when both lists hold the same page hrefs and titles in the same order. */
+function samePageOrder(
+  a: WorkspacePageDescriptor[],
+  b: WorkspacePageDescriptor[],
+): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  return a.every(
+    (page, index) =>
+      page.href === b[index]?.href && page.title === b[index]?.title,
+  );
+}
+
+function dedupePagesByHref(
+  pages: WorkspacePageDescriptor[],
+): WorkspacePageDescriptor[] {
+  const seen = new Set<string>();
+  const next: WorkspacePageDescriptor[] = [];
+
+  for (const page of pages) {
+    if (!page.href || seen.has(page.href)) {
+      continue;
+    }
+
+    seen.add(page.href);
+    next.push(page);
+  }
+
+  return next;
 }
 
 function applyDocumentChange(

@@ -34,6 +34,9 @@ export type ActiveDocumentCommandContext = {
   canShare: boolean;
   canPublish: boolean;
   canDelete: boolean;
+  /** Whether the calendar/stickers extensions are enabled for this viewer. */
+  calendarEnabled: boolean;
+  stickersEnabled: boolean;
 };
 
 export type WorkspaceLayoutState = {

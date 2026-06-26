@@ -13,9 +13,11 @@ import {
   Archive,
   Blocks,
   BookOpen,
+  CalendarPlus,
   FilePlus,
   FileText,
   Globe2,
+  History,
   Home,
   ImageIcon,
   LayoutGrid,
@@ -25,7 +27,10 @@ import {
   Save,
   Search,
   Settings,
+  Share2,
+  ShieldCheck,
   Slash,
+  Sticker,
   UserRound,
   X,
   type LucideIcon,
@@ -33,7 +38,19 @@ import {
 
 import { useVaultTheme } from "@/components/theme-provider";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
-import { useActiveDocumentCommand } from "@/components/workspace/WorkspaceChrome";
+import { useGlobalShortcuts } from "@/components/shortcuts/KeybindingsProvider";
+import {
+  useActiveDocumentCommand,
+  useRecentWorkspacePages,
+} from "@/components/workspace/WorkspaceChrome";
+import type {
+  WorkspacePageDescriptor,
+  WorkspacePageType,
+} from "@/components/workspace/workspace-types";
+import {
+  dispatchDocumentCommand,
+  requestOpenRightPanel,
+} from "@/lib/document-command-events";
 import { signOutAction } from "@/server/auth-actions";
 import {
   archiveDocumentAction,
@@ -54,12 +71,25 @@ type CommandSearchResult = {
 
 type WorkspaceCommand = {
   id: string;
+  /** The canonical `/token` (without the slash) shown and matched in the list. */
+  slug: string;
   label: string;
   group: string;
-  /** Extra terms (besides label/group) used for `/...` filtering. */
+  /** Extra terms (besides slug/label/group) used for `/...` filtering. */
   keywords: string;
   icon: LucideIcon;
   run: () => void | Promise<void>;
+};
+
+const pageTypeIcon: Record<WorkspacePageType, LucideIcon> = {
+  new: Home,
+  document: FileText,
+  public: Globe2,
+  guide: BookOpen,
+  gallery: LayoutGrid,
+  assets: ImageIcon,
+  settings: Settings,
+  admin: ShieldCheck,
 };
 
 /** A `documentId`-only FormData for the document server actions. */
@@ -96,6 +126,7 @@ export function WorkspaceCommandPalette() {
     const list: WorkspaceCommand[] = [
       {
         id: "new-document",
+        slug: "new",
         label: "New document",
         group: "Create",
         keywords: "create note doc",
@@ -106,14 +137,16 @@ export function WorkspaceCommandPalette() {
       },
       {
         id: "go-home",
+        slug: "home",
         label: "Go to workspace",
         group: "Go to",
-        keywords: "home workspace",
+        keywords: "workspace",
         icon: Home,
         run: navigate("/workspace"),
       },
       {
         id: "go-gallery",
+        slug: "gallery",
         label: "Open gallery",
         group: "Go to",
         keywords: "public explore",
@@ -122,6 +155,7 @@ export function WorkspaceCommandPalette() {
       },
       {
         id: "go-assets",
+        slug: "assets",
         label: "Open assets",
         group: "Go to",
         keywords: "images library files",
@@ -130,6 +164,7 @@ export function WorkspaceCommandPalette() {
       },
       {
         id: "go-guides",
+        slug: "guides",
         label: "Open guides",
         group: "Go to",
         keywords: "docs help official",
@@ -138,6 +173,7 @@ export function WorkspaceCommandPalette() {
       },
       {
         id: "open-settings",
+        slug: "settings",
         label: "Open settings",
         group: "Settings",
         keywords: "preferences config",
@@ -146,6 +182,7 @@ export function WorkspaceCommandPalette() {
       },
       {
         id: "open-extensions",
+        slug: "extensions",
         label: "Open extensions",
         group: "Settings",
         keywords: "plugins add-ons calendar stickers",
@@ -154,6 +191,7 @@ export function WorkspaceCommandPalette() {
       },
       {
         id: "open-account",
+        slug: "account",
         label: "Open account settings",
         group: "Settings",
         keywords: "profile login email",
@@ -174,9 +212,10 @@ export function WorkspaceCommandPalette() {
     for (const theme of themes) {
       list.push({
         id: `theme-${theme.id}`,
+        slug: `theme ${theme.id}`,
         label: `Theme: ${theme.label}`,
         group: "Appearance",
-        keywords: `theme appearance ${theme.id}`,
+        keywords: "appearance",
         icon: Palette,
         run: () => setTheme(theme.id),
       });
@@ -185,10 +224,26 @@ export function WorkspaceCommandPalette() {
     if (activeDocument) {
       const doc = activeDocument;
 
+      if (doc.canShare) {
+        list.push({
+          id: "doc-share",
+          slug: "share",
+          label: "Share document",
+          group: "This document",
+          keywords: "collaborators invite link access",
+          icon: Share2,
+          run: () => {
+            requestOpenRightPanel();
+            dispatchDocumentCommand("open-share");
+          },
+        });
+      }
+
       if (doc.canPublish) {
         if (doc.visibility === "public") {
           list.push({
             id: "doc-unpublish",
+            slug: "unpublish",
             label: "Unpublish document",
             group: "This document",
             keywords: "private hide public",
@@ -198,6 +253,7 @@ export function WorkspaceCommandPalette() {
         } else {
           list.push({
             id: "doc-publish",
+            slug: "publish",
             label: "Publish document",
             group: "This document",
             keywords: "public share web",
@@ -211,6 +267,7 @@ export function WorkspaceCommandPalette() {
         const slug = doc.publicSlug;
         list.push({
           id: "doc-copy-link",
+          slug: "copy-link",
           label: "Copy public link",
           group: "This document",
           keywords: "url share clipboard",
@@ -226,17 +283,56 @@ export function WorkspaceCommandPalette() {
       if (doc.canEdit) {
         list.push({
           id: "doc-snapshot",
+          slug: "snapshot",
           label: "Save restore point",
           group: "This document",
-          keywords: "version snapshot history backup",
+          keywords: "version backup",
           icon: Save,
           run: () => createManualDocumentVersionAction(documentForm(doc.id)),
+        });
+
+        list.push({
+          id: "doc-history",
+          slug: "history",
+          label: "Open restore points",
+          group: "This document",
+          keywords: "versions restore",
+          icon: History,
+          run: () => {
+            requestOpenRightPanel();
+            dispatchDocumentCommand("open-history");
+          },
+        });
+      }
+
+      if (doc.canEdit && doc.calendarEnabled) {
+        list.push({
+          id: "doc-insert-calendar",
+          slug: "insert-calendar",
+          label: "Insert calendar",
+          group: "This document",
+          keywords: "month block extension",
+          icon: CalendarPlus,
+          run: () => dispatchDocumentCommand("insert-calendar"),
+        });
+      }
+
+      if (doc.canEdit && doc.stickersEnabled) {
+        list.push({
+          id: "doc-insert-sticker",
+          slug: "insert-sticker",
+          label: "Insert sticker",
+          group: "This document",
+          keywords: "asset image extension",
+          icon: Sticker,
+          run: () => dispatchDocumentCommand("insert-sticker"),
         });
       }
 
       if (doc.canDelete) {
         list.push({
           id: "doc-archive",
+          slug: "archive",
           label: "Archive document",
           group: "This document",
           keywords: "delete remove trash",
@@ -248,6 +344,7 @@ export function WorkspaceCommandPalette() {
 
     list.push({
       id: "logout",
+      slug: "logout",
       label: "Sign out",
       group: "Account",
       keywords: "log out exit",
@@ -257,6 +354,15 @@ export function WorkspaceCommandPalette() {
 
     return list;
   }, [router, setTheme, activeDocument]);
+
+  const recentPages = useRecentWorkspacePages();
+
+  // Empty search field → recent tabs; `/...` → commands; otherwise content search.
+  const mode: "command" | "recent" | "search" = isCommandMode
+    ? "command"
+    : trimmedQuery
+      ? "search"
+      : "recent";
 
   const filteredCommands = useMemo(() => {
     if (!isCommandMode) {
@@ -270,7 +376,7 @@ export function WorkspaceCommandPalette() {
     const terms = commandTerm.split(/\s+/).filter(Boolean);
     return commands.filter((command) => {
       const haystack =
-        `${command.label} ${command.group} ${command.keywords}`.toLowerCase();
+        `${command.slug} ${command.label} ${command.group} ${command.keywords}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
     });
   }, [isCommandMode, commandTerm, commands]);
@@ -280,15 +386,23 @@ export function WorkspaceCommandPalette() {
     () => groupCommands(filteredCommands),
     [filteredCommands],
   );
-  const itemCount = isCommandMode ? filteredCommands.length : results.length;
+  const itemCount =
+    mode === "command"
+      ? filteredCommands.length
+      : mode === "recent"
+        ? recentPages.length
+        : results.length;
+
+  useGlobalShortcuts({
+    "global.commandPalette": () => setOpen(true),
+  });
 
   useEffect(() => {
-    function onKeyDown(event: globalThis.KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen(true);
-      }
+    if (!open) {
+      return;
+    }
 
+    function onKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
       }
@@ -296,7 +410,7 @@ export function WorkspaceCommandPalette() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -308,8 +422,9 @@ export function WorkspaceCommandPalette() {
   }, [open]);
 
   useEffect(() => {
-    // Command mode is local; only search mode hits the content API.
-    if (!open || isCommandMode) {
+    // Only an active text search hits the content API; command and recent modes
+    // are local.
+    if (!open || mode !== "search") {
       return;
     }
 
@@ -331,18 +446,18 @@ export function WorkspaceCommandPalette() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [open, isCommandMode, trimmedQuery]);
+  }, [open, mode, trimmedQuery]);
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [isCommandMode, commandTerm, results]);
+  }, [mode, commandTerm, results, recentPages]);
 
   const label = useMemo(() => {
-    if (isCommandMode) {
+    if (mode === "command") {
       return "Commands";
     }
-    return trimmedQuery ? "Search results" : "Quick open";
-  }, [isCommandMode, trimmedQuery]);
+    return mode === "recent" ? "Recent" : "Search results";
+  }, [mode]);
 
   if (!open) {
     return null;
@@ -353,9 +468,9 @@ export function WorkspaceCommandPalette() {
     setQuery("");
   }
 
-  function navigateToResult(result: CommandSearchResult) {
+  function navigateTo(href: string) {
     closePalette();
-    router.push(result.href);
+    router.push(href);
   }
 
   function runCommand(command: WorkspaceCommand) {
@@ -381,7 +496,7 @@ export function WorkspaceCommandPalette() {
     }
 
     if (event.key === "Enter") {
-      if (isCommandMode) {
+      if (mode === "command") {
         const selected = filteredCommands[selectedIndex];
         if (selected) {
           event.preventDefault();
@@ -390,10 +505,14 @@ export function WorkspaceCommandPalette() {
         return;
       }
 
-      const selected = results[selectedIndex];
-      if (selected) {
+      const href =
+        mode === "recent"
+          ? recentPages[selectedIndex]?.href
+          : results[selectedIndex]?.href;
+
+      if (href) {
         event.preventDefault();
-        navigateToResult(selected);
+        navigateTo(href);
       }
     }
   }
@@ -402,7 +521,7 @@ export function WorkspaceCommandPalette() {
     <div className="fixed inset-0 z-[80] bg-background/72 backdrop-blur-sm">
       <div className="mx-auto mt-[12vh] w-[min(44rem,calc(100vw-1.5rem))] overflow-hidden rounded-md border border-border/80 bg-card shadow-2xl shadow-black/45">
         <div className="flex h-12 items-center gap-3 border-b border-border/70 px-3">
-          {isCommandMode ? (
+          {mode === "command" ? (
             <Slash className="size-4 text-muted-foreground" />
           ) : (
             <Search className="size-4 text-muted-foreground" />
@@ -426,9 +545,9 @@ export function WorkspaceCommandPalette() {
         </div>
         <div className="max-h-[min(32rem,65vh)] overflow-y-auto p-2">
           <p className="px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            {loading && !isCommandMode ? "Searching" : label}
+            {loading && mode === "search" ? "Searching" : label}
           </p>
-          {isCommandMode ? (
+          {mode === "command" ? (
             <div className="grid gap-3">
               {groupedCommands.length > 0 ? (
                 groupedCommands.map((group) => (
@@ -450,6 +569,25 @@ export function WorkspaceCommandPalette() {
               ) : (
                 <p className="px-2 py-8 text-center text-sm text-muted-foreground">
                   No matching command.
+                </p>
+              )}
+            </div>
+          ) : mode === "recent" ? (
+            <div className="grid gap-1">
+              {recentPages.length > 0 ? (
+                recentPages.map((page, index) => (
+                  <RecentPageRow
+                    key={page.href}
+                    page={page}
+                    selected={index === selectedIndex}
+                    onFocus={() => setSelectedIndex(index)}
+                    onNavigate={closePalette}
+                  />
+                ))
+              ) : (
+                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  Type to search, or <span className="font-medium">/</span> for
+                  commands.
                 </p>
               )}
             </div>
@@ -512,8 +650,47 @@ function CommandActionRow({
       )}
     >
       <Icon className="size-4 text-muted-foreground" />
-      <span className="min-w-0 truncate font-medium">{command.label}</span>
+      <span className="flex min-w-0 items-baseline gap-2">
+        <code className="shrink-0 font-mono text-xs font-medium text-foreground">
+          /{command.slug}
+        </code>
+        <span className="min-w-0 truncate text-muted-foreground">
+          {command.label}
+        </span>
+      </span>
     </button>
+  );
+}
+
+function RecentPageRow({
+  page,
+  selected,
+  onFocus,
+  onNavigate,
+}: {
+  page: WorkspacePageDescriptor;
+  selected: boolean;
+  onFocus: () => void;
+  onNavigate: () => void;
+}) {
+  const Icon = pageTypeIcon[page.type] ?? FileText;
+
+  return (
+    <Link
+      href={page.href}
+      aria-selected={selected}
+      onMouseEnter={onFocus}
+      onFocus={onFocus}
+      onClick={onNavigate}
+      className={cn(
+        "grid grid-cols-[1.5rem_1fr] items-center gap-3 rounded-md px-3 py-2.5 text-sm transition hover:bg-muted",
+        selected && "bg-muted text-foreground",
+        "text-card-foreground",
+      )}
+    >
+      <Icon className="size-4 text-muted-foreground" />
+      <span className="min-w-0 truncate font-medium">{page.title}</span>
+    </Link>
   );
 }
 

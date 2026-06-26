@@ -21,10 +21,27 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
+import { formatBindingForDisplay } from "@/lib/shortcuts/binding";
 
 type MarkdownToolbarProps = {
   onFormat: (format: MarkdownFormat) => void;
   extensionItems?: JSX.Element;
+};
+
+const formatShortcutId: Partial<Record<MarkdownFormat, string>> = {
+  heading1: "editor.heading1",
+  heading2: "editor.heading2",
+  heading3: "editor.heading3",
+  bold: "editor.bold",
+  italic: "editor.italic",
+  link: "editor.link",
+  inlineCode: "editor.inlineCode",
+  bulletList: "editor.bulletList",
+  orderedList: "editor.orderedList",
+  blockquote: "editor.blockquote",
+  codeFence: "editor.codeFence",
+  region: "editor.region",
 };
 
 export type MarkdownFormat =
@@ -48,31 +65,42 @@ export type MarkdownFormat =
   | "calendar";
 
 export function MarkdownToolbar({ onFormat, extensionItems }: MarkdownToolbarProps) {
+  const { bindings, isMac, editorShortcutsEnabled } = useKeybindings();
+
+  const shortcutFor = (format: MarkdownFormat): string | undefined => {
+    if (!editorShortcutsEnabled) {
+      return undefined;
+    }
+    const id = formatShortcutId[format];
+    const binding = id ? bindings[id] : undefined;
+    return binding ? formatBindingForDisplay(binding, isMac) : undefined;
+  };
+
   return (
     <div className="vault-editor-toolbar -mx-1 flex w-full items-center gap-1.5 overflow-x-auto px-1 py-1 sm:flex-wrap sm:gap-2">
       <ToolbarGroup>
-        <ToolbarButton label="Heading 1" shortcut="Ctrl+Alt+1" icon={Heading1} onClick={() => onFormat("heading1")} />
-        <ToolbarButton label="Heading 2" shortcut="Ctrl+Alt+2" icon={Heading2} onClick={() => onFormat("heading2")} />
-        <ToolbarButton label="Heading 3" shortcut="Ctrl+Alt+3" icon={Heading3} onClick={() => onFormat("heading3")} />
+        <ToolbarButton label="Heading 1" shortcut={shortcutFor("heading1")} icon={Heading1} onClick={() => onFormat("heading1")} />
+        <ToolbarButton label="Heading 2" shortcut={shortcutFor("heading2")} icon={Heading2} onClick={() => onFormat("heading2")} />
+        <ToolbarButton label="Heading 3" shortcut={shortcutFor("heading3")} icon={Heading3} onClick={() => onFormat("heading3")} />
       </ToolbarGroup>
       <ToolbarGroup>
-        <ToolbarButton label="Bold" shortcut="Ctrl+B" icon={Bold} onClick={() => onFormat("bold")} />
-        <ToolbarButton label="Italic" shortcut="Ctrl+I" icon={Italic} onClick={() => onFormat("italic")} />
-        <ToolbarButton label="Link" shortcut="Ctrl+K" icon={Link2} onClick={() => onFormat("link")} />
+        <ToolbarButton label="Bold" shortcut={shortcutFor("bold")} icon={Bold} onClick={() => onFormat("bold")} />
+        <ToolbarButton label="Italic" shortcut={shortcutFor("italic")} icon={Italic} onClick={() => onFormat("italic")} />
+        <ToolbarButton label="Link" shortcut={shortcutFor("link")} icon={Link2} onClick={() => onFormat("link")} />
         <ToolbarButton label="Upload image" icon={ImageIcon} onClick={() => onFormat("imageUpload")} />
         <ToolbarButton label="Asset group" icon={Grid2x2} onClick={() => onFormat("assetGroup")} />
-        <ToolbarButton label="Inline code" shortcut="Ctrl+E" icon={Code} onClick={() => onFormat("inlineCode")} />
+        <ToolbarButton label="Inline code" shortcut={shortcutFor("inlineCode")} icon={Code} onClick={() => onFormat("inlineCode")} />
       </ToolbarGroup>
       <ToolbarGroup>
-        <ToolbarButton label="Bullet list" shortcut="Ctrl+Shift+8" icon={List} onClick={() => onFormat("bulletList")} />
-        <ToolbarButton label="Ordered list" shortcut="Ctrl+Shift+7" icon={ListOrdered} onClick={() => onFormat("orderedList")} />
+        <ToolbarButton label="Bullet list" shortcut={shortcutFor("bulletList")} icon={List} onClick={() => onFormat("bulletList")} />
+        <ToolbarButton label="Ordered list" shortcut={shortcutFor("orderedList")} icon={ListOrdered} onClick={() => onFormat("orderedList")} />
         <ToolbarButton label="Task list" icon={CheckSquare} onClick={() => onFormat("taskList")} />
-        <ToolbarButton label="Blockquote" shortcut="Ctrl+Shift+9" icon={Quote} onClick={() => onFormat("blockquote")} />
+        <ToolbarButton label="Blockquote" shortcut={shortcutFor("blockquote")} icon={Quote} onClick={() => onFormat("blockquote")} />
       </ToolbarGroup>
       <ToolbarGroup>
-        <ToolbarButton label="Code fence" shortcut="Ctrl+Alt+C" icon={Code} onClick={() => onFormat("codeFence")} />
+        <ToolbarButton label="Code fence" shortcut={shortcutFor("codeFence")} icon={Code} onClick={() => onFormat("codeFence")} />
         <ToolbarButton label="Table" icon={Table2} onClick={() => onFormat("table")} />
-        <ToolbarButton label="Vault region" shortcut="Ctrl+Alt+R" icon={Braces} onClick={() => onFormat("region")} />
+        <ToolbarButton label="Vault region" shortcut={shortcutFor("region")} icon={Braces} onClick={() => onFormat("region")} />
         <ToolbarButton label="Horizontal rule" icon={Minus} onClick={() => onFormat("horizontalRule")} />
       </ToolbarGroup>
       {extensionItems}

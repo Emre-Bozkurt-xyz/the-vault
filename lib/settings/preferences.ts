@@ -1,4 +1,6 @@
 import type { Theme } from "@/components/theme-provider";
+import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
+import { isShortcutId } from "@/lib/shortcuts/registry";
 
 export type UserSettingRows = Array<{
   namespace: string;
@@ -37,8 +39,9 @@ export type Preferences = {
   };
   hotkeys: {
     editorShortcutsEnabled: boolean;
-    commandPaletteShortcut: "mod-k" | "mod-shift-p" | "off";
     vimMode: boolean;
+    /** Sparse per-shortcut overrides keyed by registry id (null = disabled). */
+    keybindings: Record<string, string | null>;
   };
   coreFeatures: {
     livePreview: boolean;
@@ -138,18 +141,7 @@ export function buildPreferences(rows: UserSettingRows): Preferences {
         true,
       ),
     },
-    hotkeys: {
-      editorShortcutsEnabled: readBoolean(
-        get("hotkeys", "defaults").editorShortcutsEnabled,
-        true,
-      ),
-      commandPaletteShortcut: readEnum(
-        get("hotkeys", "defaults").commandPaletteShortcut,
-        ["mod-k", "mod-shift-p", "off"],
-        "mod-k",
-      ),
-      vimMode: readBoolean(get("hotkeys", "defaults").vimMode, false),
-    },
+    hotkeys: readHotkeys(get("hotkeys", "defaults")),
     coreFeatures: {
       livePreview: readBoolean(
         get("workspace", "core-features").livePreview,
@@ -179,6 +171,48 @@ export function buildPreferences(rows: UserSettingRows): Preferences {
       reduceMotion: readBoolean(get("advanced", "defaults").reduceMotion, false),
     },
   };
+}
+
+function readHotkeys(raw: Record<string, unknown>): Preferences["hotkeys"] {
+  const keybindings = readKeybindings(raw.keybindings);
+
+  // Migrate the legacy `commandPaletteShortcut` enum into the keybindings map so
+  // existing rows keep their palette shortcut. "mod-k" is the default (no override).
+  if (!("global.commandPalette" in keybindings)) {
+    if (raw.commandPaletteShortcut === "off") {
+      keybindings["global.commandPalette"] = null;
+    } else if (raw.commandPaletteShortcut === "mod-shift-p") {
+      keybindings["global.commandPalette"] = "Mod-Shift-p";
+    }
+  }
+
+  return {
+    editorShortcutsEnabled: readBoolean(raw.editorShortcutsEnabled, true),
+    vimMode: readBoolean(raw.vimMode, false),
+    keybindings,
+  };
+}
+
+function readKeybindings(value: unknown): Record<string, string | null> {
+  const result: Record<string, string | null> = {};
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [id, binding] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      if (!isShortcutId(id)) {
+        continue;
+      }
+
+      if (binding === null) {
+        result[id] = null;
+      } else if (typeof binding === "string" && isValidBinding(binding)) {
+        result[id] = canonicalizeBinding(binding) ?? binding;
+      }
+    }
+  }
+
+  return result;
 }
 
 function readBoolean(value: unknown, fallback: boolean) {

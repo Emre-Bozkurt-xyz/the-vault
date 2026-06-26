@@ -1,5 +1,12 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Folder, Share2, Trash2 } from "lucide-react";
 
+import {
+  consumePendingDocumentCommand,
+  subscribeToDocumentCommand,
+} from "@/lib/document-command-events";
 import { DocumentLinkAccessFields } from "@/components/document-link-access-fields";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,9 +79,26 @@ export function DocumentShareDialog({
     image: friend.image ?? null,
     priorityLabel: "Friend",
   }));
+  const [open, setOpen] = useState(false);
+
+  // Opened directly by the `/share` command palette action, including the case
+  // where this dialog was just mounted by revealing the context panel.
+  useEffect(() => {
+    const reveal = () => setOpen(true);
+
+    if (consumePendingDocumentCommand(["open-share"])) {
+      reveal();
+    }
+
+    return subscribeToDocumentCommand((type) => {
+      if (type === "open-share") {
+        reveal();
+      }
+    });
+  }, []);
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button type="button" variant="outline" />}>
         <Share2 className="size-4" />
         Share

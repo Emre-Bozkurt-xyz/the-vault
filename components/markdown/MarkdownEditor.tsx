@@ -94,6 +94,10 @@ import {
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
 import { formatCalendarFence, generateCalendarId } from "@/lib/calendar";
+import { subscribeToDocumentCommand } from "@/lib/document-command-events";
+import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
+import { shortcutsByScope } from "@/lib/shortcuts/registry";
+import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
 import type { CalendarWeekStart } from "@/lib/calendar";
 import type { ExtensionStateVisibility } from "@/lib/extensions/types";
 import {
@@ -248,6 +252,7 @@ export function MarkdownEditor({
     () => createWikiCompletionDismissalStore(),
     [],
   );
+  const { bindings: editorBindings, editorShortcutsEnabled } = useKeybindings();
   const wikiLinkMapStore = useMemo(
     () => createWikiLinkMapStore(wikiLinks ?? {}),
     [wikiLinks],
@@ -494,7 +499,14 @@ export function MarkdownEditor({
         }),
       }),
       EditorView.lineWrapping,
-      Prec.highest(keymap.of(createMarkdownShortcutKeymap(wikiCompletionDismissal))),
+      Prec.highest(
+        keymap.of(
+          createMarkdownShortcutKeymap(editorBindings, {
+            editorShortcutsEnabled,
+            wikiCompletionDismissal,
+          }),
+        ),
+      ),
       createBlockAnchorMarkerExtension(),
       EditorView.domEventHandlers({
         paste(event, view) {
@@ -812,6 +824,8 @@ export function MarkdownEditor({
       isCollaborative,
       editorMode,
       wikiCompletionDismissal,
+      editorBindings,
+      editorShortcutsEnabled,
       assetLinkMap,
       wikiLinkMap,
       wikiLinkMapStore,
@@ -992,6 +1006,19 @@ export function MarkdownEditor({
       toggleLinePrefix(view, prefix, format);
     }
   }, []);
+
+  // The `/insert-calendar` and `/insert-sticker` command palette actions reach
+  // the active editor through the document command bus. Each is a no-op unless
+  // its extension is enabled (the palette also hides them when disabled).
+  useEffect(() => {
+    return subscribeToDocumentCommand((type) => {
+      if (type === "insert-calendar" && calendarEnabled) {
+        applyFormat("calendar");
+      } else if (type === "insert-sticker" && stickersEnabled) {
+        setStickerPickerOpen(true);
+      }
+    });
+  }, [applyFormat, calendarEnabled, stickersEnabled]);
 
   const updateSelectedAssetAttributes = useCallback(
     (nextAttributes: Partial<AssetEmbedAttributes>) => {
@@ -1897,15 +1924,38 @@ function createWikiLinkMapStore(initialWikiLinks: WikiLinkResolutionMap): WikiLi
   };
 }
 
+// Maps registry editor-shortcut ids to their editor command. The chord for each
+// id comes from the resolved keybindings, not from here.
+const editorCommandById: Record<string, (view: EditorView) => void> = {
+  "editor.bold": (view) => toggleInlineFormat(view, "bold"),
+  "editor.italic": (view) => toggleInlineFormat(view, "italic"),
+  "editor.inlineCode": (view) => toggleInlineFormat(view, "code"),
+  "editor.link": toggleLink,
+  "editor.heading1": (view) => toggleLinePrefix(view, "# ", "heading1"),
+  "editor.heading2": (view) => toggleLinePrefix(view, "## ", "heading2"),
+  "editor.heading3": (view) => toggleLinePrefix(view, "### ", "heading3"),
+  "editor.bulletList": (view) => toggleLinePrefix(view, "- ", "bulletList"),
+  "editor.orderedList": (view) => toggleLinePrefix(view, "1. ", "orderedList"),
+  "editor.blockquote": (view) => toggleLinePrefix(view, "> ", "blockquote"),
+  "editor.codeFence": toggleCodeFence,
+  "editor.region": insertVaultRegion,
+};
+
 function createMarkdownShortcutKeymap(
-  wikiCompletionDismissal?: WikiCompletionDismissalStore,
+  editorBindings: ResolvedKeybindings,
+  options: {
+    editorShortcutsEnabled: boolean;
+    wikiCompletionDismissal?: WikiCompletionDismissalStore;
+  },
 ): KeyBinding[] {
+  const { editorShortcutsEnabled, wikiCompletionDismissal } = options;
   const run = (command: (view: EditorView) => void) => (view: EditorView) => {
     command(view);
     return true;
   };
 
-  return [
+  // Completion/navigation keys are editor mechanics and always active.
+  const completionBindings: KeyBinding[] = [
     {
       key: "ArrowDown",
       run: (view) =>
@@ -1991,37 +2041,23 @@ function createMarkdownShortcutKeymap(
         return startCompletion(view);
       },
     },
-    { key: "Mod-b", run: run((view) => toggleInlineFormat(view, "bold")) },
-    { key: "Mod-i", run: run((view) => toggleInlineFormat(view, "italic")) },
-    { key: "Mod-e", run: run((view) => toggleInlineFormat(view, "code")) },
-    { key: "Mod-k", run: run(toggleLink) },
-    {
-      key: "Mod-Alt-1",
-      run: run((view) => toggleLinePrefix(view, "# ", "heading1")),
-    },
-    {
-      key: "Mod-Alt-2",
-      run: run((view) => toggleLinePrefix(view, "## ", "heading2")),
-    },
-    {
-      key: "Mod-Alt-3",
-      run: run((view) => toggleLinePrefix(view, "### ", "heading3")),
-    },
-    {
-      key: "Mod-Shift-8",
-      run: run((view) => toggleLinePrefix(view, "- ", "bulletList")),
-    },
-    {
-      key: "Mod-Shift-7",
-      run: run((view) => toggleLinePrefix(view, "1. ", "orderedList")),
-    },
-    {
-      key: "Mod-Shift-9",
-      run: run((view) => toggleLinePrefix(view, "> ", "blockquote")),
-    },
-    { key: "Mod-Alt-c", run: run(toggleCodeFence) },
-    { key: "Mod-Alt-r", run: run(insertVaultRegion) },
   ];
+
+  if (!editorShortcutsEnabled) {
+    return completionBindings;
+  }
+
+  // Formatting shortcuts: chord per registry id, resolved from user settings.
+  const formattingBindings: KeyBinding[] = [];
+  for (const shortcut of shortcutsByScope("editor")) {
+    const binding = editorBindings[shortcut.id];
+    const command = editorCommandById[shortcut.id];
+    if (binding && command) {
+      formattingBindings.push({ key: binding, run: run(command) });
+    }
+  }
+
+  return [...completionBindings, ...formattingBindings];
 }
 
 const hiddenMarkdown = Decoration.replace({});

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { localExtensionRegistry, getLocalExtensionIds } from "@/lib/extensions/catalog";
+import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
+import { isShortcutId } from "@/lib/shortcuts/registry";
 import { requireActiveUser } from "@/server/authz";
 import {
   upsertUserSetting,
@@ -135,19 +137,36 @@ export async function saveFilesAssetsSettingsAction(input: unknown) {
 
 export async function saveHotkeysSettingsAction(input: unknown) {
   const user = await requireActiveUser();
-  const value = z
+  const parsed = z
     .object({
       editorShortcutsEnabled: z.boolean(),
-      commandPaletteShortcut: z.enum(["mod-k", "mod-shift-p", "off"]),
       vimMode: z.boolean(),
+      keybindings: z.record(z.string(), z.string().nullable()),
     })
     .parse(input);
+
+  // Keep only known shortcut ids with valid (canonicalized) chords or null.
+  const keybindings: Record<string, string | null> = {};
+  for (const [id, binding] of Object.entries(parsed.keybindings)) {
+    if (!isShortcutId(id)) {
+      continue;
+    }
+    if (binding === null) {
+      keybindings[id] = null;
+    } else if (isValidBinding(binding)) {
+      keybindings[id] = canonicalizeBinding(binding) ?? binding;
+    }
+  }
 
   await upsertUserSetting({
     userId: user.id,
     namespace: "hotkeys",
     key: "defaults",
-    value,
+    value: {
+      editorShortcutsEnabled: parsed.editorShortcutsEnabled,
+      vimMode: parsed.vimMode,
+      keybindings,
+    },
   });
 
   revalidatePath("/dashboard/settings");

@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import {
   AlertTriangle,
   Braces,
@@ -9,12 +15,22 @@ import {
   Keyboard,
   MonitorCog,
   Paintbrush,
+  RotateCcw,
   SlidersHorizontal,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { useVaultTheme, type Theme } from "@/components/theme-provider";
+import { dispatchKeybindingsChanged } from "@/components/shortcuts/KeybindingsProvider";
 import type { Preferences } from "@/lib/settings/preferences";
+import {
+  bindingFromKeyboardEvent,
+  formatBindingForDisplay,
+  isMacPlatform,
+} from "@/lib/shortcuts/binding";
+import { shortcuts } from "@/lib/shortcuts/registry";
+import { findConflicts, resolveKeybindings } from "@/lib/shortcuts/resolve";
+import { cn } from "@/lib/utils";
 import {
   saveAdvancedSettingsAction,
   saveAppearanceSettingsAction,
@@ -349,11 +365,35 @@ export function HotkeysSettingsSection({
 }) {
   const [state, setState] = useState(preferences);
   const [isPending, startTransition] = useTransition();
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    setIsMac(isMacPlatform());
+  }, []);
 
   function update(next: Preferences["hotkeys"]) {
     setState(next);
+    // Apply live to the editor/palette, then persist.
+    dispatchKeybindingsChanged({
+      bindings: resolveKeybindings(next.keybindings),
+      editorShortcutsEnabled: next.editorShortcutsEnabled,
+    });
     startTransition(() => void saveHotkeysSettingsAction(next));
   }
+
+  function setBinding(id: string, binding: string | null) {
+    update({ ...state, keybindings: { ...state.keybindings, [id]: binding } });
+  }
+
+  function resetBinding(id: string) {
+    const keybindings = { ...state.keybindings };
+    delete keybindings[id];
+    update({ ...state, keybindings });
+  }
+
+  const resolved = resolveKeybindings(state.keybindings);
+  const conflicts = findConflicts(resolved);
+  const categories = [...new Set(shortcuts.map((shortcut) => shortcut.category))];
 
   return (
     <SettingsGroup
@@ -370,23 +410,38 @@ export function HotkeysSettingsSection({
           }
         />
       </SettingRow>
-      <SettingRow title="Command palette shortcut" description="Shortcut reserved for the future command palette.">
-        <SelectControl
-          value={state.commandPaletteShortcut}
-          onChange={(commandPaletteShortcut) =>
-            update({
-              ...state,
-              commandPaletteShortcut:
-                commandPaletteShortcut as Preferences["hotkeys"]["commandPaletteShortcut"],
-            })
-          }
-          options={[
-            ["mod-k", "Ctrl/Cmd + K"],
-            ["mod-shift-p", "Ctrl/Cmd + Shift + P"],
-            ["off", "Off"],
-          ]}
-        />
-      </SettingRow>
+
+      {categories.map((category) => (
+        <Fragment key={category}>
+          {shortcuts
+            .filter((shortcut) => shortcut.category === category)
+            .map((shortcut) => (
+              <SettingRow
+                key={shortcut.id}
+                title={shortcut.label}
+                description={
+                  conflicts.has(shortcut.id)
+                    ? `${category} · conflicts with another shortcut`
+                    : category
+                }
+              >
+                <KeyCaptureControl
+                  binding={resolved[shortcut.id]}
+                  isMac={isMac}
+                  conflict={conflicts.has(shortcut.id)}
+                  dimmed={
+                    shortcut.scope === "editor" && !state.editorShortcutsEnabled
+                  }
+                  isDefault={!(shortcut.id in state.keybindings)}
+                  onCapture={(binding) => setBinding(shortcut.id, binding)}
+                  onDisable={() => setBinding(shortcut.id, null)}
+                  onReset={() => resetBinding(shortcut.id)}
+                />
+              </SettingRow>
+            ))}
+        </Fragment>
+      ))}
+
       <SettingRow title="Vim mode" description="Placeholder for future editor keymap support.">
         <ToggleControl
           checked={state.vimMode}
@@ -394,6 +449,105 @@ export function HotkeysSettingsSection({
         />
       </SettingRow>
     </SettingsGroup>
+  );
+}
+
+function KeyCaptureControl({
+  binding,
+  isMac,
+  conflict,
+  dimmed,
+  isDefault,
+  onCapture,
+  onDisable,
+  onReset,
+}: {
+  binding: string | null;
+  isMac: boolean;
+  conflict: boolean;
+  dimmed: boolean;
+  isDefault: boolean;
+  onCapture: (binding: string) => void;
+  onDisable: () => void;
+  onReset: () => void;
+}) {
+  const [capturing, setCapturing] = useState(false);
+
+  // While capturing, swallow every keystroke at the window's capture phase so it
+  // can't trigger app shortcuts or (where the browser allows) native ones. Note:
+  // a few chords are browser-reserved (e.g. Firefox Ctrl+Shift+P / Ctrl+T) and
+  // cannot be intercepted by any web page.
+  useEffect(() => {
+    if (!capturing) {
+      return;
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (event.key === "Escape") {
+        setCapturing(false);
+        return;
+      }
+
+      if (event.key === "Backspace" || event.key === "Delete") {
+        setCapturing(false);
+        onDisable();
+        return;
+      }
+
+      const next = bindingFromKeyboardEvent(event);
+      if (next) {
+        setCapturing(false);
+        onCapture(next);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [capturing, onCapture, onDisable]);
+
+  const label = capturing
+    ? "Press keys…"
+    : binding
+      ? formatBindingForDisplay(binding, isMac)
+      : "Disabled";
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {conflict && !capturing ? (
+        <AlertTriangle className="size-3.5 text-destructive" />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => setCapturing(true)}
+        onBlur={() => setCapturing(false)}
+        className={cn(
+          "h-9 min-w-28 rounded-[6px] border px-2 text-sm transition",
+          capturing
+            ? "border-ring ring-1 ring-ring"
+            : "border-input bg-background hover:border-ring",
+          conflict && !capturing && "border-destructive text-destructive",
+          dimmed && "opacity-50",
+        )}
+      >
+        {label}
+      </button>
+      {!isDefault ? (
+        <button
+          type="button"
+          onClick={onReset}
+          aria-label="Reset to default"
+          title="Reset to default"
+          className="grid size-7 place-items-center rounded text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
