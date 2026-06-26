@@ -7,14 +7,15 @@ import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X
 
 import { cn } from "@/lib/utils";
 import { subscribeToWorkspaceDocumentRemovals } from "@/components/workspace/workspace-events";
-import type { WorkspacePageDescriptor, WorkspacePageType } from "@/components/workspace/workspace-types";
-
-type WorkspaceTab = WorkspacePageDescriptor & {
-  id: string;
-};
-
-const storageKey = "vault.workspace.tabs.v1";
-const maxTabs = 12;
+import {
+  maxWorkspaceTabs as maxTabs,
+  writeWorkspaceTabsCookie,
+} from "@/lib/workspace-layout";
+import type {
+  WorkspacePageDescriptor,
+  WorkspacePageType,
+  WorkspaceTab,
+} from "@/components/workspace/workspace-types";
 
 const iconByType: Record<WorkspacePageType, typeof Home> = {
   new: Home,
@@ -27,7 +28,13 @@ const iconByType: Record<WorkspacePageType, typeof Home> = {
   admin: ShieldCheck,
 };
 
-export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescriptor }) {
+export function WorkspaceTabBar({
+  activePage,
+  initialTabs,
+}: {
+  activePage: WorkspacePageDescriptor;
+  initialTabs?: WorkspaceTab[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -38,7 +45,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
   const activeHref = activePage.href || currentHref;
   const canonicalActiveHref = canonicalWorkspaceTabHref(activeHref, activePage.type);
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() =>
-    mergeActiveTab([], {
+    mergeActiveTab(initialTabs ?? [], {
       ...activePage,
       href: canonicalActiveHref,
       id: canonicalActiveHref,
@@ -54,10 +61,9 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
           href: canonicalActiveHref,
           id: canonicalActiveHref,
         };
-        const baseTabs = currentTabs.length <= 1 ? readStoredTabs() : currentTabs;
-        const nextTabs = mergeActiveTab(baseTabs, activeTab);
+        const nextTabs = mergeActiveTab(currentTabs, activeTab);
 
-        window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
+        writeWorkspaceTabsCookie(nextTabs);
         return nextTabs;
       });
     }, 0);
@@ -77,7 +83,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
         }
 
         const nextTabs = currentTabs.filter((tab) => !isDocumentTabForId(tab, id));
-        window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
+        writeWorkspaceTabsCookie(nextTabs);
 
         if (isDocumentHrefForId(canonicalActiveHref, id)) {
           const nextActive =
@@ -97,7 +103,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
     setTabs((currentTabs) => {
       const index = currentTabs.findIndex((candidate) => candidate.href === tab.href);
       const nextTabs = currentTabs.filter((candidate) => candidate.href !== tab.href);
-      window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
+      writeWorkspaceTabsCookie(nextTabs);
 
       if (tab.href === canonicalActiveHref) {
         const nextActive = nextTabs[Math.max(0, index - 1)] ?? nextTabs[0];
@@ -129,7 +135,7 @@ export function WorkspaceTabBar({ activePage }: { activePage: WorkspacePageDescr
       }
 
       nextTabs.splice(toIndex, 0, movedTab);
-      window.localStorage.setItem(storageKey, JSON.stringify(nextTabs));
+      writeWorkspaceTabsCookie(nextTabs);
       return nextTabs;
     });
   }
@@ -241,29 +247,6 @@ function mergeActiveTab(tabs: WorkspaceTab[], activeTab: WorkspaceTab) {
     : [...normalizedTabs, normalizedActiveTab].slice(-maxTabs);
 }
 
-function readStoredTabs() {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return [];
-  }
-
-  const raw = window.localStorage.getItem(storageKey);
-
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? dedupeWorkspaceTabs(parsed.filter(isWorkspaceTab).map(normalizeWorkspaceTab))
-          .slice(0, maxTabs)
-      : [];
-  } catch {
-    window.localStorage.removeItem(storageKey);
-    return [];
-  }
-}
-
 function normalizeWorkspaceTab(tab: WorkspaceTab): WorkspaceTab {
   const href = canonicalWorkspaceTabHref(tab.href, tab.type);
 
@@ -302,20 +285,6 @@ function dedupeWorkspaceTabs(tabs: WorkspaceTab[]) {
   }
 
   return next;
-}
-
-function isWorkspaceTab(value: unknown): value is WorkspaceTab {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as Partial<WorkspaceTab>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.title === "string" &&
-    typeof candidate.href === "string" &&
-    typeof candidate.type === "string"
-  );
 }
 
 function isDocumentTabForId(tab: WorkspaceTab, documentId: string) {

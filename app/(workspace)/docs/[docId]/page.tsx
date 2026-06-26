@@ -12,6 +12,9 @@ import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
+import { calendarSettingsSchema } from "@/lib/extensions/catalog";
+import type { ExtensionStateVisibility } from "@/lib/extensions/types";
+import type { CalendarWeekStart } from "@/lib/calendar";
 import {
   listAssetResolutionsForDocument,
   listPrivateEmbeddedAssetsForPublish,
@@ -21,6 +24,7 @@ import {
   getActiveDocumentShareLinkForUser,
   getDocumentForUserWithOptionalShareLink,
   listDocumentCollaborators,
+  listDocumentFolderCollaborators,
   listDocumentVersionsForUser,
   listPublicWikiLinkResolutions,
   listWikiLinkResolutionsForUser,
@@ -64,12 +68,14 @@ export default async function DocumentPage({
     guideWikiLinks,
     publicWikiLinks,
     collaborators,
+    folderCollaborators,
     activeShareLink,
     friends,
     versions,
     assetLinks,
     privateEmbeddedAssets,
     stickersExtSetting,
+    calendarExtSetting,
   ] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -77,6 +83,9 @@ export default async function DocumentPage({
       listPublicWikiLinkResolutions(),
       document.access.canShare
         ? listDocumentCollaborators(document.id, session.user.id)
+        : Promise.resolve([]),
+      document.access.canShare
+        ? listDocumentFolderCollaborators(document.id, session.user.id)
         : Promise.resolve([]),
       document.access.canShare
         ? getActiveDocumentShareLinkForUser(document.id, session.user.id)
@@ -97,8 +106,22 @@ export default async function DocumentPage({
       document.access.canEdit
         ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.stickers" })
         : Promise.resolve(null),
+      document.access.canEdit
+        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calendar" })
+        : Promise.resolve(null),
     ]);
   const stickersEnabled = stickersExtSetting?.enabled ?? false;
+  const calendarEnabled = calendarExtSetting?.enabled ?? false;
+  const calendarSettings = calendarSettingsSchema.safeParse(
+    calendarExtSetting?.settings ?? {},
+  );
+  const calendarWeekStartsOn: CalendarWeekStart =
+    calendarSettings.success && calendarSettings.data.weekStartsOn === "1"
+      ? 1
+      : 0;
+  const calendarVisibility: ExtensionStateVisibility = calendarSettings.success
+    ? calendarSettings.data.defaultVisibility
+    : "private";
   const wikiLinks = {
     ...readableWikiLinks,
     ...publicWikiLinks,
@@ -145,6 +168,16 @@ export default async function DocumentPage({
           visibility: document.visibility,
           role: document.access.role ?? "viewer",
         }}
+        documentCommand={{
+          id: document.id,
+          title: document.title,
+          visibility: document.visibility,
+          publicSlug: document.publicSlug,
+          canEdit: document.access.canEdit,
+          canShare: document.access.canShare,
+          canPublish: document.access.canPublish,
+          canDelete: document.access.canDelete,
+        }}
         rightPanel={
           showRightPanel ? (
           <DocumentContextPanel
@@ -157,6 +190,7 @@ export default async function DocumentPage({
             canDelete={document.access.canDelete}
             canPublish={document.access.canPublish}
             collaborators={collaborators}
+            folderCollaborators={folderCollaborators}
             friends={friends}
             activeShareLink={activeShareLink}
             versions={versions}
@@ -175,6 +209,9 @@ export default async function DocumentPage({
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             stickersEnabled={stickersEnabled}
+            calendarEnabled={calendarEnabled}
+            calendarWeekStartsOn={calendarWeekStartsOn}
+            calendarVisibility={calendarVisibility}
             collaboration={
               collabToken && collabUrl
                 ? {
@@ -200,6 +237,7 @@ export default async function DocumentPage({
               markdown={markdown}
               wikiLinks={wikiLinks}
               assetLinks={assetLinks}
+              documentId={document.id}
             />
           </article>
         )}
@@ -218,6 +256,9 @@ type DocumentContextPanelProps = {
   canDelete: boolean;
   canPublish: boolean;
   collaborators: Awaited<ReturnType<typeof listDocumentCollaborators>>;
+  folderCollaborators: Awaited<
+    ReturnType<typeof listDocumentFolderCollaborators>
+  >;
   friends: Awaited<ReturnType<typeof listFriendsForUser>>;
   activeShareLink: Awaited<ReturnType<typeof getActiveDocumentShareLinkForUser>>;
   versions: Awaited<ReturnType<typeof listDocumentVersionsForUser>>;
@@ -234,6 +275,7 @@ function DocumentContextPanel({
   canDelete,
   canPublish,
   collaborators,
+  folderCollaborators,
   friends,
   activeShareLink,
   versions,
@@ -270,6 +312,7 @@ function DocumentContextPanel({
             <DocumentShareDialog
               documentId={documentId}
               collaborators={collaborators}
+              folderCollaborators={folderCollaborators}
               friends={friends}
               activeShareLink={activeShareLink}
             />

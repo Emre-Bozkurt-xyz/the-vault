@@ -33,6 +33,9 @@ import {
   transformAssetEmbeds,
   type AssetEmbedResolutionMap,
 } from "@/lib/asset-embeds";
+import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { splitCalendarSegments } from "@/lib/calendar";
+import type { CalendarState } from "@/lib/extensions/catalog";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
 import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
@@ -56,6 +59,14 @@ type MarkdownDocumentProps = {
   assetLinks?: AssetEmbedResolutionMap;
   embedDepth?: number;
   embedTrail?: string[];
+  /**
+   * When set, `:::calendar{id=…}` anchors render as read-only calendars for this
+   * document. Pass `calendarStates` on public/SSR surfaces to seed entries
+   * without a client fetch; omit it for authenticated viewers (the widget then
+   * fetches its own readable state).
+   */
+  documentId?: string;
+  calendarStates?: Record<string, CalendarState>;
 };
 
 const maxWikiEmbedDepth = 2;
@@ -957,6 +968,8 @@ export function MarkdownDocument({
   assetLinks,
   embedDepth = 0,
   embedTrail = [],
+  documentId,
+  calendarStates,
 }: MarkdownDocumentProps) {
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
@@ -979,13 +992,15 @@ export function MarkdownDocument({
     >
       {blocks.map((block, index) =>
         block.type === "markdown" ? (
-          <MarkdownSegment
+          <MarkdownBlock
             key={`markdown-${index}`}
             markdown={block.markdown}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
+            documentId={documentId}
+            calendarStates={calendarStates}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1066,6 +1081,93 @@ function VaultRegion({
     >
       {body}
     </section>
+  );
+}
+
+function MarkdownBlock({
+  markdown,
+  disableLinks,
+  wikiLinks,
+  assetLinks,
+  headingIds,
+  documentId,
+  calendarStates,
+}: {
+  markdown: string;
+  disableLinks: boolean;
+  wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
+  headingIds: Map<string, number>;
+  documentId?: string;
+  calendarStates?: Record<string, CalendarState>;
+}) {
+  // Calendars only render where a documentId is in scope (the doc viewer / public
+  // page). Without it (e.g. nested entry-text renders) we leave the fence as-is.
+  if (!documentId) {
+    return (
+      <MarkdownSegment
+        markdown={markdown}
+        disableLinks={disableLinks}
+        wikiLinks={wikiLinks}
+        assetLinks={assetLinks}
+        headingIds={headingIds}
+      />
+    );
+  }
+
+  const segments = splitCalendarSegments(markdown);
+
+  if (segments.length === 1 && segments[0].type === "markdown") {
+    return (
+      <MarkdownSegment
+        markdown={markdown}
+        disableLinks={disableLinks}
+        wikiLinks={wikiLinks}
+        assetLinks={assetLinks}
+        headingIds={headingIds}
+      />
+    );
+  }
+
+  return (
+    <>
+      {segments.map((segment, index) => {
+        if (segment.type === "calendar") {
+          return (
+            <CalendarBlock
+              key={`calendar-${index}-${segment.id ?? "none"}`}
+              documentId={documentId}
+              calendarId={segment.id}
+              canEdit={false}
+              prefetchedState={
+                calendarStates
+                  ? segment.id
+                    ? calendarStates[segment.id] ?? null
+                    : null
+                  : undefined
+              }
+              wikiLinks={wikiLinks}
+              assetLinks={assetLinks}
+            />
+          );
+        }
+
+        if (!segment.markdown.trim()) {
+          return null;
+        }
+
+        return (
+          <MarkdownSegment
+            key={`markdown-${index}`}
+            markdown={segment.markdown}
+            disableLinks={disableLinks}
+            wikiLinks={wikiLinks}
+            assetLinks={assetLinks}
+            headingIds={headingIds}
+          />
+        );
+      })}
+    </>
   );
 }
 

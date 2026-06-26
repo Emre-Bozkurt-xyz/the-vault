@@ -17,6 +17,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { CalendarBlock } from "@/components/extensions/CalendarBlock";
 import {
   getAssetEmbedClassName,
   getAssetEmbedStyle,
@@ -31,6 +32,8 @@ import {
   getWikiDocumentEmbed,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
+import { parseCalendarFence, type CalendarWeekStart } from "@/lib/calendar";
+import type { ExtensionStateVisibility } from "@/lib/extensions/types";
 import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type {
   LiveBlockScanContext,
@@ -97,12 +100,23 @@ export type LiveMathBlock = {
   source: string;
 };
 
+export type LiveCalendarBlock = {
+  kind: "calendar";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+  id: string | null;
+};
+
 export type LiveBlock =
   | LiveAssetGroupBlock
   | LiveCalloutBlock
   | LiveDocumentEmbedBlock
   | LiveTableBlock
-  | LiveMathBlock;
+  | LiveMathBlock
+  | LiveCalendarBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -113,6 +127,11 @@ export type LiveBlockOptions = {
   assetLinks: AssetEmbedResolutionMap;
   wikiLinks?: WikiLinkResolutionMap;
   onConfigureAssetGroup?: (selection: LiveAssetGroupSelection) => void;
+  /** Present in the editor so stateful block widgets (e.g. calendar) can save. */
+  documentId?: string;
+  canEdit?: boolean;
+  calendarWeekStartsOn?: CalendarWeekStart;
+  calendarVisibility?: ExtensionStateVisibility;
 };
 type LiveBlockWidgetOptions = LiveBlockOptions & LiveBlockWidgetContext;
 
@@ -183,6 +202,14 @@ const coreMarkdownLiveBlockSpecs = [
         block as LiveMathBlock,
         context,
       ),
+  },
+  {
+    id: "calendar",
+    priority: 15,
+    scan: (state, context) =>
+      getLiveCalendarBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new CalendarBlockWidget(block as LiveCalendarBlock, context),
   },
 ] satisfies LiveBlockSpecForEditor[];
 
@@ -763,6 +790,77 @@ class MathBlockWidget extends WidgetType {
   }
 }
 
+class CalendarBlockWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly block: LiveCalendarBlock,
+    private readonly options: LiveBlockOptions,
+  ) {
+    super();
+  }
+
+  eq(widget: CalendarBlockWidget) {
+    return (
+      widget.block.id === this.block.id &&
+      widget.options.documentId === this.options.documentId &&
+      widget.options.canEdit === this.options.canEdit &&
+      widget.options.calendarWeekStartsOn === this.options.calendarWeekStartsOn &&
+      widget.options.calendarVisibility === this.options.calendarVisibility &&
+      widget.options.assetLinks === this.options.assetLinks &&
+      widget.options.wikiLinks === this.options.wikiLinks
+    );
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "vault-cm-calendar-rendered";
+    container.contentEditable = "false";
+    applyStableBlockWidgetSpacing(container);
+
+    const documentId = this.options.documentId;
+
+    if (!documentId) {
+      // Read-only render surfaces (non-editor) mount the calendar elsewhere.
+      const frame = document.createElement("div");
+      frame.className = "vault-calendar-notice";
+      frame.textContent = "Calendar";
+      container.append(frame);
+      return container;
+    }
+
+    this.root = createRoot(container);
+    this.root.render(
+      createElement(CalendarBlock, {
+        documentId,
+        calendarId: this.block.id,
+        canEdit: this.options.canEdit ?? false,
+        weekStartsOn: this.options.calendarWeekStartsOn,
+        visibility: this.options.calendarVisibility,
+        wikiLinks: this.options.wikiLinks,
+        assetLinks: this.options.assetLinks,
+      }),
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+
+    if (root) {
+      window.setTimeout(() => root.unmount(), 0);
+    }
+  }
+
+  // Let the embedded React UI handle all interaction so clicks/typing inside
+  // the calendar never fall through to CodeMirror selection handling.
+  ignoreEvent() {
+    return true;
+  }
+}
+
 class ActiveMathBlockPreviewWidget extends WidgetType {
   constructor(private readonly block: LiveMathBlock) {
     super();
@@ -1114,6 +1212,40 @@ function getLiveDocumentEmbedBlocks(
       startLine: lineNumber,
       endLine: lineNumber,
       source,
+    });
+  }
+
+  return blocks;
+}
+
+function getLiveCalendarBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveCalendarBlock[] {
+  const blocks: LiveCalendarBlock[] = [];
+  const doc = state.doc;
+
+  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
+    const line = doc.line(lineNumber);
+
+    if (isInsideSyntaxRange(line.from, excludedRanges)) {
+      continue;
+    }
+
+    const fence = parseCalendarFence(line.text);
+
+    if (!fence) {
+      continue;
+    }
+
+    blocks.push({
+      kind: "calendar",
+      from: line.from,
+      to: line.to,
+      startLine: lineNumber,
+      endLine: lineNumber,
+      source: line.text.trim(),
+      id: fence.id,
     });
   }
 

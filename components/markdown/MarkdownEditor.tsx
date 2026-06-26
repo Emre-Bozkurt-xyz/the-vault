@@ -47,6 +47,7 @@ import {
   BookOpenText,
   CheckCircle2,
   Eye,
+  CalendarPlus,
   FileCode2,
   Grid3x3,
   Loader2,
@@ -92,6 +93,9 @@ import {
   type AssetGroupWidth,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
+import { formatCalendarFence, generateCalendarId } from "@/lib/calendar";
+import type { CalendarWeekStart } from "@/lib/calendar";
+import type { ExtensionStateVisibility } from "@/lib/extensions/types";
 import {
   formatTagInput,
   parseDocumentMetadata,
@@ -128,6 +132,9 @@ type MarkdownEditorProps = {
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   stickersEnabled?: boolean;
+  calendarEnabled?: boolean;
+  calendarWeekStartsOn?: CalendarWeekStart;
+  calendarVisibility?: ExtensionStateVisibility;
 };
 
 type EditorMode = "source" | "live" | "read";
@@ -197,6 +204,9 @@ export function MarkdownEditor({
   wikiLinks,
   assetLinks,
   stickersEnabled = false,
+  calendarEnabled = false,
+  calendarWeekStartsOn = 0,
+  calendarVisibility = "private",
 }: MarkdownEditorProps) {
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
@@ -741,6 +751,10 @@ export function MarkdownEditor({
             assetLinks: assetLinkMap,
             wikiLinks: wikiLinkMap,
             onConfigureAssetGroup: configureAssetGroup,
+            documentId,
+            canEdit: true,
+            calendarWeekStartsOn,
+            calendarVisibility,
           }),
           createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
@@ -803,6 +817,8 @@ export function MarkdownEditor({
       wikiLinkMapStore,
       documentId,
       shareLinkId,
+      calendarWeekStartsOn,
+      calendarVisibility,
     ],
   );
 
@@ -940,6 +956,11 @@ export function MarkdownEditor({
       return;
     }
 
+    if (format === "calendar") {
+      insertBlock(view, formatCalendarFence(generateCalendarId()), null);
+      return;
+    }
+
     const linePrefix: Record<MarkdownFormat, string | null> = {
       heading1: "# ",
       heading2: "## ",
@@ -958,6 +979,7 @@ export function MarkdownEditor({
       table: null,
       region: null,
       horizontalRule: null,
+      calendar: null,
     };
     const prefix = linePrefix[format];
 
@@ -1141,10 +1163,19 @@ export function MarkdownEditor({
               <MarkdownToolbar
                 onFormat={applyFormat}
                 extensionItems={
-                  stickersEnabled ? (
-                    <StickerToolbarGroup
-                      onAddSticker={() => setStickerPickerOpen(true)}
-                    />
+                  stickersEnabled || calendarEnabled ? (
+                    <>
+                      {calendarEnabled ? (
+                        <CalendarToolbarGroup
+                          onInsert={() => applyFormat("calendar")}
+                        />
+                      ) : null}
+                      {stickersEnabled ? (
+                        <StickerToolbarGroup
+                          onAddSticker={() => setStickerPickerOpen(true)}
+                        />
+                      ) : null}
+                    </>
                   ) : undefined
                 }
               />
@@ -1327,6 +1358,25 @@ export function MarkdownEditor({
         />
       )}
     </form>
+  );
+}
+
+function CalendarToolbarGroup({ onInsert }: { onInsert: () => void }) {
+  return (
+    <div
+      data-slot="button-group"
+      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
+    >
+      <button
+        type="button"
+        title="Insert calendar"
+        aria-label="Insert calendar"
+        onClick={onInsert}
+        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
+      >
+        <CalendarPlus className="size-4" />
+      </button>
+    </div>
   );
 }
 

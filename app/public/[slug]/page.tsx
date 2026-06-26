@@ -16,6 +16,7 @@ import { recordContentView } from "@/server/content-interactions";
 import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { getPublicStickerItems } from "@/server/sticker-state";
+import { getPublicCalendarStates } from "@/server/calendar-state";
 
 type PublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -90,12 +91,13 @@ export default async function PublicDocumentPage({
   });
   const stats = viewedStats ?? document.stats;
 
-  const [publicWikiLinks, guideWikiLinks, assetLinks, stickerItems] =
+  const [publicWikiLinks, guideWikiLinks, assetLinks, stickerItems, calendarStates] =
     await Promise.all([
       listPublicWikiLinkResolutions(),
       listOfficialDocWikiLinkResolutions(),
       listAssetResolutionsForDocument(document.id, null),
       getPublicStickerItems(document.id),
+      getPublicCalendarStates(document.id),
     ]);
   const wikiLinks = {
     ...publicWikiLinks,
@@ -151,6 +153,8 @@ export default async function PublicDocumentPage({
                 className="vault-public-markdown"
                 wikiLinks={wikiLinks}
                 assetLinks={assetLinks}
+                documentId={document.id}
+                calendarStates={calendarStates}
               />
             </PublicStickerDisplay>
           </div>

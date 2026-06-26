@@ -36,6 +36,17 @@ const server = new Server({
     }
 
     const [access] = await db`
+      with recursive folder_chain as (
+        select f.id, f.parent_id, f.owner_id
+        from folders f
+        join documents d on d.folder_id = f.id
+        where d.id = ${documentName} and f.deleted_at is null
+        union all
+        select pf.id, pf.parent_id, pf.owner_id
+        from folders pf
+        join folder_chain fc on fc.parent_id = pf.id
+        where pf.deleted_at is null
+      )
       select d.id
       from documents d
       left join document_permissions dp
@@ -58,6 +69,17 @@ const server = new Server({
               dsl.expires_at is null
               or dsl.expires_at > now()
             )
+          )
+          or exists (
+            -- Folder-inherited editor access: the user owns an ancestor folder
+            -- or holds an 'editor' folder permission on one. Mirrors
+            -- getInheritedFolderRole's editor tier in lib/permissions.ts.
+            select 1
+            from folder_chain fc
+            left join folder_permissions fp
+              on fp.folder_id = fc.id and fp.user_id = ${payload.userId}
+            where fc.owner_id = ${payload.userId}
+               or fp.role = 'editor'
           )
         )
       limit 1

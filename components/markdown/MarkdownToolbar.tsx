@@ -44,7 +44,8 @@ export type MarkdownFormat =
   | "codeFence"
   | "table"
   | "region"
-  | "horizontalRule";
+  | "horizontalRule"
+  | "calendar";
 
 export function MarkdownToolbar({ onFormat, extensionItems }: MarkdownToolbarProps) {
   return (

@@ -16,6 +16,34 @@ export type WorkspacePageDescriptor = {
   href: string;
 };
 
+export type WorkspaceTab = WorkspacePageDescriptor & {
+  id: string;
+};
+
+/**
+ * The active document's identity and capabilities, surfaced to the command
+ * palette so document-scoped slash commands (publish, archive, …) know which
+ * document they act on and which actions the viewer is allowed to run.
+ */
+export type ActiveDocumentCommandContext = {
+  id: string;
+  title: string;
+  visibility: "private" | "public";
+  publicSlug: string | null;
+  canEdit: boolean;
+  canShare: boolean;
+  canPublish: boolean;
+  canDelete: boolean;
+};
+
+export type WorkspaceLayoutState = {
+  panelMode: WorkspacePanelMode;
+  leftCollapsed: boolean;
+  leftWidth: number;
+  rightCollapsed: boolean;
+  rightWidth: number;
+};
+
 export type WorkspaceDocumentItem = {
   id: string;
   title: string;
@@ -23,6 +51,28 @@ export type WorkspaceDocumentItem = {
   updatedAt: Date;
   visibility?: "private" | "public";
   role?: "owner" | "editor" | "viewer";
+  folderId?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  ownerUsername?: string | null;
+  viaFolderName?: string | null;
+};
+
+export type WorkspaceFolderItem = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+};
+
+export type WorkspaceSharedFolderItem = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  ownerId: string;
+  ownerName: string | null;
+  ownerUsername: string | null;
+  role: "editor" | "viewer";
 };
 
 export type WorkspacePublicDocumentItem = {

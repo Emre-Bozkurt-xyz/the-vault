@@ -36,11 +36,15 @@ export default async function OfficialDocsIndexPage() {
         activePage={{ type: "guide", title: "Vault Docs", href: "/docs" }}
         isAdmin={workspace.profile.role === "admin"}
         defaultPanelMode="docs"
+        initialLayout={workspace.layout}
+        initialTabs={workspace.tabs}
         filePanel={
           <WorkspaceFileBrowser
             owned={workspace.owned}
             shared={workspace.shared}
             published={workspace.published}
+            folders={workspace.folders}
+            sharedFolders={workspace.sharedFolders}
             activeHref="/docs"
           />
         }

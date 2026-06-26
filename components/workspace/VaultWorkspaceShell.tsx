@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   BookOpen,
   Files,
@@ -23,9 +23,17 @@ import { cn } from "@/lib/utils";
 import { WorkspaceIconRail } from "@/components/workspace/WorkspaceIconRail";
 import { WorkspaceCommandPalette } from "@/components/workspace/WorkspaceCommandPalette";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
+import {
+  clampWidth,
+  leftPanelWidthBounds,
+  rightPanelWidthBounds,
+  writeWorkspaceLayoutCookie,
+} from "@/lib/workspace-layout";
 import type {
+  WorkspaceLayoutState,
   WorkspacePageDescriptor,
   WorkspacePanelMode,
+  WorkspaceTab,
 } from "@/components/workspace/workspace-types";
 
 type VaultWorkspaceShellProps = {
@@ -38,22 +46,12 @@ type VaultWorkspaceShellProps = {
   assetsPanel?: ReactNode;
   adminPanel?: ReactNode;
   defaultPanelMode?: WorkspacePanelMode;
+  initialLayout?: Partial<WorkspaceLayoutState>;
+  initialTabs?: WorkspaceTab[];
   contentClassName?: string;
   children: ReactNode;
   rightPanel?: ReactNode;
 };
-
-const panelModeKey = "vault.workspace.leftPanelMode.v1";
-const panelCollapsedKey = "vault.workspace.leftPanelCollapsed.v1";
-const leftPanelWidthKey = "vault.workspace.leftPanelWidth.v1";
-const rightPanelCollapsedKey = "vault.workspace.rightPanelCollapsed.v1";
-const rightPanelWidthKey = "vault.workspace.rightPanelWidth.v1";
-const defaultLeftPanelWidth = 288;
-const defaultRightPanelWidth = 320;
-const minLeftPanelWidth = 220;
-const maxLeftPanelWidth = 440;
-const minRightPanelWidth = 260;
-const maxRightPanelWidth = 520;
 
 export function VaultWorkspaceShell({
   activePage,
@@ -65,51 +63,54 @@ export function VaultWorkspaceShell({
   assetsPanel,
   adminPanel,
   defaultPanelMode = "files",
+  initialLayout,
+  initialTabs,
   contentClassName,
   children,
   rightPanel,
 }: VaultWorkspaceShellProps) {
-  const [panelMode, setPanelMode] = useState<WorkspacePanelMode>(defaultPanelMode);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [leftPanelWidth, setLeftPanelWidth] = useState(defaultLeftPanelWidth);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [rightPanelWidth, setRightPanelWidth] = useState(defaultRightPanelWidth);
+  const [panelMode, setPanelMode] = useState<WorkspacePanelMode>(
+    initialLayout?.panelMode ?? defaultPanelMode,
+  );
+  const [leftCollapsed, setLeftCollapsed] = useState(
+    initialLayout?.leftCollapsed ?? false,
+  );
+  const [leftPanelWidth, setLeftPanelWidth] = useState(
+    initialLayout?.leftWidth ?? leftPanelWidthBounds.default,
+  );
+  const [rightCollapsed, setRightCollapsed] = useState(
+    initialLayout?.rightCollapsed ?? false,
+  );
+  const [rightPanelWidth, setRightPanelWidth] = useState(
+    initialLayout?.rightWidth ?? rightPanelWidthBounds.default,
+  );
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileRightPanelOpen, setMobileRightPanelOpen] = useState(false);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      setPanelMode(readStoredPanelMode(defaultPanelMode));
-      setLeftCollapsed(readStoredBoolean(panelCollapsedKey, false));
-      setLeftPanelWidth(
-        readStoredWidth(leftPanelWidthKey, defaultLeftPanelWidth, {
-          min: minLeftPanelWidth,
-          max: maxLeftPanelWidth,
-        }),
-      );
-      setRightCollapsed(readStoredBoolean(rightPanelCollapsedKey, false));
-      setRightPanelWidth(
-        readStoredWidth(rightPanelWidthKey, defaultRightPanelWidth, {
-          min: minRightPanelWidth,
-          max: maxRightPanelWidth,
-        }),
-      );
+  // Persist the full layout to a cookie so the server can render it on the next
+  // load. `overrides` carries the values that just changed, since their state
+  // setters are async and would otherwise be stale in this closure.
+  function persistLayout(overrides: Partial<WorkspaceLayoutState>) {
+    writeWorkspaceLayoutCookie({
+      panelMode,
+      leftCollapsed,
+      leftWidth: leftPanelWidth,
+      rightCollapsed,
+      rightWidth: rightPanelWidth,
+      ...overrides,
     });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [defaultPanelMode]);
+  }
 
   function changeMode(mode: WorkspacePanelMode) {
     setPanelMode(mode);
     setLeftCollapsed(false);
-    window.localStorage.setItem(panelModeKey, mode);
-    window.localStorage.setItem(panelCollapsedKey, "false");
+    persistLayout({ panelMode: mode, leftCollapsed: false });
   }
 
   function toggleLeftPanel() {
     setLeftCollapsed((current) => {
       const next = !current;
-      window.localStorage.setItem(panelCollapsedKey, String(next));
+      persistLayout({ leftCollapsed: next });
       return next;
     });
   }
@@ -117,7 +118,7 @@ export function VaultWorkspaceShell({
   function toggleRightPanel() {
     setRightCollapsed((current) => {
       const next = !current;
-      window.localStorage.setItem(rightPanelCollapsedKey, String(next));
+      persistLayout({ rightCollapsed: next });
       return next;
     });
   }
@@ -133,20 +134,29 @@ export function VaultWorkspaceShell({
     const startWidth = panel === "left" ? leftPanelWidth : rightPanelWidth;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    let lastWidth = startWidth;
 
     function onPointerMove(moveEvent: PointerEvent) {
       const delta = moveEvent.clientX - startX;
       const nextWidth =
         panel === "left"
-          ? clamp(startWidth + delta, minLeftPanelWidth, maxLeftPanelWidth)
-          : clamp(startWidth - delta, minRightPanelWidth, maxRightPanelWidth);
+          ? clampWidth(
+              startWidth + delta,
+              leftPanelWidthBounds.min,
+              leftPanelWidthBounds.max,
+            )
+          : clampWidth(
+              startWidth - delta,
+              rightPanelWidthBounds.min,
+              rightPanelWidthBounds.max,
+            );
+
+      lastWidth = nextWidth;
 
       if (panel === "left") {
         setLeftPanelWidth(nextWidth);
-        window.localStorage.setItem(leftPanelWidthKey, String(nextWidth));
       } else {
         setRightPanelWidth(nextWidth);
-        window.localStorage.setItem(rightPanelWidthKey, String(nextWidth));
       }
     }
 
@@ -155,6 +165,8 @@ export function VaultWorkspaceShell({
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      // Persist once at the end of the drag rather than on every move.
+      persistLayout(panel === "left" ? { leftWidth: lastWidth } : { rightWidth: lastWidth });
     }
 
     window.addEventListener("pointermove", onPointerMove);
@@ -200,7 +212,7 @@ export function VaultWorkspaceShell({
       ) : null}
 
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <WorkspaceTabBar activePage={activePage} />
+        <WorkspaceTabBar activePage={activePage} initialTabs={initialTabs} />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
@@ -437,65 +449,5 @@ function PlaceholderPanel({ mode }: { mode: WorkspacePanelMode }) {
       </p>
       <p className="mt-2 text-sm text-muted-foreground">{label.body}</p>
     </div>
-  );
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function canReadWorkspaceStorage() {
-  return typeof window !== "undefined" && Boolean(window.localStorage);
-}
-
-function readStoredBoolean(key: string, fallback: boolean) {
-  if (!canReadWorkspaceStorage()) {
-    return fallback;
-  }
-
-  return window.localStorage.getItem(key) === "true";
-}
-
-function readStoredWidth(
-  key: string,
-  fallback: number,
-  bounds: { min: number; max: number },
-) {
-  if (!canReadWorkspaceStorage()) {
-    return fallback;
-  }
-
-  const raw = window.localStorage.getItem(key);
-
-  if (raw === null) {
-    return fallback;
-  }
-
-  const value = Number(raw);
-
-  if (!Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return clamp(value, bounds.min, bounds.max);
-}
-
-function readStoredPanelMode(fallback: WorkspacePanelMode) {
-  if (!canReadWorkspaceStorage()) {
-    return fallback;
-  }
-
-  const raw = window.localStorage.getItem(panelModeKey);
-  return isPanelMode(raw) ? raw : fallback;
-}
-
-function isPanelMode(value: string | null): value is WorkspacePanelMode {
-  return (
-    value === "files" ||
-    value === "search" ||
-    value === "gallery" ||
-    value === "assets" ||
-    value === "docs" ||
-    value === "admin"
   );
 }

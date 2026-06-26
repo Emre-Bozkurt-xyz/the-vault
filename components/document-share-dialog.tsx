@@ -1,4 +1,4 @@
-import { Share2, Trash2 } from "lucide-react";
+import { Folder, Share2, Trash2 } from "lucide-react";
 
 import { DocumentLinkAccessFields } from "@/components/document-link-access-fields";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,14 @@ type Collaborator = {
   role: string;
 };
 
+type FolderCollaborator = {
+  userId: string;
+  name: string | null;
+  email: string | null;
+  role: string;
+  folderName: string;
+};
+
 type ActiveShareLink = {
   id: string;
   scope: "anyone" | "members";
@@ -43,11 +51,13 @@ type ActiveShareLink = {
 export function DocumentShareDialog({
   documentId,
   collaborators,
+  folderCollaborators = [],
   friends,
   activeShareLink,
 }: {
   documentId: string;
   collaborators: Collaborator[];
+  folderCollaborators?: FolderCollaborator[];
   friends: ShareUser[];
   activeShareLink: ActiveShareLink;
 }) {
@@ -180,6 +190,39 @@ export function DocumentShareDialog({
               ))}
             </div>
           </section>
+
+          {folderCollaborators.length > 0 ? (
+            <section className="mt-6 border-t border-border/60 pt-5">
+              <h3 className="text-sm font-semibold">Through folders</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                These people already have access because a folder containing this
+                document is shared with them. Manage them from the folder.
+              </p>
+              <div className="mt-3 divide-y divide-border/60 rounded-md border border-border/60">
+                {folderCollaborators.map((collaborator) => (
+                  <div
+                    key={`${collaborator.userId}-${collaborator.folderName}`}
+                    className="flex items-center gap-3 px-3 py-2 text-sm"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">
+                        {collaborator.name ??
+                          collaborator.email ??
+                          "Unnamed user"}
+                      </p>
+                      <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                        <Folder className="size-3 shrink-0" />
+                        via {collaborator.folderName}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                      {collaborator.role}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="mt-6 border-t border-border/60 pt-5">
             <h3 className="text-sm font-semibold">Link access</h3>

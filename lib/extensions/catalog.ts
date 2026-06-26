@@ -24,7 +24,105 @@ export const stickersStateSchema = z.object({
 export type StickerItem = z.infer<typeof stickerItemSchema>;
 export type StickersState = z.infer<typeof stickersStateSchema>;
 
+export const calendarSettingsSchema = z.object({
+  defaultVisibility: z.enum(["private", "editor-only", "public"]).default("private"),
+  weekStartsOn: z.enum(["0", "1"]).default("0"),
+});
+
+const dayKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const calendarEntrySchema = z.object({
+  type: z.enum(["task", "event"]),
+  day: z.string().regex(dayKeyPattern),
+  text: z.string().max(500).default(""),
+  /** Tasks only: completion state. */
+  done: z.boolean().optional(),
+  /** Events only: optional `HH:MM` start time used to sort within a day. */
+  time: z.string().regex(timePattern).optional(),
+  note: z.string().max(2000).optional(),
+  /** Manual ordering within a day cell. */
+  order: z.number().default(0),
+});
+
+export const calendarStateSchema = z.object({
+  entries: z.record(z.string(), calendarEntrySchema).default({}),
+  /** Persisted full-bleed breakout toggle for this calendar block. */
+  expanded: z.boolean().default(false),
+});
+
+export type CalendarEntry = z.infer<typeof calendarEntrySchema>;
+export type CalendarState = z.infer<typeof calendarStateSchema>;
+
 export const localBuiltInExtensions: VaultExtension[] = [
+  {
+    id: "vault.calendar",
+    name: "Calendar",
+    version: 1,
+    kind: "built-in",
+    category: "document",
+    description:
+      "Embed a month calendar to track day-scoped tasks and event reminders inside a document.",
+    defaultEnabled: false,
+    permissions: [
+      "document:read",
+      "document:write-extension-state",
+    ],
+    settings: {
+      schema: calendarSettingsSchema,
+      defaults: {
+        defaultVisibility: "private",
+        weekStartsOn: "0",
+      },
+      sections: [
+        {
+          id: "behavior",
+          label: "Behavior",
+          fields: [
+            {
+              type: "select",
+              key: "defaultVisibility",
+              label: "Default visibility",
+              description:
+                "Who can see a new calendar's entries. Existing calendars keep their own setting.",
+              options: [
+                { label: "Private", value: "private" },
+                { label: "Editors only", value: "editor-only" },
+                { label: "Public", value: "public" },
+              ],
+            },
+            {
+              type: "select",
+              key: "weekStartsOn",
+              label: "Week starts on",
+              options: [
+                { label: "Sunday", value: "0" },
+                { label: "Monday", value: "1" },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    documentState: {
+      schemas: [
+        {
+          extensionId: "vault.calendar",
+          version: 1,
+          schema: calendarStateSchema,
+        },
+      ],
+    },
+    workspace: {
+      commands: [
+        {
+          id: "vault.calendar.insert",
+          label: "Insert calendar",
+          description: "Insert a month calendar block at the cursor.",
+        },
+      ],
+    },
+  },
   {
     id: "vault.stickers",
     name: "Stickers",

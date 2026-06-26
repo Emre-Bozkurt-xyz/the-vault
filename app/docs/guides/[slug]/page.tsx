@@ -68,11 +68,15 @@ export default async function OfficialDocPage({
         }}
         isAdmin={workspace.profile.role === "admin"}
         defaultPanelMode="docs"
+        initialLayout={workspace.layout}
+        initialTabs={workspace.tabs}
         filePanel={
           <WorkspaceFileBrowser
             owned={workspace.owned}
             shared={workspace.shared}
             published={workspace.published}
+            folders={workspace.folders}
+            sharedFolders={workspace.sharedFolders}
             activeHref={`/docs/guides/${doc.slug}`}
           />
         }

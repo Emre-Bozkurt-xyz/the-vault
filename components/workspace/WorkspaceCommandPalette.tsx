@@ -9,8 +9,39 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, FileText, Globe2, ImageIcon, Search, X } from "lucide-react";
+import {
+  Archive,
+  Blocks,
+  BookOpen,
+  FilePlus,
+  FileText,
+  Globe2,
+  Home,
+  ImageIcon,
+  LayoutGrid,
+  Link2,
+  LogOut,
+  Palette,
+  Save,
+  Search,
+  Settings,
+  Slash,
+  UserRound,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
+import { useVaultTheme } from "@/components/theme-provider";
+import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
+import { useActiveDocumentCommand } from "@/components/workspace/WorkspaceChrome";
+import { signOutAction } from "@/server/auth-actions";
+import {
+  archiveDocumentAction,
+  createDocumentAction,
+  createManualDocumentVersionAction,
+  publishDocumentAction,
+  unpublishDocumentAction,
+} from "@/server/documents";
 import { cn } from "@/lib/utils";
 
 type CommandSearchResult = {
@@ -21,8 +52,27 @@ type CommandSearchResult = {
   detail: string;
 };
 
+type WorkspaceCommand = {
+  id: string;
+  label: string;
+  group: string;
+  /** Extra terms (besides label/group) used for `/...` filtering. */
+  keywords: string;
+  icon: LucideIcon;
+  run: () => void | Promise<void>;
+};
+
+/** A `documentId`-only FormData for the document server actions. */
+function documentForm(documentId: string): FormData {
+  const form = new FormData();
+  form.set("documentId", documentId);
+  return form;
+}
+
 export function WorkspaceCommandPalette() {
   const router = useRouter();
+  const { setTheme } = useVaultTheme();
+  const activeDocument = useActiveDocumentCommand();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CommandSearchResult[]>([]);
@@ -30,7 +80,207 @@ export function WorkspaceCommandPalette() {
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const trimmedQuery = query.trim();
+
+  // `/` flips the bar from search into command mode; the text after the slash
+  // filters the command list (space-separated terms, all must match).
+  const isCommandMode = query.trimStart().startsWith("/");
+  const commandTerm = isCommandMode
+    ? query.trimStart().slice(1).trim().toLowerCase()
+    : "";
+
+  const commands = useMemo<WorkspaceCommand[]>(() => {
+    const navigate = (href: string) => () => {
+      router.push(href);
+    };
+
+    const list: WorkspaceCommand[] = [
+      {
+        id: "new-document",
+        label: "New document",
+        group: "Create",
+        keywords: "create note doc",
+        icon: FilePlus,
+        run: () => {
+          void createDocumentAction();
+        },
+      },
+      {
+        id: "go-home",
+        label: "Go to workspace",
+        group: "Go to",
+        keywords: "home workspace",
+        icon: Home,
+        run: navigate("/workspace"),
+      },
+      {
+        id: "go-gallery",
+        label: "Open gallery",
+        group: "Go to",
+        keywords: "public explore",
+        icon: LayoutGrid,
+        run: navigate("/gallery"),
+      },
+      {
+        id: "go-assets",
+        label: "Open assets",
+        group: "Go to",
+        keywords: "images library files",
+        icon: ImageIcon,
+        run: navigate("/assets"),
+      },
+      {
+        id: "go-guides",
+        label: "Open guides",
+        group: "Go to",
+        keywords: "docs help official",
+        icon: BookOpen,
+        run: navigate("/docs"),
+      },
+      {
+        id: "open-settings",
+        label: "Open settings",
+        group: "Settings",
+        keywords: "preferences config",
+        icon: Settings,
+        run: () => openWorkspaceSettings(),
+      },
+      {
+        id: "open-extensions",
+        label: "Open extensions",
+        group: "Settings",
+        keywords: "plugins add-ons calendar stickers",
+        icon: Blocks,
+        run: () => openWorkspaceSettings("extension-browser"),
+      },
+      {
+        id: "open-account",
+        label: "Open account settings",
+        group: "Settings",
+        keywords: "profile login email",
+        icon: UserRound,
+        run: () => openWorkspaceSettings("account"),
+      },
+    ];
+
+    const themes: { id: Parameters<typeof setTheme>[0]; label: string }[] = [
+      { id: "dark", label: "Dark" },
+      { id: "light", label: "Light" },
+      { id: "midnight", label: "Midnight" },
+      { id: "graphite", label: "Graphite" },
+      { id: "paper", label: "Paper" },
+      { id: "system", label: "System" },
+    ];
+
+    for (const theme of themes) {
+      list.push({
+        id: `theme-${theme.id}`,
+        label: `Theme: ${theme.label}`,
+        group: "Appearance",
+        keywords: `theme appearance ${theme.id}`,
+        icon: Palette,
+        run: () => setTheme(theme.id),
+      });
+    }
+
+    if (activeDocument) {
+      const doc = activeDocument;
+
+      if (doc.canPublish) {
+        if (doc.visibility === "public") {
+          list.push({
+            id: "doc-unpublish",
+            label: "Unpublish document",
+            group: "This document",
+            keywords: "private hide public",
+            icon: Globe2,
+            run: () => unpublishDocumentAction(documentForm(doc.id)),
+          });
+        } else {
+          list.push({
+            id: "doc-publish",
+            label: "Publish document",
+            group: "This document",
+            keywords: "public share web",
+            icon: Globe2,
+            run: () => publishDocumentAction(documentForm(doc.id)),
+          });
+        }
+      }
+
+      if (doc.visibility === "public" && doc.publicSlug) {
+        const slug = doc.publicSlug;
+        list.push({
+          id: "doc-copy-link",
+          label: "Copy public link",
+          group: "This document",
+          keywords: "url share clipboard",
+          icon: Link2,
+          run: () => {
+            void navigator.clipboard?.writeText(
+              `${window.location.origin}/public/${slug}`,
+            );
+          },
+        });
+      }
+
+      if (doc.canEdit) {
+        list.push({
+          id: "doc-snapshot",
+          label: "Save restore point",
+          group: "This document",
+          keywords: "version snapshot history backup",
+          icon: Save,
+          run: () => createManualDocumentVersionAction(documentForm(doc.id)),
+        });
+      }
+
+      if (doc.canDelete) {
+        list.push({
+          id: "doc-archive",
+          label: "Archive document",
+          group: "This document",
+          keywords: "delete remove trash",
+          icon: Archive,
+          run: () => archiveDocumentAction(documentForm(doc.id)),
+        });
+      }
+    }
+
+    list.push({
+      id: "logout",
+      label: "Sign out",
+      group: "Account",
+      keywords: "log out exit",
+      icon: LogOut,
+      run: () => signOutAction(),
+    });
+
+    return list;
+  }, [router, setTheme, activeDocument]);
+
+  const filteredCommands = useMemo(() => {
+    if (!isCommandMode) {
+      return [];
+    }
+
+    if (!commandTerm) {
+      return commands;
+    }
+
+    const terms = commandTerm.split(/\s+/).filter(Boolean);
+    return commands.filter((command) => {
+      const haystack =
+        `${command.label} ${command.group} ${command.keywords}`.toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
+  }, [isCommandMode, commandTerm, commands]);
+
   const groupedResults = useMemo(() => groupResults(results), [results]);
+  const groupedCommands = useMemo(
+    () => groupCommands(filteredCommands),
+    [filteredCommands],
+  );
+  const itemCount = isCommandMode ? filteredCommands.length : results.length;
 
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
@@ -58,7 +308,8 @@ export function WorkspaceCommandPalette() {
   }, [open]);
 
   useEffect(() => {
-    if (!open) {
+    // Command mode is local; only search mode hits the content API.
+    if (!open || isCommandMode) {
       return;
     }
 
@@ -80,16 +331,18 @@ export function WorkspaceCommandPalette() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [open, trimmedQuery]);
+  }, [open, isCommandMode, trimmedQuery]);
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [results]);
+  }, [isCommandMode, commandTerm, results]);
 
-  const label = useMemo(
-    () => (trimmedQuery ? "Search results" : "Quick open"),
-    [trimmedQuery],
-  );
+  const label = useMemo(() => {
+    if (isCommandMode) {
+      return "Commands";
+    }
+    return trimmedQuery ? "Search results" : "Quick open";
+  }, [isCommandMode, trimmedQuery]);
 
   if (!open) {
     return null;
@@ -97,6 +350,7 @@ export function WorkspaceCommandPalette() {
 
   function closePalette() {
     setOpen(false);
+    setQuery("");
   }
 
   function navigateToResult(result: CommandSearchResult) {
@@ -104,11 +358,16 @@ export function WorkspaceCommandPalette() {
     router.push(result.href);
   }
 
+  function runCommand(command: WorkspaceCommand) {
+    closePalette();
+    void command.run();
+  }
+
   function onInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setSelectedIndex((current) =>
-        results.length === 0 ? 0 : (current + 1) % results.length,
+        itemCount === 0 ? 0 : (current + 1) % itemCount,
       );
       return;
     }
@@ -116,16 +375,22 @@ export function WorkspaceCommandPalette() {
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setSelectedIndex((current) =>
-        results.length === 0
-          ? 0
-          : (current - 1 + results.length) % results.length,
+        itemCount === 0 ? 0 : (current - 1 + itemCount) % itemCount,
       );
       return;
     }
 
     if (event.key === "Enter") {
-      const selected = results[selectedIndex];
+      if (isCommandMode) {
+        const selected = filteredCommands[selectedIndex];
+        if (selected) {
+          event.preventDefault();
+          runCommand(selected);
+        }
+        return;
+      }
 
+      const selected = results[selectedIndex];
       if (selected) {
         event.preventDefault();
         navigateToResult(selected);
@@ -137,13 +402,17 @@ export function WorkspaceCommandPalette() {
     <div className="fixed inset-0 z-[80] bg-background/72 backdrop-blur-sm">
       <div className="mx-auto mt-[12vh] w-[min(44rem,calc(100vw-1.5rem))] overflow-hidden rounded-md border border-border/80 bg-card shadow-2xl shadow-black/45">
         <div className="flex h-12 items-center gap-3 border-b border-border/70 px-3">
-          <Search className="size-4 text-muted-foreground" />
+          {isCommandMode ? (
+            <Slash className="size-4 text-muted-foreground" />
+          ) : (
+            <Search className="size-4 text-muted-foreground" />
+          )}
           <input
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onInputKeyDown}
-            placeholder="Search docs, assets, guides, tags..."
+            placeholder="Search docs, assets, guides... or type / for commands"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           <button
@@ -157,35 +426,94 @@ export function WorkspaceCommandPalette() {
         </div>
         <div className="max-h-[min(32rem,65vh)] overflow-y-auto p-2">
           <p className="px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            {loading ? "Searching" : label}
+            {loading && !isCommandMode ? "Searching" : label}
           </p>
-          <div className="grid gap-3">
-            {groupedResults.length > 0 ? (
-              groupedResults.map((group) => (
-                <section key={group.label} className="grid gap-1">
-                  <p className="px-2 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
-                    {group.label}
-                  </p>
-                  {group.items.map(({ result, index }) => (
-                    <CommandResultLink
-                      key={result.id}
-                      result={result}
-                      selected={index === selectedIndex}
-                      onFocus={() => setSelectedIndex(index)}
-                      onNavigate={closePalette}
-                    />
-                  ))}
-                </section>
-              ))
-            ) : (
-              <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-                {loading ? "Searching..." : "No matching content."}
-              </p>
-            )}
-          </div>
+          {isCommandMode ? (
+            <div className="grid gap-3">
+              {groupedCommands.length > 0 ? (
+                groupedCommands.map((group) => (
+                  <section key={group.label} className="grid gap-1">
+                    <p className="px-2 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+                      {group.label}
+                    </p>
+                    {group.items.map(({ command, index }) => (
+                      <CommandActionRow
+                        key={command.id}
+                        command={command}
+                        selected={index === selectedIndex}
+                        onFocus={() => setSelectedIndex(index)}
+                        onRun={() => runCommand(command)}
+                      />
+                    ))}
+                  </section>
+                ))
+              ) : (
+                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  No matching command.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {groupedResults.length > 0 ? (
+                groupedResults.map((group) => (
+                  <section key={group.label} className="grid gap-1">
+                    <p className="px-2 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+                      {group.label}
+                    </p>
+                    {group.items.map(({ result, index }) => (
+                      <CommandResultLink
+                        key={result.id}
+                        result={result}
+                        selected={index === selectedIndex}
+                        onFocus={() => setSelectedIndex(index)}
+                        onNavigate={closePalette}
+                      />
+                    ))}
+                  </section>
+                ))
+              ) : (
+                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  {loading ? "Searching..." : "No matching content."}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function CommandActionRow({
+  command,
+  selected,
+  onFocus,
+  onRun,
+}: {
+  command: WorkspaceCommand;
+  selected: boolean;
+  onFocus: () => void;
+  onRun: () => void;
+}) {
+  const Icon = command.icon;
+
+  return (
+    <button
+      type="button"
+      data-selected={selected || undefined}
+      onMouseEnter={onFocus}
+      onFocus={onFocus}
+      onClick={onRun}
+      className={cn(
+        "grid grid-cols-[1.5rem_1fr] items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition hover:bg-muted",
+        selected && "bg-muted text-foreground",
+        "text-card-foreground",
+      )}
+    >
+      <Icon className="size-4 text-muted-foreground" />
+      <span className="min-w-0 truncate font-medium">{command.label}</span>
+    </button>
   );
 }
 
@@ -231,6 +559,24 @@ function CommandResultLink({
       </span>
     </Link>
   );
+}
+
+function groupCommands(commands: WorkspaceCommand[]) {
+  const groups = new Map<
+    string,
+    { label: string; items: { command: WorkspaceCommand; index: number }[] }
+  >();
+
+  commands.forEach((command, index) => {
+    const group = groups.get(command.group) ?? {
+      label: command.group,
+      items: [],
+    };
+    group.items.push({ command, index });
+    groups.set(command.group, group);
+  });
+
+  return [...groups.values()];
 }
 
 function groupResults(results: CommandSearchResult[]) {

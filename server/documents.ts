@@ -25,13 +25,18 @@ import {
   documentTags,
   documentVersions,
   documents,
+  folderPermissions,
+  folders,
   friendships,
   tags,
   users,
+  type DocumentRole,
+  type DocumentVisibility,
 } from "@/db/schema";
 import {
   canDeleteDocument,
   canEditDocument,
+  canEditFolderContents,
   canShareDocument,
   type DocumentAccess,
   getDocumentAccess,
@@ -41,6 +46,7 @@ import {
   type ContentSearchQuery,
   contentSearchIsEmpty,
 } from "@/lib/content-search-query";
+import { coerceDates } from "@/lib/db-rows";
 import { normalizeTagSlug } from "@/lib/content-metadata";
 import { slugify } from "@/lib/slug";
 import {
@@ -147,6 +153,46 @@ export async function createDocumentAction() {
     return [createdDocument];
   });
 
+  redirect(`/docs/${document.id}`);
+}
+
+export async function createDocumentInFolderAction(formData: FormData) {
+  const user = await requireActiveUser();
+  const rawFolderId = formData.get("folderId");
+  const folderId =
+    typeof rawFolderId === "string" && rawFolderId
+      ? documentIdSchema.parse(rawFolderId)
+      : null;
+
+  // Allow creating into any folder the user can manage: their own, or one
+  // shared with them as an editor. The new document is owned by its creator.
+  if (folderId && !(await canEditFolderContents(user.id, folderId))) {
+    notFound();
+  }
+
+  const [document] = await db.transaction(async (tx) => {
+    const [createdDocument] = await tx
+      .insert(documents)
+      .values({
+        ownerId: user.id,
+        folderId,
+        title: "Untitled document",
+        markdown: initialMarkdownContent,
+      })
+      .returning({ id: documents.id });
+
+    await tx.insert(documentPermissions).values({
+      documentId: createdDocument.id,
+      userId: user.id,
+      role: "owner",
+    });
+
+    return [createdDocument];
+  });
+
+  // Refresh the workspace layout so the sidebar tree places the new document in
+  // its folder; the redirect navigation alone keeps the cached (stale) layout.
+  revalidatePath("/", "layout");
   redirect(`/docs/${document.id}`);
 }
 
@@ -771,6 +817,7 @@ export async function listDocumentsForUser(userId: string) {
       title: documents.title,
       markdown: documents.markdown,
       visibility: documents.visibility,
+      folderId: documents.folderId,
       updatedAt: documents.updatedAt,
     })
     .from(documents)
@@ -778,8 +825,57 @@ export async function listDocumentsForUser(userId: string) {
     .orderBy(desc(documents.updatedAt));
 }
 
-export async function listSharedDocumentsForUser(userId: string) {
+/**
+ * Documents that live inside a folder the user owns but were created by someone
+ * else (e.g. a folder collaborator with editor access). The folder owner can
+ * access these through folder ownership, so they belong in the owner's folder
+ * tree even though they are not in `listDocumentsForUser`.
+ */
+export async function listDocumentsInOwnedFoldersFromOthers(userId: string) {
   return db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      visibility: documents.visibility,
+      folderId: documents.folderId,
+      updatedAt: documents.updatedAt,
+    })
+    .from(documents)
+    .innerJoin(folders, eq(documents.folderId, folders.id))
+    .where(
+      and(
+        eq(folders.ownerId, userId),
+        ne(documents.ownerId, userId),
+        isNull(documents.deletedAt),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .orderBy(desc(documents.updatedAt));
+}
+
+type SharedDocumentRow = {
+  id: string;
+  title: string;
+  markdown: string;
+  visibility: DocumentVisibility;
+  updatedAt: Date;
+  role: DocumentRole;
+  folderId: string | null;
+  ownerId: string;
+  ownerName: string | null;
+  ownerUsername: string | null;
+  viaFolderName: string | null;
+};
+
+/**
+ * Documents shared with a user — both direct document shares and documents the
+ * user reaches through a shared folder (or any of its descendants). Owner
+ * details are attached so the sidebar can group "Shared with me" by owner.
+ */
+export async function listSharedDocumentsForUser(
+  userId: string,
+): Promise<SharedDocumentRow[]> {
+  const directRows = await db
     .select({
       id: documents.id,
       title: documents.title,
@@ -787,17 +883,87 @@ export async function listSharedDocumentsForUser(userId: string) {
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
       role: documentPermissions.role,
+      folderId: documents.folderId,
+      ownerId: documents.ownerId,
+      ownerName: users.name,
+      ownerUsername: users.username,
     })
     .from(documentPermissions)
     .innerJoin(documents, eq(documentPermissions.documentId, documents.id))
+    .innerJoin(users, eq(documents.ownerId, users.id))
     .where(
       and(
         eq(documentPermissions.userId, userId),
         ne(documentPermissions.role, "owner"),
         isNull(documents.deletedAt),
       ),
+    );
+
+  const inheritedRows = await db.execute<{
+    id: string;
+    title: string;
+    markdown: string;
+    visibility: DocumentVisibility;
+    updatedAt: Date;
+    role: "editor" | "viewer";
+    folderId: string | null;
+    ownerId: string;
+    ownerName: string | null;
+    ownerUsername: string | null;
+    viaFolderName: string | null;
+  }>(sql`
+    with recursive shared_folders as (
+      select f.id, fp.role::text as role, f.name as via_name
+      from ${folders} f
+      join ${folderPermissions} fp
+        on fp.folder_id = f.id and fp.user_id = ${userId}
+      where f.deleted_at is null
+      union all
+      select c.id, sf.role, sf.via_name
+      from ${folders} c
+      join shared_folders sf on c.parent_id = sf.id
+      where c.deleted_at is null
     )
-    .orderBy(desc(documents.updatedAt));
+    select
+      d.id as "id",
+      d.title as "title",
+      d.markdown as "markdown",
+      d.visibility as "visibility",
+      d.updated_at as "updatedAt",
+      sf.role as "role",
+      d.folder_id as "folderId",
+      d.owner_id as "ownerId",
+      u.name as "ownerName",
+      u.username as "ownerUsername",
+      sf.via_name as "viaFolderName"
+    from shared_folders sf
+    join ${documents} d on d.folder_id = sf.id
+    join ${users} u on u.id = d.owner_id
+    where d.deleted_at is null and d.owner_id <> ${userId}
+  `);
+
+  const byId = new Map<string, SharedDocumentRow>();
+
+  for (const row of directRows) {
+    byId.set(row.id, { ...row, viaFolderName: null });
+  }
+
+  for (const row of inheritedRows) {
+    const existing = byId.get(row.id);
+
+    // A direct share is authoritative; otherwise keep the strongest folder role.
+    // Raw db.execute rows skip Drizzle's column mapping, so coerce the timestamp
+    // back to a Date to match the query-builder rows.
+    if (!existing) {
+      byId.set(row.id, coerceDates(row, ["updatedAt"]));
+    } else if (existing.viaFolderName && row.role === "editor") {
+      byId.set(row.id, { ...existing, role: "editor" });
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+  );
 }
 
 export async function listPublicDocuments(
@@ -1106,6 +1272,60 @@ export async function listDocumentCollaborators(documentId: string, userId: stri
     .innerJoin(users, eq(documentPermissions.userId, users.id))
     .where(eq(documentPermissions.documentId, parsedDocumentId.data))
     .orderBy(documentPermissions.role, users.email);
+}
+
+/**
+ * Lists people who can reach a document through a shared folder (the document's
+ * folder or any ancestor), with the folder that grants the access. Used to show
+ * inherited collaborators in the document share dialog. Owner-gated like the
+ * direct collaborator list.
+ */
+export async function listDocumentFolderCollaborators(
+  documentId: string,
+  userId: string,
+) {
+  const parsedDocumentId = documentIdSchema.safeParse(documentId);
+
+  if (!parsedDocumentId.success) {
+    return [];
+  }
+
+  if (!(await canShareDocument(userId, parsedDocumentId.data))) {
+    return [];
+  }
+
+  return db.execute<{
+    userId: string;
+    name: string | null;
+    email: string | null;
+    role: "editor" | "viewer";
+    folderName: string;
+  }>(sql`
+    with recursive chain as (
+      select f.id, f.parent_id, f.name
+      from ${folders} f
+      where f.id = (
+        select folder_id from ${documents} where id = ${parsedDocumentId.data}
+      )
+      and f.deleted_at is null
+      union all
+      select f.id, f.parent_id, f.name
+      from ${folders} f
+      join chain c on f.id = c.parent_id
+      where f.deleted_at is null
+    )
+    select
+      u.id as "userId",
+      u.name as "name",
+      u.email as "email",
+      fp.role as "role",
+      c.name as "folderName"
+    from chain c
+    join ${folderPermissions} fp on fp.folder_id = c.id
+    join ${users} u on u.id = fp.user_id
+    where u.id <> ${userId}
+    order by u.email
+  `);
 }
 
 export async function getActiveDocumentShareLinkForUser(

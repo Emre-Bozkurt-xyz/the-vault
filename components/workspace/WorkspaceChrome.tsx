@@ -21,10 +21,15 @@ import {
   subscribeToWorkspaceDocumentRemovals,
 } from "@/components/workspace/workspace-events";
 import type {
+  ActiveDocumentCommandContext,
   WorkspaceDocumentItem,
+  WorkspaceFolderItem,
   WorkspaceGuideGroup,
+  WorkspaceLayoutState,
   WorkspacePageDescriptor,
   WorkspacePublicDocumentItem,
+  WorkspaceSharedFolderItem,
+  WorkspaceTab,
 } from "@/components/workspace/workspace-types";
 
 type WorkspaceChromeData = {
@@ -35,9 +40,13 @@ type WorkspaceChromeData = {
     role?: string | null;
     username?: string | null;
   };
+  layout: Partial<WorkspaceLayoutState>;
+  tabs: WorkspaceTab[];
   owned: WorkspaceDocumentItem[];
   shared: WorkspaceDocumentItem[];
   published: WorkspaceDocumentItem[];
+  folders: WorkspaceFolderItem[];
+  sharedFolders: WorkspaceSharedFolderItem[];
   publicDocuments: WorkspacePublicDocumentItem[];
   guideGroups: WorkspaceGuideGroup[];
 };
@@ -46,10 +55,20 @@ type WorkspaceChromeContextValue = {
   setActivePage: (page: WorkspacePageDescriptor) => void;
   setRightPanel: (panel: ReactNode | null) => void;
   upsertDocument: (document: WorkspaceDocumentItem) => void;
+  activeDocument: ActiveDocumentCommandContext | null;
+  setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
 };
 
 const WorkspaceChromeContext =
   createContext<WorkspaceChromeContextValue | null>(null);
+
+/**
+ * The active document's command context, or null when the foreground page is
+ * not an editable document. Consumed by the command palette.
+ */
+export function useActiveDocumentCommand(): ActiveDocumentCommandContext | null {
+  return useContext(WorkspaceChromeContext)?.activeDocument ?? null;
+}
 
 export function WorkspaceChrome({
   workspace,
@@ -71,6 +90,8 @@ export function WorkspaceChrome({
   const [activePage, setActivePage] =
     useState<WorkspacePageDescriptor>(fallbackPage);
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
+  const [activeDocument, setActiveDocument] =
+    useState<ActiveDocumentCommandContext | null>(null);
   const [workspaceState, setWorkspaceState] = useState(workspace);
   const isAdmin = workspace.profile.role === "admin";
   const baseCurrentHref = currentHref.split("?")[0] ?? currentHref;
@@ -116,8 +137,10 @@ export function WorkspaceChrome({
       setActivePage,
       setRightPanel,
       upsertDocument,
+      activeDocument,
+      setActiveDocument,
     }),
-    [upsertDocument],
+    [upsertDocument, activeDocument],
   );
 
   return (
@@ -126,12 +149,16 @@ export function WorkspaceChrome({
         activePage={activePage}
         isAdmin={isAdmin}
         defaultPanelMode={defaultPanelModeForHref(currentHref)}
+        initialLayout={workspace.layout}
+        initialTabs={workspace.tabs}
         contentClassName="max-w-none px-0 py-0 md:px-0 md:py-0"
         filePanel={
           <WorkspaceFileBrowser
             owned={workspaceState.owned}
             shared={workspaceState.shared}
             published={workspaceState.published}
+            folders={workspaceState.folders}
+            sharedFolders={workspaceState.sharedFolders}
             activeHref={currentHref.split("?")[0]}
           />
         }
@@ -176,16 +203,19 @@ export function WorkspacePageRegistration({
   page,
   rightPanel,
   documentItem,
+  documentCommand,
 }: {
   page: WorkspacePageDescriptor;
   rightPanel?: ReactNode;
   documentItem?: WorkspaceDocumentItem;
+  documentCommand?: ActiveDocumentCommandContext;
 }) {
   const context = useContext(WorkspaceChromeContext);
 
   useEffect(() => {
     context?.setActivePage(page);
     context?.setRightPanel(rightPanel ?? null);
+    context?.setActiveDocument(documentCommand ?? null);
 
     if (documentItem) {
       context?.upsertDocument(documentItem);
@@ -193,8 +223,9 @@ export function WorkspacePageRegistration({
 
     return () => {
       context?.setRightPanel(null);
+      context?.setActiveDocument(null);
     };
-  }, [context, documentItem, page, rightPanel]);
+  }, [context, documentCommand, documentItem, page, rightPanel]);
 
   return null;
 }
@@ -248,7 +279,10 @@ function applyDocumentChange(
     ...workspace,
     owned: nextOwned,
     shared: nextShared,
-    published: nextOwned.filter((document) => document.visibility === "public"),
+    published: nextOwned.filter(
+      (document) =>
+        document.visibility === "public" && document.role === "owner",
+    ),
   };
 }
 

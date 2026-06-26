@@ -230,7 +230,7 @@ Add notes as real files appear:
 | `components/user-search-field.tsx` | Reusable user search/autocomplete field with avatar/name/username/email suggestions |
 | `components/document-workspace.tsx` | Client wrapper for the document editor workspace and collapsible right-side action panel |
 | `components/workspace/` | Workspace shell, draggable tab bar, Ctrl/Cmd+K command palette, icon rail, file browser, docs panel, utility panels, resizable/collapsible side panels, document-state sync helpers, and new-tab components for Phase 10; settings is modal-only and no longer has a utility sidebar |
-| `components/workspace/WorkspaceCommandPalette.tsx` | Workspace-wide Ctrl/Cmd+K modal with grouped results, arrow-key navigation, and quick-open search for documents, public content, assets, and official guides |
+| `components/workspace/WorkspaceCommandPalette.tsx` | Workspace-wide Ctrl/Cmd+K modal with grouped results, arrow-key navigation, and quick-open search for documents, public content, assets, and official guides. Typing a leading `/` flips it into command mode: navigation/create/theme/settings/account commands plus document-scoped actions (publish/unpublish, copy link, save restore point, archive) gated on the active document's capabilities via `useActiveDocumentCommand` from `WorkspaceChrome` |
 | `components/ui/` | shadcn/ui components |
 | `db/` | Database client/schema/migrations |
 | `db/index.ts` | Drizzle/Postgres client |
@@ -446,7 +446,7 @@ Schema notes:
 - `document_versions` stores full Markdown checkpoints for recovery. Automatic checkpoints are batched to at most one every 10 minutes per document unless a save changes the body size by at least 2,000 characters or 25%.
 - `official_docs` stores admin-authored Markdown docs with `draft`, `published`, and `archived` statuses. Public docs routes only read published rows.
 - `official_docs.category` and `official_docs.sort_order` drive the public docs sidebar grouping and order. Published docs sort by category, sort order, then title.
-- `content/docs/**/*.md` stores repo-backed canonical docs with frontmatter (`title`, `slug`, `category`, `order`, `public`). Repo docs are merged with DB docs in the public/admin docs UI. The Assets category currently includes `asset-library` and `asset-embeds-and-layout`; guide examples intentionally include rendered Markdown snippets so the docs show both source syntax and output shape.
+- `content/docs/**/*.md` stores repo-backed canonical docs with frontmatter (`title`, `slug`, `category`, `order`, `public`). Repo docs are merged with DB docs in the public/admin docs UI. The Assets category currently includes asset library, asset metadata/search, and asset embed/layout docs; guide examples intentionally include rendered Markdown snippets so the docs show both source syntax and output shape.
 - Repo docs own their slugs. DB docs with a slug collision are hidden from public docs and cannot be saved until the slug changes.
 - Owners are stored both as `documents.owner_id` and as an owner row in `document_permissions`.
 - `document_share_links` stores one stable revocable share link per document. Link access is dynamic and does not create a `document_permissions` row. Updating link settings reuses the same URL while changing enabled/scope/role access. `anyone` links are read-only; `members` links may be viewer or editor, but editor access requires a signed-in Vault account and does not grant sharing/publishing/deleting rights.
@@ -1036,7 +1036,7 @@ Current workspace behavior:
 - `/docs/[docId]` is the most complete editor-first route: the document canvas only contains toolbar, live presence, title, editor/preview surface, and fallback save state. Share, visibility, history, and archive controls live in the right context panel.
 - Settings, friends, admin users, admin docs list, admin official-doc editor, gallery, and signed-in official docs routes now render inside the workspace shell with flatter workspace-native surfaces.
 - `app/dashboard/admin/docs/[docId]/page.tsx` moved to `app/(workspace)/dashboard/admin/docs/[docId]/page.tsx`; it now registers its right context panel and uses a flatter `OfficialDocEditor` surface.
-- `/gallery` currently lists public documents and filters by document title, owner display name, username, and public slug. Tags, asset uploads, score/rating, and image-board behavior are intentionally deferred until separate schema/design work.
+- `/gallery` lists public documents and public assets, filters through the shared metadata-aware search parser, supports tag/owner/kind/visibility filters, and supports `sort:score` plus `sort:trending` for public engagement ordering.
 ```
 
 Known workspace caveats:
@@ -1398,3 +1398,4 @@ Use this as a compact implementation log.
 | 2026-06-24 | Improved search ranking and command UX | Gallery public document/asset search now pushes metadata filters into SQL, `sort:trending` uses seven-day activity instead of all-time score, and Ctrl/Cmd+K has grouped keyboard-navigable results |
 | 2026-06-24 | Added tag autocomplete UI | Document Properties and asset metadata editors now use a shared space-separated tag autocomplete input backed by `/api/tags/completions` suggestions and usage counts |
 | 2026-06-24 | Added admin tag management | Added `/dashboard/admin/tags` plus admin actions for canonical tag authoring, aliases, usage counts, unused filtering, bulk safe orphan cleanup, and per-tag deletion |
+| 2026-06-25 | Added metadata/search user guides | Added repo-backed docs for document Properties, shared tags, search tokens, asset metadata, public/private search behavior, and updated the asset library guide to mention tags |

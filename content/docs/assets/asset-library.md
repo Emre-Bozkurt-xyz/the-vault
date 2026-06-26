@@ -33,8 +33,12 @@ Each asset has metadata separate from the original object bytes:
 | --- | --- |
 | Display name | The human-friendly name shown in the library, gallery, and autocomplete. |
 | Alt text | Fallback text for image embeds and accessibility. |
+| Tags | Shared document/asset tags used by library search and the public gallery. |
 | Description | Notes about the asset for your library or public gallery entry. |
 | Visibility | Private or public. |
+
+See [[guide:asset-metadata-and-search|Asset metadata and search]] for the full
+search syntax and tag rules.
 
 ## Private and public assets
 

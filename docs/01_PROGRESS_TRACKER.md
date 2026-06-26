@@ -351,7 +351,7 @@ Reference plan: `docs/12_EXTENSION_REGISTRY_PLAN.md`
 | [~] | Move Live block specs into registry | Added `lib/extensions/registry.ts` and route current core LiveBlockSpecs through a `VaultExtension`; splitting specs into separate registry-owned modules remains |
 | [x] | Add extension state runtime API | Added permission-checked server actions and a debounced client hook for object-shaped document extension state |
 | [x] | Prototype stickers extension | `vault.stickers` extension: `ContentPickerDialog` reusable asset picker (debounced search, kind tabs, persisted "include public" toggle), `StickerLayer` overlay with pointer-capture drag and delete, sticker button injected via `MarkdownToolbar.extensionItems`, `stickersEnabled` fetched from `userExtensionSettings` at doc load |
-| [ ] | Prototype calendar extension | Workspace/page contribution first; optional Markdown block after the workspace flow proves useful |
+| [~] | Prototype calendar extension | `vault.calendar` block built end-to-end: `lib/calendar.ts` fence/day-math helpers, `calendarStateSchema`, `server/calendar-state.ts` public prefetch, `CalendarBlock` widget, Live-mode `CalendarBlockWidget`, and a toolbar insert (`CalendarToolbarGroup` → `applyFormat("calendar")`) that drops a `:::calendar{id=…}` block with a fresh id. Doc page now fetches `vault.calendar` settings and wires `calendarEnabled`/`weekStartsOn`/`visibility` so the gated toolbar button actually renders. Remaining: command-palette/slash execution of the declared `vault.calendar.insert` command |
 
 Exit criteria:
 
@@ -406,6 +406,7 @@ Reference plan: `docs/14_METADATA_TAGS_SEARCH_PLAN.md`
 | [x] | Replace gallery search backend | Shared parser supports bare mixed search plus `tags:`, `kind:`, `owner:`, `visibility:`, and `sort:` tokens; public document/asset gallery searches push metadata filters into SQL and rank by title/tag/summary/owner relevance when text terms are present |
 | [x] | Add likes/views UI and actions | Signed-in like toggle, daily unique-ish view records, public document/asset counts, all-time `sort:score`, and seven-day `sort:trending` gallery ordering are wired |
 | [x] | Add Ctrl+K content search | `Ctrl/Cmd+K` opens a grouped keyboard-navigable command palette backed by `/api/content/search` for readable docs, shared docs, owned assets, public content, and official guides |
+| [x] | Add metadata/search guide docs | Added repo-backed user guides for document Properties, shared tags, search tokens, asset metadata, and public/private search behavior |
 
 Exit criteria:
 

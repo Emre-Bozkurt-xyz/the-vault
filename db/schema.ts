@@ -13,9 +13,11 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 export type DocumentRole = "owner" | "editor" | "viewer";
+export type FolderRole = "editor" | "viewer";
 export type DocumentVisibility = "private" | "public";
 export type DocumentShareLinkScope = "anyone" | "members";
 export type DocumentShareLinkRole = "viewer" | "editor";
@@ -161,6 +163,61 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
   }),
 }));
 
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references((): AnyPgColumn => folders.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("folders_owner_id_idx").on(table.ownerId),
+    index("folders_parent_id_idx").on(table.parentId),
+    index("folders_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const folderPermissions = pgTable(
+  "folder_permissions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    folderId: uuid("folder_id")
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").$type<FolderRole>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("folder_permissions_folder_user_unique").on(
+      table.folderId,
+      table.userId,
+    ),
+    index("folder_permissions_folder_id_idx").on(table.folderId),
+    index("folder_permissions_user_id_idx").on(table.userId),
+  ],
+);
+
 export const documents = pgTable(
   "documents",
   {
@@ -168,6 +225,9 @@ export const documents = pgTable(
     ownerId: uuid("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    folderId: uuid("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
     title: text("title").notNull(),
     markdown: text("markdown").notNull().default(""),
     visibility: text("visibility").$type<DocumentVisibility>().notNull().default("private"),
@@ -182,6 +242,7 @@ export const documents = pgTable(
   },
   (table) => [
     index("documents_owner_id_idx").on(table.ownerId),
+    index("documents_folder_id_idx").on(table.folderId),
     index("documents_visibility_idx").on(table.visibility),
     index("documents_updated_at_idx").on(table.updatedAt),
     uniqueIndex("documents_public_slug_unique").on(table.publicSlug),
@@ -648,10 +709,43 @@ export const contentViews = pgTable(
   ],
 );
 
+export const foldersRelations = relations(folders, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [folders.ownerId],
+    references: [users.id],
+  }),
+  parent: one(folders, {
+    fields: [folders.parentId],
+    references: [folders.id],
+    relationName: "folder_parent",
+  }),
+  children: many(folders, { relationName: "folder_parent" }),
+  permissions: many(folderPermissions),
+  documents: many(documents),
+}));
+
+export const folderPermissionsRelations = relations(
+  folderPermissions,
+  ({ one }) => ({
+    folder: one(folders, {
+      fields: [folderPermissions.folderId],
+      references: [folders.id],
+    }),
+    user: one(users, {
+      fields: [folderPermissions.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
 export const documentsRelations = relations(documents, ({ one, many }) => ({
   owner: one(users, {
     fields: [documents.ownerId],
     references: [users.id],
+  }),
+  folder: one(folders, {
+    fields: [documents.folderId],
+    references: [folders.id],
   }),
   collabState: one(documentCollabStates, {
     fields: [documents.id],
