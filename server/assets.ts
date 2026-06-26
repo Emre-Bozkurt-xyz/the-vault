@@ -123,6 +123,24 @@ export async function getOptionalAssetUser(): Promise<ActiveAssetUser | null> {
   };
 }
 
+export async function getUserStorageSummary(
+  userId: string,
+): Promise<{ usedBytes: number; quotaBytes: number }> {
+  const [user] = await db
+    .select({
+      storageUsedBytes: users.storageUsedBytes,
+      storageQuotaBytes: users.storageQuotaBytes,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return {
+    usedBytes: user?.storageUsedBytes ?? 0,
+    quotaBytes: user?.storageQuotaBytes ?? 0,
+  };
+}
+
 export async function requireAssetUser() {
   const user = await getOptionalAssetUser();
 

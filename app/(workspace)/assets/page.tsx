@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AssetLibraryClient } from "@/components/assets/AssetLibraryClient";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
-import { listAssetsForUser } from "@/server/assets";
+import { getUserStorageSummary, listAssetsForUser } from "@/server/assets";
 
 export default async function AssetsPage() {
   const session = await auth();
@@ -12,7 +12,10 @@ export default async function AssetsPage() {
     redirect("/login");
   }
 
-  const assets = await listAssetsForUser(session.user.id);
+  const [assets, storage] = await Promise.all([
+    listAssetsForUser(session.user.id),
+    getUserStorageSummary(session.user.id),
+  ]);
 
   return (
     <>
@@ -20,7 +23,10 @@ export default async function AssetsPage() {
         page={{ type: "assets", title: "Assets", href: "/assets" }}
       />
       <section className="mx-auto w-full max-w-6xl py-6">
-        <AssetLibraryClient initialAssets={assets} />
+        <AssetLibraryClient
+          initialAssets={assets}
+          storageQuotaBytes={storage.quotaBytes}
+        />
       </section>
     </>
   );

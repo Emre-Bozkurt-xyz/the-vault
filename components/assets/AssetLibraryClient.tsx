@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   Check,
   Copy,
@@ -8,11 +8,13 @@ import {
   FileText,
   Globe2,
   ImageIcon,
+  Loader2,
   Lock,
   PanelRightOpen,
   Save,
   Search,
   Trash2,
+  Upload,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -53,12 +55,18 @@ type KindFilter = "all" | "image" | "pdf";
 type VisibilityFilter = "all" | "private" | "public";
 type SortMode = "newest" | "oldest" | "name" | "size";
 
+const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
+
 export function AssetLibraryClient({
   initialAssets,
+  storageQuotaBytes,
 }: {
   initialAssets: AssetLibraryItem[];
+  storageQuotaBytes: number;
 }) {
   const [assets, setAssets] = useState(initialAssets);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
     initialAssets[0]?.id ?? null,
   );
@@ -98,6 +106,73 @@ export function AssetLibraryClient({
   async function copyEmbed(asset: AssetLibraryItem) {
     await navigator.clipboard.writeText(asset.markdown);
     setMessage("Embed copied.");
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    event.target.value = "";
+
+    if (files.length === 0) {
+      return;
+    }
+
+    setUploading(true);
+    setMessage(null);
+
+    let uploaded = 0;
+
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.set("file", file);
+
+        const response = await fetch("/api/assets", {
+          method: "POST",
+          body: formData,
+        });
+        const payload = (await response.json()) as {
+          asset?: { id: string };
+          error?: string;
+        };
+
+        if (!response.ok || !payload.asset) {
+          throw new Error(payload.error ?? `Could not upload ${file.name}.`);
+        }
+
+        uploaded += 1;
+      }
+
+      const listResponse = await fetch("/api/assets");
+      const listPayload = (await listResponse.json()) as {
+        assets?: AssetLibraryItem[];
+        error?: string;
+      };
+
+      if (listResponse.ok && listPayload.assets) {
+        const refreshed = listPayload.assets;
+        setAssets(refreshed);
+
+        const stillSelected = refreshed.some((asset) => asset.id === selectedId);
+        if (!stillSelected && refreshed[0]) {
+          setSelectedId(refreshed[0].id);
+          setDraft(toDraft(refreshed[0]));
+        }
+      }
+
+      setMessage(
+        files.length === 1
+          ? "Asset uploaded."
+          : `${uploaded} of ${files.length} assets uploaded.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not upload asset.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function saveAsset(event: FormEvent<HTMLFormElement>) {
@@ -204,11 +279,36 @@ export function AssetLibraryClient({
               it should be visible outside private docs.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-sm sm:min-w-64">
-            <Metric label="Assets" value={String(assets.length)} />
-            <Metric label="Stored" value={formatBytes(storage.bytes)} />
+          <div className="flex flex-col gap-3 text-sm sm:min-w-72">
+            <Button
+              type="button"
+              onClick={openFilePicker}
+              disabled={uploading}
+              className="w-full sm:w-auto sm:self-end"
+            >
+              {uploading ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {uploading ? "Uploading..." : "Upload asset"}
+            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Metric label="Assets" value={String(assets.length)} />
+              <Metric label="Stored" value={formatBytes(storage.bytes)} />
+            </div>
+            <StorageBar used={storage.bytes} quota={storageQuotaBytes} />
           </div>
         </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={UPLOAD_ACCEPT}
+          multiple
+          className="sr-only"
+          onChange={(event) => void handleFilesSelected(event)}
+        />
 
         {assets.length > 0 ? (
           <div className="mt-5 grid gap-3 border-b border-border/50 pb-5 lg:grid-cols-[minmax(0,1fr)_9rem_9rem_9rem]">
@@ -330,14 +430,27 @@ export function AssetLibraryClient({
             <ImageIcon className="mx-auto size-8 text-muted-foreground" />
             <h2 className="mt-4 text-lg font-semibold">No assets yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              Open a document, use the image upload button in the Markdown
-              toolbar, then come back here to browse and configure the upload.
+              Upload an image or PDF to get started, or add one from the image
+              upload button in a document&apos;s Markdown toolbar.
             </p>
+            <Button
+              type="button"
+              onClick={openFilePicker}
+              disabled={uploading}
+              className="mx-auto mt-5"
+            >
+              {uploading ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {uploading ? "Uploading..." : "Upload asset"}
+            </Button>
           </div>
         )}
       </section>
 
-      <aside className="min-h-0 border border-border/70 bg-card/70 lg:sticky lg:top-6 lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto">
+      <aside className="min-h-0 min-w-0 overflow-x-hidden border border-border/70 bg-card/70 lg:sticky lg:top-6 lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto">
         {selected ? (
           <form onSubmit={saveAsset} className="flex h-full flex-col">
             <div className="border-b border-border/70 p-4">
@@ -425,11 +538,14 @@ export function AssetLibraryClient({
                   />
                 </div>
               </div>
-              <div className="grid gap-2 rounded-md border border-border/70 bg-background/55 p-3 text-xs text-muted-foreground">
-                <p className="font-mono text-[0.72rem] text-foreground">
+              <div className="grid gap-2.5 rounded-md border border-border/70 bg-background/55 p-3">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Markdown embed
+                </span>
+                <code className="block overflow-hidden rounded bg-muted/60 px-2.5 py-2 font-mono text-[0.72rem] leading-relaxed text-foreground [overflow-wrap:anywhere]">
                   {selected.markdown}
-                </p>
-                <div className="flex gap-2">
+                </code>
+                <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
                     size="sm"
@@ -492,6 +608,40 @@ function Metric({ label, value }: { label: string; value: string }) {
         {label}
       </p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function StorageBar({ used, quota }: { used: number; quota: number }) {
+  const ratio = quota > 0 ? Math.min(used / quota, 1) : 0;
+  const percent = Math.round(ratio * 100);
+  const nearLimit = ratio >= 0.9;
+
+  return (
+    <div className="grid gap-1.5 rounded-md border border-border/70 bg-card/60 px-3 py-2.5">
+      <div className="flex items-center justify-between text-[0.7rem] text-muted-foreground">
+        <span className="font-semibold uppercase tracking-[0.18em]">Storage</span>
+        <span>{percent}%</span>
+      </div>
+      <div
+        className="h-2 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Storage used"
+      >
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            nearLimit ? "bg-destructive" : "bg-primary",
+          )}
+          style={{ width: `${Math.max(ratio * 100, used > 0 ? 2 : 0)}%` }}
+        />
+      </div>
+      <p className="text-[0.7rem] text-muted-foreground">
+        {formatBytes(used)} of {quota > 0 ? formatBytes(quota) : "unlimited"} used
+      </p>
     </div>
   );
 }
