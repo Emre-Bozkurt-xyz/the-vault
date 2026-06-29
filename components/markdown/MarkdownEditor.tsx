@@ -716,6 +716,9 @@ export function MarkdownEditor({
         ".vault-markdown-editor-live & .cm-content .vault-cm-preview-italic": {
           fontStyle: "italic",
         },
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-strike": {
+          textDecorationLine: "line-through",
+        },
         ".vault-markdown-editor-live & .cm-content .vault-cm-preview-code": {
           border: "1px solid var(--border)",
           borderRadius: "0.3rem",
@@ -742,6 +745,13 @@ export function MarkdownEditor({
           borderLeft: "3px solid var(--border)",
           color: "var(--muted-foreground)",
           paddingLeft: "1rem",
+        },
+        ".vault-markdown-editor-live & .cm-content .vault-cm-preview-hr": {
+          display: "inline-block",
+          width: "100%",
+          height: "0",
+          verticalAlign: "middle",
+          borderTop: "1px solid var(--border)",
         },
         ".vault-cm-preview-codeblock": {
           backgroundColor: "color-mix(in oklab, var(--muted) 60%, transparent)",
@@ -2063,6 +2073,7 @@ function createMarkdownShortcutKeymap(
 const hiddenMarkdown = Decoration.replace({});
 const previewBold = Decoration.mark({ class: "vault-cm-preview-bold" });
 const previewItalic = Decoration.mark({ class: "vault-cm-preview-italic" });
+const previewStrike = Decoration.mark({ class: "vault-cm-preview-strike" });
 const previewCode = Decoration.mark({ class: "vault-cm-preview-code" });
 const previewLink = Decoration.mark({ class: "vault-cm-preview-link" });
 const previewWikiLink = Decoration.mark({ class: "vault-cm-preview-wiki-link" });
@@ -2111,18 +2122,7 @@ function createHiddenFrontmatterExtension() {
 }
 
 function getHiddenFrontmatterDecorations(state: EditorState) {
-  if (state.doc.lines < 2 || state.doc.line(1).text.trim() !== "---") {
-    return Decoration.none;
-  }
-
-  let closingLineNumber: number | null = null;
-
-  for (let lineNumber = 2; lineNumber <= state.doc.lines; lineNumber += 1) {
-    if (state.doc.line(lineNumber).text.trim() === "---") {
-      closingLineNumber = lineNumber;
-      break;
-    }
-  }
+  const closingLineNumber = getFrontmatterEndLine(state.doc);
 
   if (!closingLineNumber) {
     return Decoration.none;
@@ -2135,6 +2135,26 @@ function getHiddenFrontmatterDecorations(state: EditorState) {
   }
 
   return Decoration.set(ranges);
+}
+
+/**
+ * Line number of the closing `---` of a leading YAML frontmatter block, or `0`
+ * when the document does not open with one. Shared by the frontmatter-hiding
+ * decorations and the live horizontal-rule preview so the latter never mistakes
+ * a frontmatter delimiter for a thematic break.
+ */
+function getFrontmatterEndLine(doc: EditorState["doc"]) {
+  if (doc.lines < 2 || doc.line(1).text.trim() !== "---") {
+    return 0;
+  }
+
+  for (let lineNumber = 2; lineNumber <= doc.lines; lineNumber += 1) {
+    if (doc.line(lineNumber).text.trim() === "---") {
+      return lineNumber;
+    }
+  }
+
+  return 0;
 }
 
 const calloutAliases = new Map<string, string>([
@@ -2658,6 +2678,21 @@ class ListMarkerWidget extends WidgetType {
   }
 }
 
+class HorizontalRuleWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+
+  toDOM() {
+    const rule = document.createElement("span");
+    rule.className = "vault-cm-preview-hr";
+    rule.setAttribute("role", "separator");
+    rule.setAttribute("aria-hidden", "true");
+
+    return rule;
+  }
+}
+
 class CalloutMarkerWidget extends WidgetType {
   constructor(
     private readonly inputType: string,
@@ -2868,6 +2903,7 @@ function buildLivePreviewDecorations(
   const codeFenceLines = getCodeFenceLines(view);
   const liveBlockLines = getLiveBlockLineNumbers(view.state);
   const doc = view.state.doc;
+  const frontmatterEndLine = getFrontmatterEndLine(doc);
 
   for (const visibleRange of view.visibleRanges) {
     let position = visibleRange.from;
@@ -2928,6 +2964,7 @@ function buildLivePreviewDecorations(
             line.text,
             codeFenceLines.has(line.number),
             activePositions,
+            frontmatterEndLine,
           );
 
           ranges.push(...lineRanges);
@@ -3307,6 +3344,7 @@ function decorateInactiveMarkdownLine(
   text: string,
   inCodeFence: boolean,
   activePositions: number[],
+  frontmatterEndLine = 0,
 ) {
   const ranges: RangeLike[] = [];
 
@@ -3331,6 +3369,54 @@ function decorateInactiveMarkdownLine(
       calloutBlock,
       activePositions,
     );
+  }
+
+  if (isThematicBreakLine(doc, lineNumber, text, frontmatterEndLine)) {
+    const to = lineFrom + text.length;
+
+    if (!hasActivePositionInRange(activePositions, lineFrom, to)) {
+      ranges.push(
+        Decoration.replace({
+          widget: new HorizontalRuleWidget(),
+        }).range(lineFrom, to),
+      );
+    }
+
+    return ranges;
+  }
+
+  // Setext heading text line: style the paragraph as a heading. The `===`/`---`
+  // underline lives on the next line and is hidden when that construct is idle.
+  const setextHeadingLevel = getSetextHeadingLevel(
+    doc,
+    lineNumber,
+    frontmatterEndLine,
+  );
+
+  if (setextHeadingLevel) {
+    ranges.push(headingDecorationForLevel(setextHeadingLevel).range(lineFrom));
+    addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+
+    return ranges;
+  }
+
+  // Setext underline line: hide the `===`/`---` belonging to the heading above,
+  // unless the cursor sits on either line of the construct.
+  if (
+    lineNumber > 1 &&
+    getSetextHeadingLevel(doc, lineNumber - 1, frontmatterEndLine)
+  ) {
+    const previousLine = doc.line(lineNumber - 1);
+    const to = lineFrom + text.length;
+
+    if (
+      !hasActivePositionInRange(activePositions, previousLine.from, previousLine.to) &&
+      !hasActivePositionInRange(activePositions, lineFrom, to)
+    ) {
+      ranges.push(hiddenMarkdown.range(lineFrom, to));
+    }
+
+    return ranges;
   }
 
   const heading = text.match(/^(#{1,6})(\s+)/);
@@ -3388,6 +3474,113 @@ function decorateInactiveMarkdownLine(
   addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
 
   return ranges;
+}
+
+const thematicBreakPattern =
+  /^(?:\*[ \t]*){3,}$|^(?:-[ \t]*){3,}$|^(?:_[ \t]*){3,}$/;
+
+/**
+ * Whether a line is a CommonMark thematic break (`---`, `***`, `___`, with 3+
+ * markers and optional internal spaces) that the live preview should render as
+ * a horizontal rule. Frontmatter delimiters are excluded (they are hidden
+ * separately), and a dash run sitting directly under a paragraph line is left
+ * as source because the real renderer treats it as a Setext heading underline,
+ * not a rule.
+ */
+function isThematicBreakLine(
+  doc: EditorView["state"]["doc"],
+  lineNumber: number,
+  text: string,
+  frontmatterEndLine: number,
+) {
+  if (lineNumber <= frontmatterEndLine) {
+    return false;
+  }
+
+  const trimmed = text.trim();
+
+  if (!thematicBreakPattern.test(trimmed)) {
+    return false;
+  }
+
+  if (
+    trimmed[0] === "-" &&
+    lineNumber > 1 &&
+    isParagraphLine(doc.line(lineNumber - 1).text)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Setext underline level for a line of only `=` (level 1) or only `-` (level 2),
+ * or `null` when the line is not a setext underline.
+ */
+function setextUnderlineLevel(text: string) {
+  const trimmed = text.trim();
+
+  if (/^=+$/.test(trimmed)) {
+    return 1;
+  }
+
+  if (/^-+$/.test(trimmed)) {
+    return 2;
+  }
+
+  return null;
+}
+
+/**
+ * A non-blank line that would be parsed as a paragraph, so a following setext
+ * underline applies to it (and a following dash run underlines it rather than
+ * forming a thematic break). Structural lines and setext underlines are
+ * excluded.
+ */
+function isParagraphLine(text: string) {
+  const trimmed = text.trim();
+
+  if (!trimmed || setextUnderlineLevel(trimmed) !== null) {
+    return false;
+  }
+
+  return !(
+    /^#{1,6}\s/.test(trimmed) ||
+    /^>/.test(trimmed) ||
+    /^([-*+]\s|\d+\.\s)/.test(trimmed) ||
+    /^(```|~~~)/.test(trimmed) ||
+    thematicBreakPattern.test(trimmed)
+  );
+}
+
+/**
+ * Setext heading level (1 or 2) for `paragraphLineNumber` when it is a
+ * single-line paragraph underlined by `===`/`---` on the next line, else `null`.
+ * Multi-line paragraphs are skipped because styling only their last line would
+ * diverge from the rendered heading.
+ */
+function getSetextHeadingLevel(
+  doc: EditorView["state"]["doc"],
+  paragraphLineNumber: number,
+  frontmatterEndLine: number,
+) {
+  if (
+    paragraphLineNumber <= frontmatterEndLine ||
+    paragraphLineNumber >= doc.lines ||
+    !isParagraphLine(doc.line(paragraphLineNumber).text)
+  ) {
+    return null;
+  }
+
+  if (
+    paragraphLineNumber > 1 &&
+    isParagraphLine(doc.line(paragraphLineNumber - 1).text)
+  ) {
+    return null;
+  }
+
+  return setextUnderlineLevel(doc.line(paragraphLineNumber + 1).text);
 }
 
 function decorateInactiveCalloutLine(
@@ -3526,6 +3719,16 @@ function addInlinePreviewDecorations(
     to: lineFrom + to,
   }));
   const protectedInlineRanges = [...inlineCodeRanges, ...inlineMathRanges];
+  // Links and URLs commonly contain underscores (e.g. `foo_bar`); guard them so
+  // underscore emphasis matches the renderer, where `_` inside a link
+  // destination or autolink is literal.
+  const underscoreProtectedRanges = [
+    ...protectedInlineRanges,
+    ...getEmphasisGuardRanges(text).map(({ from, to }) => ({
+      from: lineFrom + from,
+      to: lineFrom + to,
+    })),
+  ];
 
   addInlineHtmlDecorations(ranges, lineFrom, text, activePositions);
   addWikiImageDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
@@ -3569,8 +3772,76 @@ function addInlinePreviewDecorations(
     activePositions,
     protectedInlineRanges,
   );
+  // Underscore emphasis mirrors the asterisk forms, but the surrounding
+  // lookarounds enforce CommonMark's intra-word rule (e.g. `foo_bar_baz` and
+  // `snake_case` stay literal).
+  addRegexDecorations(
+    ranges,
+    lineFrom,
+    text,
+    /(?<![\w_])__([^_\n]+)__(?![\w_])/g,
+    previewBold,
+    [
+      [0, 2],
+      [-2, 0],
+    ],
+    activePositions,
+    underscoreProtectedRanges,
+  );
+  addRegexDecorations(
+    ranges,
+    lineFrom,
+    text,
+    /(?<![\w_])_([^_\n]+)_(?![\w_])/g,
+    previewItalic,
+    [
+      [0, 1],
+      [-1, 0],
+    ],
+    activePositions,
+    underscoreProtectedRanges,
+  );
+  addRegexDecorations(
+    ranges,
+    lineFrom,
+    text,
+    /~~([^~\n]+)~~/g,
+    previewStrike,
+    [
+      [0, 2],
+      [-2, 0],
+    ],
+    activePositions,
+    protectedInlineRanges,
+  );
   addLinkDecorations(ranges, lineFrom, text, activePositions, protectedInlineRanges);
   addWikiLinkDecorations(ranges, lineFrom, text, activePositions, protectedInlineRanges);
+}
+
+/**
+ * Spans (relative to the line) where underscore emphasis must not apply because
+ * the renderer treats `_` literally there: markdown links/images, wiki
+ * links/embeds, and bare URLs.
+ */
+function getEmphasisGuardRanges(text: string) {
+  const ranges: Array<{ from: number; to: number }> = [];
+  const patterns = [
+    /!?\[\[[^\]\n]+\]\]/g,
+    /!?\[[^\]\n]+\]\([^)\n]+\)/g,
+    /\bhttps?:\/\/\S+/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (match.index === undefined) {
+        continue;
+      }
+
+      ranges.push({ from: match.index, to: match.index + match[0].length });
+    }
+  }
+
+  return ranges;
 }
 
 function addInlineMathDecorations(

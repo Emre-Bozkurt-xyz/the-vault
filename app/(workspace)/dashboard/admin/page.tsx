@@ -2,6 +2,7 @@ import {
   Ban,
   BookOpen,
   Hash,
+  HardDrive,
   ShieldCheck,
   ShieldOff,
   UserRoundCog,
@@ -55,6 +56,16 @@ export default async function AdminPage({
             >
               <Hash className="size-4" />
               Tags
+            </Link>
+            <Link
+              href="/dashboard/admin/assets"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "gap-2",
+              )}
+            >
+              <HardDrive className="size-4" />
+              Assets
             </Link>
             <Link
               href="/dashboard/admin/docs"

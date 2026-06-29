@@ -825,6 +825,75 @@ export async function softDeleteAssetForUser(input: {
   return { id: asset.id };
 }
 
+export async function adminDeleteAsset(assetId: string) {
+  const [asset] = await db
+    .update(assets)
+    .set({
+      status: "deleted",
+      visibility: "private",
+      deletedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(assets.id, assetId),
+        eq(assets.status, "ready"),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .returning({
+      id: assets.id,
+      ownerId: assets.ownerId,
+      storageKey: assets.storageKey,
+      sizeBytes: assets.sizeBytes,
+    });
+
+  if (!asset) {
+    throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
+  }
+
+  await db
+    .delete(documentAssets)
+    .where(eq(documentAssets.assetId, assetId));
+  await releaseUserStorage(asset.ownerId, asset.sizeBytes);
+
+  try {
+    await deleteAssetObject(asset.storageKey);
+  } catch (error) {
+    console.error("Failed to delete R2 asset object", {
+      assetId,
+      storageKey: asset.storageKey,
+      error,
+    });
+  }
+
+  return { id: asset.id };
+}
+
+export async function recalculateUserStorage(userId: string) {
+  const [row] = await db
+    .select({
+      total: sql<number>`coalesce(sum(${assets.sizeBytes}), 0)`,
+    })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.ownerId, userId),
+        eq(assets.status, "ready"),
+        isNull(assets.deletedAt),
+      ),
+    );
+
+  const total = Number(row?.total ?? 0);
+
+  await db
+    .update(users)
+    .set({ storageUsedBytes: total, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  return total;
+}
+
 export async function listAssetResolutionsForDocument(
   documentId: string,
   userId: string | null,

@@ -468,6 +468,15 @@
     grid-column: 1;
   }
 
+  /*
+   * Keep block content (nested lists, loose-list paragraphs) in the content
+   * column. Without this they auto-flow into the 1rem checkbox track and get
+   * squeezed to a single character per line.
+   */
+  .vault-md-li:has(.vault-md-checkbox) > :not(.vault-md-checkbox) {
+    grid-column: 2;
+  }
+
   .vault-md-blockquote {
     border-left: 3px solid var(--border);
     color: var(--muted-foreground);
