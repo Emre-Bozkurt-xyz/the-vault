@@ -222,3 +222,23 @@ export async function recalcUserStorageAction(formData: FormData) {
 
   revalidatePath(ADMIN_ASSETS_PATH);
 }
+
+// Quota is entered in MiB in the admin UI; cap at 1 TiB to avoid absurd values.
+const quotaMbSchema = z.coerce.number().int().min(0).max(1024 * 1024);
+
+export async function updateUserQuotaAction(formData: FormData) {
+  await requireAdmin();
+  const userId = userIdSchema.parse(formData.get("userId"));
+  const quotaMb = quotaMbSchema.parse(formData.get("quotaMb"));
+
+  await db
+    .update(users)
+    .set({
+      storageQuotaBytes: quotaMb * 1024 * 1024,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+
+  revalidatePath(ADMIN_ASSETS_PATH);
+  revalidatePath("/dashboard/admin/users");
+}

@@ -465,12 +465,20 @@ function inferWorkspacePage(
     return { type: "admin", title: "Admin", href };
   }
 
+  if (pathname === "/dashboard/admin/users") {
+    return { type: "admin", title: "Users", href };
+  }
+
   if (pathname === "/dashboard/admin/docs") {
     return { type: "admin", title: "Official docs", href };
   }
 
   if (pathname === "/dashboard/admin/tags") {
     return { type: "admin", title: "Tags", href };
+  }
+
+  if (pathname === "/dashboard/admin/assets") {
+    return { type: "admin", title: "Assets", href };
   }
 
   if (pathname?.startsWith("/dashboard/admin/docs/")) {

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Hash, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 
+import { AdminShell } from "@/components/admin/AdminShell";
+import { MetricCard } from "@/components/admin/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,25 +51,8 @@ export default async function AdminTagsPage({
           href: "/dashboard/admin/tags",
         }}
       />
-      <section className="mx-auto grid w-full max-w-7xl gap-5 py-4">
-        <header className="flex flex-col gap-4 border-b border-border/70 pb-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-              Admin
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
-              Tags
-            </h1>
-          </div>
-          <Link
-            href="/dashboard/admin"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2")}
-          >
-            Back to admin
-          </Link>
-        </header>
-
-        <section className="grid gap-4 border border-border/60 bg-card/45 p-4 text-card-foreground">
+      <AdminShell>
+      <section className="grid gap-4 border border-border/60 bg-card/45 p-4 text-card-foreground">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -332,18 +317,7 @@ export default async function AdminTagsPage({
             })
           )}
         </section>
-      </section>
+      </AdminShell>
     </>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-border/60 bg-background/45 px-3 py-2">
-      <p className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
-    </div>
   );
 }

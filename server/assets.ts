@@ -25,6 +25,7 @@ import {
   type AssetKind,
 } from "@/db/schema";
 import { extractAssetEmbedIds } from "@/lib/asset-embeds";
+import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import {
   type ContentSearchQuery,
   contentSearchIsEmpty,
@@ -153,8 +154,8 @@ export async function requireAssetUser() {
 
 export function getAssetUploadLimits() {
   return {
-    imageMaxBytes: readByteEnv("MAX_IMAGE_UPLOAD_BYTES", 10 * 1024 * 1024),
-    pdfMaxBytes: readByteEnv("MAX_PDF_UPLOAD_BYTES", 25 * 1024 * 1024),
+    imageMaxBytes: readByteEnv("MAX_IMAGE_UPLOAD_BYTES", ASSET_LIMITS.imageMaxBytes),
+    pdfMaxBytes: readByteEnv("MAX_PDF_UPLOAD_BYTES", ASSET_LIMITS.pdfMaxBytes),
   };
 }
 

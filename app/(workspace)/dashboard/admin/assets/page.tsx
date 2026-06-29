@@ -11,10 +11,13 @@ import {
   Users,
 } from "lucide-react";
 
+import { AdminShell } from "@/components/admin/AdminShell";
+import { MetricCard, UsageBar } from "@/components/admin/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   deleteAssetAsAdminAction,
@@ -22,6 +25,7 @@ import {
   listAssetsForUserAdmin,
   listUserStorageForAdmin,
   recalcUserStorageAction,
+  updateUserQuotaAction,
   type AdminAssetItem,
 } from "@/server/assets-admin";
 import { requireAdmin } from "@/server/authz";
@@ -92,25 +96,8 @@ export default async function AdminAssetsPage({
           href: "/dashboard/admin/assets",
         }}
       />
-      <section className="mx-auto grid w-full max-w-7xl gap-5 py-4">
-        <header className="flex flex-col gap-4 border-b border-border/70 pb-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-              Admin
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
-              Asset storage
-            </h1>
-          </div>
-          <Link
-            href="/dashboard/admin"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2")}
-          >
-            Back to admin
-          </Link>
-        </header>
-
-        <section className="grid gap-4 border border-border/60 bg-card/45 p-4 text-card-foreground">
+      <AdminShell>
+      <section className="grid gap-4 border border-border/60 bg-card/45 p-4 text-card-foreground">
           <div className="flex items-center gap-2">
             <HardDrive className="size-5 text-primary" />
             <h2 className="text-lg font-semibold">Overview</h2>
@@ -286,6 +273,28 @@ export default async function AdminAssetsPage({
                       quota={user.storageQuotaBytes}
                     />
 
+                    <form
+                      action={updateUserQuotaAction}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <input type="hidden" name="userId" value={user.id} />
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Quota (MiB)
+                      </label>
+                      <Input
+                        type="number"
+                        name="quotaMb"
+                        min={0}
+                        step={1}
+                        defaultValue={Math.round(user.storageQuotaBytes / MB)}
+                        className="h-9 w-28"
+                        aria-label="Storage quota in MiB"
+                      />
+                      <Button type="submit" variant="outline" size="sm">
+                        Set quota
+                      </Button>
+                    </form>
+
                     {isOpen ? (
                       <AssetModerationList
                         assets={selectedAssets}
@@ -298,59 +307,8 @@ export default async function AdminAssetsPage({
             </div>
           )}
         </section>
-      </section>
+      </AdminShell>
     </>
-  );
-}
-
-function MetricCard({
-  icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="border border-border/60 bg-background/45 px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {icon}
-        {label}
-      </p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
-      {hint ? (
-        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function UsageBar({ used, quota }: { used: number; quota: number }) {
-  const ratio = quota > 0 ? Math.min(used / quota, 1) : 0;
-  const percent = Math.round(ratio * 100);
-  const nearLimit = ratio >= 0.9;
-
-  return (
-    <div className="grid gap-1">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          {formatBytes(used)} of {formatBytes(quota)}
-        </span>
-        <span>{percent}%</span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            nearLimit ? "bg-destructive" : "bg-primary",
-          )}
-          style={{ width: `${Math.max(ratio * 100, used > 0 ? 1 : 0)}%` }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -410,21 +368,4 @@ function AssetModerationList({
       ))}
     </div>
   );
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }

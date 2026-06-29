@@ -1,222 +1,179 @@
+import Link from "next/link";
 import {
-  Ban,
   BookOpen,
+  Database,
+  FileText,
   Hash,
   HardDrive,
-  ShieldCheck,
-  ShieldOff,
-  UserRoundCog,
+  ImageIcon,
+  ShieldAlert,
+  UserPlus,
+  Users,
 } from "lucide-react";
-import Link from "next/link";
 
+import { AdminShell } from "@/components/admin/AdminShell";
+import { MetricCard } from "@/components/admin/metric-card";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import {
-  banUserAction,
-  listUsersForAdmin,
-  setUserRoleAction,
-  unbanUserAction,
-} from "@/server/admin";
+import { getAdminUserOverview, listUsersForAdmin } from "@/server/admin";
+import { getAssetStorageOverview } from "@/server/assets-admin";
 import { requireAdmin } from "@/server/authz";
 
-export default async function AdminPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string; error?: string }>;
-}) {
+export default async function AdminOverviewPage() {
   await requireAdmin();
-  const { q, error } = await searchParams;
-  const users = await listUsersForAdmin(q);
+
+  const [userOverview, storage, recent] = await Promise.all([
+    getAdminUserOverview(),
+    getAssetStorageOverview(),
+    listUsersForAdmin({ sort: "joined_desc", page: 1 }),
+  ]);
+
+  const recentUsers = recent.items.slice(0, 6);
 
   return (
     <>
       <WorkspacePageRegistration
         page={{ type: "admin", title: "Admin", href: "/dashboard/admin" }}
       />
-      <section className="mx-auto grid w-full max-w-7xl gap-5 py-4">
-        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/70 pb-5">
-          <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-              Moderation
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
-              Admin
-            </h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/dashboard/admin/tags"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "gap-2",
-              )}
-            >
-              <Hash className="size-4" />
-              Tags
-            </Link>
-            <Link
-              href="/dashboard/admin/assets"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "gap-2",
-              )}
-            >
-              <HardDrive className="size-4" />
-              Assets
-            </Link>
-            <Link
-              href="/dashboard/admin/docs"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "gap-2",
-              )}
-            >
-              <BookOpen className="size-4" />
-              Official docs
-            </Link>
-          </div>
-        </header>
 
-        <section className="border border-border/60 bg-card/45 p-4 text-card-foreground">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <UserRoundCog className="size-5 text-primary" />
-                <h2 className="text-lg font-semibold">Users</h2>
-              </div>
-            </div>
-            <form className="flex w-full gap-2 md:max-w-md">
-              <Input
-                type="search"
-                name="q"
-                defaultValue={q ?? ""}
-                placeholder="Search users"
-                autoComplete="off"
-                className="h-10"
-              />
-              <Button type="submit" variant="outline">
-                Search
-              </Button>
-            </form>
-          </div>
-          {error === "self-ban" ? (
-            <p className="mt-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              You cannot ban your own admin account.
-            </p>
-          ) : null}
-          {error === "self-demote" ? (
-            <p className="mt-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              You cannot remove admin access from your own account.
-            </p>
-          ) : null}
-        </section>
-
-        <section className="grid gap-3">
-          {users.map((user) => (
-            <article
-              key={user.id}
-              className="border border-border/60 bg-card/45 p-4 text-card-foreground"
-            >
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-semibold">
-                      {user.nickname ?? user.email ?? "Unnamed user"}
-                    </h3>
-                    <Badge variant={user.role === "admin" ? "default" : "outline"}>
-                      {user.role}
-                    </Badge>
-                    {user.isBanActive ? (
-                      <Badge variant="destructive">Banned</Badge>
-                    ) : (
-                      <Badge variant="secondary">Active</Badge>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {user.username ? `@${user.username}` : "No username"} -{" "}
-                    {user.email ?? "No email"}
-                  </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Joined {user.createdAt.toLocaleDateString()} - Updated{" "}
-                    {user.updatedAt.toLocaleDateString()}
-                  </p>
-                  {user.bannedAt ? (
-                    <p className="mt-3 border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                      Ban reason: {user.banReason || "No reason provided."}
-                      <br />
-                      Ends:{" "}
-                      {user.bannedUntil
-                        ? user.bannedUntil.toLocaleString()
-                        : "Permanent"}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="grid gap-2 xl:min-w-[520px]">
-                  <form
-                    action={setUserRoleAction}
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    <input type="hidden" name="userId" value={user.id} />
-                    <select
-                      name="role"
-                      defaultValue={user.role}
-                      className="h-9 border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                    <Button type="submit" variant="outline">
-                      <ShieldCheck className="size-4" />
-                      Set role
-                    </Button>
-                  </form>
-
-                  <form
-                    action={banUserAction}
-                    className="grid gap-2 border border-border/60 bg-background/50 p-3 sm:grid-cols-[120px_1fr_auto]"
-                  >
-                    <input type="hidden" name="userId" value={user.id} />
-                    <select
-                      name="duration"
-                      defaultValue="7d"
-                      className="h-9 border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="1d">1 day</option>
-                      <option value="7d">7 days</option>
-                      <option value="30d">30 days</option>
-                      <option value="forever">Forever</option>
-                    </select>
-                    <Input
-                      name="reason"
-                      placeholder="Reason visible to the user"
-                      autoComplete="off"
-                      className="h-9"
-                    />
-                    <Button type="submit" variant="destructive">
-                      <Ban className="size-4" />
-                      Ban
-                    </Button>
-                  </form>
-
-                  {user.bannedAt ? (
-                    <form action={unbanUserAction}>
-                      <input type="hidden" name="userId" value={user.id} />
-                      <Button type="submit" variant="outline">
-                        <ShieldOff className="size-4" />
-                        Remove ban
-                      </Button>
-                    </form>
-                  ) : null}
-                </div>
-              </div>
-            </article>
-          ))}
-        </section>
+      <AdminShell>
+      <section className="grid gap-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <Users className="size-4 text-primary" />
+          Users
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            icon={<Users className="size-4" />}
+            label="Total users"
+            value={userOverview.totalUsers.toLocaleString()}
+            hint={`${userOverview.adminCount} admins`}
+          />
+          <MetricCard
+            icon={<UserPlus className="size-4" />}
+            label="New this week"
+            value={userOverview.newThisWeek.toLocaleString()}
+          />
+          <MetricCard
+            icon={<ShieldAlert className="size-4" />}
+            label="Banned"
+            value={userOverview.bannedCount.toLocaleString()}
+          />
+          <MetricCard
+            icon={<ImageIcon className="size-4" />}
+            label="Users with uploads"
+            value={storage.usersWithAssets.toLocaleString()}
+            hint={`of ${storage.userCount} total`}
+          />
+        </div>
       </section>
+
+      <section className="grid gap-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <HardDrive className="size-4 text-primary" />
+          Storage &amp; content
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            icon={<Database className="size-4" />}
+            label="Stored"
+            value={formatBytes(storage.totalBytes)}
+            hint={`${formatBytes(storage.totalQuotaBytes)} allocated`}
+          />
+          <MetricCard
+            icon={<FileText className="size-4" />}
+            label="Assets"
+            value={storage.totalAssets.toLocaleString()}
+            hint={`${storage.imageCount} images · ${storage.pdfCount} PDFs`}
+          />
+          <MetricCard
+            icon={<ImageIcon className="size-4" />}
+            label="Public assets"
+            value={storage.publicCount.toLocaleString()}
+            hint={`${storage.privateCount} private`}
+          />
+          <MetricCard
+            icon={<Database className="size-4" />}
+            label="Tracked usage"
+            value={formatBytes(storage.trackedUsedBytes)}
+          />
+        </div>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+        <section className="grid gap-3 border border-border/60 bg-card/45 p-4 text-card-foreground">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Recent signups</h2>
+            <Link
+              href="/dashboard/admin/users"
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Manage users
+            </Link>
+          </div>
+          {recentUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No users yet.</p>
+          ) : (
+            <ul className="grid gap-1.5">
+              {recentUsers.map((user) => (
+                <li
+                  key={user.id}
+                  className="flex items-center justify-between gap-3 border border-border/50 bg-background/45 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {user.nickname ?? user.email ?? "Unnamed user"}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {user.username ? `@${user.username}` : user.email ?? "No email"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {user.role === "admin" ? (
+                      <Badge variant="default">admin</Badge>
+                    ) : null}
+                    {user.isBanActive ? (
+                      <Badge variant="destructive">banned</Badge>
+                    ) : null}
+                    <span className="text-xs text-muted-foreground">
+                      {user.createdAt.toLocaleDateString()}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="grid content-start gap-2 border border-border/60 bg-card/45 p-4 text-card-foreground">
+          <h2 className="text-sm font-semibold">Quick links</h2>
+          {[
+            { label: "User management", href: "/dashboard/admin/users", icon: Users },
+            { label: "Asset storage", href: "/dashboard/admin/assets", icon: HardDrive },
+            { label: "Tags", href: "/dashboard/admin/tags", icon: Hash },
+            { label: "Official docs", href: "/dashboard/admin/docs", icon: BookOpen },
+          ].map((link) => {
+            const Icon = link.icon;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "justify-start gap-2",
+                )}
+              >
+                <Icon className="size-4" />
+                {link.label}
+              </Link>
+            );
+          })}
+        </section>
+      </div>
+      </AdminShell>
     </>
   );
 }

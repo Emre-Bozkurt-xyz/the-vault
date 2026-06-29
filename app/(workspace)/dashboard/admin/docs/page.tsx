@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FilePlus2, FileText, Globe2, Pencil } from "lucide-react";
 
+import { AdminShell } from "@/components/admin/AdminShell";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
@@ -22,25 +23,18 @@ export default async function AdminOfficialDocsPage() {
           href: "/dashboard/admin/docs",
         }}
       />
-      <section className="mx-auto grid w-full max-w-6xl gap-5 py-4">
-        <header className="flex flex-col gap-4 border-b border-border/70 pb-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-              Admin
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
-              Official documentation
-            </h1>
-          </div>
-          <form action={createOfficialDocAction}>
-            <Button type="submit">
-              <FilePlus2 className="size-4" />
-              New official doc
-            </Button>
-          </form>
-        </header>
+      <AdminShell>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">Official documentation</h2>
+        <form action={createOfficialDocAction}>
+          <Button type="submit">
+            <FilePlus2 className="size-4" />
+            New official doc
+          </Button>
+        </form>
+      </div>
 
-        <section className="grid gap-3">
+      <section className="grid gap-3">
           {docs.length === 0 ? (
             <div className="border border-dashed border-border/70 bg-card/45 p-8 text-card-foreground">
               <p className="font-semibold">No official docs yet</p>
@@ -124,7 +118,7 @@ export default async function AdminOfficialDocsPage() {
             ))
           )}
         </section>
-      </section>
+      </AdminShell>
     </>
   );
 }

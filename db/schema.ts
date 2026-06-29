@@ -16,6 +16,8 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
+import { ASSET_LIMITS } from "../lib/config/asset-limits";
+
 export type DocumentRole = "owner" | "editor" | "viewer";
 export type FolderRole = "editor" | "viewer";
 export type DocumentVisibility = "private" | "public";
@@ -76,7 +78,7 @@ export const users = pgTable(
       .default(0),
     storageQuotaBytes: bigint("storage_quota_bytes", { mode: "number" })
       .notNull()
-      .default(268435456),
+      .default(ASSET_LIMITS.defaultUserStorageQuotaBytes),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

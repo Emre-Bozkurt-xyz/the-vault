@@ -10,7 +10,7 @@ Update this file whenever the codebase changes in a meaningful way.
 
 ## 1. Current Status Snapshot
 
-Last updated:
+Last updated: 2026-06-29
 
 ```txt
 2026-06-29
@@ -315,9 +315,9 @@ R2_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com
 R2_ACCESS_KEY_ID=replace-with-r2-access-key-id
 R2_SECRET_ACCESS_KEY=replace-with-r2-secret-access-key
 ASSET_ROUTE_BASE_PATH=/api/assets
-DEFAULT_USER_STORAGE_QUOTA_BYTES=268435456
-MAX_IMAGE_UPLOAD_BYTES=10485760
-MAX_PDF_UPLOAD_BYTES=26214400
+# Optional overrides; defaults live in lib/config/asset-limits.ts
+# MAX_IMAGE_UPLOAD_BYTES=10485760
+# MAX_PDF_UPLOAD_BYTES=26214400
 ASSET_PRIVATE_CACHE_SECONDS=0
 ASSET_PUBLIC_CACHE_SECONDS=3600
 ```
@@ -352,9 +352,8 @@ Rules:
 | `R2_ACCESS_KEY_ID` | Required for uploads | Asset storage helper | Server-only R2 S3-compatible access key |
 | `R2_SECRET_ACCESS_KEY` | Required for uploads | Asset storage helper | Server-only R2 S3-compatible secret key |
 | `ASSET_ROUTE_BASE_PATH` | Optional | Asset renderer/API | Vault route prefix for permission-checked asset reads, default `/api/assets` |
-| `DEFAULT_USER_STORAGE_QUOTA_BYTES` | Planned | Asset quota logic | Placeholder for future configurable user creation; current DB default is 256 MiB |
-| `MAX_IMAGE_UPLOAD_BYTES` | Optional | Asset upload validation | Maximum image upload size; current default is 10 MiB |
-| `MAX_PDF_UPLOAD_BYTES` | Optional | Asset upload validation | Maximum PDF upload size; current default is 25 MiB |
+| `MAX_IMAGE_UPLOAD_BYTES` | Optional override | Asset upload validation | Per-upload image cap; default (10 MiB) in `lib/config/asset-limits.ts` |
+| `MAX_PDF_UPLOAD_BYTES` | Optional override | Asset upload validation | Per-upload PDF cap; default (25 MiB) in `lib/config/asset-limits.ts` |
 | `ASSET_PRIVATE_CACHE_SECONDS` | Optional | Asset content route | Cache seconds for private asset responses; current default is `0` |
 | `ASSET_PUBLIC_CACHE_SECONDS` | Optional | Asset content route | Cache seconds for explicitly public asset responses; current default is `3600` |
 
@@ -453,7 +452,7 @@ Schema notes:
 - `/api/health` uses `select 1` and does not require any application tables.
 - Wiki-link metadata is derived from document Markdown at read time. Resolved wiki maps include headings, Obsidian-style block anchors (`^block-id`), and hidden Vault regions (`<!-- vault-region id="..." -->`), so links and embeds can target a specific heading, block, or region without schema changes. Vault regions marked `foldable` render as collapsible disclosure blocks; `collapsed` makes them initially closed.
 - Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
-- `users.storage_used_bytes` and `users.storage_quota_bytes` track uploaded asset quota; migration `0011_tiresome_ultimates.sql` defaults existing/new users to 0 used bytes and 256 MiB quota.
+- `users.storage_used_bytes` and `users.storage_quota_bytes` track uploaded asset quota. The new-user quota default is sourced from `lib/config/asset-limits.ts` (`defaultUserStorageQuotaBytes`, 50 MiB) via the schema column default; migration `0016_flawless_betty_ross.sql` set it (was 256 MiB in `0011`). Existing rows keep their stored quota.
 - `assets` stores private-by-default uploaded object metadata, ownership, R2 bucket/key, MIME detection data, size, checksum, visibility, and upload status. R2 stores bytes; Postgres owns identity, quota, and authorization metadata.
 - `document_assets` links assets to documents without duplicating object bytes. The current upload route creates this link when uploading from a document editor; document saves and collaboration stores remove links for assets no longer embedded in the Markdown source.
 - `asset_tags` links assets into the same global tag vocabulary as documents. The asset PATCH route accepts optional tag arrays and syncs them through `server/content-metadata.ts`; the asset library can edit tags and includes tags in local library filtering.
@@ -1406,3 +1405,6 @@ Use this as a compact implementation log.
 | 2026-06-29 | Fixed nested lists under task items in rendered Markdown | `.vault-md-li:has(.vault-md-checkbox)` is a 2-column grid (checkbox + content); nested `<ul>`/`<ol>` and loose-list `<p>` were auto-flowing into the 1rem checkbox track and rendering one character per line in Read/preview mode. Added a rule in `app/globals.css` forcing non-checkbox children into the content column |
 | 2026-06-29 | Added Live-mode horizontal rules and Setext headings | `components/markdown/MarkdownEditor.tsx` now renders idle `---`/`***`/`___` thematic breaks as a horizontal rule (`HorizontalRuleWidget`) and styles `Title`+`===`/`---` Setext headings as H1/H2 with the underline hidden, both revealing raw source on cursor entry. Shares `getFrontmatterEndLine()` with the frontmatter-hiding extension so YAML `---` delimiters are never mistaken for rules, and leaves dash runs under a paragraph as Setext underlines (matching the renderer) |
 | 2026-06-29 | Added Live-mode underscore emphasis and strikethrough | Live preview now decorates `_italic_`/`__bold__` (CommonMark intra-word guards via `(?<![\w_])…(?![\w_])`, plus a link/URL/wiki-link guard so underscores in destinations stay literal) and `~~strikethrough~~`, closing the gap where these rendered in Read mode (remark-gfm) but not in Live mode |
+| 2026-06-29 | Centralized asset limit defaults in repo config | Added `lib/config/asset-limits.ts` as the committed source of truth for per-upload image/PDF caps and the per-user storage quota default; `getAssetUploadLimits()` and the `users.storage_quota_bytes` schema default now read from it. Raised the new-user quota default to 50 MiB (migration `0016_flawless_betty_ross.sql`; existing rows unchanged), with `MAX_IMAGE_UPLOAD_BYTES`/`MAX_PDF_UPLOAD_BYTES` kept as optional env overrides. Removed the dead `DEFAULT_USER_STORAGE_QUOTA_BYTES` env var from `.env.example` and docs |
+| 2026-06-29 | Added admin per-user quota editing and Assets sidebar tab | Admin asset storage page now has an inline per-user "Quota (MiB)" form backed by a new `updateUserQuotaAction` (`server/assets-admin.ts`, capped at 1 TiB) so admins can raise/lower individual quotas; `/dashboard/admin/assets` is now a first-class item in the admin utility-panel sidebar (`WorkspaceUtilityPanel`) instead of being reachable only from the main admin page |
+| 2026-06-29 | Overhauled admin into a dashboard | Restructured the admin area around a shared `AdminShell` (header + `AdminNav` tab bar across Overview/Users/Assets/Tags/Docs) replacing the per-page headers and "Back to admin" buttons. `/dashboard/admin` is now a metrics Overview (user + storage KPIs, recent signups, quick links) via new `getAdminUserOverview`; user management moved to `/dashboard/admin/users` as a dense sortable/filterable/paginated table (`listUsersForAdmin` rewritten to take options and return storage/asset counts + total) with a per-user detail drawer (new `components/ui/sheet.tsx`) consolidating role, ban/unban, quota, recalc, and a cross-link to the user's assets. Added shared `lib/format.ts` `formatBytes` and `components/admin/metric-card.tsx` (`MetricCard` + `UsageBar`, the latter with a `showLabel` prop); the Assets and Tags pages now consume these shared components instead of their own local copies. The focused doc editor opts out of the shell. Sidebar/`WorkspaceChrome` updated for the Overview/Users split |

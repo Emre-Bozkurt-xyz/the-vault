@@ -1,0 +1,1 @@
+ALTER TABLE "users" ALTER COLUMN "storage_quota_bytes" SET DEFAULT 52428800;
