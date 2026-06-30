@@ -9,11 +9,16 @@ import {
   restoreDocumentVersionForUser,
   setDocumentTitleForUser,
 } from "@/server/documents";
+import { getAssetForUser, linkAssetToDocument } from "@/server/assets";
 import {
   normalizeTagList,
   parseDocumentMetadata,
   updateDocumentMetadataFrontmatter,
 } from "@/lib/content-metadata";
+import {
+  formatAssetEmbedSource,
+  type AssetEmbedAttributes,
+} from "@/lib/asset-embeds";
 import { maxMarkdownLength } from "@/lib/markdown";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
@@ -100,7 +105,9 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
         tags: z
           .array(z.string())
           .optional()
-          .describe("Replacement tag list (normalized to slugs). [] clears."),
+          .describe(
+            "Replacement tag list. Each tag is normalized to a lowercase slug — spaces and dashes become underscores (e.g. 'mcp-test' -> 'mcp_test'). Pass [] to clear.",
+          ),
         summary: z
           .string()
           .max(500)
@@ -258,6 +265,90 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
         }
 
         return json({ ok: true, restored: true });
+      }),
+  );
+
+  server.registerTool(
+    "embed_asset",
+    {
+      title: "Embed an asset",
+      description:
+        "Insert one of the user's assets (found via search_assets) into a document as a styled embed. Choose alignment and width, and optionally add a caption. Appended at the end of the document by default; pass a heading to place it at the end of that section instead. The asset must belong to the current user; the document↔asset link is maintained automatically.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document to embed into."),
+        assetId: z
+          .string()
+          .uuid()
+          .describe("The asset id (from search_assets)."),
+        align: z
+          .enum(["left", "center", "right"])
+          .default("center")
+          .describe("Horizontal alignment."),
+        width: z
+          .enum(["small", "medium", "large", "full"])
+          .default("large")
+          .describe("Display width preset."),
+        caption: z
+          .string()
+          .max(240)
+          .optional()
+          .describe("Optional caption shown beneath the asset."),
+        alt: z
+          .string()
+          .max(240)
+          .optional()
+          .describe("Optional alt text (defaults to the asset's own alt text)."),
+        heading: z
+          .string()
+          .optional()
+          .describe(
+            "Place the embed at the end of this heading's section (matched by text or slug); otherwise appended at the document end.",
+          ),
+      },
+    },
+    async (
+      { documentId, assetId, align, width, caption, alt, heading },
+      extra,
+    ) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const asset = await getAssetForUser(userId, assetId);
+
+        const attributes: AssetEmbedAttributes = {
+          layout: "block",
+          align,
+          width,
+          customWidth: null,
+          caption: caption?.trim() || null,
+          alt: alt?.trim() || asset.altText || null,
+        };
+        const source = formatAssetEmbedSource(
+          { assetId, label: asset.displayName },
+          attributes,
+        );
+
+        let placed = true;
+        await withLiveDocumentText(userId, documentId, (ytext) => {
+          if (heading) {
+            placed = insertAtHeading(ytext, heading, source, "section_end");
+          } else {
+            appendMarkdown(ytext, source);
+          }
+        });
+
+        if (!placed) {
+          return failure(`No heading matching "${heading}" was found.`);
+        }
+
+        // Reconcile only prunes; the asset→document link is created explicitly,
+        // mirroring the editor's embed flow.
+        await linkAssetToDocument({
+          documentId,
+          assetId,
+          linkedBy: userId,
+        });
+
+        return json({ ok: true, embedded: assetId });
       }),
   );
 

@@ -1,6 +1,14 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { Archive, Globe2, History, RotateCcw, Save, Share2 } from "lucide-react";
+import {
+  Archive,
+  Globe2,
+  History,
+  RotateCcw,
+  Save,
+  Share2,
+  Sparkles,
+} from "lucide-react";
 
 import { auth } from "@/auth";
 import { CopyPublicLink } from "@/components/copy-public-link";
@@ -408,9 +416,17 @@ function DocumentContextPanel({
                       <p className="truncate text-xs font-medium">
                         {version.title}
                       </p>
-                      <p className="mt-0.5 text-[0.68rem] text-muted-foreground">
-                        {version.createdAt.toLocaleString()}
-                      </p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <p className="text-[0.68rem] text-muted-foreground">
+                          {version.createdAt.toLocaleString()}
+                        </p>
+                        {version.reason === "assistant" ? (
+                          <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary">
+                            <Sparkles className="size-2.5" />
+                            via assistant
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <span className="shrink-0 text-[0.66rem] text-muted-foreground">
                       {version.markdownLength.toLocaleString()}

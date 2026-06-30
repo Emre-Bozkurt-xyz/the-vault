@@ -7,8 +7,9 @@ import * as Y from "yjs";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { documentVersions, documents, users } from "@/db/schema";
 import { createCollabToken } from "@/lib/collab-token";
+import { pruneAssistantVersions } from "@/lib/document-versions";
 import { getDocumentAccess } from "@/lib/permissions";
 
 const syncTimeoutMs = 10_000;
@@ -53,6 +54,13 @@ export async function withLiveDocumentText(
     .where(eq(users.id, userId))
     .limit(1);
 
+  const [documentRow] = await db
+    .select({ title: documents.title })
+    .from(documents)
+    .where(eq(documents.id, documentId))
+    .limit(1);
+  const priorTitle = documentRow?.title ?? "Untitled document";
+
   const token = createCollabToken({
     documentId,
     userId,
@@ -83,11 +91,29 @@ export async function withLiveDocumentText(
     await waitForSync(provider);
 
     const ytext = ydoc.getText("markdown");
+    const priorMarkdown = ytext.toString();
+
     ydoc.transact(() => mutate(ytext, ydoc), "mcp");
+
+    const nextMarkdown = ytext.toString();
+
+    // Snapshot the pre-edit state so each agent operation is its own restore
+    // point (the collab server's own versioning is threshold-gated and would
+    // miss small, rapid edits). Skipped when the edit was a no-op.
+    if (nextMarkdown !== priorMarkdown) {
+      await db.insert(documentVersions).values({
+        documentId,
+        createdBy: userId,
+        title: priorTitle,
+        markdown: priorMarkdown,
+        reason: "assistant",
+      });
+      await pruneAssistantVersions(db, documentId);
+    }
 
     await waitForFlush(provider);
 
-    return { markdown: ytext.toString() };
+    return { markdown: nextMarkdown };
   } finally {
     provider.destroy();
     ydoc.destroy();

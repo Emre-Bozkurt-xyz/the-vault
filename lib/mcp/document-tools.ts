@@ -10,6 +10,7 @@ import {
   listSharedDocumentsForUser,
   listTagsForDocumentIds,
 } from "@/server/documents";
+import { listAssetsForUser } from "@/server/assets";
 import { normalizeTagList } from "@/lib/content-metadata";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import {
@@ -109,7 +110,9 @@ export function registerVaultDocumentTools(server: McpServer): void {
         tags: z
           .array(z.string())
           .optional()
-          .describe("Require all of these tags (normalized to slugs)."),
+          .describe(
+            "Require all of these tags. Normalized to lowercase slugs (spaces and dashes become underscores, e.g. 'mcp-test' -> 'mcp_test').",
+          ),
         scope: z
           .enum(["owned", "shared", "all"])
           .default("all")
@@ -336,6 +339,80 @@ export function registerVaultDocumentTools(server: McpServer): void {
         }
 
         return json(version);
+      }),
+  );
+
+  server.registerTool(
+    "search_assets",
+    {
+      title: "Search assets",
+      description:
+        "Find the current user's uploaded assets (images, PDFs) to embed in documents. Filter by free text (matched in name/description/alt text), tags, and kind. Returns each asset's id, name, kind, tags, and size. Pass an id to embed_asset to place it in a document with styling.",
+      inputSchema: {
+        query: z
+          .string()
+          .optional()
+          .describe("Text to match in asset name, description, or alt text."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Require all of these tags. Normalized to lowercase slugs (dashes become underscores).",
+          ),
+        kind: z
+          .enum(["image", "pdf"])
+          .optional()
+          .describe("Filter by asset kind."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Maximum results to return (default 20)."),
+      },
+    },
+    async ({ query, tags, kind, limit }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const assets = await listAssetsForUser(userId);
+        const needle = query?.trim().toLowerCase() ?? "";
+        const requiredTags = tags ? normalizeTagList(tags) : [];
+
+        const matches = assets
+          .filter((asset) => {
+            if (kind && asset.kind !== kind) {
+              return false;
+            }
+
+            if (needle) {
+              const haystack =
+                `${asset.displayName} ${asset.description ?? ""} ${asset.altText ?? ""}`.toLowerCase();
+              if (!haystack.includes(needle)) {
+                return false;
+              }
+            }
+
+            if (requiredTags.length > 0) {
+              const assetTags = new Set(asset.tags);
+              if (!requiredTags.every((tag) => assetTags.has(tag))) {
+                return false;
+              }
+            }
+
+            return true;
+          })
+          .slice(0, limit ?? 20)
+          .map((asset) => ({
+            id: asset.id,
+            name: asset.displayName,
+            kind: asset.kind,
+            tags: asset.tags,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+          }));
+
+        return json({ count: matches.length, assets: matches });
       }),
   );
 }

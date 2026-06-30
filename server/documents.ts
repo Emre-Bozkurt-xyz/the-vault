@@ -49,6 +49,7 @@ import {
 import { coerceDates } from "@/lib/db-rows";
 import { normalizeTagSlug } from "@/lib/content-metadata";
 import { slugify } from "@/lib/slug";
+import { pruneAssistantVersions } from "@/lib/document-versions";
 import {
   extractMarkdownAnchorOptions,
   extractMarkdownHeadingOptions,
@@ -640,18 +641,20 @@ export async function setDocumentTitleForUser(
       return;
     }
 
-    await maybeCreateAutomaticDocumentVersion(tx, {
-      document: current,
-      actorId: userId,
-      reason: "auto",
-      nextTitle,
-      nextMarkdown: current.markdown,
-    });
+    // Force a restore point per agent operation (unlike the gated UI path).
+    if (current.title !== nextTitle) {
+      await createDocumentVersion(tx, {
+        document: current,
+        actorId: userId,
+        reason: "assistant",
+      });
+      await pruneAssistantVersions(tx, parsedId.data);
 
-    await tx
-      .update(documents)
-      .set({ title: nextTitle, updatedAt: sql`now()` })
-      .where(and(eq(documents.id, parsedId.data), isNull(documents.deletedAt)));
+      await tx
+        .update(documents)
+        .set({ title: nextTitle, updatedAt: sql`now()` })
+        .where(and(eq(documents.id, parsedId.data), isNull(documents.deletedAt)));
+    }
 
     updated = true;
   });

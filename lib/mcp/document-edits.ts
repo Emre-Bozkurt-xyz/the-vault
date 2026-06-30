@@ -106,11 +106,47 @@ export function replaceYTextMinimal(ytext: Y.Text, newText: string): void {
   }
 }
 
-/** Appends markdown to the end of the document, ensuring a separating newline. */
-export function appendMarkdown(ytext: Y.Text, markdown: string): void {
+/**
+ * Inserts a markdown block at `index`, ensuring a blank line of separation from
+ * surrounding content on both sides so the block is parsed as its own
+ * paragraph/heading/list (rather than being soft-wrapped into an adjacent
+ * paragraph or glued to a following heading). The block's own leading/trailing
+ * blank lines are normalized so spacing isn't doubled.
+ */
+export function insertBlockWithSpacing(
+  ytext: Y.Text,
+  index: number,
+  rawBlock: string,
+): void {
+  const block = rawBlock.replace(/^\n+/, "").replace(/\n+$/, "");
+
+  if (block.length === 0) {
+    return;
+  }
+
   const text = ytext.toString();
-  const separator = text.length === 0 || text.endsWith("\n") ? "" : "\n";
-  ytext.insert(ytext.length, `${separator}${markdown}`);
+  const before = text.slice(0, index);
+  const after = text.slice(index);
+
+  const lead =
+    before.length === 0 || before.endsWith("\n\n")
+      ? ""
+      : before.endsWith("\n")
+        ? "\n"
+        : "\n\n";
+  const trail =
+    after.length === 0 || after.startsWith("\n\n")
+      ? ""
+      : after.startsWith("\n")
+        ? "\n"
+        : "\n\n";
+
+  ytext.insert(index, `${lead}${block}${trail}`);
+}
+
+/** Appends a markdown block to the end of the document with blank-line spacing. */
+export function appendMarkdown(ytext: Y.Text, markdown: string): void {
+  insertBlockWithSpacing(ytext, ytext.length, markdown);
 }
 
 export type HeadingInsertPosition = "section_start" | "section_end";
@@ -127,23 +163,15 @@ export function insertAtHeading(
   markdown: string,
   position: HeadingInsertPosition,
 ): boolean {
-  const text = ytext.toString();
-  const section = findHeadingSection(text, heading);
+  const section = findHeadingSection(ytext.toString(), heading);
 
   if (!section) {
     return false;
   }
 
-  if (position === "section_start") {
-    const block = markdown.endsWith("\n") ? markdown : `${markdown}\n`;
-    ytext.insert(section.bodyStart, block);
-    return true;
-  }
-
-  const before = text.slice(0, section.end);
-  const separator = before.endsWith("\n") ? "" : "\n";
-  const trailing = markdown.endsWith("\n") ? "" : "\n";
-  ytext.insert(section.end, `${separator}${markdown}${trailing}`);
+  const index =
+    position === "section_start" ? section.bodyStart : section.end;
+  insertBlockWithSpacing(ytext, index, markdown);
   return true;
 }
 
