@@ -428,6 +428,7 @@ Reference plan: `docs/15_MCP_INTEGRATION_PLAN.md`
 | [x] | Phase 1 — read-only MCP server | `/api/mcp/mcp` via `mcp-handler`; tools `list_documents`/`search_documents`/`get_outline`/`read_document` delegate to `server/documents.ts`; dev auth via `MCP_DEV_USER_ID`; verified end-to-end over JSON-RPC |
 | [x] | Phase 2 — collab-safe writes | `lib/mcp/collab-write.ts` connects a Node HocuspocusProvider with `createCollabToken`; `edit_document` (anchored search/replace deltas) + `append_to_document`/`insert_at_heading`; verified edit/append/insert persist through the collab pipeline |
 | [x] | Phase 3 — self-hosted OAuth AS | Metadata (RFC 8414/9728) + DCR + `/oauth/authorize` (delegates to NextAuth session, PKCE consent) + `/oauth/token` (auth_code + refresh, S256); `mcp_clients`/`mcp_auth_codes`/`mcp_tokens` tables (migration 0017); `/api/mcp` wrapped with `withMcpAuth`; verified register→token→authed call→refresh |
+| [x] | Document lifecycle tools | `create_document` (owner-permissioned, optional title/markdown, metadata synced) and `delete_document` (owner-only soft-delete with `before_archive` snapshot), via `createDocumentForUser`/`archiveDocumentForUser` |
 | [ ] | Phase 4 — hardening | Per-token rate limits, consent UI, surface `assistant` reason in history, observability |
 
 Exit criteria:

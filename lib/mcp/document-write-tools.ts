@@ -1,7 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { getDocumentForUser } from "@/server/documents";
+import {
+  archiveDocumentForUser,
+  createDocumentForUser,
+  getDocumentForUser,
+} from "@/server/documents";
+import { maxMarkdownLength } from "@/lib/markdown";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
 import {
@@ -38,6 +43,61 @@ async function runTool(body: () => Promise<ToolResult>): Promise<ToolResult> {
  * persistence/versioning pipeline. Edits never resend the whole document.
  */
 export function registerVaultDocumentWriteTools(server: McpServer): void {
+  server.registerTool(
+    "create_document",
+    {
+      title: "Create a document",
+      description:
+        "Create a new document owned by the current user and return its id. Optionally provide a title and initial markdown body (markdown may include YAML frontmatter for tags/aliases/summary). Use edit_document/append_to_document afterwards to keep editing it.",
+      inputSchema: {
+        title: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("Document title (defaults to 'Untitled document')."),
+        markdown: z
+          .string()
+          .max(maxMarkdownLength)
+          .optional()
+          .describe("Initial markdown body."),
+      },
+    },
+    async ({ title, markdown }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const { id } = await createDocumentForUser(userId, { title, markdown });
+
+        return json({ ok: true, id });
+      }),
+  );
+
+  server.registerTool(
+    "delete_document",
+    {
+      title: "Delete a document",
+      description:
+        "Archive (soft-delete) a document the current user owns. A version snapshot is saved first, so the delete is recoverable from the document's history. Only the owner can delete.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document id to delete."),
+      },
+    },
+    async ({ documentId }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const archived = await archiveDocumentForUser(userId, documentId);
+
+        if (!archived) {
+          return failure(
+            "Document not found, already deleted, or you are not its owner.",
+          );
+        }
+
+        return json({ ok: true, deleted: true });
+      }),
+  );
+
   server.registerTool(
     "edit_document",
     {

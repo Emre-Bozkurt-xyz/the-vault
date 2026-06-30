@@ -196,6 +196,42 @@ export async function createDocumentInFolderAction(formData: FormData) {
   redirect(`/docs/${document.id}`);
 }
 
+/**
+ * Creates a document owned by `userId` and returns its id. Unlike
+ * {@link createDocumentAction} (which redirects), this is callable from
+ * non-UI contexts such as the MCP server. When `markdown` is supplied, asset
+ * links and frontmatter metadata are reconciled the same way a save would.
+ */
+export async function createDocumentForUser(
+  userId: string,
+  input: { title?: string; markdown?: string } = {},
+): Promise<{ id: string }> {
+  const title = (input.title?.trim() || "Untitled document").slice(0, 200);
+  const markdown = input.markdown ?? initialMarkdownContent;
+
+  const [document] = await db.transaction(async (tx) => {
+    const [createdDocument] = await tx
+      .insert(documents)
+      .values({ ownerId: userId, title, markdown })
+      .returning({ id: documents.id });
+
+    await tx.insert(documentPermissions).values({
+      documentId: createdDocument.id,
+      userId,
+      role: "owner",
+    });
+
+    return [createdDocument];
+  });
+
+  if (input.markdown !== undefined) {
+    await reconcileDocumentAssetLinks({ documentId: document.id, markdown });
+    await syncDocumentMetadata({ documentId: document.id, markdown });
+  }
+
+  return { id: document.id };
+}
+
 export async function saveMarkdownDocumentAction(
   input: unknown,
 ): Promise<
@@ -504,6 +540,65 @@ export async function archiveDocumentAction(formData: FormData) {
   });
 
   redirect("/dashboard");
+}
+
+/**
+ * Archives (soft-deletes) a document on behalf of `userId`, snapshotting a
+ * version first. Returns false when the document is missing or the user lacks
+ * delete permission. Like {@link createDocumentForUser}, this is the redirect-free
+ * variant of {@link archiveDocumentAction} for non-UI callers (e.g. MCP). The
+ * delete is recoverable from the document's version history / trash.
+ */
+export async function archiveDocumentForUser(
+  userId: string,
+  documentId: string,
+): Promise<boolean> {
+  const parsedDocumentId = documentIdSchema.safeParse(documentId);
+
+  if (!parsedDocumentId.success) {
+    return false;
+  }
+
+  if (!(await canDeleteDocument(userId, parsedDocumentId.data))) {
+    return false;
+  }
+
+  let archived = false;
+
+  await db.transaction(async (tx) => {
+    const [document] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(
+        and(eq(documents.id, parsedDocumentId.data), isNull(documents.deletedAt)),
+      )
+      .limit(1);
+
+    if (!document) {
+      return;
+    }
+
+    await createDocumentVersion(tx, {
+      document,
+      actorId: userId,
+      reason: "before_archive",
+    });
+
+    await tx
+      .update(documents)
+      .set({ deletedAt: sql`now()`, updatedAt: sql`now()` })
+      .where(
+        and(eq(documents.id, parsedDocumentId.data), isNull(documents.deletedAt)),
+      );
+
+    archived = true;
+  });
+
+  return archived;
 }
 
 export async function shareDocumentAction(formData: FormData) {
