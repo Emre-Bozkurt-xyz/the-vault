@@ -37,6 +37,7 @@
     "hast-util-sanitize": "^5.0.2",
     "katex": "^0.16.22",
     "lucide-react": "^1.16.0",
+    "mcp-handler": "^1.1.0",
     "next": "16.2.6",
     "next-auth": "^5.0.0-beta.31",
     "postgres": "^3.4.9",

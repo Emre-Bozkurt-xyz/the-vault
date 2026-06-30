@@ -977,3 +977,76 @@ export const officialDocsRelations = relations(officialDocs, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// --- MCP OAuth (self-hosted authorization server for the MCP endpoint) ---
+
+// OAuth clients registered via Dynamic Client Registration (RFC 7591). MCP
+// clients (e.g. Claude) register themselves; they are public PKCE clients, so
+// no client secret is stored.
+export const mcpClients = pgTable("mcp_clients", {
+  id: text("id").primaryKey(), // client_id
+  clientName: text("client_name"),
+  redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+  grantTypes: jsonb("grant_types").$type<string[]>().notNull(),
+  responseTypes: jsonb("response_types").$type<string[]>().notNull(),
+  tokenEndpointAuthMethod: text("token_endpoint_auth_method")
+    .notNull()
+    .default("none"),
+  scope: text("scope"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
+// Short-lived authorization codes (PKCE). The plaintext code is never stored —
+// only its SHA-256 hash. One-time use: deleted on exchange.
+export const mcpAuthCodes = pgTable(
+  "mcp_auth_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpClients.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull(),
+    scope: text("scope"),
+    resource: text("resource"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [index("mcp_auth_codes_expires_at_idx").on(table.expiresAt)],
+);
+
+// Issued access/refresh tokens, stored as SHA-256 hashes. Revocable via
+// revokedAt; the access token is audience-bound to the MCP resource (RFC 8707).
+export const mcpTokens = pgTable(
+  "mcp_tokens",
+  {
+    accessTokenHash: text("access_token_hash").primaryKey(),
+    refreshTokenHash: text("refresh_token_hash").unique(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpClients.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scope: text("scope"),
+    resource: text("resource"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("mcp_tokens_user_id_idx").on(table.userId),
+    index("mcp_tokens_refresh_token_hash_idx").on(table.refreshTokenHash),
+  ],
+);

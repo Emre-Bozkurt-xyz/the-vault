@@ -8,19 +8,30 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { devSignInAction, devSignInAsEmailAction, isDevLoginEnabled } from "@/server/dev-auth";
 
+// Only allow same-origin relative callback paths to avoid open redirects.
+function sanitizeCallbackUrl(value: string | undefined): string {
+  if (value && value.startsWith("/") && !value.startsWith("//")) {
+    return value;
+  }
+
+  return "/dashboard";
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; devError?: string }>;
+  searchParams: Promise<{ error?: string; devError?: string; callbackUrl?: string }>;
 }) {
+  const { error, devError, callbackUrl } = await searchParams;
+  const redirectTo = sanitizeCallbackUrl(callbackUrl);
+
   const session = await auth();
 
   if (session?.user?.id) {
-    redirect("/dashboard");
+    redirect(redirectTo);
   }
 
   const showDevLogin = isDevLoginEnabled();
-  const { error, devError } = await searchParams;
   const accountNotLinked = error === "OAuthAccountNotLinked";
 
   return (
@@ -64,7 +75,7 @@ export default async function LoginPage({
               <form
                 action={async () => {
                   "use server";
-                  await signIn("github", { redirectTo: "/dashboard" });
+                  await signIn("github", { redirectTo });
                 }}
               >
                 <Button type="submit" className="w-full">
@@ -76,7 +87,7 @@ export default async function LoginPage({
               <form
                 action={async () => {
                   "use server";
-                  await signIn("google", { redirectTo: "/dashboard" });
+                  await signIn("google", { redirectTo });
                 }}
               >
                 <Button type="submit" variant="outline" className="w-full">
@@ -111,18 +122,21 @@ export default async function LoginPage({
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <form action={devSignInAction}>
                     <input type="hidden" name="devUser" value="owner" />
+                    <input type="hidden" name="callbackUrl" value={redirectTo} />
                     <Button type="submit" variant="outline" className="w-full">
                       Dev owner
                     </Button>
                   </form>
                   <form action={devSignInAction}>
                     <input type="hidden" name="devUser" value="collaborator" />
+                    <input type="hidden" name="callbackUrl" value={redirectTo} />
                     <Button type="submit" variant="outline" className="w-full">
                       Dev collaborator
                     </Button>
                   </form>
                 </div>
                 <form action={devSignInAsEmailAction} className="mt-2 flex gap-2">
+                  <input type="hidden" name="callbackUrl" value={redirectTo} />
                   <input
                     type="email"
                     name="email"

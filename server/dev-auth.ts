@@ -10,6 +10,15 @@ import { sessions, users } from "@/db/schema";
 
 const devUserSchema = z.enum(["owner", "collaborator"]);
 
+// Only allow same-origin relative callback paths to avoid open redirects.
+function sanitizeCallbackUrl(value: FormDataEntryValue | null): string {
+  if (typeof value === "string" && value.startsWith("/") && !value.startsWith("//")) {
+    return value;
+  }
+
+  return "/dashboard";
+}
+
 const devUsers = {
   owner: {
     name: "Dev Owner",
@@ -62,7 +71,7 @@ export async function devSignInAction(formData: FormData) {
     .returning({ id: users.id });
 
   await createDevSession(user.id);
-  redirect("/dashboard");
+  redirect(sanitizeCallbackUrl(formData.get("callbackUrl")));
 }
 
 export async function devSignInAsEmailAction(formData: FormData) {
@@ -82,5 +91,5 @@ export async function devSignInAsEmailAction(formData: FormData) {
   }
 
   await createDevSession(user.id);
-  redirect("/dashboard");
+  redirect(sanitizeCallbackUrl(formData.get("callbackUrl")));
 }
