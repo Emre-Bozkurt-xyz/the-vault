@@ -171,6 +171,45 @@ export async function listUserStorageForAdmin(options: {
   }));
 }
 
+export async function getUserStorageForAdmin(
+  userId: string,
+): Promise<AdminUserStorageItem | null> {
+  await requireAdmin();
+  const id = userIdSchema.parse(userId);
+
+  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null)::int`;
+  const actualBytes = sql<number>`coalesce(sum(${assets.sizeBytes}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null), 0)`;
+
+  const [row] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      email: users.email,
+      storageUsedBytes: users.storageUsedBytes,
+      storageQuotaBytes: users.storageQuotaBytes,
+      assetCount,
+      actualBytes,
+    })
+    .from(users)
+    .leftJoin(assets, eq(assets.ownerId, users.id))
+    .where(eq(users.id, id))
+    .groupBy(users.id)
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    storageUsedBytes: Number(row.storageUsedBytes),
+    storageQuotaBytes: Number(row.storageQuotaBytes),
+    assetCount: Number(row.assetCount),
+    actualBytes: Number(row.actualBytes),
+  };
+}
+
 export async function listAssetsForUserAdmin(
   userId: string,
 ): Promise<AdminAssetItem[]> {

@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import {
   deleteAssetAsAdminAction,
   getAssetStorageOverview,
+  getUserStorageForAdmin,
   listAssetsForUserAdmin,
   listUserStorageForAdmin,
   recalcUserStorageAction,
@@ -60,7 +61,7 @@ export default async function AdminAssetsPage({
   const { q, sort, min, userId } = await searchParams;
   const minMb = Number(min) > 0 ? Number(min) : 0;
 
-  const [overview, userRows, selectedAssets] = await Promise.all([
+  const [overview, userRows, selectedAssets, focusedUser] = await Promise.all([
     getAssetStorageOverview(),
     listUserStorageForAdmin({
       query: q,
@@ -68,6 +69,7 @@ export default async function AdminAssetsPage({
       minBytes: minMb * MB,
     }),
     userId ? listAssetsForUserAdmin(userId) : Promise.resolve([]),
+    userId ? getUserStorageForAdmin(userId) : Promise.resolve(null),
   ]);
 
   const overallRatio =
@@ -158,6 +160,51 @@ export default async function AdminAssetsPage({
           </div>
         </section>
 
+        {userId ? (
+          <section className="grid gap-4 border border-primary/40 bg-card/45 p-4 text-card-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="size-5 text-primary" />
+                <h2 className="text-lg font-semibold">
+                  {focusedUser
+                    ? `Assets for ${focusedUser.name ?? focusedUser.email ?? "user"}`
+                    : "Selected user"}
+                </h2>
+              </div>
+              <Link
+                href={userHref()}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2")}
+              >
+                Clear
+              </Link>
+            </div>
+
+            {focusedUser ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  {focusedUser.username ? (
+                    <Badge variant="outline">@{focusedUser.username}</Badge>
+                  ) : null}
+                  <Badge variant="secondary">{focusedUser.assetCount} assets</Badge>
+                  <span>{focusedUser.email ?? "No email"}</span>
+                </div>
+                <UsageBar
+                  used={focusedUser.storageUsedBytes}
+                  quota={focusedUser.storageQuotaBytes}
+                />
+                <AssetModerationList
+                  assets={selectedAssets}
+                  deleteAction={deleteAssetAsAdminAction}
+                />
+              </>
+            ) : (
+              <p className="border border-dashed border-border/60 bg-background/45 px-3 py-4 text-sm text-muted-foreground">
+                That user no longer exists.
+              </p>
+            )}
+          </section>
+        ) : null}
+
         <section className="grid gap-4 border border-border/60 bg-card/45 p-4 text-card-foreground">
           <div className="flex items-center gap-2">
             <Users className="size-5 text-primary" />
@@ -215,13 +262,16 @@ export default async function AdminAssetsPage({
           ) : (
             <div className="grid gap-3">
               {userRows.map((user) => {
-                const isOpen = user.id === userId;
+                const isFocused = user.id === userId;
                 const drift = user.storageUsedBytes !== user.actualBytes;
 
                 return (
                   <article
                     key={user.id}
-                    className="grid gap-3 border border-border/60 bg-background/45 p-4"
+                    className={cn(
+                      "grid gap-3 border bg-background/45 p-4",
+                      isFocused ? "border-primary/50" : "border-border/60",
+                    )}
                   >
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div className="min-w-0">
@@ -248,15 +298,17 @@ export default async function AdminAssetsPage({
 
                       <div className="flex shrink-0 items-center gap-2">
                         <Link
-                          href={isOpen ? userHref() : userHref(user.id)}
-                          scroll={false}
+                          href={userHref(user.id)}
                           className={cn(
-                            buttonVariants({ variant: "outline", size: "sm" }),
+                            buttonVariants({
+                              variant: isFocused ? "secondary" : "outline",
+                              size: "sm",
+                            }),
                             "gap-2",
                           )}
                         >
                           <SlidersHorizontal className="size-4" />
-                          {isOpen ? "Hide assets" : "Manage assets"}
+                          Manage assets
                         </Link>
                         <form action={recalcUserStorageAction}>
                           <input type="hidden" name="userId" value={user.id} />
@@ -294,13 +346,6 @@ export default async function AdminAssetsPage({
                         Set quota
                       </Button>
                     </form>
-
-                    {isOpen ? (
-                      <AssetModerationList
-                        assets={selectedAssets}
-                        deleteAction={deleteAssetAsAdminAction}
-                      />
-                    ) : null}
                   </article>
                 );
               })}
