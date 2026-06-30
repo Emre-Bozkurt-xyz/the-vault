@@ -149,6 +149,35 @@ export function appendMarkdown(ytext: Y.Text, markdown: string): void {
   insertBlockWithSpacing(ytext, ytext.length, markdown);
 }
 
+/**
+ * Inserts a block immediately after the unique occurrence of `anchor` (with
+ * blank-line spacing). Same uniqueness guard as anchored edits: throws a
+ * recoverable error when the anchor is missing or matches more than once, so the
+ * caller can re-read and retry.
+ */
+export function insertBlockAfterText(
+  ytext: Y.Text,
+  anchor: string,
+  rawBlock: string,
+): void {
+  const text = ytext.toString();
+  const index = text.indexOf(anchor);
+
+  if (index === -1) {
+    throw new Error(
+      `Anchor not found — re-read the section. text: "${truncate(anchor)}"`,
+    );
+  }
+
+  if (text.indexOf(anchor, index + 1) !== -1) {
+    throw new Error(
+      `Anchor is ambiguous (matches more than once) — include more surrounding context. text: "${truncate(anchor)}"`,
+    );
+  }
+
+  insertBlockWithSpacing(ytext, index + anchor.length, rawBlock);
+}
+
 export type HeadingInsertPosition = "section_start" | "section_end";
 
 /**

@@ -26,6 +26,7 @@ import {
   appendMarkdown,
   applyAnchoredEdits,
   insertAtHeading,
+  insertBlockAfterText,
   replaceYTextMinimal,
 } from "@/lib/mcp/document-edits";
 
@@ -273,13 +274,20 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
     {
       title: "Embed an asset",
       description:
-        "Insert one of the user's assets (found via search_assets) into a document as a styled embed. Choose alignment and width, and optionally add a caption. Appended at the end of the document by default; pass a heading to place it at the end of that section instead. The asset must belong to the current user; the document↔asset link is maintained automatically.",
+        "Insert one of the user's assets (found via search_assets) into a document as a styled embed. Choose alignment and width, and optionally add a caption. Placement: by default appended at the end; pass `after` to place it immediately after a unique snippet of existing text (precise positioning, like edit_document anchors), or `heading` to place it at the end of a section. The asset must belong to the current user; the document↔asset link is created automatically (required for collaborators/public viewers to load the image).",
       inputSchema: {
         documentId: z.string().uuid().describe("The document to embed into."),
         assetId: z
           .string()
           .uuid()
           .describe("The asset id (from search_assets)."),
+        after: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Place the embed immediately after this unique snippet of existing document text. Must match exactly once. Takes precedence over `heading`.",
+          ),
         align: z
           .enum(["left", "center", "right"])
           .default("center")
@@ -307,7 +315,7 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
       },
     },
     async (
-      { documentId, assetId, align, width, caption, alt, heading },
+      { documentId, assetId, align, width, caption, alt, after, heading },
       extra,
     ) =>
       runTool(async () => {
@@ -329,7 +337,9 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
 
         let placed = true;
         await withLiveDocumentText(userId, documentId, (ytext) => {
-          if (heading) {
+          if (after) {
+            insertBlockAfterText(ytext, after, source);
+          } else if (heading) {
             placed = insertAtHeading(ytext, heading, source, "section_end");
           } else {
             appendMarkdown(ytext, source);
