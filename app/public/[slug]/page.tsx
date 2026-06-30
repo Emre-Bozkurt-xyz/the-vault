@@ -95,7 +95,7 @@ export default async function PublicDocumentPage({
     await Promise.all([
       listPublicWikiLinkResolutions(),
       listOfficialDocWikiLinkResolutions(),
-      listAssetResolutionsForDocument(document.id, null),
+      listAssetResolutionsForDocument(document.id, null, document.markdown),
       getPublicStickerItems(document.id),
       getPublicCalendarStates(document.id),
     ]);

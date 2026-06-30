@@ -47,7 +47,7 @@ export default async function WorkspacePublicDocumentPage({
     await Promise.all([
       listPublicWikiLinkResolutions({ workspaceHrefs: true }),
       listOfficialDocWikiLinkResolutions(),
-      listAssetResolutionsForDocument(document.id, null),
+      listAssetResolutionsForDocument(document.id, null, document.markdown),
       getPublicStickerItems(document.id),
       getPublicCalendarStates(document.id),
     ]);

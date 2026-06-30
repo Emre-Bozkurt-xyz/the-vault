@@ -92,7 +92,11 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
   const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
     listPublicWikiLinkResolutions(),
     listOfficialDocWikiLinkResolutions(),
-    listAssetResolutionsForDocument(document.id, session?.user?.id ?? null),
+    listAssetResolutionsForDocument(
+      document.id,
+      session?.user?.id ?? null,
+      document.markdown,
+    ),
   ]);
   const wikiLinks = {
     ...publicWikiLinks,

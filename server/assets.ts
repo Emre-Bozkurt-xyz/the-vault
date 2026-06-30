@@ -898,17 +898,29 @@ export async function recalculateUserStorage(userId: string) {
 export async function listAssetResolutionsForDocument(
   documentId: string,
   userId: string | null,
+  markdown?: string | null,
 ) {
-  const rows = await db
-    .select({
-      id: assets.id,
-      kind: assets.kind,
-      displayName: assets.displayName,
-      altText: assets.altText,
-      mimeType: assets.mimeType,
-      sizeBytes: assets.sizeBytes,
-      visibility: assets.visibility,
-    })
+  const canRead = await canReadDocument(userId, documentId);
+
+  if (!canRead) {
+    return {};
+  }
+
+  const resolutionColumns = {
+    id: assets.id,
+    kind: assets.kind,
+    displayName: assets.displayName,
+    altText: assets.altText,
+    mimeType: assets.mimeType,
+    sizeBytes: assets.sizeBytes,
+    visibility: assets.visibility,
+  };
+
+  // Linked assets: the document_assets row is an access grant, which is what
+  // lets a viewer load a *private* asset they don't own. Anonymous viewers can
+  // still only see the public ones.
+  const linkedRows = await db
+    .select(resolutionColumns)
     .from(documentAssets)
     .innerJoin(assets, eq(documentAssets.assetId, assets.id))
     .where(
@@ -919,28 +931,103 @@ export async function listAssetResolutionsForDocument(
       ),
     );
 
-  const canRead = await canReadDocument(userId, documentId);
+  const rows = linkedRows.filter(
+    (row) => userId || row.visibility === "public",
+  );
 
-  if (!canRead) {
-    return {};
+  // Public assets need no grant — they're world-readable — so resolve any
+  // public asset referenced in the body even if it was never linked (e.g. an
+  // embed copy-pasted from the public gallery, possibly owned by someone else).
+  const embeddedIds = markdown
+    ? [...new Set(extractAssetEmbedIds(markdown))]
+    : [];
+  const unresolvedIds = embeddedIds.filter(
+    (id) => !rows.some((row) => row.id === id),
+  );
+
+  if (unresolvedIds.length > 0) {
+    const publicRows = await db
+      .select(resolutionColumns)
+      .from(assets)
+      .where(
+        and(
+          inArray(assets.id, unresolvedIds),
+          eq(assets.visibility, "public"),
+          eq(assets.status, "ready"),
+          isNull(assets.deletedAt),
+        ),
+      );
+
+    rows.push(...publicRows);
   }
 
   return Object.fromEntries(
-    rows
-      .filter((row) => userId || row.visibility === "public")
-      .map((row) => [
-        row.id,
-        {
-          id: row.id,
-          kind: row.kind,
-          displayName: row.displayName,
-          altText: row.altText,
-          mimeType: row.mimeType,
-          sizeBytes: row.sizeBytes,
-          url: buildAssetContentUrl(row.id, documentId),
-        } satisfies AssetResolution,
-      ]),
+    rows.map((row) => [
+      row.id,
+      {
+        id: row.id,
+        kind: row.kind,
+        displayName: row.displayName,
+        altText: row.altText,
+        mimeType: row.mimeType,
+        sizeBytes: row.sizeBytes,
+        url: buildAssetContentUrl(row.id, documentId),
+      } satisfies AssetResolution,
+    ]),
   );
+}
+
+/**
+ * Resolves a single embed reference for the live editor when its id isn't in the
+ * server-rendered resolution map yet (e.g. a public embed just pasted from the
+ * gallery). Mirrors {@link listAssetResolutionsForDocument}'s public branch:
+ * only *public* assets resolve without a link, and the caller must be able to
+ * read the document. Returns null when it wouldn't render on a reload anyway.
+ */
+export async function resolveEmbeddableAssetForDocument(input: {
+  assetId: string;
+  userId: string | null;
+  documentId: string;
+}): Promise<AssetResolution | null> {
+  const canRead = await canReadDocument(input.userId, input.documentId);
+
+  if (!canRead) {
+    return null;
+  }
+
+  const [asset] = await db
+    .select({
+      id: assets.id,
+      kind: assets.kind,
+      displayName: assets.displayName,
+      altText: assets.altText,
+      mimeType: assets.mimeType,
+      sizeBytes: assets.sizeBytes,
+    })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.id, input.assetId),
+        eq(assets.visibility, "public"),
+        eq(assets.status, "ready"),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!asset) {
+    return null;
+  }
+
+  return {
+    id: asset.id,
+    kind: asset.kind,
+    displayName: asset.displayName,
+    altText: asset.altText,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    url: buildAssetContentUrl(asset.id, input.documentId),
+  } satisfies AssetResolution;
 }
 
 export async function getReadableAsset(input: {

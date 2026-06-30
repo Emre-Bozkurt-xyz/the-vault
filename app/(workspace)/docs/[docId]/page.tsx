@@ -105,7 +105,11 @@ export default async function DocumentPage({
       document.access.canEdit
         ? listDocumentVersionsForUser(document.id, session.user.id)
         : Promise.resolve([]),
-      listAssetResolutionsForDocument(document.id, session.user.id),
+      listAssetResolutionsForDocument(
+        document.id,
+        session.user.id,
+        document.markdown,
+      ),
       document.access.canPublish
         ? listPrivateEmbeddedAssetsForPublish({
             documentId: document.id,

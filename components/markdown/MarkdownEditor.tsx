@@ -78,6 +78,7 @@ import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
 import { dispatchWorkspaceDocumentChanged } from "@/components/workspace/workspace-events";
 import {
+  extractAssetEmbedIds,
   formatAssetEmbedSource,
   formatAssetGroupFence,
   getAssetEmbedClassName,
@@ -260,6 +261,9 @@ export function MarkdownEditor({
   const titleValueRef = useRef(title);
   const markdownValueRef = useRef(markdown);
   const savingRef = useRef(false);
+  // Embed ids we've already tried to resolve live (resolved or 404'd) so the
+  // effect below doesn't refetch them on every keystroke.
+  const resolvedEmbedAttemptsRef = useRef<Set<string>>(new Set());
   const collaborationKey = collaboration
     ? `${documentId}:${collaboration.url}:${collaboration.token}`
     : "local";
@@ -272,7 +276,78 @@ export function MarkdownEditor({
 
   useEffect(() => {
     setAssetLinkMap(assetLinks ?? {});
+    // A fresh server map may now cover ids we previously resolved client-side;
+    // allow re-attempts so anything still missing gets picked up below.
+    resolvedEmbedAttemptsRef.current = new Set(Object.keys(assetLinks ?? {}));
   }, [assetLinks]);
+
+  // Resolve embeds whose id isn't in the map yet — e.g. a public asset embed
+  // pasted from the gallery. The server render already handles these on reload;
+  // this fetches each unknown id's resolution so it renders live without one.
+  // Only public assets resolve (the endpoint 404s otherwise), and each id is
+  // attempted at most once until the server map changes.
+  useEffect(() => {
+    const unknownIds = [...new Set(extractAssetEmbedIds(markdownValue))].filter(
+      (id) => !assetLinkMap[id] && !resolvedEmbedAttemptsRef.current.has(id),
+    );
+
+    if (unknownIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      for (const id of unknownIds) {
+        resolvedEmbedAttemptsRef.current.add(id);
+      }
+
+      void Promise.all(
+        unknownIds.map(async (id) => {
+          try {
+            const response = await fetch(
+              `/api/assets/${id}/resolve?documentId=${encodeURIComponent(documentId)}`,
+            );
+
+            if (!response.ok) {
+              return null;
+            }
+
+            const data = (await response.json()) as {
+              asset: AssetEmbedResolutionMap[string];
+            };
+            return data.asset ?? null;
+          } catch {
+            return null;
+          }
+        }),
+      ).then((resolved) => {
+        if (cancelled) {
+          return;
+        }
+
+        const found = resolved.filter(
+          (asset): asset is AssetEmbedResolutionMap[string] => asset !== null,
+        );
+
+        if (found.length === 0) {
+          return;
+        }
+
+        setAssetLinkMap((current) => {
+          const next = { ...current };
+          for (const asset of found) {
+            next[asset.id] = asset;
+          }
+          return next;
+        });
+      });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [markdownValue, assetLinkMap, documentId]);
 
   useEffect(() => {
     setAssetWidthDraft(
