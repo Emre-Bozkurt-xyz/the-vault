@@ -68,6 +68,96 @@ export type ExtensionStateApi = {
   ) => Promise<void>;
 };
 
+/**
+ * State surface handed to an agent action handler. Unlike {@link ExtensionStateApi},
+ * every method is pre-bound to the acting extension's id — a handler cannot name
+ * (let alone touch) another extension's state. The server builds this; handlers
+ * never import `db` or the permission-checked state functions directly.
+ */
+export type ExtensionAgentStateApi = {
+  get: (stateKey?: string) => Promise<ExtensionStateValue | null>;
+  set: (
+    state: ExtensionStateValue,
+    options?: {
+      stateKey?: string;
+      visibility?: ExtensionStateVisibility;
+      version?: number;
+    },
+  ) => Promise<void>;
+  list: () => Promise<
+    Array<{
+      stateKey: string;
+      state: ExtensionStateValue;
+      visibility: ExtensionStateVisibility;
+      version: number;
+    }>
+  >;
+  delete: (stateKey?: string) => Promise<void>;
+};
+
+/**
+ * Document surface for a document-scoped agent action. Only the capabilities the
+ * action's declared permissions allow are populated: `markdown` is present with
+ * `document:read`, `state` with `document:write-extension-state` (and read),
+ * `assets` with `asset:read`. Markdown *mutation* is intentionally absent in the
+ * MVP — see docs/14.
+ */
+export type ExtensionAgentDocumentContext = {
+  id: string;
+  canEdit: boolean;
+  state: ExtensionAgentStateApi;
+  assets?: ExtensionAssetApi;
+  markdown?: {
+    read: () => Promise<string>;
+  };
+};
+
+/**
+ * The sandbox a {@link VaultExtensionAgentAction} handler runs against. The
+ * server constructs it per call after resolving the acting user, the target
+ * document (for document-scoped actions), and the action's permissions.
+ */
+export type ExtensionAgentActionContext = {
+  user: { id: string };
+  /** Present for `scope: "document"` actions; absent for `scope: "workspace"`. */
+  document?: ExtensionAgentDocumentContext;
+};
+
+export type ExtensionAgentActionResult = {
+  /** Optional structured payload returned to the caller. Serialized to JSON for the model, so it must be JSON-safe. */
+  data?: unknown;
+  /** Optional human/agent-readable summary of what happened. */
+  message?: string;
+};
+
+export type ExtensionAgentActionScope = "document" | "workspace";
+
+/**
+ * An agent-invokable operation an extension exposes. The `input` schema is both
+ * validated server-side and surfaced to the model as JSON Schema (discovery).
+ * The `handler` is a pure function of `(input, ctx)` — it must not import
+ * server-only modules; all capabilities arrive via the sandboxed `ctx`.
+ */
+export type VaultExtensionAgentAction<TInput = unknown> = {
+  /** Globally unique, namespaced under the extension id (e.g. "vault.calendar.addEntry"). */
+  id: string;
+  title: string;
+  description: string;
+  scope: ExtensionAgentActionScope;
+  /** Whether the action mutates state. Document-scoped mutating actions require edit access. */
+  mutates?: boolean;
+  /**
+   * Capabilities the handler needs. Must be a subset of the extension's own
+   * `permissions`; the registry asserts this. Gates which `ctx` surfaces exist.
+   */
+  permissions?: ExtensionPermission[];
+  input: ZodType<TInput>;
+  handler: (
+    input: TInput,
+    context: ExtensionAgentActionContext,
+  ) => Promise<ExtensionAgentActionResult>;
+};
+
 export type LiveBlockInstance = {
   kind: string;
   from: number;
@@ -224,5 +314,8 @@ export type VaultExtension = {
     pages?: WorkspacePageContribution[];
     panels?: WorkspacePanelContribution[];
     commands?: CommandContribution[];
+  };
+  agent?: {
+    actions: VaultExtensionAgentAction[];
   };
 };

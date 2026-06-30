@@ -6,9 +6,15 @@ import type {
   LiveBlockSpec,
   MarkdownPreprocessor,
   VaultExtension,
+  VaultExtensionAgentAction,
   WorkspacePageContribution,
   WorkspacePanelContribution,
 } from "@/lib/extensions/types";
+
+export type AgentActionEntry = {
+  action: VaultExtensionAgentAction;
+  extension: VaultExtension;
+};
 
 export type VaultExtensionRegistry = {
   extensions: VaultExtension[];
@@ -37,7 +43,47 @@ export type VaultExtensionRegistry = {
   getCommandContributions: () => Array<
     CommandContribution & { sourceExtensionId: string }
   >;
+  getAgentActions: () => AgentActionEntry[];
+  getAgentAction: (actionId: string) => AgentActionEntry | null;
 };
+
+/**
+ * Asserts the manifest invariants agent actions rely on: every action id is
+ * namespaced under its extension, ids are globally unique, and an action never
+ * requests a permission its extension hasn't declared. Throws at module load so
+ * a malformed manifest fails fast rather than at dispatch time.
+ */
+function assertAgentActionInvariants(extensions: VaultExtension[]): void {
+  const seen = new Set<string>();
+
+  for (const extension of extensions) {
+    const granted = new Set(extension.permissions ?? []);
+
+    for (const action of extension.agent?.actions ?? []) {
+      if (seen.has(action.id)) {
+        throw new Error(`Duplicate agent action id: ${action.id}`);
+      }
+      seen.add(action.id);
+
+      if (
+        action.id !== extension.id &&
+        !action.id.startsWith(`${extension.id}.`)
+      ) {
+        throw new Error(
+          `Agent action "${action.id}" must be namespaced under extension "${extension.id}".`,
+        );
+      }
+
+      for (const permission of action.permissions ?? []) {
+        if (!granted.has(permission)) {
+          throw new Error(
+            `Agent action "${action.id}" requests permission "${permission}" not granted to extension "${extension.id}".`,
+          );
+        }
+      }
+    }
+  }
+}
 
 export function createVaultExtensionRegistry(
   extensions: VaultExtension[],
@@ -45,6 +91,8 @@ export function createVaultExtensionRegistry(
   const orderedExtensions = [...extensions].sort((a, b) =>
     a.id.localeCompare(b.id),
   );
+
+  assertAgentActionInvariants(orderedExtensions);
 
   return {
     extensions: orderedExtensions,
@@ -127,6 +175,25 @@ export function createVaultExtensionRegistry(
           sourceExtensionId: extension.id,
         })),
       );
+    },
+    getAgentActions() {
+      return orderedExtensions.flatMap((extension) =>
+        (extension.agent?.actions ?? []).map((action) => ({
+          action,
+          extension,
+        })),
+      );
+    },
+    getAgentAction(actionId) {
+      for (const extension of orderedExtensions) {
+        const action = extension.agent?.actions?.find(
+          (candidate) => candidate.id === actionId,
+        );
+        if (action) {
+          return { action, extension };
+        }
+      }
+      return null;
     },
   };
 }

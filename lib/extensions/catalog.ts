@@ -54,6 +54,46 @@ export const calendarStateSchema = z.object({
 export type CalendarEntry = z.infer<typeof calendarEntrySchema>;
 export type CalendarState = z.infer<typeof calendarStateSchema>;
 
+/**
+ * The instance handle for a calendar block. A document can hold several
+ * calendars; each persists under the state key `calendar:<calendarId>`, matching
+ * the id embedded in the in-document live block.
+ */
+const calendarIdInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[a-z0-9][a-z0-9._-]*$/i)
+  .describe("Calendar instance id (the <id> in its `calendar:<id>` state key).");
+
+const listEntriesInputSchema = z.object({
+  calendarId: calendarIdInputSchema
+    .optional()
+    .describe(
+      "A specific calendar to read. Omit to list all calendars in the document with their entry counts.",
+    ),
+});
+
+const addEntryInputSchema = z.object({
+  calendarId: calendarIdInputSchema,
+  type: z
+    .enum(["task", "event"])
+    .default("task")
+    .describe("'task' (completable) or 'event' (time-anchored reminder)."),
+  day: z
+    .string()
+    .regex(dayKeyPattern)
+    .describe("The day this entry belongs to, as YYYY-MM-DD."),
+  text: z.string().max(500).default("").describe("The entry's label."),
+  time: z
+    .string()
+    .regex(timePattern)
+    .optional()
+    .describe("Events only: optional HH:MM start time."),
+  note: z.string().max(2000).optional().describe("Optional longer note."),
+});
+
 export const localBuiltInExtensions: VaultExtension[] = [
   {
     id: "vault.calendar",
@@ -119,6 +159,126 @@ export const localBuiltInExtensions: VaultExtension[] = [
           id: "vault.calendar.insert",
           label: "Insert calendar",
           description: "Insert a month calendar block at the cursor.",
+        },
+      ],
+    },
+    agent: {
+      actions: [
+        {
+          id: "vault.calendar.listEntries",
+          title: "List calendar entries",
+          description:
+            "Read a document's calendar data. With a calendarId, returns that calendar's tasks and events; without one, lists every calendar in the document and how many entries each has.",
+          scope: "document",
+          mutates: false,
+          permissions: ["document:read"],
+          input: listEntriesInputSchema,
+          async handler(input, context) {
+            const document = context.document;
+            if (!document) {
+              throw new Error("This action requires a document.");
+            }
+
+            const { calendarId } = input as z.infer<
+              typeof listEntriesInputSchema
+            >;
+
+            if (calendarId) {
+              const raw = await document.state.get(`calendar:${calendarId}`);
+              if (!raw) {
+                return {
+                  message: `No calendar "${calendarId}" exists in this document.`,
+                  data: { calendarId, entries: [] },
+                };
+              }
+              const state = calendarStateSchema.parse(raw);
+              const entries = Object.entries(state.entries)
+                .map(([id, entry]) => ({ id, ...entry }))
+                .sort(
+                  (a, b) =>
+                    a.day.localeCompare(b.day) ||
+                    (a.time ?? "").localeCompare(b.time ?? "") ||
+                    a.order - b.order,
+                );
+              return {
+                data: { calendarId, entries },
+                message: `Calendar "${calendarId}" has ${entries.length} entr${entries.length === 1 ? "y" : "ies"}.`,
+              };
+            }
+
+            const calendars = (await document.state.list())
+              .filter((row) => row.stateKey.startsWith("calendar:"))
+              .map((row) => {
+                const parsed = calendarStateSchema.safeParse(row.state);
+                return {
+                  calendarId: row.stateKey.slice("calendar:".length),
+                  entryCount: parsed.success
+                    ? Object.keys(parsed.data.entries).length
+                    : 0,
+                };
+              });
+            return {
+              data: { calendars },
+              message: `This document has ${calendars.length} calendar${calendars.length === 1 ? "" : "s"}.`,
+            };
+          },
+        },
+        {
+          id: "vault.calendar.addEntry",
+          title: "Add a calendar entry",
+          description:
+            "Add a task or event to an existing calendar in a document, on a given day. Use listEntries first to find the calendarId.",
+          scope: "document",
+          mutates: true,
+          permissions: ["document:write-extension-state"],
+          input: addEntryInputSchema,
+          async handler(input, context) {
+            const document = context.document;
+            if (!document) {
+              throw new Error("This action requires a document.");
+            }
+
+            const args = input as z.infer<typeof addEntryInputSchema>;
+            const stateKey = `calendar:${args.calendarId}`;
+
+            const existing = (await document.state.list()).find(
+              (row) => row.stateKey === stateKey,
+            );
+            const current = existing
+              ? calendarStateSchema.parse(existing.state)
+              : calendarStateSchema.parse({});
+
+            const id = crypto.randomUUID();
+            const sameDayCount = Object.values(current.entries).filter(
+              (entry) => entry.day === args.day,
+            ).length;
+
+            const entry: CalendarEntry = {
+              type: args.type,
+              day: args.day,
+              text: args.text,
+              order: sameDayCount,
+              ...(args.type === "task" ? { done: false } : {}),
+              ...(args.time ? { time: args.time } : {}),
+              ...(args.note ? { note: args.note } : {}),
+            };
+
+            const next = calendarStateSchema.parse({
+              ...current,
+              entries: { ...current.entries, [id]: entry },
+            });
+
+            await document.state.set(next, {
+              stateKey,
+              version: 1,
+              visibility: existing?.visibility ?? "private",
+            });
+
+            return {
+              data: { entryId: id },
+              message: `Added ${args.type} "${args.text}" to ${args.day} in calendar "${args.calendarId}".`,
+            };
+          },
         },
       ],
     },
