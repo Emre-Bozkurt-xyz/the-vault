@@ -601,6 +601,228 @@ export async function archiveDocumentForUser(
   return archived;
 }
 
+/**
+ * Updates a document's title (a `documents` column, separate from the collab
+ * body) on behalf of `userId`, snapshotting a version first. Redirect-free
+ * sibling of {@link saveDocumentTitleAction} for non-UI callers (MCP). Returns
+ * false when the document is missing or the user lacks edit access.
+ */
+export async function setDocumentTitleForUser(
+  userId: string,
+  documentId: string,
+  title: string,
+): Promise<boolean> {
+  const parsedId = documentIdSchema.safeParse(documentId);
+  const nextTitle = title.trim().slice(0, 200);
+
+  if (!parsedId.success || nextTitle.length === 0) {
+    return false;
+  }
+
+  if (!(await canEditDocument(userId, parsedId.data))) {
+    return false;
+  }
+
+  let updated = false;
+
+  await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(and(eq(documents.id, parsedId.data), isNull(documents.deletedAt)))
+      .limit(1);
+
+    if (!current) {
+      return;
+    }
+
+    await maybeCreateAutomaticDocumentVersion(tx, {
+      document: current,
+      actorId: userId,
+      reason: "auto",
+      nextTitle,
+      nextMarkdown: current.markdown,
+    });
+
+    await tx
+      .update(documents)
+      .set({ title: nextTitle, updatedAt: sql`now()` })
+      .where(and(eq(documents.id, parsedId.data), isNull(documents.deletedAt)));
+
+    updated = true;
+  });
+
+  return updated;
+}
+
+/**
+ * Returns a single prior version's full content for a document the user can
+ * edit, or null. Edit-gated to match {@link listDocumentVersionsForUser}.
+ */
+export async function getDocumentVersionForUser(
+  userId: string,
+  documentId: string,
+  versionId: string,
+) {
+  const parsedId = documentIdSchema.safeParse(documentId);
+  const parsedVersion = documentIdSchema.safeParse(versionId);
+
+  if (!parsedId.success || !parsedVersion.success) {
+    return null;
+  }
+
+  if (!(await canEditDocument(userId, parsedId.data))) {
+    return null;
+  }
+
+  const [version] = await db
+    .select({
+      id: documentVersions.id,
+      title: documentVersions.title,
+      markdown: documentVersions.markdown,
+      reason: documentVersions.reason,
+      createdAt: documentVersions.createdAt,
+    })
+    .from(documentVersions)
+    .where(
+      and(
+        eq(documentVersions.id, parsedVersion.data),
+        eq(documentVersions.documentId, parsedId.data),
+      ),
+    )
+    .limit(1);
+
+  return version ?? null;
+}
+
+/**
+ * Restores a document to a prior version on behalf of `userId` (redirect-free
+ * {@link restoreDocumentVersionAction}). Snapshots the current state as a
+ * `before_restore` version, then resets title/markdown and clears collab state
+ * so the next load rebuilds from the restored markdown. Returns false when the
+ * version or document is missing or the user lacks edit access.
+ */
+export async function restoreDocumentVersionForUser(
+  userId: string,
+  documentId: string,
+  versionId: string,
+): Promise<boolean> {
+  const parsedId = documentIdSchema.safeParse(documentId);
+  const parsedVersion = documentIdSchema.safeParse(versionId);
+
+  if (!parsedId.success || !parsedVersion.success) {
+    return false;
+  }
+
+  if (!(await canEditDocument(userId, parsedId.data))) {
+    return false;
+  }
+
+  let restoredMarkdown: string | null = null;
+
+  await db.transaction(async (tx) => {
+    const [version] = await tx
+      .select({
+        title: documentVersions.title,
+        markdown: documentVersions.markdown,
+      })
+      .from(documentVersions)
+      .where(
+        and(
+          eq(documentVersions.id, parsedVersion.data),
+          eq(documentVersions.documentId, parsedId.data),
+        ),
+      )
+      .limit(1);
+
+    const [current] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(and(eq(documents.id, parsedId.data), isNull(documents.deletedAt)))
+      .limit(1);
+
+    if (!version || !current) {
+      return;
+    }
+
+    await createDocumentVersion(tx, {
+      document: current,
+      actorId: userId,
+      reason: "before_restore",
+    });
+
+    await tx
+      .update(documents)
+      .set({
+        title: version.title,
+        markdown: version.markdown,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(documents.id, parsedId.data), isNull(documents.deletedAt)));
+
+    await tx
+      .delete(documentCollabStates)
+      .where(eq(documentCollabStates.documentId, parsedId.data));
+
+    restoredMarkdown = version.markdown;
+  });
+
+  if (restoredMarkdown === null) {
+    return false;
+  }
+
+  await reconcileDocumentAssetLinks({
+    documentId: parsedId.data,
+    markdown: restoredMarkdown,
+  });
+  await syncDocumentMetadata({
+    documentId: parsedId.data,
+    markdown: restoredMarkdown,
+  });
+
+  return true;
+}
+
+/**
+ * Un-archives a previously soft-deleted document. Owner-only. Returns false when
+ * the document is missing, not deleted, or not owned by the user.
+ */
+export async function restoreArchivedDocumentForUser(
+  userId: string,
+  documentId: string,
+): Promise<boolean> {
+  const parsedId = documentIdSchema.safeParse(documentId);
+
+  if (!parsedId.success) {
+    return false;
+  }
+
+  const [document] = await db
+    .select({ ownerId: documents.ownerId, deletedAt: documents.deletedAt })
+    .from(documents)
+    .where(eq(documents.id, parsedId.data))
+    .limit(1);
+
+  if (!document || document.ownerId !== userId || !document.deletedAt) {
+    return false;
+  }
+
+  await db
+    .update(documents)
+    .set({ deletedAt: null, updatedAt: sql`now()` })
+    .where(eq(documents.id, parsedId.data));
+
+  return true;
+}
+
 export async function shareDocumentAction(formData: FormData) {
   const user = await requireActiveUser();
 
@@ -1218,7 +1440,7 @@ function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
-async function listTagsForDocumentIds(documentIds: string[]) {
+export async function listTagsForDocumentIds(documentIds: string[]) {
   const tagMap = new Map<string, string[]>();
   const uniqueDocumentIds = [...new Set(documentIds)];
 

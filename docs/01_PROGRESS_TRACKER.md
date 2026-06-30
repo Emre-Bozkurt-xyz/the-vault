@@ -429,7 +429,8 @@ Reference plan: `docs/15_MCP_INTEGRATION_PLAN.md`
 | [x] | Phase 2 — collab-safe writes | `lib/mcp/collab-write.ts` connects a Node HocuspocusProvider with `createCollabToken`; `edit_document` (anchored search/replace deltas) + `append_to_document`/`insert_at_heading`; verified edit/append/insert persist through the collab pipeline |
 | [x] | Phase 3 — self-hosted OAuth AS | Metadata (RFC 8414/9728) + DCR + `/oauth/authorize` (delegates to NextAuth session, PKCE consent) + `/oauth/token` (auth_code + refresh, S256); `mcp_clients`/`mcp_auth_codes`/`mcp_tokens` tables (migration 0017); `/api/mcp` wrapped with `withMcpAuth`; verified register→token→authed call→refresh |
 | [x] | Document lifecycle tools | `create_document` (owner-permissioned, optional title/markdown, metadata synced) and `delete_document` (owner-only soft-delete with `before_archive` snapshot), via `createDocumentForUser`/`archiveDocumentForUser` |
-| [ ] | Phase 4 — hardening | Per-token rate limits, consent UI, surface `assistant` reason in history, observability |
+| [x] | Metadata, versioning, and tag-search tools | `update_document` (title→DB, frontmatter→collab via `replaceYTextMinimal`+`updateDocumentMetadataFrontmatter`); `list_versions`/`read_version`/`restore_version`; `restore_document` (un-archive); tag/scope filtering in `search_documents`. 14 MCP tools total |
+| [ ] | Phase 4 — hardening | Per-token rate limits, surface `assistant` version reason in history UI, consent polish, observability, list_documents pagination/filters (deferred) |
 
 Exit criteria:
 

@@ -5,7 +5,15 @@ import {
   archiveDocumentForUser,
   createDocumentForUser,
   getDocumentForUser,
+  restoreArchivedDocumentForUser,
+  restoreDocumentVersionForUser,
+  setDocumentTitleForUser,
 } from "@/server/documents";
+import {
+  normalizeTagList,
+  parseDocumentMetadata,
+  updateDocumentMetadataFrontmatter,
+} from "@/lib/content-metadata";
 import { maxMarkdownLength } from "@/lib/markdown";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
@@ -13,6 +21,7 @@ import {
   appendMarkdown,
   applyAnchoredEdits,
   insertAtHeading,
+  replaceYTextMinimal,
 } from "@/lib/mcp/document-edits";
 
 type ToolResult = {
@@ -74,6 +83,105 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "update_document",
+    {
+      title: "Update document properties",
+      description:
+        "Update a document's title and/or frontmatter metadata (tags, summary, status, project, aliases) — the structured 'properties', NOT the body. Use edit_document for body content. Only the fields you pass are changed; pass an empty string/array to clear a field. Tags are normalized to slugs; other frontmatter fields you didn't author are preserved.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document id."),
+        title: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("New title."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Replacement tag list (normalized to slugs). [] clears."),
+        summary: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("Summary. Empty string clears."),
+        status: z
+          .string()
+          .max(80)
+          .optional()
+          .describe("Status. Empty string clears."),
+        project: z
+          .string()
+          .max(80)
+          .optional()
+          .describe("Project. Empty string clears."),
+        aliases: z
+          .array(z.string())
+          .optional()
+          .describe("Replacement alias list. [] clears."),
+      },
+    },
+    async (
+      { documentId, title, tags, summary, status, project, aliases },
+      extra,
+    ) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const updated: string[] = [];
+
+        if (title !== undefined) {
+          const ok = await setDocumentTitleForUser(userId, documentId, title);
+
+          if (!ok) {
+            return failure("Document not found or you cannot edit it.");
+          }
+
+          updated.push("title");
+        }
+
+        const frontmatterTouched =
+          tags !== undefined ||
+          summary !== undefined ||
+          status !== undefined ||
+          project !== undefined ||
+          aliases !== undefined;
+
+        if (frontmatterTouched) {
+          await withLiveDocumentText(userId, documentId, (ytext) => {
+            const current = parseDocumentMetadata(ytext.toString());
+            const merged = {
+              tags: tags !== undefined ? normalizeTagList(tags) : current.tags,
+              aliases:
+                aliases !== undefined
+                  ? aliases.map((alias) => alias.trim()).filter(Boolean)
+                  : current.aliases,
+              summary:
+                summary !== undefined ? summary.trim() || null : current.summary,
+              status:
+                status !== undefined ? status.trim() || null : current.status,
+              project:
+                project !== undefined ? project.trim() || null : current.project,
+            };
+            const nextMarkdown = updateDocumentMetadataFrontmatter(
+              ytext.toString(),
+              merged,
+            );
+            replaceYTextMinimal(ytext, nextMarkdown);
+          });
+
+          updated.push("metadata");
+        }
+
+        if (updated.length === 0) {
+          return failure("Provide at least one field to update.");
+        }
+
+        return json({ ok: true, updated });
+      }),
+  );
+
+  server.registerTool(
     "delete_document",
     {
       title: "Delete a document",
@@ -95,6 +203,61 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
         }
 
         return json({ ok: true, deleted: true });
+      }),
+  );
+
+  server.registerTool(
+    "restore_document",
+    {
+      title: "Restore a deleted document",
+      description:
+        "Un-archive a previously deleted (soft-deleted) document. Owner only. Use this to reverse delete_document.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The deleted document id."),
+      },
+    },
+    async ({ documentId }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const restored = await restoreArchivedDocumentForUser(userId, documentId);
+
+        if (!restored) {
+          return failure(
+            "Document not found, not deleted, or you are not its owner.",
+          );
+        }
+
+        return json({ ok: true, restored: true });
+      }),
+  );
+
+  server.registerTool(
+    "restore_version",
+    {
+      title: "Restore a prior version",
+      description:
+        "Roll a document back to a prior version (from list_versions). Snapshots the current state first, so this is itself reversible. Note: this resets the live editor session for the document.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document id."),
+        versionId: z.string().uuid().describe("The version id to restore."),
+      },
+    },
+    async ({ documentId, versionId }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const ok = await restoreDocumentVersionForUser(
+          userId,
+          documentId,
+          versionId,
+        );
+
+        if (!ok) {
+          return failure(
+            "Document or version not found, or you cannot edit this document.",
+          );
+        }
+
+        return json({ ok: true, restored: true });
       }),
   );
 

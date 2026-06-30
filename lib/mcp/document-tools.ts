@@ -4,9 +4,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { extractMarkdownHeadingOptions } from "@/lib/wiki-links";
 import {
   getDocumentForUser,
+  getDocumentVersionForUser,
+  listDocumentVersionsForUser,
   listDocumentsForUser,
   listSharedDocumentsForUser,
+  listTagsForDocumentIds,
 } from "@/server/documents";
+import { normalizeTagList } from "@/lib/content-metadata";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import {
   sliceMarkdownByHeading,
@@ -96,9 +100,20 @@ export function registerVaultDocumentTools(server: McpServer): void {
     {
       title: "Search documents",
       description:
-        "Find documents the current user can access whose title or body contains the query text. Returns ids, titles, and a short snippet. Read the full body or a section with read_document.",
+        "Find documents the current user can access. Filter by free text (matched in title/body), by tags (a document must have all given tags), and/or by scope (owned vs shared). Provide at least a query or tags. Returns ids, titles, tags, and a short snippet.",
       inputSchema: {
-        query: z.string().min(1).describe("Text to search for in titles and bodies."),
+        query: z
+          .string()
+          .optional()
+          .describe("Text to match in titles and bodies."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Require all of these tags (normalized to slugs)."),
+        scope: z
+          .enum(["owned", "shared", "all"])
+          .default("all")
+          .describe("Limit to owned, shared, or all accessible documents."),
         limit: z
           .number()
           .int()
@@ -108,45 +123,79 @@ export function registerVaultDocumentTools(server: McpServer): void {
           .describe("Maximum results to return (default 20)."),
       },
     },
-    async ({ query, limit }, extra) =>
+    async ({ query, tags, scope, limit }, extra) =>
       runTool(async () => {
         const userId = resolveMcpUserId(extra);
+        const needle = query?.trim().toLowerCase() ?? "";
+        const requiredTags = tags ? normalizeTagList(tags) : [];
+
+        if (!needle && requiredTags.length === 0) {
+          return failure("Provide a query and/or tags to search.");
+        }
+
         const [owned, shared] = await Promise.all([
           listDocumentsForUser(userId),
           listSharedDocumentsForUser(userId),
         ]);
 
-        const needle = query.trim().toLowerCase();
         const candidates = [
-          ...owned.map((document) => ({
-            id: document.id,
-            title: document.title,
-            markdown: document.markdown,
-            source: "owned" as const,
-          })),
-          ...shared.map((document) => ({
-            id: document.id,
-            title: document.title,
-            markdown: document.markdown,
-            source: "shared" as const,
-          })),
+          ...(scope !== "shared"
+            ? owned.map((document) => ({
+                id: document.id,
+                title: document.title,
+                markdown: document.markdown,
+                source: "owned" as const,
+              }))
+            : []),
+          ...(scope !== "owned"
+            ? shared.map((document) => ({
+                id: document.id,
+                title: document.title,
+                markdown: document.markdown,
+                source: "shared" as const,
+              }))
+            : []),
         ];
 
+        const tagMap = await listTagsForDocumentIds(
+          candidates.map((document) => document.id),
+        );
+
         const matches = candidates
-          .filter(
-            (document) =>
-              document.title.toLowerCase().includes(needle) ||
-              document.markdown.toLowerCase().includes(needle),
-          )
+          .filter((document) => {
+            if (
+              needle &&
+              !document.title.toLowerCase().includes(needle) &&
+              !document.markdown.toLowerCase().includes(needle)
+            ) {
+              return false;
+            }
+
+            if (requiredTags.length > 0) {
+              const documentTags = new Set(tagMap.get(document.id) ?? []);
+              if (!requiredTags.every((tag) => documentTags.has(tag))) {
+                return false;
+              }
+            }
+
+            return true;
+          })
           .slice(0, limit ?? 20)
           .map((document) => ({
             id: document.id,
             title: document.title,
             source: document.source,
+            tags: tagMap.get(document.id) ?? [],
             snippet: snippet(document.markdown),
           }));
 
-        return json({ query, count: matches.length, matches });
+        return json({
+          query: query ?? null,
+          tags: requiredTags,
+          scope,
+          count: matches.length,
+          matches,
+        });
       }),
   );
 
@@ -240,6 +289,53 @@ export function registerVaultDocumentTools(server: McpServer): void {
           canEdit: document.access.canEdit,
           markdown: body,
         });
+      }),
+  );
+
+  server.registerTool(
+    "list_versions",
+    {
+      title: "List document versions",
+      description:
+        "List a document's recent saved versions (history) — ids, reasons, timestamps, and a short preview. Pair with read_version to fetch a version's full content or restore_version to roll back. Requires edit access.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document id."),
+      },
+    },
+    async ({ documentId }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const versions = await listDocumentVersionsForUser(documentId, userId);
+
+        return json({ documentId, count: versions.length, versions });
+      }),
+  );
+
+  server.registerTool(
+    "read_version",
+    {
+      title: "Read a document version",
+      description:
+        "Fetch the full title and markdown of a specific prior version (from list_versions). Useful for diffing against the current document before deciding whether to restore_version.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document id."),
+        versionId: z.string().uuid().describe("The version id."),
+      },
+    },
+    async ({ documentId, versionId }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const version = await getDocumentVersionForUser(
+          userId,
+          documentId,
+          versionId,
+        );
+
+        if (!version) {
+          return failure("Version not found or you do not have access.");
+        }
+
+        return json(version);
       }),
   );
 }

@@ -61,6 +61,51 @@ export function applyAnchoredEdits(ytext: Y.Text, edits: AnchoredEdit[]): number
   return ordered.length;
 }
 
+/**
+ * Replaces a Y.Text's contents with `newText` using the minimal delete+insert
+ * (common prefix/suffix diff). Because only the differing region becomes a CRDT
+ * op, an edit confined to one area (e.g. rewriting the frontmatter block at the
+ * top) leaves the rest of the document — including concurrent body edits — intact
+ * and conflict-free. Caller wraps this in a `ydoc.transact`.
+ */
+export function replaceYTextMinimal(ytext: Y.Text, newText: string): void {
+  const oldText = ytext.toString();
+
+  if (oldText === newText) {
+    return;
+  }
+
+  let start = 0;
+  const minLength = Math.min(oldText.length, newText.length);
+
+  while (start < minLength && oldText[start] === newText[start]) {
+    start += 1;
+  }
+
+  let endOld = oldText.length;
+  let endNew = newText.length;
+
+  while (
+    endOld > start &&
+    endNew > start &&
+    oldText[endOld - 1] === newText[endNew - 1]
+  ) {
+    endOld -= 1;
+    endNew -= 1;
+  }
+
+  const deleteLength = endOld - start;
+  const insertText = newText.slice(start, endNew);
+
+  if (deleteLength > 0) {
+    ytext.delete(start, deleteLength);
+  }
+
+  if (insertText.length > 0) {
+    ytext.insert(start, insertText);
+  }
+}
+
 /** Appends markdown to the end of the document, ensuring a separating newline. */
 export function appendMarkdown(ytext: Y.Text, markdown: string): void {
   const text = ytext.toString();
