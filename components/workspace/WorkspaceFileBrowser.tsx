@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useMemo,
@@ -19,6 +20,7 @@ import {
   Globe2,
   MoreHorizontal,
   Pencil,
+  RotateCcw,
   Trash2,
   Users,
 } from "lucide-react";
@@ -40,7 +42,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FolderShareDialog } from "@/components/folder-share-dialog";
-import { createDocumentInFolderAction } from "@/server/documents";
+import {
+  createDocumentInFolderAction,
+  restoreArchivedDocumentAction,
+} from "@/server/documents";
 import {
   createFolderAction,
   deleteFolderAction,
@@ -50,6 +55,7 @@ import {
 } from "@/server/folders";
 import { cn } from "@/lib/utils";
 import type {
+  WorkspaceArchivedItem,
   WorkspaceDocumentItem,
   WorkspaceFolderItem,
   WorkspaceSharedFolderItem,
@@ -59,6 +65,8 @@ type WorkspaceFileBrowserProps = {
   owned: WorkspaceDocumentItem[];
   shared: WorkspaceDocumentItem[];
   published: WorkspaceDocumentItem[];
+  archived: WorkspaceArchivedItem[];
+  binRetentionDays: number | null;
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
   activeHref?: string;
@@ -75,6 +83,8 @@ export function WorkspaceFileBrowser({
   owned,
   shared,
   published,
+  archived,
+  binRetentionDays,
   folders,
   sharedFolders,
   activeHref,
@@ -405,6 +415,7 @@ export function WorkspaceFileBrowser({
           activeHref={activeHref}
           emptyText="No published documents"
         />
+        <BinSection items={archived} retentionDays={binRetentionDays} />
       </div>
 
       <Dialog
@@ -828,6 +839,96 @@ function FlatSection({
       </div>
     </section>
   );
+}
+
+function BinSection({
+  items,
+  retentionDays,
+}: {
+  items: WorkspaceArchivedItem[];
+  retentionDays: number | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  function restore(documentId: string) {
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("documentId", documentId);
+      await restoreArchivedDocumentAction(fd);
+      // Re-pull getWorkspaceData so the doc leaves the Bin and returns to Files.
+      router.refresh();
+    });
+  }
+
+  return (
+    <section className={cn("mb-3", isPending && "opacity-90")}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition hover:text-foreground"
+      >
+        <ChevronRight
+          className={cn("size-3.5 shrink-0 transition", open && "rotate-90")}
+        />
+        <Trash2 className="size-3.5 shrink-0 opacity-70" />
+        <span className="min-w-0 flex-1 text-left">Bin</span>
+        <span>{items.length}</span>
+      </button>
+
+      {open ? (
+        <div className="grid gap-0.5">
+          {items.length > 0 ? (
+            items.map((item) => (
+              <div
+                key={item.id}
+                className="group flex min-w-0 items-center gap-2 rounded-[5px] px-2 py-1.5 pl-6 text-sm text-muted-foreground"
+              >
+                <FileText className="size-3.5 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 truncate" title={item.title}>
+                  {item.title}
+                </span>
+                <span className="shrink-0 text-[0.62rem] text-muted-foreground/70">
+                  {formatBinCountdown(item.deletedAt, retentionDays)}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Restore ${item.title}`}
+                  title="Restore"
+                  disabled={isPending}
+                  onClick={() => restore(item.id)}
+                  className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-muted/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                >
+                  <RotateCcw className="size-3.5" />
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="px-2 py-1 pl-6 text-xs text-muted-foreground/70">
+              Bin is empty
+            </p>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Short label for how long an archived document remains before auto-deletion. */
+function formatBinCountdown(deletedAt: Date, retentionDays: number | null) {
+  if (retentionDays === null) {
+    return "kept";
+  }
+
+  const purgeAt = deletedAt.getTime() + retentionDays * 24 * 60 * 60 * 1000;
+  const daysLeft = Math.ceil((purgeAt - Date.now()) / (24 * 60 * 60 * 1000));
+
+  if (daysLeft <= 0) {
+    return "deleting soon";
+  }
+
+  return daysLeft === 1 ? "1 day left" : `${daysLeft} days left`;
 }
 
 function SharedSection({

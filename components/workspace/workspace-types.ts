@@ -61,6 +61,12 @@ export type WorkspaceDocumentItem = {
   viaFolderName?: string | null;
 };
 
+export type WorkspaceArchivedItem = {
+  id: string;
+  title: string;
+  deletedAt: Date;
+};
+
 export type WorkspaceFolderItem = {
   id: string;
   name: string;

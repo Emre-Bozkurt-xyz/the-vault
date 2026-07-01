@@ -23,6 +23,7 @@ import {
 } from "@/components/workspace/workspace-events";
 import type {
   ActiveDocumentCommandContext,
+  WorkspaceArchivedItem,
   WorkspaceDocumentItem,
   WorkspaceFolderItem,
   WorkspaceGuideGroup,
@@ -46,6 +47,8 @@ type WorkspaceChromeData = {
   owned: WorkspaceDocumentItem[];
   shared: WorkspaceDocumentItem[];
   published: WorkspaceDocumentItem[];
+  archived: WorkspaceArchivedItem[];
+  binRetentionDays: number | null;
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
   publicDocuments: WorkspacePublicDocumentItem[];
@@ -181,6 +184,8 @@ export function WorkspaceChrome({
             owned={workspaceState.owned}
             shared={workspaceState.shared}
             published={workspaceState.published}
+            archived={workspaceState.archived}
+            binRetentionDays={workspaceState.binRetentionDays}
             folders={workspaceState.folders}
             sharedFolders={workspaceState.sharedFolders}
             activeHref={currentHref.split("?")[0]}
@@ -360,13 +365,25 @@ function removeDocumentFromWorkspace(
   workspace: WorkspaceChromeData,
   documentId: string,
 ): WorkspaceChromeData {
+  const removedOwned = workspace.owned.find((item) => item.id === documentId);
   const owned = workspace.owned.filter((item) => item.id !== documentId);
   const shared = workspace.shared.filter((item) => item.id !== documentId);
+
+  // Archiving an owned document moves it into the Bin; reflect that optimistically
+  // so the section updates without a round-trip (a reload reconciles from server).
+  const archived =
+    removedOwned && !workspace.archived.some((item) => item.id === documentId)
+      ? [
+          { id: removedOwned.id, title: removedOwned.title, deletedAt: new Date() },
+          ...workspace.archived,
+        ]
+      : workspace.archived;
 
   return {
     ...workspace,
     owned,
     shared,
+    archived,
     published: workspace.published.filter((item) => item.id !== documentId),
   };
 }

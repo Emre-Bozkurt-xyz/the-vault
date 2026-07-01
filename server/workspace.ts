@@ -5,10 +5,12 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import {
+  listArchivedDocumentsForUser,
   listDocumentsForUser,
   listDocumentsInOwnedFoldersFromOthers,
   listPublicDocuments,
   listSharedDocumentsForUser,
+  purgeExpiredArchivedDocumentsForUser,
 } from "@/server/documents";
 import {
   listFoldersForUser,
@@ -16,6 +18,8 @@ import {
 } from "@/server/folders";
 import { requireCompletedProfile } from "@/server/profile";
 import { listPublishedOfficialDocs } from "@/server/official-docs";
+import { listUserSettings } from "@/server/user-settings";
+import { buildPreferences } from "@/lib/settings/preferences";
 import {
   parseWorkspaceLayout,
   parseWorkspaceTabs,
@@ -23,6 +27,7 @@ import {
   workspaceTabsCookie,
 } from "@/lib/workspace-layout";
 import type {
+  WorkspaceArchivedItem,
   WorkspaceDocumentItem,
   WorkspaceFolderItem,
   WorkspaceGuideGroup,
@@ -43,6 +48,14 @@ export async function getWorkspaceData() {
     cookieStore.get(workspaceLayoutCookie)?.value,
   );
   const tabs = parseWorkspaceTabs(cookieStore.get(workspaceTabsCookie)?.value);
+
+  // Resolve the Bin retention preference and lazily purge expired archived
+  // documents before listing anything, so purged docs never reach the client.
+  const userSettings = await listUserSettings({ userId: session.user.id });
+  const binRetentionDays =
+    buildPreferences(userSettings).filesAssets.binRetentionDays;
+  await purgeExpiredArchivedDocumentsForUser(session.user.id, binRetentionDays);
+
   const [
     ownedDocuments,
     foreignFolderDocuments,
@@ -51,6 +64,7 @@ export async function getWorkspaceData() {
     officialDocs,
     folderRows,
     sharedFolderRows,
+    archivedDocuments,
   ] = await Promise.all([
     listDocumentsForUser(session.user.id),
     listDocumentsInOwnedFoldersFromOthers(session.user.id),
@@ -59,6 +73,7 @@ export async function getWorkspaceData() {
     listPublishedOfficialDocs(),
     listFoldersForUser(session.user.id),
     listSharedFoldersForUser(session.user.id),
+    listArchivedDocumentsForUser(session.user.id),
   ]);
 
   const ownedDocs: WorkspaceDocumentItem[] = ownedDocuments.map((document) => ({
@@ -121,6 +136,15 @@ export async function getWorkspaceData() {
     viaFolderName: document.viaFolderName,
   }));
 
+  const archived: WorkspaceArchivedItem[] = archivedDocuments.map(
+    (document) => ({
+      id: document.id,
+      title: document.title,
+      // `deletedAt` is non-null by the query's filter.
+      deletedAt: document.deletedAt as Date,
+    }),
+  );
+
   const published: WorkspaceDocumentItem[] = ownedDocs.filter(
     (document) => document.visibility === "public",
   );
@@ -165,6 +189,8 @@ export async function getWorkspaceData() {
     owned,
     shared,
     published,
+    archived,
+    binRetentionDays,
     folders,
     sharedFolders,
     publicDocuments,

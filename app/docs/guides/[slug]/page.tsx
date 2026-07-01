@@ -75,6 +75,8 @@ export default async function OfficialDocPage({
             owned={workspace.owned}
             shared={workspace.shared}
             published={workspace.published}
+            archived={workspace.archived}
+            binRetentionDays={workspace.binRetentionDays}
             folders={workspace.folders}
             sharedFolders={workspace.sharedFolders}
             activeHref={`/docs/guides/${doc.slug}`}

@@ -354,6 +354,32 @@ export function FilesAssetsSettingsSection({
           }
         />
       </SettingRow>
+      <SettingRow
+        title="Auto-delete binned documents"
+        description="How long archived documents stay in the Bin before they are permanently deleted."
+      >
+        <SelectControl
+          value={
+            state.binRetentionDays === null
+              ? "never"
+              : String(state.binRetentionDays)
+          }
+          onChange={(value) =>
+            update({
+              ...state,
+              binRetentionDays: value === "never" ? null : Number(value),
+            })
+          }
+          options={[
+            ["7", "After 7 days"],
+            ["14", "After 14 days"],
+            ["30", "After 30 days"],
+            ["60", "After 60 days"],
+            ["90", "After 90 days"],
+            ["never", "Never"],
+          ]}
+        />
+      </SettingRow>
     </SettingsGroup>
   );
 }

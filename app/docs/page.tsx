@@ -43,6 +43,8 @@ export default async function OfficialDocsIndexPage() {
             owned={workspace.owned}
             shared={workspace.shared}
             published={workspace.published}
+            archived={workspace.archived}
+            binRetentionDays={workspace.binRetentionDays}
             folders={workspace.folders}
             sharedFolders={workspace.sharedFolders}
             activeHref="/docs"

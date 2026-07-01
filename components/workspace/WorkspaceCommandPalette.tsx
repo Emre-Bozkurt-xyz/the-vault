@@ -47,6 +47,7 @@ import type {
   WorkspacePageDescriptor,
   WorkspacePageType,
 } from "@/components/workspace/workspace-types";
+import { dispatchWorkspaceDocumentRemoved } from "@/components/workspace/workspace-events";
 import {
   dispatchDocumentCommand,
   requestOpenRightPanel,
@@ -337,7 +338,12 @@ export function WorkspaceCommandPalette() {
           group: "This document",
           keywords: "delete remove trash",
           icon: Archive,
-          run: () => archiveDocumentAction(documentForm(doc.id)),
+          run: async () => {
+            const result = await archiveDocumentAction(doc.id);
+            if (result.ok) {
+              dispatchWorkspaceDocumentRemoved({ id: doc.id });
+            }
+          },
         });
       }
     }

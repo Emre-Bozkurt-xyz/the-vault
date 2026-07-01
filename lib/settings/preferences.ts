@@ -36,6 +36,8 @@ export type Preferences = {
     copyEmbedsWithTitle: boolean;
     openPdfsInNewTab: boolean;
     showPrivatePublishWarning: boolean;
+    /** Days an archived document stays in the Bin before permanent deletion; null = keep forever. */
+    binRetentionDays: number | null;
   };
   hotkeys: {
     editorShortcutsEnabled: boolean;
@@ -140,6 +142,9 @@ export function buildPreferences(rows: UserSettingRows): Preferences {
         get("files-assets", "defaults").showPrivatePublishWarning,
         true,
       ),
+      binRetentionDays: readRetentionDays(
+        get("files-assets", "defaults").binRetentionDays,
+      ),
     },
     hotkeys: readHotkeys(get("hotkeys", "defaults")),
     coreFeatures: {
@@ -213,6 +218,21 @@ function readKeybindings(value: unknown): Record<string, string | null> {
   }
 
   return result;
+}
+
+/** Allowed Bin retention values in days; `null` means "Never" (keep forever). */
+export const binRetentionDayOptions = [7, 14, 30, 60, 90] as const;
+
+/** Reads a Bin retention setting, defaulting to 30 days and treating null as Never. */
+export function readRetentionDays(value: unknown): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return typeof value === "number" &&
+    (binRetentionDayOptions as readonly number[]).includes(value)
+    ? value
+    : 30;
 }
 
 function readBoolean(value: unknown, fallback: boolean) {

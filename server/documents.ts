@@ -503,47 +503,31 @@ export async function restoreDocumentVersionAction(formData: FormData) {
   redirect(`/docs/${input.documentId}`);
 }
 
-export async function archiveDocumentAction(formData: FormData) {
+/**
+ * Archives (soft-deletes) a document the current user can delete. Redirect-free
+ * and result-returning so it can be invoked from client code inside the
+ * workspace SPA — the caller dispatches {@link dispatchWorkspaceDocumentRemoved}
+ * on success to close the tab and drop it from the sidebar. (A hard redirect
+ * here would race that client navigation and re-render the now-archived doc
+ * route into `notFound`.) Delegates the version snapshot + soft delete to
+ * {@link archiveDocumentForUser}.
+ */
+export async function archiveDocumentAction(
+  input: unknown,
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const user = await requireActiveUser();
 
-  const documentId = documentIdSchema.parse(formData.get("documentId"));
-  const allowed = await canDeleteDocument(user.id, documentId);
+  const parsed = documentIdSchema.safeParse(input);
 
-  if (!allowed) {
-    notFound();
+  if (!parsed.success) {
+    return { ok: false, message: "This document reference is invalid." };
   }
 
-  await db.transaction(async (tx) => {
-    const [document] = await tx
-      .select({
-        id: documents.id,
-        title: documents.title,
-        markdown: documents.markdown,
-      })
-      .from(documents)
-      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
-      .limit(1);
+  const archived = await archiveDocumentForUser(user.id, parsed.data);
 
-    if (!document) {
-      notFound();
-    }
-
-    await createDocumentVersion(tx, {
-      document,
-      actorId: user.id,
-      reason: "before_archive",
-    });
-
-    await tx
-      .update(documents)
-      .set({
-        deletedAt: sql`now()`,
-        updatedAt: sql`now()`,
-      })
-      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
-  });
-
-  redirect("/dashboard");
+  return archived
+    ? { ok: true }
+    : { ok: false, message: "This document could not be archived." };
 }
 
 /**
@@ -827,6 +811,62 @@ export async function restoreArchivedDocumentForUser(
     .where(eq(documents.id, parsedId.data));
 
   return true;
+}
+
+/**
+ * Un-archives a document via a form submission (owner-gated by
+ * {@link restoreArchivedDocumentForUser}) and revalidates the workspace layout
+ * so the restored document reappears in the file tree and leaves the Bin.
+ */
+export async function restoreArchivedDocumentAction(formData: FormData) {
+  const user = await requireActiveUser();
+  const documentId = documentIdSchema.parse(formData.get("documentId"));
+
+  await restoreArchivedDocumentForUser(user.id, documentId);
+
+  revalidatePath("/", "layout");
+}
+
+/**
+ * Permanently deletes the user's archived documents whose `deletedAt` is older
+ * than `retentionDays`. A no-op when `retentionDays` is null ("Never"). A single
+ * hard delete is safe: every `document_*` child table references `documents.id`
+ * with `onDelete: "cascade"`. Called lazily on workspace load (see
+ * {@link getWorkspaceData}).
+ */
+export async function purgeExpiredArchivedDocumentsForUser(
+  userId: string,
+  retentionDays: number | null,
+): Promise<void> {
+  if (retentionDays == null) {
+    return;
+  }
+
+  await db
+    .delete(documents)
+    .where(
+      and(
+        eq(documents.ownerId, userId),
+        isNotNull(documents.deletedAt),
+        sql`${documents.deletedAt} < now() - make_interval(days => ${retentionDays})`,
+      ),
+    );
+}
+
+/**
+ * Lists the user's archived (soft-deleted) documents for the Bin, most recently
+ * archived first. `deletedAt` is guaranteed non-null by the filter.
+ */
+export async function listArchivedDocumentsForUser(userId: string) {
+  return db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      deletedAt: documents.deletedAt,
+    })
+    .from(documents)
+    .where(and(eq(documents.ownerId, userId), isNotNull(documents.deletedAt)))
+    .orderBy(desc(documents.deletedAt));
 }
 
 export async function shareDocumentAction(formData: FormData) {
