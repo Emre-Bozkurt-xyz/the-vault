@@ -145,7 +145,10 @@ and workspace scope:
 - `vault.calendar.listEntries` — read (`document:read`); with a `calendarId`
   returns that calendar's entries, otherwise lists calendars + entry counts.
 - `vault.calendar.addEntry` — mutate (`document:write-extension-state`); appends a
-  task/event to a calendar instance on a given day. Declares an `output` schema.
+  task/event to a calendar instance on a given day. `day` is validated as a real
+  calendar date (`dayKeySchema`/`isValidDayKey`), not just the `YYYY-MM-DD` shape.
+- `vault.calendar.setEntryDone` — mutate (`document:write-extension-state`); marks
+  a task done/not-done (events rejected), enabling the recurring todo workflow.
 - `vault.calendar.insertCalendar` — mutate (`document:write`); creates a new,
   empty calendar by writing a `:::calendar{id=…}` block (`formatCalendarFence`)
   into the markdown via `ctx.document.markdown`, returning the new `calendarId`.

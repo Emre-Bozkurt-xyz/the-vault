@@ -4,6 +4,7 @@ import {
   calendarStateKey,
   formatCalendarFence,
   generateCalendarId,
+  isValidDayKey,
 } from "@/lib/calendar";
 import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type { VaultExtension } from "@/lib/extensions/types";
@@ -77,6 +78,16 @@ export const calendarSettingsSchema = z.object({
 const dayKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/**
+ * A `YYYY-MM-DD` day key that must also be a REAL calendar date — the regex alone
+ * accepts `2026-13-99`. Used for agent action inputs; the stored entry schema
+ * stays regex-only so reading existing (possibly imperfect) data never throws.
+ */
+const dayKeySchema = z
+  .string()
+  .regex(dayKeyPattern)
+  .refine(isValidDayKey, "Must be a real calendar date (YYYY-MM-DD).");
+
 const calendarEntrySchema = z.object({
   type: z.enum(["task", "event"]),
   day: z.string().regex(dayKeyPattern),
@@ -126,10 +137,7 @@ const addEntryInputSchema = z.object({
     .enum(["task", "event"])
     .default("task")
     .describe("'task' (completable) or 'event' (time-anchored reminder)."),
-  day: z
-    .string()
-    .regex(dayKeyPattern)
-    .describe("The day this entry belongs to, as YYYY-MM-DD."),
+  day: dayKeySchema.describe("The day this entry belongs to, as YYYY-MM-DD."),
   text: z.string().max(500).default("").describe("The entry's label."),
   time: z
     .string()
@@ -141,6 +149,20 @@ const addEntryInputSchema = z.object({
 
 const addEntryOutputSchema = z.object({
   entryId: z.string().describe("Id of the created entry."),
+});
+
+const setEntryDoneInputSchema = z.object({
+  calendarId: calendarIdInputSchema,
+  entryId: z.string().min(1).describe("The task entry id (from listEntries)."),
+  done: z
+    .boolean()
+    .default(true)
+    .describe("Mark the task done (true) or reopen it (false)."),
+});
+
+const setEntryDoneOutputSchema = z.object({
+  entryId: z.string(),
+  done: z.boolean(),
 });
 
 const insertCalendarInputSchema = z.object({
@@ -163,14 +185,10 @@ const insertCalendarOutputSchema = z.object({
 });
 
 const listUpcomingTasksInputSchema = z.object({
-  from: z
-    .string()
-    .regex(dayKeyPattern)
+  from: dayKeySchema
     .optional()
     .describe("Only include tasks on/after this day (YYYY-MM-DD)."),
-  to: z
-    .string()
-    .regex(dayKeyPattern)
+  to: dayKeySchema
     .optional()
     .describe("Only include tasks on/before this day (YYYY-MM-DD)."),
   includeDone: z
@@ -378,6 +396,63 @@ export const localBuiltInExtensions: VaultExtension[] = [
             return {
               data: { entryId: id },
               message: `Added ${args.type} "${args.text}" to ${args.day} in calendar "${args.calendarId}".`,
+            };
+          },
+        },
+        {
+          id: "vault.calendar.setEntryDone",
+          title: "Complete or reopen a calendar task",
+          description:
+            "Mark a calendar task done or not-done. Events can't be completed. Use listEntries to find the entryId.",
+          scope: "document",
+          mutates: true,
+          permissions: ["document:write-extension-state"],
+          input: setEntryDoneInputSchema,
+          output: setEntryDoneOutputSchema,
+          async handler(input, context) {
+            const document = context.document;
+            if (!document) {
+              throw new Error("This action requires a document.");
+            }
+
+            const args = input as z.infer<typeof setEntryDoneInputSchema>;
+            const stateKey = calendarStateKey(args.calendarId);
+            const existing = (await document.state.list()).find(
+              (row) => row.stateKey === stateKey,
+            );
+            if (!existing) {
+              throw new Error(
+                `No calendar "${args.calendarId}" exists in this document.`,
+              );
+            }
+
+            const current = calendarStateSchema.parse(existing.state);
+            const entry = current.entries[args.entryId];
+            if (!entry) {
+              throw new Error(
+                `No entry "${args.entryId}" in calendar "${args.calendarId}".`,
+              );
+            }
+            if (entry.type !== "task") {
+              throw new Error("Only tasks can be completed, not events.");
+            }
+
+            const next = calendarStateSchema.parse({
+              ...current,
+              entries: {
+                ...current.entries,
+                [args.entryId]: { ...entry, done: args.done },
+              },
+            });
+            await document.state.set(next, {
+              stateKey,
+              version: 1,
+              visibility: existing.visibility,
+            });
+
+            return {
+              data: { entryId: args.entryId, done: args.done },
+              message: `Marked task ${args.done ? "done" : "not done"}.`,
             };
           },
         },

@@ -100,6 +100,27 @@ export function toDayKey(year: number, month: number, day: number): string {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
+/**
+ * Whether `value` is a real calendar date in `YYYY-MM-DD` form. The bare
+ * `^\d{4}-\d{2}-\d{2}$` regex accepts impossible dates like `2026-13-99`; this
+ * additionally rejects out-of-range months/days (and Feb 30 etc.).
+ */
+export function isValidDayKey(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 /** Today's date in the viewer's local time as a `YYYY-MM-DD` key. */
 export function todayDayKey(now: Date = new Date()): string {
   return toDayKey(now.getFullYear(), now.getMonth() + 1, now.getDate());

@@ -208,7 +208,10 @@ export async function createDocumentForUser(
   input: { title?: string; markdown?: string } = {},
 ): Promise<{ id: string }> {
   const title = (input.title?.trim() || "Untitled document").slice(0, 200);
-  const markdown = input.markdown ?? initialMarkdownContent;
+  // The title is stored/rendered separately, so a seeded "# Untitled document /
+  // Start writing..." body just duplicates the title (and mismatches when a title
+  // was given). Start agent-created docs with an empty body instead.
+  const markdown = input.markdown ?? "";
 
   const [document] = await db.transaction(async (tx) => {
     const [createdDocument] = await tx
