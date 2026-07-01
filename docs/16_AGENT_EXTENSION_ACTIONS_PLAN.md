@@ -54,6 +54,8 @@ scope       "document" (needs a documentId) | "workspace"
 mutates     whether it writes; document-scoped mutating actions need edit access
 permissions subset of the extension's own permissions; gates ctx surfaces
 input       a Zod schema — validated server-side AND surfaced as JSON Schema
+output      optional Zod schema — surfaced as JSON Schema; dispatcher validates
+            the handler's `data` against it
 handler     (input, ctx) => Promise<{ data?, message? }>
 ```
 
@@ -74,18 +76,34 @@ For `scope: "document"` actions the server builds `ctx.document` after resolving
 document access:
 
 ```txt
-ctx.document.state   ExtensionAgentStateApi — get/set/list/delete, PRE-BOUND to
-                     the action's own extensionId + the target documentId. A
-                     handler physically cannot name another extension's state.
-ctx.document.markdown.read   present with `document:read`
-ctx.document.assets          present with `asset:read` (surface not yet wired)
+ctx.document.state        ExtensionAgentStateApi — get/set/list/delete, PRE-BOUND
+                          to the action's own extensionId + the target documentId.
+                          A handler physically cannot name another extension's state.
+ctx.document.markdown.read                 present with `document:read`
+ctx.document.markdown.append/insertAtHeading/edit
+                          present with `document:write` — go through the collab
+                          session (`withLiveDocumentText`), so they merge
+                          conflict-free and reuse the human edit/version pipeline.
+ctx.document.assets.get   present with `asset:read` — async, owner-scoped lookup
+                          via `getAssetForUser`; null when not the user's ready asset.
 ctx.document.canEdit
 ```
 
-Permission/access enforcement is layered: the bound state API delegates to the
-existing permission-checked functions in `server/document-extensions.ts`
-(canRead for reads, canEdit for writes), and the dispatcher additionally
-front-loads a clear error when a `mutates` action lacks edit access.
+For `scope: "workspace"` actions the server builds `ctx.workspace` instead (no
+document):
+
+```txt
+ctx.workspace.state.listAcrossDocuments   present with `document:read` — returns
+                          the acting extension's state rows across every document
+                          the user OWNS (owner-scoped, so no per-doc access check),
+                          each tagged with documentId + title. Bound to the
+                          extension: it can't read another extension's state.
+```
+
+Permission/access enforcement is layered: the bound state APIs delegate to the
+permission-checked functions in `server/document-extensions.ts` (canRead for
+reads, canEdit for writes), and the dispatcher additionally front-loads a clear
+error when a `mutates` action lacks edit access.
 
 ## 4. Dispatch + discovery
 
@@ -94,17 +112,23 @@ cowork UI all call through it):
 
 - `resolveEnabledExtensionsForUser(userId)` — core extensions always, plus
   built-ins the user enabled (or `defaultEnabled` with no explicit row).
-- `listAgentActionsForUser(userId)` — actions from enabled extensions only, each
-  with `z.toJSONSchema(input, { io: "input" })` so the model gets the exact input
-  shape (defaulted fields optional).
+- `listAgentActionsForUser(userId, documentId?)` — actions from enabled
+  extensions only, each with `z.toJSONSchema(input, { io: "input" })` (and the
+  output schema when declared) so the model gets the exact shapes. When a
+  `documentId` is passed, document-scoped actions are annotated with
+  `documentInstanceCount` (how many of that extension's state rows exist there)
+  and `runnableInDocument` (given the user's access), plus a top-level `document`
+  access summary — so the model doesn't try actions that can't apply.
 - `runAgentActionForUser({ userId, actionId, documentId?, input })` — resolve →
   enabled check → unsupported-permission guard → validate input → scope/access
-  gating → build sandboxed ctx → run handler.
+  gating → build sandboxed ctx → run handler → validate output against the
+  action's `output` schema (if any).
 
 `lib/mcp/extension-tools.ts` registers two dispatcher tools (wired in
 `app/api/mcp/[transport]/route.ts`):
 
-- `list_extension_actions` — discovery; the model is told to call it first.
+- `list_extension_actions` — discovery (optional `documentId` to scope it); the
+  model is told to call it first.
 - `run_extension_action` — `{ actionId, documentId?, input }`; `input` is a
   generic object on the MCP boundary because the real schema is per-action and
   discovered via `list_extension_actions`.
@@ -112,30 +136,45 @@ cowork UI all call through it):
 This is the "static tool list, runtime-discovered targets" pattern: the tool set
 is fixed, but what they dispatch to is the user's live enabled set.
 
-## 5. Reference implementation
+## 5. Reference implementations
 
-`vault.calendar` exposes two actions, validating document scope, multi-instance
-handles (`calendar:<calendarId>` state keys), and state read/write through the
-sandbox:
+`vault.calendar` — validates document scope, multi-instance handles
+(`calendar:<calendarId>` state keys via `calendarStateKey`), markdown mutation,
+and workspace scope:
 
 - `vault.calendar.listEntries` — read (`document:read`); with a `calendarId`
   returns that calendar's entries, otherwise lists calendars + entry counts.
 - `vault.calendar.addEntry` — mutate (`document:write-extension-state`); appends a
-  task/event to a calendar instance on a given day.
+  task/event to a calendar instance on a given day. Declares an `output` schema.
+- `vault.calendar.insertCalendar` — mutate (`document:write`); creates a new,
+  empty calendar by writing a `:::calendar{id=…}` block (`formatCalendarFence`)
+  into the markdown via `ctx.document.markdown`, returning the new `calendarId`.
+  This is instance *creation* (block + future state), the piece that turns
+  editing-existing-data into authoring.
+- `vault.calendar.listUpcomingTasks` — **workspace** read (`document:read`); scans
+  the user's calendars across all owned documents for tasks (optional day range,
+  excludes done by default) — the daily-digest use case. Declares an `output` schema.
 
-## 6. MVP scope cuts (next increments)
+`vault.stickers` — validates the single-`layout`-key shape and the `asset:read`
+surface:
 
-- **Markdown mutation surface.** `ctx.document` exposes `markdown.read` only.
-  Actions that need to insert/edit document markdown (e.g. *create a new calendar
-  instance in a new doc* = live block + state row) require a write surface over
-  `withLiveDocumentText` (`lib/mcp/collab-write.ts`). Deferred until an action
-  needs it; `supportedActionPermissions` in `server/extensions.ts` is the guard
-  that fails such actions clearly until then.
-- **Asset surface.** `asset:read` is accepted by the guard but `ctx.document.assets`
-  is not yet populated; no reference action needs it.
-- **Workspace-scoped actions.** The shape exists (`scope: "workspace"`, no
-  `ctx.document`) but has no reference action or account-level capability surface
-  yet.
+- `vault.stickers.listStickers` — read (`document:read`).
+- `vault.stickers.addSticker` — mutate (`document:write-extension-state` +
+  `asset:read`); validates the asset is the user's own image via
+  `ctx.document.assets.get` before placing it.
+- `vault.stickers.removeSticker` — mutate (`document:write-extension-state`).
+
+## 6. Remaining scope cuts (next increments)
+
+- **Writable account-level state.** Workspace actions can *read* an extension's
+  state across owned documents, but there is no account-scoped *writable* store
+  (state not tied to any document). Adding one means a new
+  `user_extension_states` table (keyed `(userId, extensionId, stateKey)`) mirroring
+  `document_extension_states`, plus a `ctx.workspace.state.get/set`. Deliberately
+  deferred — no consumer needs it yet, and it is a durable schema commitment.
+- **Cross-document scope beyond owned.** `listAcrossDocuments` is owner-scoped;
+  shared documents are not included. Revisit if a workspace action needs them
+  (requires per-document access filtering rather than an owner join).
 - **Hub / external manifests.** The contract is intentionally frozen-friendly now,
   while there is one built-in consumer, before the extension hub loads
   third-party manifests against it.

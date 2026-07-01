@@ -42,14 +42,21 @@ export function registerVaultExtensionTools(server: McpServer): void {
     {
       title: "List extension actions",
       description:
-        "List the agent actions exposed by the extensions the current user has enabled. Each entry includes the action id, what it does, its scope ('document' actions need a documentId, 'workspace' actions don't), whether it mutates data, and the JSON Schema of its input. ALWAYS call this first to discover available actions and their exact input shape before calling run_extension_action.",
-      inputSchema: {},
+        "List the agent actions exposed by the extensions the current user has enabled. Each entry includes the action id, what it does, its scope ('document' actions need a documentId, 'workspace' actions don't), whether it mutates data, the JSON Schema of its input, and (when declared) of its output. Pass a documentId to also learn, per document-scoped action, how many of that extension's instances exist in the document and whether the action is runnable given your access. ALWAYS call this first to discover available actions and their exact input shape before calling run_extension_action.",
+      inputSchema: {
+        documentId: z
+          .string()
+          .uuid()
+          .optional()
+          .describe(
+            "Scope discovery to a document to get per-action instance counts and runnability.",
+          ),
+      },
     },
-    async (_args, extra) =>
+    async ({ documentId }, extra) =>
       runTool(async () => {
         const userId = resolveMcpUserId(extra);
-        const actions = await listAgentActionsForUser(userId);
-        return json({ count: actions.length, actions });
+        return json(await listAgentActionsForUser(userId, documentId));
       }),
   );
 

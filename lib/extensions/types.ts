@@ -96,20 +96,74 @@ export type ExtensionAgentStateApi = {
 };
 
 /**
+ * Read-only asset surface for an agent action. Async (unlike the client-side
+ * {@link ExtensionAssetApi}, which reads a preloaded map), owner-scoped: `get`
+ * resolves an asset the acting user owns, or null. Present only with `asset:read`.
+ */
+export type ExtensionAgentAssetApi = {
+  get: (assetId: string) => Promise<{
+    id: string;
+    kind: "image" | "pdf";
+    displayName: string;
+    mimeType: string;
+    visibility: "private" | "public";
+  } | null>;
+};
+
+/**
+ * Markdown surface for a document-scoped agent action. `read` is present with
+ * `document:read`; the mutators (`append`/`insertAtHeading`/`edit`) are present
+ * with `document:write` and go through the collab session (conflict-free, same
+ * persistence/versioning path as the human editor).
+ */
+export type ExtensionAgentMarkdownApi = {
+  read?: () => Promise<string>;
+  append?: (markdown: string) => Promise<{ length: number }>;
+  insertAtHeading?: (
+    heading: string,
+    markdown: string,
+    position?: "section_start" | "section_end",
+  ) => Promise<{ inserted: boolean }>;
+  edit?: (
+    edits: Array<{ oldString: string; newString: string }>,
+  ) => Promise<{ applied: number }>;
+};
+
+/**
  * Document surface for a document-scoped agent action. Only the capabilities the
- * action's declared permissions allow are populated: `markdown` is present with
- * `document:read`, `state` with `document:write-extension-state` (and read),
- * `assets` with `asset:read`. Markdown *mutation* is intentionally absent in the
- * MVP — see docs/14.
+ * action's declared permissions allow are populated: `state` always (reads need
+ * `document:read`, writes `document:write-extension-state`), `markdown.read` with
+ * `document:read` and its mutators with `document:write`, `assets` with `asset:read`.
  */
 export type ExtensionAgentDocumentContext = {
   id: string;
   canEdit: boolean;
   state: ExtensionAgentStateApi;
-  assets?: ExtensionAssetApi;
-  markdown?: {
-    read: () => Promise<string>;
-  };
+  assets?: ExtensionAgentAssetApi;
+  markdown?: ExtensionAgentMarkdownApi;
+};
+
+export type ExtensionAgentWorkspaceStateEntry = {
+  documentId: string;
+  documentTitle: string;
+  stateKey: string;
+  state: ExtensionStateValue;
+  visibility: ExtensionStateVisibility;
+  version: number;
+};
+
+/**
+ * Cross-document, owner-scoped state surface for a `scope: "workspace"` action —
+ * pre-bound to the acting extension. Lets an action aggregate its own state
+ * across all the user's documents (e.g. "every task in any calendar I own").
+ */
+export type ExtensionAgentWorkspaceStateApi = {
+  listAcrossDocuments: () => Promise<ExtensionAgentWorkspaceStateEntry[]>;
+};
+
+export type ExtensionAgentWorkspaceContext = {
+  /** Present with `document:read`. */
+  state?: ExtensionAgentWorkspaceStateApi;
 };
 
 /**
@@ -119,8 +173,10 @@ export type ExtensionAgentDocumentContext = {
  */
 export type ExtensionAgentActionContext = {
   user: { id: string };
-  /** Present for `scope: "document"` actions; absent for `scope: "workspace"`. */
+  /** Present for `scope: "document"` actions. */
   document?: ExtensionAgentDocumentContext;
+  /** Present for `scope: "workspace"` actions. */
+  workspace?: ExtensionAgentWorkspaceContext;
 };
 
 export type ExtensionAgentActionResult = {
@@ -152,6 +208,12 @@ export type VaultExtensionAgentAction<TInput = unknown> = {
    */
   permissions?: ExtensionPermission[];
   input: ZodType<TInput>;
+  /**
+   * Optional schema for the handler's `data`. When present it is surfaced to the
+   * model as JSON Schema (so returns are self-describing) and the dispatcher
+   * validates `result.data` against it after the handler runs.
+   */
+  output?: ZodType;
   handler: (
     input: TInput,
     context: ExtensionAgentActionContext,

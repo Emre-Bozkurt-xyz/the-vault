@@ -228,6 +228,41 @@ export async function deleteDocumentExtensionStateForUser(input: {
   return row ?? null;
 }
 
+/**
+ * All of a user's extension-state rows for one extension, across every document
+ * they own. Owner-scoped (no sharing) so it needs no per-document access check —
+ * the backing surface for `scope: "workspace"` agent actions that aggregate an
+ * extension's data across documents.
+ */
+export async function listOwnedDocumentExtensionStates(input: {
+  userId: string;
+  extensionId: string;
+}) {
+  const extensionId = normalizeExtensionId(input.extensionId);
+
+  return db
+    .select({
+      documentId: documentExtensionStates.documentId,
+      documentTitle: documents.title,
+      stateKey: documentExtensionStates.stateKey,
+      state: documentExtensionStates.state,
+      version: documentExtensionStates.version,
+      visibility: documentExtensionStates.visibility,
+      updatedAt: documentExtensionStates.updatedAt,
+    })
+    .from(documentExtensionStates)
+    .innerJoin(documents, eq(documents.id, documentExtensionStates.documentId))
+    .where(
+      and(
+        eq(documents.ownerId, input.userId),
+        eq(documentExtensionStates.extensionId, extensionId),
+        isNull(documents.deletedAt),
+        isNull(documentExtensionStates.deletedAt),
+      ),
+    )
+    .orderBy(documents.title, documentExtensionStates.stateKey);
+}
+
 export async function listPublicDocumentExtensionStates(input: {
   documentId: string;
   extensionId?: string;
