@@ -338,11 +338,15 @@ export function WorkspaceCommandPalette() {
           group: "This document",
           keywords: "delete remove trash",
           icon: Archive,
-          run: async () => {
-            const result = await archiveDocumentAction(doc.id);
-            if (result.ok) {
-              dispatchWorkspaceDocumentRemoved({ id: doc.id });
-            }
+          run: () => {
+            // Close/switch the tab first so archiving never flashes the doc's
+            // notFound state on-screen; then perform the soft delete.
+            dispatchWorkspaceDocumentRemoved({ id: doc.id });
+            void archiveDocumentAction(doc.id).then((result) => {
+              if (!result.ok) {
+                router.refresh();
+              }
+            });
           },
         });
       }

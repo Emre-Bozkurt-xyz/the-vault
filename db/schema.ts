@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { ASSET_LIMITS } from "../lib/config/asset-limits";
+import type { SnippetStatus } from "../lib/config/snippet-limits";
 
 export type DocumentRole = "owner" | "editor" | "viewer";
 export type FolderRole = "editor" | "viewer";
@@ -878,6 +879,80 @@ export const documentAssetsRelations = relations(documentAssets, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// User-authored CSS snippets. `sourceCss` is what the author wrote;
+// `compiledCss` is the sanitized, scope-placeholdered output that is the ONLY
+// thing ever served to viewers. Raw source is never delivered to a browser.
+export const snippets = pgTable(
+  "snippets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    sourceCss: text("source_css").notNull().default(""),
+    compiledCss: text("compiled_css").notNull().default(""),
+    compiledHash: text("compiled_hash").notNull().default(""),
+    status: text("status").$type<SnippetStatus>().notNull().default("ok"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("snippets_owner_name_unique").on(table.ownerId, table.name),
+    index("snippets_owner_id_idx").on(table.ownerId),
+  ],
+);
+
+// Explicit per-document attachment of a snippet, ordered. Applied for every
+// permitted viewer of the document.
+export const documentSnippets = pgTable(
+  "document_snippets",
+  {
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    snippetId: uuid("snippet_id")
+      .notNull()
+      .references(() => snippets.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.documentId, table.snippetId] }),
+    index("document_snippets_document_id_idx").on(table.documentId),
+    index("document_snippets_snippet_id_idx").on(table.snippetId),
+  ],
+);
+
+export const snippetsRelations = relations(snippets, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [snippets.ownerId],
+    references: [users.id],
+  }),
+  documentSnippets: many(documentSnippets),
+}));
+
+export const documentSnippetsRelations = relations(
+  documentSnippets,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentSnippets.documentId],
+      references: [documents.id],
+    }),
+    snippet: one(snippets, {
+      fields: [documentSnippets.snippetId],
+      references: [snippets.id],
+    }),
+  }),
+);
 
 export const friendRequests = pgTable(
   "friend_requests",

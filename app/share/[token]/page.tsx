@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
+import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,11 @@ import {
   listPublicWikiLinkResolutions,
 } from "@/server/documents";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
+import {
+  getActiveSnippetCssForDocument,
+  getViewerStylingPreference,
+} from "@/server/snippets";
+import { getCspNonce } from "@/lib/security/nonce";
 
 type ShareLinkPageProps = {
   params: Promise<{ token: string }>;
@@ -103,6 +109,14 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
     ...guideWikiLinks,
   };
 
+  const [applyStyling, nonce] = await Promise.all([
+    getViewerStylingPreference(session?.user?.id ?? null),
+    getCspNonce(),
+  ]);
+  const snippetCss = applyStyling
+    ? await getActiveSnippetCssForDocument(document.id)
+    : "";
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen w-full max-w-4xl px-3 py-8 sm:px-6 sm:py-12">
@@ -153,11 +167,17 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
             </p>
           ) : null}
           <div className="mt-8 border-t border-border/50 pt-7">
-            <MarkdownDocument
-              markdown={document.markdown}
-              wikiLinks={wikiLinks}
-              assetLinks={assetLinks}
-            />
+            <DocumentStyling
+              documentId={document.id}
+              snippetCss={snippetCss}
+              nonce={nonce}
+            >
+              <MarkdownDocument
+                markdown={document.markdown}
+                wikiLinks={wikiLinks}
+                assetLinks={assetLinks}
+              />
+            </DocumentStyling>
           </div>
         </article>
       </div>

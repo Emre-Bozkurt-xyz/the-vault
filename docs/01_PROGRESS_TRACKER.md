@@ -442,6 +442,29 @@ through the collaborative editor without conflicting with live editors.
 
 ---
 
+## Phase 17 - Polish, Hardening, and CSS Snippets
+
+Reference plan: `docs/17_POLISH_AND_CSS_SNIPPETS_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write audit + snippets plan | 2026-07-02 review: no CSP/security headers, `className`-on-`*` sanitize hole (app-class borrowing → viewer UI spoofing), no tests over the sanitize pipeline, globals.css monolith, undocumented `vault-md-*` contract, duplicated render pipelines |
+| [x] | Phase 0 — hardening blockers | Done: `proxy.ts` CSP (enforced + report-only nonce) + security headers; `className` lockdown via `lib/html-class.ts` + extracted `lib/markdown/sanitize.ts`; vitest suite (48 tests); `globals.css` split into `app/styles/*`; `DocumentCanvas` + containment; `lib/rate-limit.ts`; `docs/CSS_CONTRACT.md` |
+| [x] | Phase 1 — schema + compiler | Migration `0018`; `lib/snippets/compile.ts` (css-tree: allowlists, scope rewrite under `[data-vault-snippet-scope]`, keyframe rename, no url()/network, AST re-serialize, reduced-motion reset) + golden unit corpus; `server/snippets.ts` + `server/snippets-actions.ts` CRUD/attach/compile |
+| [~] | Phase 2 — manager + editor UX | Done: Settings→Snippets section with list/create/delete + CodeMirror CSS editor (draft-compile preview + diagnostics) + global opt-out. Editor is in-modal (not a full workspace tab); palette/tab registration deferred |
+| [x] | Phase 3 — viewer application | Scoped nonce'd `<style>` on all four read surfaces via `DocumentStyling`; containment; per-view pill; `appearance/snippets` global opt-out; owner "Styling" card (`DocumentSnippetsPanel`). Playwright smoke deferred |
+| [ ] | Phase 4 — editor live mode + polish | Live-mode scope, authoring guide, compile cache/dedupe, same-origin asset url() |
+
+Exit criteria:
+
+```txt
+Owners can author, validate, and attach CSS snippets; every viewer sees them
+applied only inside the document body, can disable them, and no snippet can
+affect app chrome, other pages, or the network.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |

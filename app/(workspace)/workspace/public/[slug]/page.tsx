@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
+import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -19,6 +20,11 @@ import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { getPublicStickerItems } from "@/server/sticker-state";
 import { getPublicCalendarStates } from "@/server/calendar-state";
+import {
+  getActiveSnippetCssForDocument,
+  getViewerStylingPreference,
+} from "@/server/snippets";
+import { getCspNonce } from "@/lib/security/nonce";
 
 type WorkspacePublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -60,6 +66,14 @@ export default async function WorkspacePublicDocumentPage({
   const ownerInitial = ownerName.trim().charAt(0).toUpperCase() || "V";
   const workspaceHref = `/workspace/public/${slug}`;
   const publicHref = `/public/${slug}`;
+
+  const [applyStyling, nonce] = await Promise.all([
+    getViewerStylingPreference(viewer.userId ?? null),
+    getCspNonce(),
+  ]);
+  const snippetCss = applyStyling
+    ? await getActiveSnippetCssForDocument(document.id)
+    : "";
 
   return (
     <>
@@ -113,6 +127,12 @@ export default async function WorkspacePublicDocumentPage({
 
         <div className="border-t border-border/55 pt-6">
           <PublicStickerDisplay items={stickerItems}>
+            <DocumentStyling
+              documentId={document.id}
+              snippetCss={snippetCss}
+              nonce={nonce}
+              authorLabel={ownerHandle ?? ownerName}
+            >
             <MarkdownDocument
               markdown={document.markdown}
               className="vault-public-markdown"
@@ -122,6 +142,7 @@ export default async function WorkspacePublicDocumentPage({
               documentId={document.id}
               calendarStates={calendarStates}
             />
+            </DocumentStyling>
           </PublicStickerDisplay>
         </div>
       </article>

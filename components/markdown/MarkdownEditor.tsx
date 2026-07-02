@@ -63,6 +63,7 @@ import { yCollab } from "y-codemirror.next";
 import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
 import { StickerLayer } from "@/components/extensions/StickerLayer";
 import { ContentPickerDialog } from "@/components/content-picker-dialog";
+import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   createLiveBlockDecorationExtension,
@@ -140,6 +141,9 @@ type MarkdownEditorProps = {
   calendarEnabled?: boolean;
   calendarWeekStartsOn?: CalendarWeekStart;
   calendarVisibility?: ExtensionStateVisibility;
+  /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
+  snippetCss?: string;
+  snippetNonce?: string;
 };
 
 type EditorMode = "source" | "live" | "read";
@@ -212,6 +216,8 @@ export function MarkdownEditor({
   calendarEnabled = false,
   calendarWeekStartsOn = 0,
   calendarVisibility = "private",
+  snippetCss = "",
+  snippetNonce,
 }: MarkdownEditorProps) {
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
@@ -1424,12 +1430,18 @@ export function MarkdownEditor({
             ) : null}
             {editorMode === "read" ? (
               <div className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8">
-                <MarkdownDocument
-                  markdown={markdownValue}
-                  wikiLinks={wikiLinkMap}
-                  assetLinks={assetLinkMap}
-                  contained={false}
-                />
+                <DocumentCanvas
+                  documentId={documentId}
+                  snippetCss={snippetCss || null}
+                  nonce={snippetNonce}
+                >
+                  <MarkdownDocument
+                    markdown={markdownValue}
+                    wikiLinks={wikiLinkMap}
+                    assetLinks={assetLinkMap}
+                    contained={false}
+                  />
+                </DocumentCanvas>
               </div>
             ) : null}
           </div>

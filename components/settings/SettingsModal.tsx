@@ -11,6 +11,7 @@ import {
   Paintbrush,
   Settings2,
   SlidersHorizontal,
+  Sparkles,
   UserRound,
   Wrench,
 } from "lucide-react";
@@ -29,6 +30,7 @@ type SettingsSectionId =
   | "workspace"
   | "editor"
   | "appearance"
+  | "snippets"
   | "files-assets"
   | "hotkeys"
   | "core-features"
@@ -41,6 +43,7 @@ type SettingsModalProps = {
   workspaceSection?: ReactNode;
   editorSection?: ReactNode;
   appearanceSection?: ReactNode;
+  snippetsSection?: ReactNode;
   filesAssetsSection?: ReactNode;
   hotkeysSection?: ReactNode;
   coreFeaturesSection?: ReactNode;
@@ -82,6 +85,12 @@ const settingsSections: Array<{
     label: "Appearance",
     description: "Themes, fonts, and document presentation.",
     icon: Paintbrush,
+  },
+  {
+    id: "snippets",
+    label: "Snippets",
+    description: "Author CSS snippets to style your documents.",
+    icon: Sparkles,
   },
   {
     id: "files-assets",
@@ -126,6 +135,7 @@ export function SettingsModal({
   workspaceSection,
   editorSection,
   appearanceSection,
+  snippetsSection,
   filesAssetsSection,
   hotkeysSection,
   coreFeaturesSection,
@@ -228,6 +238,8 @@ export function SettingsModal({
               editorSection
             ) : activeSection === "appearance" && appearanceSection ? (
               appearanceSection
+            ) : activeSection === "snippets" && snippetsSection ? (
+              snippetsSection
             ) : activeSection === "files-assets" && filesAssetsSection ? (
               filesAssetsSection
             ) : activeSection === "hotkeys" && hotkeysSection ? (

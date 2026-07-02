@@ -1,0 +1,18 @@
+/* CSS snippet support: the document canvas wrapper and its containment.
+
+   When a document has active snippets, the canvas carries
+   [data-vault-snippet-scope]; the containment below traps any snippet layout,
+   painting, positioning, z-index, filter, or transform inside the document
+   body so it can never affect app chrome, other tabs, or sibling documents.
+   Without snippets the wrapper is inert (no containment cost). */
+
+@layer components {
+  .vault-document-canvas {
+    position: relative;
+  }
+
+  .vault-document-canvas[data-vault-snippet-scope] {
+    contain: layout paint style;
+    isolation: isolate;
+  }
+}

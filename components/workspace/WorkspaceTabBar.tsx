@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
@@ -52,6 +52,12 @@ export function WorkspaceTabBar({
     }),
   );
   const [draggedHref, setDraggedHref] = useState<string | null>(null);
+  // Mirrors `tabs` so the removal handler can read the freshest list and decide
+  // the neighbor tab synchronously (no side effects inside a state updater).
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -73,29 +79,31 @@ export function WorkspaceTabBar({
 
   useEffect(() => {
     return subscribeToWorkspaceDocumentRemovals(({ id }) => {
-      setTabs((currentTabs) => {
-        const firstRemovedIndex = currentTabs.findIndex((tab) =>
-          isDocumentTabForId(tab, id),
-        );
+      const currentTabs = tabsRef.current;
+      const firstRemovedIndex = currentTabs.findIndex((tab) =>
+        isDocumentTabForId(tab, id),
+      );
 
-        if (firstRemovedIndex < 0) {
-          return currentTabs;
-        }
+      if (firstRemovedIndex < 0) {
+        return;
+      }
 
-        const nextTabs = currentTabs.filter((tab) => !isDocumentTabForId(tab, id));
-        writeWorkspaceTabsCookie(nextTabs);
+      const nextTabs = currentTabs.filter((tab) => !isDocumentTabForId(tab, id));
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      writeWorkspaceTabsCookie(nextTabs);
 
-        if (isDocumentHrefForId(canonicalActiveHref, id)) {
-          const nextActive =
-            nextTabs[Math.max(0, firstRemovedIndex - 1)] ??
-            nextTabs[firstRemovedIndex] ??
-            nextTabs[0];
+      // Only redirect when the closed tab was the active one. Prefer the tab to
+      // the left; fall back to the one that shifted into its place (the right
+      // neighbor), then the first tab, then the empty new-tab view.
+      if (isDocumentHrefForId(canonicalActiveHref, id)) {
+        const nextActive =
+          nextTabs[Math.max(0, firstRemovedIndex - 1)] ??
+          nextTabs[firstRemovedIndex] ??
+          nextTabs[0];
 
-          router.push(nextActive?.href ?? "/workspace");
-        }
-
-        return nextTabs;
-      });
+        router.push(nextActive?.href ?? "/workspace");
+      }
     });
   }, [canonicalActiveHref, router]);
 

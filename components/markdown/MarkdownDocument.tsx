@@ -25,7 +25,6 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
-import { defaultSchema, type Schema } from "hast-util-sanitize";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
@@ -37,7 +36,11 @@ import { CalendarBlock } from "@/components/extensions/CalendarBlock";
 import { splitCalendarSegments } from "@/lib/calendar";
 import type { CalendarState } from "@/lib/extensions/catalog";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
-import { inlineStyleToReactStyle, sanitizeInlineStyle } from "@/lib/html-style";
+import { inlineStyleToReactStyle } from "@/lib/html-style";
+import {
+  rehypeSanitizeContent,
+  safeHtmlSchema,
+} from "@/lib/markdown/sanitize";
 import { cn } from "@/lib/utils";
 import {
   extractMarkdownTarget,
@@ -217,137 +220,6 @@ const calloutAliases = new Map<string, keyof typeof calloutDefinitions>([
   ["error", "danger"],
   ["cite", "quote"],
 ]);
-
-const safeHtmlSchema: Schema = {
-  ...defaultSchema,
-  tagNames: [
-    ...(defaultSchema.tagNames ?? []),
-    "article",
-    "aside",
-    "section",
-    "header",
-    "footer",
-    "main",
-    "nav",
-    "figure",
-    "figcaption",
-    "details",
-    "summary",
-    "mark",
-    "small",
-    "sub",
-    "sup",
-    "kbd",
-    "samp",
-    "var",
-    "abbr",
-    "address",
-    "dl",
-    "dt",
-    "dd",
-    "time",
-    "div",
-    "span",
-    "br",
-    "img",
-    "iframe",
-  ],
-  attributes: {
-    ...defaultSchema.attributes,
-    "*": [
-      ...(defaultSchema.attributes?.["*"] ?? []),
-      "id",
-      "title",
-      "className",
-      "style",
-      "aria-label",
-      "aria-describedby",
-      "aria-hidden",
-      "role",
-    ],
-    a: [
-      ...(defaultSchema.attributes?.a ?? []),
-      "href",
-      "title",
-      "target",
-      "rel",
-    ],
-    abbr: [...(defaultSchema.attributes?.abbr ?? []), "title"],
-    img: [
-      ...(defaultSchema.attributes?.img ?? []),
-      "src",
-      "alt",
-      "title",
-      "width",
-      "height",
-      "loading",
-    ],
-    iframe: [
-      "src",
-      "title",
-      "width",
-      "height",
-      "allow",
-      "allowFullScreen",
-      "allowfullscreen",
-      "frameBorder",
-      "frameborder",
-      "loading",
-      "referrerPolicy",
-      "referrerpolicy",
-      "sandbox",
-      "style",
-    ],
-    input: [
-      ...(defaultSchema.attributes?.input ?? []),
-      "type",
-      "checked",
-      "disabled",
-    ],
-    time: [...(defaultSchema.attributes?.time ?? []), "dateTime"],
-  },
-  protocols: {
-    ...defaultSchema.protocols,
-    href: ["http", "https", "mailto"],
-    src: ["http", "https"],
-  },
-  clobberPrefix: "vault-user-content-",
-};
-
-type HastNode = {
-  type?: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-};
-
-function rehypeSanitizeInlineStyles() {
-  return function transform(tree: HastNode) {
-    visitHastNode(tree, (node) => {
-      const style = sanitizeInlineStyle(node.properties?.style);
-
-      if (style) {
-        node.properties = { ...node.properties, style };
-        return;
-      }
-
-      if (node.properties && "style" in node.properties) {
-        delete node.properties.style;
-        const properties = node.properties;
-        node.properties = properties;
-      }
-    });
-  };
-}
-
-function visitHastNode(node: HastNode, visitor: (node: HastNode) => void) {
-  if (node.type === "element") {
-    visitor(node);
-  }
-
-  for (const child of node.children ?? []) {
-    visitHastNode(child, visitor);
-  }
-}
 
 function styledProps(
   baseClassName: string,
@@ -1195,7 +1067,7 @@ function MarkdownSegment({
       rehypePlugins={[
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],
-        rehypeSanitizeInlineStyles,
+        rehypeSanitizeContent,
         rehypeKatex,
       ]}
       components={createMarkdownComponents(disableLinks, headingIds)}

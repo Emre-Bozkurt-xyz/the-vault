@@ -1,0 +1,2620 @@
+/* Component layer.
+
+   Contains both app-internal chrome (doc cards, calendar/sticker widgets,
+   CodeMirror editor live-preview) AND the document-content rendering contract
+   (.vault-md-*, .callout*, .vault-asset-*). The document-content classes are a
+   stable public API for CSS snippets — see docs/CSS_CONTRACT.md before
+   renaming any .vault-md-* / .callout / .vault-asset-* selector. */
+
+@layer components {
+  .vault-display {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+
+  .vault-doc-card {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 0.45rem;
+    background: var(--card);
+    box-shadow: 0 18px 55px -44px rgba(0, 0, 0, 0.9);
+    transition:
+      transform 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  .vault-doc-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+    box-shadow: 0 28px 70px -46px rgba(0, 0, 0, 0.95);
+  }
+
+  .vault-doc-preview {
+    display: flex;
+    aspect-ratio: 4 / 3;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 0;
+    overflow: hidden;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+    background: color-mix(in oklab, var(--background) 98%, var(--card) 2%);
+    user-select: none;
+  }
+
+  .vault-doc-preview-sheet {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border: 0;
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--foreground) 3%, transparent), transparent 35%),
+      color-mix(in oklab, var(--card) 92%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-doc-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .vault-doc-title {
+    display: -webkit-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .vault-doc-preview-edge {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: color-mix(in oklab, var(--border) 70%, transparent);
+  }
+
+  .vault-doc-preview-content {
+    transform: scale(0.82);
+    transform-origin: top left;
+    width: 122%;
+    padding: 1.15rem 1.25rem;
+    font-size: 0.82rem;
+  }
+
+  .vault-doc-preview-fade {
+    pointer-events: none;
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 58px;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      color-mix(in oklab, var(--card) 96%, transparent)
+    );
+  }
+
+  .vault-doc-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: color-mix(in oklab, var(--background) 96%, transparent);
+    padding: 0.95rem 1rem 1rem;
+    font-size: 0.8rem;
+  }
+
+  .vault-doc-kicker {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--muted-foreground);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .vault-markdown {
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    overflow-wrap: anywhere;
+  }
+
+  .vault-markdown > * + *,
+  .vault-markdown .vault-md-table-wrap + *,
+  .vault-markdown * + .vault-md-table-wrap {
+    margin-top: 0.85rem;
+  }
+
+  .vault-md-h1,
+  .vault-md-h2,
+  .vault-md-h3,
+  .vault-md-h4 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .vault-md-h1 {
+    font-size: 2rem;
+    line-height: 1.15;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  }
+
+  .vault-md-h2 {
+    font-size: 1.5rem;
+    line-height: 1.25;
+  }
+
+  .vault-md-h3 {
+    font-size: 1.2rem;
+    line-height: 1.3;
+  }
+
+  .vault-md-h4 {
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+
+  .vault-md-h5 {
+    font-family: var(--font-heading);
+    font-size: 0.95rem;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .vault-md-h6 {
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+
+  .vault-md-p,
+  .vault-md-li {
+    line-height: 1.75;
+  }
+
+  .vault-md-ul,
+  .vault-md-ol {
+    padding-left: 1.5rem;
+  }
+
+  .vault-md-ul {
+    list-style: disc;
+  }
+
+  .vault-md-ol {
+    list-style: decimal;
+  }
+
+  .vault-md-checkbox,
+  .vault-cm-task-checkbox {
+    position: relative;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.34rem 0.15rem 0 0;
+    flex: 0 0 auto;
+    appearance: none;
+    border: 1px solid color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    background: color-mix(in oklab, var(--background) 82%, var(--card) 18%);
+    border-radius: 0.28rem;
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 8%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--background) 70%, transparent);
+    opacity: 1;
+    vertical-align: -0.16rem;
+  }
+
+  .vault-md-checkbox:checked,
+  .vault-cm-task-checkbox[data-checked="true"] {
+    border-color: color-mix(in oklab, var(--primary) 86%, var(--foreground) 14%);
+    background:
+      linear-gradient(135deg, transparent 58%, color-mix(in oklab, white 12%, transparent) 58%),
+      var(--primary);
+  }
+
+  .vault-md-checkbox:checked::after,
+  .vault-cm-task-checkbox[data-checked="true"]::after {
+    position: absolute;
+    left: 0.31rem;
+    top: 0.12rem;
+    width: 0.32rem;
+    height: 0.56rem;
+    border: solid var(--primary-foreground);
+    border-width: 0 0.12rem 0.12rem 0;
+    content: "";
+    transform: rotate(45deg);
+  }
+
+  .vault-md-li:has(.vault-md-checkbox) {
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    column-gap: 0.7rem;
+    align-items: start;
+    list-style: none;
+  }
+
+  .vault-md-li:has(.vault-md-checkbox)::marker {
+    content: "";
+  }
+
+  .vault-md-li:has(.vault-md-checkbox) .vault-md-checkbox {
+    grid-column: 1;
+  }
+
+  /*
+   * Keep block content (nested lists, loose-list paragraphs) in the content
+   * column. Without this they auto-flow into the 1rem checkbox track and get
+   * squeezed to a single character per line.
+   */
+  .vault-md-li:has(.vault-md-checkbox) > :not(.vault-md-checkbox) {
+    grid-column: 2;
+  }
+
+  .vault-md-blockquote {
+    border-left: 3px solid var(--border);
+    color: var(--muted-foreground);
+    padding-left: 1rem;
+  }
+
+  .vault-md-document-embed {
+    position: relative;
+    width: 100%;
+    margin-block: 1.15rem;
+    padding: 0.25rem 0 0.25rem 1.25rem;
+    border-left: 2px solid color-mix(in oklab, var(--primary) 54%, var(--border));
+  }
+
+  .vault-md-document-embed-header {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.55rem;
+    color: color-mix(in oklab, var(--foreground) 88%, var(--primary));
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .vault-md-document-embed-icon {
+    display: inline-grid;
+    place-items: center;
+    color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+  }
+
+  .vault-md-document-embed-title {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .vault-md-document-embed-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+  }
+
+  .vault-md-document-embed-body {
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  .vault-md-document-embed-body > * + * {
+    margin-top: 0.7rem;
+  }
+
+  .vault-md-document-embed-body .vault-md-h1 {
+    font-size: 1.45rem;
+  }
+
+  .vault-md-document-embed-body .vault-md-h2 {
+    font-size: 1.25rem;
+  }
+
+  .vault-md-document-embed-body .vault-md-h3 {
+    font-size: 1.08rem;
+  }
+
+  .vault-md-document-embed-message {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .vault-md-document-embed-unavailable {
+    border-left-color: color-mix(in oklab, var(--muted-foreground) 48%, var(--border));
+  }
+
+  .vault-md-region {
+    margin-block: 1.15rem;
+    scroll-margin-top: 6rem;
+  }
+
+  .vault-md-region-foldable {
+    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in oklab, var(--card) 84%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in oklab, var(--primary) 70%, var(--border));
+    overflow: hidden;
+  }
+
+  .vault-md-region-summary {
+    display: flex;
+    cursor: pointer;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.85rem 1rem;
+    color: var(--foreground);
+    font-weight: 700;
+    list-style: none;
+  }
+
+  .vault-md-region-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .vault-md-region-caret {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    opacity: 0.68;
+    transform: rotate(-45deg);
+    transition: transform 140ms ease;
+  }
+
+  .vault-md-region-foldable[open] .vault-md-region-caret {
+    transform: rotate(45deg) translateY(-0.12rem);
+  }
+
+  .vault-md-region-foldable[open] .vault-md-region-summary {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  }
+
+  .vault-md-region-body {
+    max-width: none;
+    margin-inline: 0;
+    padding: 1rem;
+  }
+
+  .vault-md-region-static > .vault-md-region-body {
+    padding: 0;
+  }
+
+  .callout {
+    --callout-color: 83, 112, 255;
+    --callout-icon: lucide-pencil;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(var(--callout-color), 0.32);
+    border-radius: 0.75rem;
+    background-color: rgba(var(--callout-color), 0.16);
+    background:
+      linear-gradient(
+        90deg,
+        rgba(var(--callout-color), 0.28),
+        rgba(var(--callout-color), 0.16)
+      ),
+      color-mix(in oklab, var(--card) 82%, transparent);
+    box-shadow:
+      inset 0 0 0 999px rgba(var(--callout-color), 0.055),
+      inset 3px 0 0 rgba(var(--callout-color), 0.85);
+    padding: 1rem 1.15rem;
+    color: var(--foreground);
+  }
+
+  .callout[data-callout-resolved="abstract"] {
+    --callout-color: 86, 148, 159;
+    --callout-icon: lucide-list;
+  }
+
+  .callout[data-callout-resolved="info"] {
+    --callout-color: 8, 109, 221;
+    --callout-icon: lucide-info;
+  }
+
+  .callout[data-callout-resolved="todo"] {
+    --callout-color: 8, 109, 221;
+    --callout-icon: lucide-check-circle-2;
+  }
+
+  .callout[data-callout-resolved="tip"] {
+    --callout-color: 0, 191, 188;
+    --callout-icon: lucide-lightbulb;
+  }
+
+  .callout[data-callout-resolved="success"] {
+    --callout-color: 8, 185, 78;
+    --callout-icon: lucide-check;
+  }
+
+  .callout[data-callout-resolved="question"] {
+    --callout-color: 236, 117, 0;
+    --callout-icon: lucide-help-circle;
+  }
+
+  .callout[data-callout-resolved="warning"] {
+    --callout-color: 236, 117, 0;
+    --callout-icon: lucide-alert-triangle;
+  }
+
+  .callout[data-callout-resolved="failure"] {
+    --callout-color: 233, 49, 71;
+    --callout-icon: lucide-x-circle;
+  }
+
+  .callout[data-callout-resolved="danger"] {
+    --callout-color: 233, 49, 71;
+    --callout-icon: lucide-flame;
+  }
+
+  .callout[data-callout-resolved="bug"] {
+    --callout-color: 233, 49, 71;
+    --callout-icon: lucide-bug;
+  }
+
+  .callout[data-callout-resolved="example"] {
+    --callout-color: 120, 82, 238;
+    --callout-icon: lucide-list;
+  }
+
+  .callout[data-callout-resolved="quote"] {
+    --callout-color: 158, 158, 158;
+    --callout-icon: lucide-quote;
+  }
+
+  .callout-title,
+  .callout-summary {
+    color: rgb(var(--callout-color));
+  }
+
+  .callout-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .callout-icon {
+    display: inline-flex;
+    color: rgb(var(--callout-color));
+  }
+
+  .callout-title-inner {
+    min-width: 0;
+  }
+
+  .callout-content {
+    margin-top: 0.85rem;
+    color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground));
+  }
+
+  .callout-content > * + * {
+    margin-top: 0.85rem;
+  }
+
+  .callout-summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .callout-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details.callout:not([open]) {
+    padding-bottom: 1rem;
+  }
+
+  details.callout[open] .callout-summary {
+    border-bottom: 1px solid rgba(var(--callout-color), 0.22);
+    padding-bottom: 0.8rem;
+  }
+
+  details.callout[open] .callout-content {
+    margin-top: 0.9rem;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout,
+  .cm-line.callout.vault-cm-callout {
+    --callout-color: 83, 112, 255;
+    --callout-pad-x: clamp(1.05rem, 2vw, 1.5rem);
+    --callout-marker-width: 2.45rem;
+    position: relative;
+    display: block !important;
+    width: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    min-height: 1.9em;
+    padding-left: calc(var(--callout-pad-x) + var(--callout-marker-width)) !important;
+    padding-right: var(--callout-pad-x) !important;
+    text-indent: calc(var(--callout-marker-width) * -1);
+    background:
+      linear-gradient(
+        90deg,
+        rgba(var(--callout-color), 0.28),
+        rgba(var(--callout-color), 0.16)
+      ),
+      color-mix(in oklab, var(--card) 82%, transparent);
+    border-left: 1px solid rgba(var(--callout-color), 0.32);
+    border-right: 1px solid rgba(var(--callout-color), 0.32);
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    border-radius: 0 !important;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 400;
+    box-shadow: inset 3px 0 0 rgba(var(--callout-color), 0.85);
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-preview-list:not(.vault-cm-callout) {
+    --list-marker-width: 1.55rem;
+    padding-left: var(--list-marker-width) !important;
+    text-indent: calc(var(--list-marker-width) * -1);
+  }
+
+  .vault-cm-list-marker {
+    display: inline-flex;
+    width: 1.55rem;
+    align-items: baseline;
+    justify-content: center;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.92;
+    text-indent: 0;
+  }
+
+  .vault-cm-list-marker-bullet {
+    font-size: 0.92em;
+  }
+
+  .vault-cm-list-marker-ordered {
+    justify-content: flex-start;
+    font-size: 0.9em;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-title-line,
+  .cm-line.vault-cm-callout-title-line {
+    color: rgb(var(--callout-color));
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-first,
+  .cm-line.vault-cm-callout-first {
+    border-top: 1px solid rgba(var(--callout-color), 0.32) !important;
+    border-radius: 0.75rem 0.75rem 0 0 !important;
+    padding-top: 0.9rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-middle,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-body-line,
+  .cm-line.vault-cm-callout-middle,
+  .cm-line.vault-cm-callout-body-line {
+    padding-top: 0.18rem !important;
+    padding-bottom: 0.18rem !important;
+    line-height: 1.75;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-last,
+  .cm-line.vault-cm-callout-last {
+    border-bottom: 1px solid rgba(var(--callout-color), 0.32) !important;
+    border-radius: 0 0 0.75rem 0.75rem !important;
+    padding-bottom: 0.9rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-single,
+  .cm-line.vault-cm-callout-single {
+    border-radius: 0.75rem !important;
+    padding-top: 0.9rem !important;
+    padding-bottom: 0.9rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-abstract {
+    --callout-color: 86, 148, 159;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-info,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-todo {
+    --callout-color: 8, 109, 221;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-tip {
+    --callout-color: 0, 191, 188;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-success {
+    --callout-color: 8, 185, 78;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-question,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-warning {
+    --callout-color: 236, 117, 0;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-failure,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-danger,
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-bug {
+    --callout-color: 233, 49, 71;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-example {
+    --callout-color: 120, 82, 238;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-callout-type-quote {
+    --callout-color: 158, 158, 158;
+  }
+
+  .vault-cm-callout-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    margin-right: 0.45rem;
+    color: rgb(var(--callout-color));
+    font-family: var(--font-sans);
+    font-weight: 700;
+    text-indent: 0;
+  }
+
+  .vault-cm-callout-marker::before {
+    content: "i";
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
+  .vault-cm-callout-spacer::before {
+    content: "";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="abstract"]::before {
+    content: "=";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="info"]::before,
+  .vault-cm-callout-marker[data-callout-resolved="todo"]::before,
+  .vault-cm-callout-marker[data-callout-resolved="success"]::before {
+    content: "v";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="tip"]::before {
+    content: "*";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="question"]::before {
+    content: "?";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="warning"]::before {
+    content: "!";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="failure"]::before,
+  .vault-cm-callout-marker[data-callout-resolved="danger"]::before {
+    content: "x";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="bug"]::before {
+    content: "#";
+  }
+
+  .vault-cm-callout-marker[data-callout-resolved="quote"]::before {
+    content: "\"";
+  }
+
+  .vault-cm-callout-marker.vault-cm-callout-spacer::before {
+    content: "" !important;
+  }
+
+  .vault-md-pre {
+    overflow-x: auto;
+    overflow-wrap: normal;
+    white-space: pre;
+    word-break: normal;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    padding: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-code {
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--muted) 75%, transparent);
+    padding: 0.1rem 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    border-radius: 0.3rem;
+  }
+
+  .vault-md-pre .vault-md-code {
+    display: block;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+    line-height: inherit;
+    overflow-wrap: normal;
+    white-space: pre;
+    word-break: normal;
+    text-decoration: none;
+    text-decoration-line: none;
+    border-radius: 0;
+  }
+
+  .vault-md-table-wrap {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .vault-md-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .vault-md-th,
+  .vault-md-td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.65rem;
+    text-align: left;
+  }
+
+  .vault-md-th {
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+    font-weight: 600;
+  }
+
+  .vault-md-hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 1.5rem 0;
+  }
+
+  .vault-md-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+    font-weight: 500;
+  }
+
+  .vault-markdown .katex-display,
+  .vault-markdown .katex {
+    max-width: 100%;
+    color: var(--foreground);
+  }
+
+  .vault-markdown .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin: 1.2rem 0;
+    padding: 0.6rem 0;
+  }
+
+  .vault-cm-math-tooltip {
+    max-width: min(34rem, calc(100vw - 2rem));
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.42rem 0.7rem;
+    color: var(--foreground);
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+
+  .vault-md-wiki-link {
+    border-radius: 0.35rem;
+    padding: 0.05rem 0.25rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  .vault-md-wiki-link-ambiguous {
+    border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-md-wiki-link-private {
+    border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+    color: color-mix(in oklab, var(--destructive) 82%, var(--foreground));
+  }
+
+  .vault-md-hidden-anchor {
+    display: block;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .vault-md-strong {
+    font-weight: 700;
+  }
+
+  .vault-md-em {
+    font-style: italic;
+  }
+
+  .vault-md-html-block,
+  .vault-md-section {
+    display: block;
+  }
+
+  .vault-md-section {
+    border-left: 2px solid color-mix(in oklab, var(--border) 85%, transparent);
+    padding-left: 1rem;
+  }
+
+  .vault-md-aside {
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+    padding: 1rem;
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-figure {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .vault-md-figcaption {
+    color: var(--muted-foreground);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .vault-md-details {
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 35%, transparent);
+    padding: 0.8rem 1rem;
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .vault-md-details[open] .vault-md-summary {
+    margin-bottom: 0.75rem;
+  }
+
+  .vault-md-mark {
+    background: color-mix(in oklab, var(--primary) 24%, transparent);
+    color: var(--foreground);
+    padding: 0.05rem 0.2rem;
+    border-radius: 0.25rem;
+  }
+
+  .vault-md-small {
+    color: var(--muted-foreground);
+    font-size: 0.85em;
+  }
+
+  .vault-md-kbd {
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--border) 90%, transparent);
+    padding: 0.08rem 0.32rem;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    border-radius: 0.35rem;
+  }
+
+  .vault-md-abbr {
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2rem;
+  }
+
+  .vault-md-dl {
+    display: grid;
+    gap: 0.35rem 1rem;
+  }
+
+  .vault-md-dt {
+    font-weight: 700;
+  }
+
+  .vault-md-dd {
+    margin-left: 1rem;
+    color: var(--muted-foreground);
+  }
+
+  .vault-md-image-frame {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: min(100%, 48rem);
+    min-height: clamp(12rem, 42vw, 26rem);
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+    border-radius: 0.65rem;
+  }
+
+  .vault-md-img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: inherit;
+    object-fit: contain;
+    background: color-mix(in oklab, var(--background) 80%, var(--card) 20%);
+  }
+
+  .vault-md-image-fallback {
+    position: absolute;
+    inset: 0;
+    display: none;
+    place-items: center;
+    padding: 1rem;
+    color: var(--muted-foreground);
+    text-align: center;
+    background:
+      linear-gradient(135deg, transparent 48%, color-mix(in oklab, var(--border) 80%, transparent) 49%, color-mix(in oklab, var(--border) 80%, transparent) 51%, transparent 52%),
+      color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  .vault-md-img:not([src]),
+  .vault-md-img[src=""] {
+    display: none;
+  }
+
+  .vault-md-img:not([src]) + .vault-md-image-fallback,
+  .vault-md-img[src=""] + .vault-md-image-fallback,
+  .vault-md-image-frame[data-image-state="error"] .vault-md-image-fallback {
+    display: grid;
+  }
+
+  .vault-md-image-frame[data-image-state="error"] .vault-md-img {
+    visibility: hidden;
+  }
+
+  .vault-asset-embed--image {
+    display: block;
+    width: 100%;
+    max-width: min(100%, 48rem);
+    margin: 1rem auto;
+    white-space: normal;
+  }
+
+  .vault-asset-embed--image .vault-md-image-frame {
+    display: block;
+    width: 100%;
+    min-height: 0;
+    background: transparent;
+  }
+
+  .vault-asset-embed--image .vault-md-img {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    object-fit: contain;
+  }
+
+  .vault-asset-embed--image .vault-md-image-frame[data-image-state="error"] {
+    display: grid;
+    min-height: 10rem;
+    background: color-mix(in oklab, var(--muted) 45%, transparent);
+  }
+
+  .vault-asset-embed--file {
+    display: grid;
+    grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.85rem;
+    width: 100%;
+    max-width: min(100%, 34rem);
+    margin: 1rem auto;
+    border: 1px solid color-mix(in oklab, var(--border) 86%, transparent);
+    border-radius: 0.55rem;
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--foreground) 4%, transparent), transparent),
+      color-mix(in oklab, var(--card) 88%, transparent);
+    padding: 0.8rem;
+    color: var(--foreground);
+    text-decoration: none;
+    white-space: normal;
+    box-shadow: 0 18px 45px -42px rgba(0, 0, 0, 0.9);
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease,
+      transform 140ms ease;
+  }
+
+  .vault-asset-embed--file:hover,
+  .vault-asset-embed--file:focus-visible {
+    transform: translateY(-1px);
+    border-color: color-mix(in oklab, var(--primary) 52%, var(--border));
+    background-color: color-mix(in oklab, var(--card) 94%, var(--foreground) 6%);
+    color: var(--foreground);
+    outline: none;
+  }
+
+  .vault-asset-file-icon {
+    display: grid;
+    width: 2.4rem;
+    height: 2.4rem;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    border-radius: 0.35rem;
+    background: color-mix(in oklab, var(--background) 74%, var(--card) 26%);
+    color: color-mix(in oklab, var(--foreground) 82%, var(--muted-foreground));
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
+  .vault-asset-file-body {
+    display: grid;
+    min-width: 0;
+    gap: 0.16rem;
+  }
+
+  .vault-asset-file-title {
+    overflow: hidden;
+    color: var(--foreground);
+    font-size: 0.92rem;
+    font-weight: 650;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vault-asset-file-meta {
+    overflow: hidden;
+    color: var(--muted-foreground);
+    font-size: 0.74rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vault-asset-file-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    border-radius: 999px;
+    padding: 0.28rem 0.58rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    font-weight: 650;
+    text-decoration: none;
+  }
+
+  .vault-asset-embed--file:hover .vault-asset-file-action,
+  .vault-asset-embed--file:focus-visible .vault-asset-file-action {
+    border-color: color-mix(in oklab, var(--primary) 52%, var(--border));
+    color: var(--foreground);
+  }
+
+  .vault-asset-group {
+    display: block;
+    width: 100%;
+    margin: 1.35rem auto;
+    white-space: normal;
+  }
+
+  .vault-asset-group-width-medium {
+    max-width: min(100%, 36rem);
+  }
+
+  .vault-asset-group-width-large {
+    max-width: min(100%, 52rem);
+  }
+
+  .vault-asset-group-width-full {
+    max-width: 100%;
+  }
+
+  .vault-asset-group-align-left {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .vault-asset-group-align-center {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .vault-asset-group-align-right {
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  .vault-asset-group-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+    align-items: start;
+  }
+
+  .vault-asset-group-columns-2 .vault-asset-group-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vault-asset-group-columns-3 .vault-asset-group-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vault-asset-group-columns-4 .vault-asset-group-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .vault-asset-group-gap-small .vault-asset-group-grid {
+    gap: 0.55rem;
+  }
+
+  .vault-asset-group-gap-medium .vault-asset-group-grid {
+    gap: 0.9rem;
+  }
+
+  .vault-asset-group-gap-large .vault-asset-group-grid {
+    gap: 1.35rem;
+  }
+
+  .vault-asset-group-item {
+    min-width: 0;
+  }
+
+  .vault-asset-group .vault-asset-embed--image {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .vault-asset-group .vault-asset-embed--file {
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .vault-asset-group .vault-asset-embed-caption {
+    margin-top: 0.38rem;
+    font-size: 0.76rem;
+  }
+
+  .vault-asset-group-caption {
+    display: block;
+    margin-top: 0.65rem;
+    color: var(--muted-foreground);
+    font-size: 0.84rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  .vault-asset-group-align-left .vault-asset-group-caption {
+    text-align: left;
+  }
+
+  .vault-asset-group-align-right .vault-asset-group-caption {
+    text-align: right;
+  }
+
+  .vault-asset-width-small {
+    max-width: min(100%, 18rem);
+  }
+
+  .vault-asset-width-medium {
+    max-width: min(100%, 32rem);
+  }
+
+  .vault-asset-width-large {
+    max-width: min(100%, 48rem);
+  }
+
+  .vault-asset-width-full {
+    max-width: 100%;
+  }
+
+  .vault-asset-align-left {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .vault-asset-align-center {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .vault-asset-align-right {
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  .vault-asset-layout-inline {
+    display: inline-block;
+    width: auto;
+    max-width: min(100%, 18rem);
+    margin: 0 0.35rem;
+    vertical-align: middle;
+  }
+
+  .vault-asset-layout-inline.vault-asset-width-medium {
+    max-width: min(100%, 24rem);
+  }
+
+  .vault-asset-layout-inline.vault-asset-width-large,
+  .vault-asset-layout-inline.vault-asset-width-full {
+    max-width: min(100%, 32rem);
+  }
+
+  .vault-asset-layout-inline .vault-md-image-frame {
+    min-height: 0;
+  }
+
+  .vault-asset-layout-inline .vault-md-img {
+    max-height: 12rem;
+  }
+
+  .vault-asset-layout-wrap {
+    width: min(45%, 100%);
+    margin-top: 0.25rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .vault-asset-layout-wrap.vault-asset-align-left {
+    float: left;
+    margin-right: 1.25rem;
+  }
+
+  .vault-asset-layout-wrap.vault-asset-align-right {
+    float: right;
+    margin-left: 1.25rem;
+  }
+
+  .vault-asset-layout-wrap.vault-asset-align-center {
+    float: none;
+    width: 100%;
+  }
+
+  .vault-asset-embed-caption {
+    display: block;
+    margin-top: 0.45rem;
+    color: var(--muted-foreground);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  .vault-asset-align-left .vault-asset-embed-caption {
+    text-align: left;
+  }
+
+  .vault-asset-align-right .vault-asset-embed-caption {
+    text-align: right;
+  }
+
+  .vault-markdown::after,
+  .vault-markdown-editor-live .cm-content::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+
+  @media (max-width: 760px) {
+    .vault-asset-group-columns-2 .vault-asset-group-grid,
+    .vault-asset-group-columns-3 .vault-asset-group-grid,
+    .vault-asset-group-columns-4 .vault-asset-group-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .vault-asset-layout-wrap {
+      float: none !important;
+      width: 100%;
+      max-width: 100% !important;
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    .vault-asset-embed--file {
+      grid-template-columns: 2.2rem minmax(0, 1fr);
+    }
+
+    .vault-asset-file-action {
+      display: none;
+    }
+  }
+
+  .vault-cm-wiki-image-preview {
+    margin-block: 0.35rem;
+    white-space: normal;
+  }
+
+  .vault-cm-document-embed-preview {
+    display: block;
+    width: 100%;
+    padding-block: 0.35rem;
+    white-space: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-document-embed-preview,
+  .vault-markdown-editor-live .vault-cm-wiki-image-preview,
+  .vault-markdown-editor-live .vault-cm-html-preview,
+  .vault-markdown-editor-live .vault-cm-html-inline-preview {
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-asset-group-rendered {
+    position: relative;
+    padding-block: 0.6rem;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-callout-rendered {
+    display: block;
+    width: 100%;
+    padding-block: 0.6rem;
+    line-height: normal;
+    white-space: normal;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-table-rendered {
+    display: block;
+    width: 100%;
+    padding-block: 0.6rem;
+    line-height: normal;
+    white-space: normal;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-rendered {
+    display: block;
+    width: 100%;
+    padding-block: 0.6rem;
+    line-height: normal;
+    white-space: normal;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-active-preview {
+    display: block;
+    width: 100%;
+    line-height: normal;
+    white-space: normal;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-active-preview-frame {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 1.75rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 0.35rem;
+    background: color-mix(in oklab, var(--foreground) 3%, transparent);
+    padding: 0.45rem 0.85rem;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-active-preview-frame .katex-display {
+    margin: 0;
+  }
+
+  .vault-markdown-editor-live .vault-cm-callout-rendered-markdown {
+    max-width: none;
+    margin: 0;
+    line-height: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-table-rendered-markdown {
+    max-width: none;
+    margin: 0;
+    line-height: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-math-rendered-markdown {
+    max-width: none;
+    margin: 0;
+    line-height: normal;
+  }
+
+  .vault-markdown-editor-live .vault-cm-table-rendered-markdown .vault-md-table-wrap {
+    margin: 0;
+  }
+
+  .vault-markdown-editor-live .vault-cm-callout-rendered-markdown .callout {
+    margin: 0;
+  }
+
+  /* Calendar extension --------------------------------------------------- */
+
+  .vault-cm-calendar-rendered {
+    display: block;
+    width: 100%;
+    padding-block: 0.6rem;
+    white-space: normal;
+    /* Interactive widget: keep pointer/selection enabled (unlike previews). */
+    pointer-events: auto;
+    user-select: auto;
+  }
+
+  .vault-calendar {
+    box-sizing: border-box;
+    /* Reset the monospace font CodeMirror sets on .cm-content; the calendar is
+       UI chrome, not editor text. */
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--foreground);
+    transition: width 0.15s ease, margin 0.15s ease;
+  }
+
+  .vault-calendar *,
+  .vault-calendar *::before,
+  .vault-calendar *::after {
+    box-sizing: border-box;
+  }
+
+  /* Expanded "focus mode": a portal overlay so the full month is visible at
+     once instead of being clipped by the editor column's overflow. Sits below
+     base-ui dialogs (z-50) so the day editor still layers on top. */
+  .vault-calendar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: clamp(1rem, 4vh, 3rem) clamp(1rem, 4vw, 3rem);
+    overflow: auto;
+  }
+
+  .vault-calendar-overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    border: none;
+    margin: 0;
+    padding: 0;
+    cursor: default;
+    background: color-mix(in oklab, var(--background) 55%, black 45%);
+    backdrop-filter: blur(2px);
+  }
+
+  .vault-calendar-overlay-panel {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 1400px;
+    margin: auto;
+    padding: 1.25rem;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: 0 24px 60px -12px rgb(0 0 0 / 0.45);
+  }
+
+  .vault-calendar-stub {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 0.5rem;
+    border: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
+    background: color-mix(in oklab, var(--muted) 30%, transparent);
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    color: var(--muted-foreground);
+  }
+
+  .vault-calendar-stub-label {
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  .vault-calendar-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .vault-calendar-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  .vault-calendar-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .vault-calendar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.85rem;
+    height: 1.85rem;
+    padding-inline: 0.4rem;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: var(--background);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  .vault-calendar-btn--text {
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .vault-calendar-btn:hover {
+    background: color-mix(in oklab, var(--muted) 60%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-calendar-notice {
+    margin-bottom: 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px dashed color-mix(in oklab, var(--border) 85%, transparent);
+    background: color-mix(in oklab, var(--muted) 35%, transparent);
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+  }
+
+  .vault-calendar-notice code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .vault-calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.3rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .vault-calendar-weekday {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .vault-calendar-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .vault-calendar-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.3rem;
+  }
+
+  .vault-calendar-cell {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-height: 5.5rem;
+    padding: 0.35rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+    background: color-mix(in oklab, var(--card) 55%, transparent);
+    overflow: hidden;
+  }
+
+  .vault-calendar--expanded .vault-calendar-cell {
+    min-height: 7rem;
+  }
+
+  .vault-calendar-cell--muted {
+    background: transparent;
+    opacity: 0.55;
+  }
+
+  .vault-calendar-cell--today {
+    border-color: color-mix(in oklab, var(--primary) 65%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+
+  .vault-calendar-cell-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .vault-calendar-daynum {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+
+  .vault-calendar-cell--today .vault-calendar-daynum {
+    color: var(--primary);
+  }
+
+  .vault-calendar-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 0.35rem;
+    border: none;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease;
+  }
+
+  .vault-calendar-cell:hover .vault-calendar-add {
+    opacity: 1;
+  }
+
+  .vault-calendar-add:hover {
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-calendar-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    min-width: 0;
+  }
+
+  .vault-calendar-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.3rem;
+    min-width: 0;
+    font-size: 0.78rem;
+    line-height: 1.25;
+  }
+
+  .vault-calendar-entry--event {
+    color: var(--foreground);
+  }
+
+  .vault-calendar-check {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.95rem;
+    height: 0.95rem;
+    margin-top: 0.1rem;
+    border-radius: 0.28rem;
+    border: 1.5px solid color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+    background: var(--background);
+    color: var(--primary-foreground);
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .vault-calendar-entry--done .vault-calendar-check {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .vault-calendar-check:disabled {
+    cursor: default;
+  }
+
+  .vault-calendar-entry-time {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    margin-top: 0.05rem;
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+
+  .vault-calendar-entry-text {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .vault-calendar-entry--done .vault-calendar-entry-text {
+    text-decoration: line-through;
+    color: var(--muted-foreground);
+  }
+
+  .vault-calendar-entry-empty {
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+
+  .vault-calendar-entry-md,
+  .vault-calendar-entry-md .vault-md-p {
+    display: inline;
+    margin: 0;
+    max-width: none;
+    font-size: inherit;
+    line-height: inherit;
+    white-space: nowrap;
+  }
+
+  .vault-calendar-entry-preview .vault-calendar-entry-md,
+  .vault-calendar-entry-preview .vault-calendar-entry-md .vault-md-p {
+    white-space: normal;
+  }
+
+  .vault-calendar-dialog-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: var(--background);
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--foreground);
+    cursor: pointer;
+  }
+
+  .vault-calendar-dialog-add:hover {
+    background: color-mix(in oklab, var(--muted) 60%, transparent);
+  }
+
+  .vault-calendar-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 0.4rem;
+    border: none;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+
+  .vault-calendar-icon-btn:hover {
+    background: color-mix(in oklab, var(--destructive) 12%, transparent);
+    color: var(--destructive);
+  }
+
+  .vault-calendar-entry-preview {
+    border-top: 1px dashed color-mix(in oklab, var(--border) 70%, transparent);
+    padding-top: 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .vault-markdown-editor-live .vault-cm-asset-group-configure {
+    position: absolute;
+    z-index: 2;
+    top: 0.55rem;
+    right: 0.55rem;
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
+    background: color-mix(in oklab, var(--card) 88%, transparent);
+    color: var(--muted-foreground);
+    box-shadow: 0 16px 44px -28px rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(14px);
+    pointer-events: auto;
+  }
+
+  .vault-markdown-editor-live .vault-cm-asset-group-configure:hover,
+  .vault-markdown-editor-live .vault-cm-asset-group-configure:focus-visible {
+    border-color: color-mix(in oklab, var(--foreground) 26%, var(--border));
+    color: var(--foreground);
+    outline: none;
+  }
+
+  .vault-markdown-editor-live .vault-cm-asset-group-configure svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line {
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line .cm-widgetBuffer {
+    display: none;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-document-embed-line .cm-widget {
+    display: block;
+    width: 100%;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-asset-group-source {
+    border-left: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-right: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    background: color-mix(in oklab, var(--foreground) 4%, transparent);
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    font-family: var(--font-mono);
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-asset-group-source-first {
+    border-top: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.65rem 0.65rem 0 0;
+    padding-top: 0.45rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-asset-group-source-last {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0 0 0.65rem 0.65rem;
+    padding-bottom: 0.45rem !important;
+  }
+
+  .vault-markdown-editor-live
+    .cm-line.vault-cm-asset-group-source-first.vault-cm-asset-group-source-last {
+    border-radius: 0.65rem;
+  }
+
+  .vault-cm-document-embed-markdown {
+    width: 100%;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .vault-cm-document-embed-preview > .vault-markdown.vault-cm-document-embed-markdown {
+    max-width: none !important;
+    margin-inline: 0 !important;
+  }
+
+  .vault-cm-document-embed-preview .vault-markdown,
+  .vault-cm-document-embed-preview .vault-markdown * {
+    font-family: var(--font-sans);
+    white-space: normal;
+  }
+
+  .vault-cm-document-embed-preview .vault-md-document-embed {
+    margin-inline: 0;
+  }
+
+  .vault-cm-document-embed-preview .vault-md-code,
+  .vault-cm-document-embed-preview .vault-md-pre,
+  .vault-cm-document-embed-preview .vault-md-pre * {
+    font-family: var(--font-mono);
+  }
+
+  .vault-md-iframe {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    border-radius: 0.8rem;
+    background: var(--card);
+  }
+
+  .vault-markdown-compact .vault-md-iframe {
+    display: none;
+  }
+
+  .vault-markdown-compact {
+    max-width: none;
+    font-size: 0.62rem;
+    line-height: 1.25;
+  }
+
+  .vault-markdown-compact > * + * {
+    margin-top: 0.25rem;
+  }
+
+  .vault-markdown-compact .vault-md-h1 {
+    font-size: 0.95rem;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .vault-markdown-compact .vault-md-h2 {
+    font-size: 0.88rem;
+  }
+
+  .vault-markdown-compact .vault-md-h3 {
+    font-size: 0.84rem;
+  }
+
+  .vault-markdown-compact .vault-md-p,
+  .vault-markdown-compact .vault-md-li {
+    line-height: 1.25;
+  }
+
+  .vault-markdown-compact .vault-md-pre,
+  .vault-markdown-compact .vault-md-table-wrap,
+  .vault-markdown-compact .callout-content {
+    display: none;
+  }
+
+  .vault-markdown-compact .callout {
+    border-radius: 0.35rem;
+    padding: 0.35rem 0.45rem;
+  }
+
+  .vault-markdown-compact .callout-title {
+    gap: 0.25rem;
+    font-size: 0.62rem;
+  }
+
+  .vault-markdown-compact .callout-icon svg {
+    width: 0.7rem;
+    height: 0.7rem;
+  }
+
+  @media (max-width: 640px) {
+    .vault-public-markdown .vault-md-ul,
+    .vault-public-markdown .vault-md-ol {
+      padding-left: 1.05rem;
+    }
+
+    .vault-public-markdown .callout {
+      padding: 0.85rem 0.9rem;
+    }
+
+    .vault-public-markdown .vault-md-blockquote {
+      padding-left: 0.75rem;
+    }
+  }
+
+  .vault-collab-caret {
+    position: relative;
+    margin-left: -1px;
+    margin-right: -1px;
+    border-left: 2px solid;
+    pointer-events: none;
+  }
+
+  .vault-collab-label {
+    position: absolute;
+    left: -1px;
+    top: -1.35rem;
+    border-radius: 3px;
+    color: white;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    white-space: nowrap;
+  }
+
+  .vault-collab-selection {
+    border-radius: 2px;
+  }
+
+  .vault-markdown-editor-source .cm-content span,
+  .vault-markdown-editor-split .cm-content span {
+    font-family: var(--font-mono);
+    font-size: inherit;
+    font-style: normal;
+    font-weight: inherit;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+    letter-spacing: 0;
+    text-decoration: none;
+    text-decoration-line: none;
+  }
+
+  .vault-markdown-editor-source .cm-content,
+  .vault-markdown-editor-split .cm-content {
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+
+  .vault-markdown-editor-live,
+  .vault-markdown-editor-read,
+  .vault-markdown-editor-preview {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .vault-markdown-editor-live .cm-editor,
+  .vault-markdown-editor-read .cm-editor,
+  .vault-markdown-editor-preview .cm-editor {
+    background: transparent;
+  }
+
+  .vault-markdown-editor-live .cm-scroller {
+    background: transparent;
+    overflow-x: hidden;
+  }
+
+  .vault-markdown-editor-live .cm-content {
+    max-width: min(100%, 56rem);
+    min-height: calc(100svh - 17rem);
+    margin-inline: auto;
+    padding: clamp(1rem, 3vw, 2rem) clamp(0.75rem, 2vw, 1.5rem) 6rem;
+    font-family: var(--font-sans);
+    font-feature-settings: normal;
+    font-variant-ligatures: normal;
+  }
+
+  .vault-markdown-editor-live .cm-line {
+    padding-inline: 0;
+    font-family: var(--font-sans);
+    line-height: 1.75;
+  }
+
+  .vault-markdown-editor-live .cm-content span {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variant-ligatures: inherit;
+  }
+
+  .vault-markdown-editor-live .cm-gutters {
+    display: none;
+  }
+
+  .vault-markdown-editor-live .cm-activeLine {
+    background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  }
+
+  .vault-markdown-editor-live .cm-selectionBackground,
+  .vault-markdown-editor-live .cm-focused .cm-selectionBackground {
+    background: color-mix(in oklab, var(--primary) 28%, transparent) !important;
+  }
+
+  .vault-editor-canvas {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--background) 96%, var(--card) 4%) 0%,
+        var(--background) 24rem
+      );
+  }
+
+  .vault-editor-toolbar {
+    scrollbar-width: none;
+  }
+
+  .vault-editor-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .vault-asset-format-panel {
+    position: absolute;
+    z-index: 45;
+    top: 3.35rem;
+    left: calc(100% + 1rem);
+    display: grid;
+    width: 20rem;
+    max-height: calc(100svh - 7rem);
+    overflow-y: auto;
+    gap: 0.65rem;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--card) 88%, transparent);
+    padding: 0.65rem;
+    color: var(--foreground);
+    box-shadow: 0 16px 48px -44px rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(16px);
+  }
+
+  .vault-asset-format-panel-header {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.75rem;
+  }
+
+  .vault-asset-format-close {
+    display: grid;
+    width: 1.65rem;
+    height: 1.65rem;
+    place-items: center;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted-foreground);
+  }
+
+  .vault-asset-format-close:hover,
+  .vault-asset-format-close:focus-visible {
+    border-color: color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--foreground) 8%, transparent);
+    color: var(--foreground);
+    outline: none;
+  }
+
+  .vault-asset-format-label {
+    color: var(--foreground);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .vault-asset-format-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.55rem;
+  }
+
+  .vault-asset-format-segment,
+  .vault-asset-format-field {
+    display: grid;
+    gap: 0.28rem;
+    color: var(--muted-foreground);
+    font-size: 0.68rem;
+  }
+
+  .vault-asset-format-segment > span,
+  .vault-asset-format-field > span {
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .vault-asset-format-segment > div {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+  }
+
+  .vault-asset-format-segment button,
+  .vault-asset-format-field button {
+    min-height: 1.9rem;
+    border: 0;
+    border-right: 1px solid color-mix(in oklab, var(--border) 66%, transparent);
+    background: transparent;
+    padding: 0 0.65rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+
+  .vault-asset-format-segment button:last-child {
+    border-right: 0;
+  }
+
+  .vault-asset-format-segment button:hover,
+  .vault-asset-format-field button:hover,
+  .vault-asset-format-segment button[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--foreground) 9%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-asset-format-field select,
+  .vault-asset-format-field input {
+    height: 1.9rem;
+    min-width: 0;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+    padding: 0 0.55rem;
+    color: var(--foreground);
+    font-size: 0.75rem;
+    outline: none;
+  }
+
+  .vault-asset-format-field select:focus,
+  .vault-asset-format-field input:focus {
+    border-color: color-mix(in oklab, var(--primary) 62%, var(--border));
+  }
+
+  .vault-asset-format-width-select {
+    width: 7.5rem;
+  }
+
+  .vault-asset-format-width-input {
+    grid-template-columns: minmax(5.5rem, 7rem) auto;
+  }
+
+  .vault-asset-format-width-input > span {
+    grid-column: 1 / -1;
+  }
+
+  .vault-asset-format-width-input button {
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+  }
+
+  .vault-asset-format-text {
+    min-width: min(100%, 11rem);
+    flex: 1 1 11rem;
+  }
+
+  .vault-asset-group-caption-field {
+    flex-basis: 100%;
+  }
+
+  @media (max-width: 1280px) {
+    .vault-asset-format-panel {
+      left: auto;
+      right: 0;
+      width: min(100%, 28rem);
+    }
+  }
+
+  @media (max-width: 760px) {
+    .vault-asset-format-panel {
+      position: fixed;
+      inset: auto 0.75rem 0.75rem;
+      width: auto;
+      max-height: min(70svh, 24rem);
+    }
+  }
+
+  .vault-editor-column {
+    position: relative;
+    width: min(100%, 56rem);
+  }
+
+  .vault-document-overlay-host {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .vault-document-overlay-content {
+    position: relative;
+    z-index: 1;
+    display: contents;
+  }
+
+  .vault-document-overlay-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+  }
+
+  .vault-document-overlay-item {
+    position: absolute;
+    pointer-events: auto;
+  }
+
+  .vault-editor-toolbar-row {
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .vault-editor-mode-switch {
+    z-index: 20;
+    isolation: isolate;
+    opacity: 0.66;
+    transition: opacity 140ms ease;
+  }
+
+  .vault-editor-mode-switch::before {
+    content: "";
+    position: absolute;
+    inset: -1rem -1.25rem -5.75rem -1.25rem;
+    z-index: 0;
+  }
+
+  .vault-editor-mode-switch:hover,
+  .vault-editor-mode-switch:focus-within {
+    opacity: 1;
+  }
+
+  .vault-editor-mode-button {
+    z-index: 2;
+    border: 1px solid transparent;
+    background: color-mix(in oklab, var(--background) 82%, transparent);
+    box-shadow: 0 8px 22px -20px rgba(0, 0, 0, 0.75);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transform: translate3d(0, 0, 0) scale(0.78);
+    transition:
+      opacity 150ms ease,
+      transform 170ms cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0ms linear 170ms,
+      color 140ms ease,
+      border-color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .vault-editor-mode-button:hover,
+  .vault-editor-mode-button:focus-visible {
+    border-color: color-mix(in oklab, var(--border) 82%, transparent);
+    background: color-mix(in oklab, var(--foreground) 8%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-editor-mode-button-active {
+    z-index: 4;
+    border-color: color-mix(in oklab, var(--border) 70%, transparent);
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button,
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transition-delay: 0ms, 0ms, 0ms, 0ms, 0ms, 0ms;
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button:nth-child(1),
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button:nth-child(1) {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button:nth-child(2),
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button:nth-child(2) {
+    transform: translate3d(0, 2.15rem, 0) scale(1);
+  }
+
+  .vault-editor-mode-switch:hover .vault-editor-mode-button:nth-child(3),
+  .vault-editor-mode-switch:focus-within .vault-editor-mode-button:nth-child(3) {
+    transform: translate3d(0, 4.3rem, 0) scale(1);
+  }
+
+  @media (max-width: 640px) {
+    .vault-editor-mode-switch {
+      margin-left: 0;
+    }
+  }
+
+  .vault-editor-canvas .vault-markdown-editor {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .vault-editor-canvas .cm-editor,
+  .vault-editor-canvas .cm-scroller {
+    background: transparent;
+  }
+
+  .vault-editor-canvas .vault-markdown-editor-live .cm-content {
+    max-width: 100%;
+    min-height: calc(100svh - 18rem);
+    margin-inline: 0;
+    padding: 0.25rem 0 8rem 0.35rem !important;
+  }
+
+  .vault-editor-canvas .vault-markdown-editor-live .cm-line:not(.vault-cm-callout):not(.vault-cm-preview-list) {
+    padding-inline: 0 !important;
+  }
+
+  .vault-editor-canvas .vault-markdown-editor-preview-pane > .vault-markdown {
+    max-width: 100%;
+    margin-inline: 0;
+  }
+
+  .vault-markdown-editor-preview-pane {
+    background: transparent;
+  }
+
+  .vault-markdown-editor-preview-pane > .vault-markdown {
+    max-width: min(100%, 56rem);
+    margin-inline: auto;
+  }
+
+  .vault-public-markdown {
+    max-width: min(100%, 56rem);
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-bold {
+    font-weight: 700;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-italic {
+    font-style: italic;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-code {
+    font-family: var(--font-mono);
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-link {
+    color: var(--foreground);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-math-inline-preview {
+    display: inline-block;
+    max-width: 100%;
+    color: var(--foreground);
+    line-height: 1;
+    vertical-align: -0.08em;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .vault-markdown-editor .cm-content .vault-cm-preview-block-anchor {
+    color: color-mix(in oklab, var(--muted-foreground) 78%, var(--foreground));
+    font-size: 0.9em;
+    opacity: 0.82;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-html-preview {
+    max-width: 100%;
+    padding-block: 0.15rem;
+    font-family: var(--font-sans);
+    white-space: normal;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-html-preview * {
+    white-space: normal;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-html-inline-preview,
+  .vault-markdown-editor-live .cm-content .vault-cm-html-inline-preview * {
+    font-family: inherit;
+    white-space: normal;
+  }
+
+  .vault-markdown-editor-live .cm-content .vault-cm-task-checkbox {
+    display: inline-block;
+    margin-right: 0.55rem;
+  }
+
+  .vault-markdown-editor .cm-tooltip {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: color-mix(in oklab, var(--card) 96%, black 4%);
+    color: var(--card-foreground);
+    box-shadow: 0 24px 80px -45px rgb(0 0 0 / 0.85);
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete {
+    min-width: 14rem;
+    padding: 0.35rem;
+    font-family: var(--font-sans);
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete > ul {
+    max-height: 15rem;
+    padding: 0;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete ul li {
+    min-height: 2rem;
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.55rem;
+    color: var(--muted-foreground);
+    line-height: 1.25;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete ul li[aria-selected] {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon {
+    color: var(--muted-foreground);
+    opacity: 0.75;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionLabel {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionDetail {
+    margin-left: 0.75rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionMatchedText {
+    color: var(--foreground);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  @media (max-width: 640px) {
+    .vault-markdown-editor .cm-content {
+      min-height: calc(100svh - 17rem);
+      padding: 0.8rem 0.55rem;
+      font-size: 0.95rem;
+    }
+
+    .vault-markdown-editor .cm-line {
+      padding-inline: 0.15rem;
+    }
+
+    .vault-markdown-editor .cm-gutters {
+      width: 1.85rem;
+      min-width: 1.85rem;
+      max-width: 1.85rem;
+      overflow: hidden;
+    }
+
+    .vault-markdown-editor .cm-foldGutter,
+    .vault-markdown-editor .cm-foldGutterOpen,
+    .vault-markdown-editor .cm-foldGutterFolded {
+      display: none;
+      width: 0;
+      min-width: 0;
+      max-width: 0;
+      padding: 0;
+    }
+
+    .vault-markdown-editor .cm-lineNumbers {
+      width: 1.85rem;
+      min-width: 1.85rem;
+      max-width: 1.85rem;
+    }
+
+    .vault-markdown-editor .cm-gutterElement {
+      width: 1.85rem;
+      min-width: 1.85rem;
+      max-width: 1.85rem;
+      padding-inline: 0 0.35rem;
+      text-align: right;
+    }
+
+    .vault-markdown-editor .cm-scroller {
+      overflow-x: hidden;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-1 {
+      font-size: 1.55rem;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-2 {
+      font-size: 1.25rem;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-3 {
+      font-size: 1.08rem;
+    }
+
+    .vault-markdown-editor .vault-cm-preview-heading-4,
+    .vault-markdown-editor .vault-cm-preview-heading-5,
+    .vault-markdown-editor .vault-cm-preview-heading-6 {
+      font-size: 0.95rem;
+    }
+  }
+}

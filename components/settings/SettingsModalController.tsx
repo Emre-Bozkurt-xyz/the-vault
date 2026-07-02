@@ -9,6 +9,7 @@ type SettingsSectionId =
   | "workspace"
   | "editor"
   | "appearance"
+  | "snippets"
   | "files-assets"
   | "hotkeys"
   | "core-features"
@@ -27,6 +28,7 @@ type SettingsModalControllerProps = {
   workspaceSection?: ReactNode;
   editorSection?: ReactNode;
   appearanceSection?: ReactNode;
+  snippetsSection?: ReactNode;
   filesAssetsSection?: ReactNode;
   hotkeysSection?: ReactNode;
   coreFeaturesSection?: ReactNode;
@@ -40,6 +42,7 @@ export function SettingsModalController({
   workspaceSection,
   editorSection,
   appearanceSection,
+  snippetsSection,
   filesAssetsSection,
   hotkeysSection,
   coreFeaturesSection,
@@ -71,6 +74,7 @@ export function SettingsModalController({
       workspaceSection={workspaceSection}
       editorSection={editorSection}
       appearanceSection={appearanceSection}
+      snippetsSection={snippetsSection}
       filesAssetsSection={filesAssetsSection}
       hotkeysSection={hotkeysSection}
       coreFeaturesSection={coreFeaturesSection}

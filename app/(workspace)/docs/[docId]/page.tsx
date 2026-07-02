@@ -16,6 +16,8 @@ import { DocumentArchiveForm } from "@/components/document-archive-form";
 import { DocumentPublishControl } from "@/components/document-publish-control";
 import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { DocumentRestorePoints } from "@/components/document-restore-points";
+import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPanel";
+import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -45,6 +47,12 @@ import { listFriendsForUser } from "@/server/friends";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
 import { getUserExtensionSetting } from "@/server/user-settings";
+import {
+  getActiveSnippetCssForDocument,
+  getViewerStylingPreference,
+  listDocumentSnippetAttachmentsForOwner,
+} from "@/server/snippets";
+import { getCspNonce } from "@/lib/security/nonce";
 
 export default async function DocumentPage({
   params,
@@ -142,6 +150,25 @@ export default async function DocumentPage({
   };
   const markdown = document.markdown;
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
+  // Attached snippet CSS applies to the rendered read view and to the editor's
+  // Read mode (so owners can preview their styling). The global viewer opt-out
+  // only affects other authors' styling in the non-owner read view.
+  const attachedSnippetCss = await getActiveSnippetCssForDocument(document.id);
+  const cspNonce = attachedSnippetCss ? await getCspNonce() : undefined;
+  const applyStyling = document.access.canEdit
+    ? true
+    : await getViewerStylingPreference(session.user.id);
+  const readViewSnippetCss = applyStyling ? attachedSnippetCss : "";
+  const editorSnippetCss = document.access.canEdit ? attachedSnippetCss : "";
+
+  const snippetAttachments =
+    document.access.role === "owner"
+      ? await listDocumentSnippetAttachmentsForOwner(
+          session.user.id,
+          document.id,
+        )
+      : null;
+
   const collabRole = document.access.canEdit
     ? document.access.role === "owner"
       ? "owner"
@@ -210,6 +237,7 @@ export default async function DocumentPage({
             activeShareLink={activeShareLink}
             versions={versions}
             privateEmbeddedAssets={privateEmbeddedAssets}
+            snippetAttachments={snippetAttachments}
           />
           ) : undefined
         }
@@ -227,6 +255,8 @@ export default async function DocumentPage({
             calendarEnabled={calendarEnabled}
             calendarWeekStartsOn={calendarWeekStartsOn}
             calendarVisibility={calendarVisibility}
+            snippetCss={editorSnippetCss}
+            snippetNonce={cspNonce}
             collaboration={
               collabToken && collabUrl
                 ? {
@@ -248,12 +278,18 @@ export default async function DocumentPage({
                 {document.title}
               </h1>
             </div>
-            <MarkdownDocument
-              markdown={markdown}
-              wikiLinks={wikiLinks}
-              assetLinks={assetLinks}
+            <DocumentStyling
               documentId={document.id}
-            />
+              snippetCss={readViewSnippetCss}
+              nonce={cspNonce}
+            >
+              <MarkdownDocument
+                markdown={markdown}
+                wikiLinks={wikiLinks}
+                assetLinks={assetLinks}
+                documentId={document.id}
+              />
+            </DocumentStyling>
           </article>
         )}
       </div>
@@ -278,6 +314,9 @@ type DocumentContextPanelProps = {
   activeShareLink: Awaited<ReturnType<typeof getActiveDocumentShareLinkForUser>>;
   versions: Awaited<ReturnType<typeof listDocumentVersionsForUser>>;
   privateEmbeddedAssets: Awaited<ReturnType<typeof listPrivateEmbeddedAssetsForPublish>>;
+  snippetAttachments: Awaited<
+    ReturnType<typeof listDocumentSnippetAttachmentsForOwner>
+  >;
 };
 
 function DocumentContextPanel({
@@ -295,6 +334,7 @@ function DocumentContextPanel({
   activeShareLink,
   versions,
   privateEmbeddedAssets,
+  snippetAttachments,
 }: DocumentContextPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto px-3 py-3 text-sm">
@@ -385,6 +425,16 @@ function DocumentContextPanel({
               </p>
             )}
           </div>
+        </section>
+      ) : null}
+
+      {snippetAttachments ? (
+        <section className="border-b border-border/70 py-3">
+          <DocumentSnippetsPanel
+            documentId={documentId}
+            initialAttached={snippetAttachments.attached}
+            initialAvailable={snippetAttachments.available}
+          />
         </section>
       ) : null}
 

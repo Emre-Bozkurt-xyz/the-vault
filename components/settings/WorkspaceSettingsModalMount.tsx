@@ -12,6 +12,7 @@ import {
 } from "@/components/settings/PreferenceSettingsSections";
 import { buildPreferences } from "@/lib/settings/preferences";
 import { SettingsModalController } from "@/components/settings/SettingsModalController";
+import { SnippetsSettingsSection } from "@/components/settings/SnippetsSettingsSection";
 import {
   getLocalExtensionIds,
   localBuiltInExtensions,
@@ -21,6 +22,10 @@ import {
   listUserExtensionSettings,
   listUserSettings,
 } from "@/server/user-settings";
+import {
+  getViewerStylingPreference,
+  listSnippetsForUser,
+} from "@/server/snippets";
 
 type WorkspaceSettingsModalMountProps = {
   profile: {
@@ -35,15 +40,22 @@ type WorkspaceSettingsModalMountProps = {
 export async function WorkspaceSettingsModalMount({
   profile,
 }: WorkspaceSettingsModalMountProps) {
-  const [connectedProviders, userExtensionSettings, userSettings] =
-    await Promise.all([
-      listConnectedAuthProviders(),
-      listUserExtensionSettings({
-        userId: profile.id,
-        allowedExtensionIds: getLocalExtensionIds(),
-      }),
-      listUserSettings({ userId: profile.id }),
-    ]);
+  const [
+    connectedProviders,
+    userExtensionSettings,
+    userSettings,
+    snippetList,
+    applyAuthorStyling,
+  ] = await Promise.all([
+    listConnectedAuthProviders(),
+    listUserExtensionSettings({
+      userId: profile.id,
+      allowedExtensionIds: getLocalExtensionIds(),
+    }),
+    listUserSettings({ userId: profile.id }),
+    listSnippetsForUser(profile.id),
+    getViewerStylingPreference(profile.id),
+  ]);
   const preferences = buildPreferences(userSettings);
 
   return (
@@ -65,6 +77,12 @@ export async function WorkspaceSettingsModalMount({
       editorSection={<EditorSettingsSection preferences={preferences.editor} />}
       appearanceSection={
         <AppearanceSettingsSection preferences={preferences.appearance} />
+      }
+      snippetsSection={
+        <SnippetsSettingsSection
+          initialSnippets={snippetList}
+          initialApplyAuthorStyling={applyAuthorStyling}
+        />
       }
       filesAssetsSection={
         <FilesAssetsSettingsSection preferences={preferences.filesAssets} />

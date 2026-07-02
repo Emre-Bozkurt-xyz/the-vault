@@ -1,0 +1,16 @@
+/* Base layer: global element resets and body background. App-internal. */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background-image: var(--app-bg);
+    background-attachment: fixed;
+    background-size: cover;
+  }
+  html {
+    @apply font-sans;
+  }
+}

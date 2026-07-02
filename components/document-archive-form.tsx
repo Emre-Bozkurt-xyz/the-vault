@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { archiveDocumentAction } from "@/server/documents";
 import { Button } from "@/components/ui/button";
@@ -15,22 +16,23 @@ import {
 import { dispatchWorkspaceDocumentRemoved } from "@/components/workspace/workspace-events";
 
 export function DocumentArchiveForm({ documentId }: { documentId: string }) {
+  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   function archive() {
-    setError(null);
-    startTransition(async () => {
-      const result = await archiveDocumentAction(documentId);
+    setConfirming(false);
+    // Navigate away from (and close) this document's tab BEFORE the soft delete
+    // runs. The server action revalidates this route on completion, which would
+    // otherwise flash the archived doc's notFound state; switching to a nearby
+    // tab first keeps that off-screen. The removal event drives the tab switch
+    // (WorkspaceTabBar) and the sidebar/Bin update (WorkspaceChrome).
+    dispatchWorkspaceDocumentRemoved({ id: documentId });
 
-      if (result.ok) {
-        setConfirming(false);
-        // Closes the document's tab and removes it from the sidebar; no
-        // navigation/redirect is needed here.
-        dispatchWorkspaceDocumentRemoved({ id: documentId });
-      } else {
-        setError(result.message);
+    void archiveDocumentAction(documentId).then((result) => {
+      if (!result.ok) {
+        // The optimistic removal already happened; resync from the server so the
+        // still-active document reappears in the file tree.
+        router.refresh();
       }
     });
   }
@@ -42,10 +44,7 @@ export function DocumentArchiveForm({ documentId }: { documentId: string }) {
         variant="destructive"
         size="sm"
         className="mt-3 w-full"
-        onClick={() => {
-          setError(null);
-          setConfirming(true);
-        }}
+        onClick={() => setConfirming(true)}
       >
         Archive document
       </Button>
@@ -53,7 +52,7 @@ export function DocumentArchiveForm({ documentId }: { documentId: string }) {
       <Dialog
         open={confirming}
         onOpenChange={(open) => {
-          if (!open && !isPending) {
+          if (!open) {
             setConfirming(false);
           }
         }}
@@ -66,25 +65,16 @@ export function DocumentArchiveForm({ documentId }: { documentId: string }) {
               Files panel until it is automatically deleted.
             </DialogDescription>
           </DialogHeader>
-          {error ? (
-            <p className="text-sm text-destructive">{error}</p>
-          ) : null}
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
               onClick={() => setConfirming(false)}
-              disabled={isPending}
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={archive}
-              disabled={isPending}
-            >
-              {isPending ? "Archiving…" : "Move to Bin"}
+            <Button type="button" variant="destructive" onClick={archive}>
+              Move to Bin
             </Button>
           </DialogFooter>
         </DialogContent>

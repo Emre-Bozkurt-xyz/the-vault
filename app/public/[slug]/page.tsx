@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
+import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createMarkdownExcerpt } from "@/lib/markdown";
@@ -14,6 +15,11 @@ import {
 } from "@/server/documents";
 import { recordContentView } from "@/server/content-interactions";
 import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
+import {
+  getActiveSnippetCssForDocument,
+  getViewerStylingPreference,
+} from "@/server/snippets";
+import { getCspNonce } from "@/lib/security/nonce";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { getPublicStickerItems } from "@/server/sticker-state";
 import { getPublicCalendarStates } from "@/server/calendar-state";
@@ -107,6 +113,14 @@ export default async function PublicDocumentPage({
   const ownerHandle = document.ownerUsername ? `@${document.ownerUsername}` : null;
   const ownerInitial = ownerName.trim().charAt(0).toUpperCase() || "V";
 
+  const [applyStyling, nonce] = await Promise.all([
+    getViewerStylingPreference(viewer.userId ?? null),
+    getCspNonce(),
+  ]);
+  const snippetCss = applyStyling
+    ? await getActiveSnippetCssForDocument(document.id)
+    : "";
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen w-full max-w-4xl px-2 py-8 sm:px-6 sm:py-12">
@@ -148,14 +162,21 @@ export default async function PublicDocumentPage({
           />
           <div className="mt-7 border-t border-border/50 pt-5 sm:mt-8 sm:pt-7">
             <PublicStickerDisplay items={stickerItems}>
-              <MarkdownDocument
-                markdown={document.markdown}
-                className="vault-public-markdown"
-                wikiLinks={wikiLinks}
-                assetLinks={assetLinks}
+              <DocumentStyling
                 documentId={document.id}
-                calendarStates={calendarStates}
-              />
+                snippetCss={snippetCss}
+                nonce={nonce}
+                authorLabel={ownerHandle ?? ownerName}
+              >
+                <MarkdownDocument
+                  markdown={document.markdown}
+                  className="vault-public-markdown"
+                  wikiLinks={wikiLinks}
+                  assetLinks={assetLinks}
+                  documentId={document.id}
+                  calendarStates={calendarStates}
+                />
+              </DocumentStyling>
             </PublicStickerDisplay>
           </div>
         </article>
