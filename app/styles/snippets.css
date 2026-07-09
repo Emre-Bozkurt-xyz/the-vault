@@ -4,14 +4,20 @@
    [data-vault-snippet-scope]; the containment below traps any snippet layout,
    painting, positioning, z-index, filter, or transform inside the document
    body so it can never affect app chrome, other tabs, or sibling documents.
-   Without snippets the wrapper is inert (no containment cost). */
+   Without snippets the wrapper is inert (no containment cost).
+
+   The `--no-containment` variant (the live editor) keeps the scope + injected
+   <style> but opts out of containment, since `contain`/`isolation` on an
+   ancestor of CodeMirror breaks its coordinate math and clips floating UI. */
 
 @layer components {
   .vault-document-canvas {
     position: relative;
   }
 
-  .vault-document-canvas[data-vault-snippet-scope] {
+  .vault-document-canvas[data-vault-snippet-scope]:not(
+      .vault-document-canvas--no-containment
+    ) {
     contain: layout paint style;
     isolation: isolate;
   }

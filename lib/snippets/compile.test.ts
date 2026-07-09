@@ -121,6 +121,21 @@ describe("compileSnippet — properties", () => {
     );
   });
 
+  it("passes through a lucide --callout-icon but drops a raw <svg> value", () => {
+    // The lucide-<name> form is a safe bare identifier and must survive so
+    // snippet authors can swap callout icons (resolved client-side).
+    expect(
+      compileSnippet('.callout[data-callout="defence"] { --callout-icon: lucide-shield }')
+        .css,
+    ).toContain("--callout-icon: lucide-shield");
+    // Obsidian also accepts a raw <svg> string; our `<`/`>` ban must drop it.
+    const svgAttempt = compileSnippet(
+      ".callout { --callout-icon: '<svg onload=alert(1)></svg>' }",
+    );
+    expect(svgAttempt.css).not.toContain("<svg");
+    expect(svgAttempt.css).not.toContain("--callout-icon");
+  });
+
   it("preserves !important", () => {
     expect(compileSnippet(".x { color: red !important }").css).toContain(
       "!important",

@@ -33,6 +33,7 @@ import {
   type AssetEmbedResolutionMap,
 } from "@/lib/asset-embeds";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { splitCalendarSegments } from "@/lib/calendar";
 import type { CalendarState } from "@/lib/extensions/catalog";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
@@ -537,13 +538,9 @@ function Callout({
   const Icon = definition.icon;
   const header = (
     <div className="callout-title">
-      <span
-        className="callout-icon"
-        data-callout-icon={definition.iconName}
-        aria-hidden="true"
-      >
+      <CalloutIcon fallbackIconName={definition.iconName}>
         <Icon className="size-5" />
-      </span>
+      </CalloutIcon>
       <span className="callout-title-inner">{title || definition.title}</span>
     </div>
   );

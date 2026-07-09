@@ -61,6 +61,14 @@ Container `.callout`, with a resolved-type hook
 `.callout-title-inner`, `.callout-content`, `.callout-summary`. The raw input
 type is also exposed as `[data-callout="<input>"]`.
 
+Callout CSS variables are part of the contract: `--callout-color` (an **RGB
+triple**, consumed via `rgb()/rgba()`) and `--callout-icon` (a `lucide-<id>`
+value). `--callout-icon` is resolved by the client component
+`components/markdown/CalloutIcon.tsx`, which reads the computed variable and
+renders the named Lucide icon via `lucide-react/dynamic`; the built-in icon is
+server-rendered as the fallback. Raw `<svg>` values cannot reach this path (the
+snippet compiler bans `<`/`>`), so only the `lucide-<id>` form is supported.
+
 ## Asset embeds
 
 `.vault-asset-embed` with modifiers `--image` / `--file` / `--missing`;

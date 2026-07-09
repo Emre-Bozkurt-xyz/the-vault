@@ -18,6 +18,17 @@ type DocumentCanvasProps = {
   snippetCss?: string | null;
   /** CSP nonce for the injected <style> element (from middleware). */
   nonce?: string;
+  /**
+   * Skip the layout/paint/style containment (and stacking isolation) that the
+   * canvas normally applies when snippets are active. Used for the live editor,
+   * where `contain`/`isolation` on an ancestor of CodeMirror would break its
+   * coordinate math (`posAtCoords`) and clip floating tooltips/inspectors. The
+   * scope attribute + injected <style> are unaffected, so snippets still apply;
+   * only the paint-isolation belt-and-suspenders is dropped. Safe here because
+   * the compiler already strips `position: fixed/sticky` and scope-prefixes
+   * every selector, and this surface only shows the author their own CSS.
+   */
+  disableContainment?: boolean;
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
@@ -36,6 +47,7 @@ export function DocumentCanvas({
   documentId,
   snippetCss,
   nonce,
+  disableContainment = false,
   className,
   style,
   children,
@@ -52,7 +64,11 @@ export function DocumentCanvas({
 
   return (
     <div
-      className={cn("vault-document-canvas", className)}
+      className={cn(
+        "vault-document-canvas",
+        disableContainment && "vault-document-canvas--no-containment",
+        className,
+      )}
       {...(scopeActive
         ? { [snippetScopeAttribute]: documentId as string }
         : {})}

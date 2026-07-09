@@ -1396,7 +1396,12 @@ export function MarkdownEditor({
             )}
           >
             {editorMode !== "read" ? (
-              <div>
+              <DocumentCanvas
+                documentId={documentId}
+                snippetCss={snippetCss || null}
+                nonce={snippetNonce}
+                disableContainment
+              >
                 <CodeMirror
                   key={`${collaborationKey}:${isCollaborative ? "collab" : "local"}`}
                   value={
@@ -1426,7 +1431,7 @@ export function MarkdownEditor({
                   }}
                   theme="none"
                 />
-              </div>
+              </DocumentCanvas>
             ) : null}
             {editorMode === "read" ? (
               <div className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8">
