@@ -96,7 +96,8 @@ prefix content may introduce; everything else is stripped by
 ## Not part of the contract (internal — do not rely on)
 
 - App chrome / layout: `.vault-doc-*` (preview cards), workspace shell classes,
-  any Tailwind utility class.
+  the document outline (`.vault-outline*`, `.vault-reading-frame`,
+  `.vault-reading-content`), any Tailwind utility class.
 - Editor internals: `.vault-cm-*`, `.vault-markdown-editor*`, anything under
   `.cm-*`.
 - Extension widgets: `.vault-calendar*`, sticker overlay classes.

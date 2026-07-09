@@ -17,6 +17,7 @@ import { DocumentPublishControl } from "@/components/document-publish-control";
 import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { DocumentRestorePoints } from "@/components/document-restore-points";
 import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPanel";
+import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
@@ -278,18 +279,20 @@ export default async function DocumentPage({
                 {document.title}
               </h1>
             </div>
-            <DocumentStyling
-              documentId={document.id}
-              snippetCss={readViewSnippetCss}
-              nonce={cspNonce}
-            >
-              <MarkdownDocument
-                markdown={markdown}
-                wikiLinks={wikiLinks}
-                assetLinks={assetLinks}
+            <DocumentReadingFrame markdown={markdown}>
+              <DocumentStyling
                 documentId={document.id}
-              />
-            </DocumentStyling>
+                snippetCss={readViewSnippetCss}
+                nonce={cspNonce}
+              >
+                <MarkdownDocument
+                  markdown={markdown}
+                  wikiLinks={wikiLinks}
+                  assetLinks={assetLinks}
+                  documentId={document.id}
+                />
+              </DocumentStyling>
+            </DocumentReadingFrame>
           </article>
         )}
       </div>

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
+import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -167,17 +168,19 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
             </p>
           ) : null}
           <div className="mt-8 border-t border-border/50 pt-7">
-            <DocumentStyling
-              documentId={document.id}
-              snippetCss={snippetCss}
-              nonce={nonce}
-            >
-              <MarkdownDocument
-                markdown={document.markdown}
-                wikiLinks={wikiLinks}
-                assetLinks={assetLinks}
-              />
-            </DocumentStyling>
+            <DocumentReadingFrame markdown={document.markdown}>
+              <DocumentStyling
+                documentId={document.id}
+                snippetCss={snippetCss}
+                nonce={nonce}
+              >
+                <MarkdownDocument
+                  markdown={document.markdown}
+                  wikiLinks={wikiLinks}
+                  assetLinks={assetLinks}
+                />
+              </DocumentStyling>
+            </DocumentReadingFrame>
           </div>
         </article>
       </div>

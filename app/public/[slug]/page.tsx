@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
+import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -161,23 +162,25 @@ export default async function PublicDocumentPage({
             className="mt-5"
           />
           <div className="mt-7 border-t border-border/50 pt-5 sm:mt-8 sm:pt-7">
-            <PublicStickerDisplay items={stickerItems}>
-              <DocumentStyling
-                documentId={document.id}
-                snippetCss={snippetCss}
-                nonce={nonce}
-                authorLabel={ownerHandle ?? ownerName}
-              >
-                <MarkdownDocument
-                  markdown={document.markdown}
-                  className="vault-public-markdown"
-                  wikiLinks={wikiLinks}
-                  assetLinks={assetLinks}
+            <DocumentReadingFrame markdown={document.markdown}>
+              <PublicStickerDisplay items={stickerItems}>
+                <DocumentStyling
                   documentId={document.id}
-                  calendarStates={calendarStates}
-                />
-              </DocumentStyling>
-            </PublicStickerDisplay>
+                  snippetCss={snippetCss}
+                  nonce={nonce}
+                  authorLabel={ownerHandle ?? ownerName}
+                >
+                  <MarkdownDocument
+                    markdown={document.markdown}
+                    className="vault-public-markdown"
+                    wikiLinks={wikiLinks}
+                    assetLinks={assetLinks}
+                    documentId={document.id}
+                    calendarStates={calendarStates}
+                  />
+                </DocumentStyling>
+              </PublicStickerDisplay>
+            </DocumentReadingFrame>
           </div>
         </article>
       </div>

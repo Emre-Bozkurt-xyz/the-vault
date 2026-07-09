@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
+import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -126,24 +127,26 @@ export default async function WorkspacePublicDocumentPage({
         </header>
 
         <div className="border-t border-border/55 pt-6">
-          <PublicStickerDisplay items={stickerItems}>
-            <DocumentStyling
-              documentId={document.id}
-              snippetCss={snippetCss}
-              nonce={nonce}
-              authorLabel={ownerHandle ?? ownerName}
-            >
-            <MarkdownDocument
-              markdown={document.markdown}
-              className="vault-public-markdown"
-              wikiLinks={wikiLinks}
-              assetLinks={assetLinks}
-              contained={false}
-              documentId={document.id}
-              calendarStates={calendarStates}
-            />
-            </DocumentStyling>
-          </PublicStickerDisplay>
+          <DocumentReadingFrame markdown={document.markdown}>
+            <PublicStickerDisplay items={stickerItems}>
+              <DocumentStyling
+                documentId={document.id}
+                snippetCss={snippetCss}
+                nonce={nonce}
+                authorLabel={ownerHandle ?? ownerName}
+              >
+              <MarkdownDocument
+                markdown={document.markdown}
+                className="vault-public-markdown"
+                wikiLinks={wikiLinks}
+                assetLinks={assetLinks}
+                contained={false}
+                documentId={document.id}
+                calendarStates={calendarStates}
+              />
+              </DocumentStyling>
+            </PublicStickerDisplay>
+          </DocumentReadingFrame>
         </div>
       </article>
     </>

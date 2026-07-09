@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { BookOpen, Home } from "lucide-react";
 
 import { auth } from "@/auth";
+import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
@@ -155,11 +156,13 @@ function GuideContent({
       </header>
 
       <div className="mt-10">
-        <MarkdownDocument
-          markdown={doc.markdown}
-          className="max-w-4xl"
-          wikiLinks={wikiLinks}
-        />
+        <DocumentReadingFrame markdown={doc.markdown} stickyTop="4.5rem">
+          <MarkdownDocument
+            markdown={doc.markdown}
+            className="max-w-4xl"
+            wikiLinks={wikiLinks}
+          />
+        </DocumentReadingFrame>
       </div>
     </article>
   );

@@ -64,6 +64,7 @@ import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost
 import { StickerLayer } from "@/components/extensions/StickerLayer";
 import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
+import { EditorOutline } from "@/components/markdown/EditorOutline";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   createLiveBlockDecorationExtension,
@@ -251,6 +252,8 @@ export function MarkdownEditor({
   const [assetWidthDraft, setAssetWidthDraft] = useState("");
   const [editorMountMarkdown, setEditorMountMarkdown] = useState(markdown);
   const viewRef = useRef<EditorView | null>(null);
+  const readPreviewRef = useRef<HTMLDivElement | null>(null);
+  const [viewEpoch, setViewEpoch] = useState(0);
   const assetInputRef = useRef<HTMLInputElement | null>(null);
   const assetUploadHandlerRef = useRef<
     ((file: File, view: EditorView | null) => Promise<void>) | null
@@ -1274,7 +1277,14 @@ export function MarkdownEditor({
       onSubmit={handleSubmit}
       className="vault-editor-canvas min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10"
     >
-      <div className="vault-editor-column mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5">
+      <div className="vault-editor-column relative mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5">
+        <EditorOutline
+          markdown={markdownValue}
+          mode={editorMode}
+          viewRef={viewRef}
+          viewEpoch={viewEpoch}
+          previewRef={readPreviewRef}
+        />
         <div className="vault-editor-toolbar-row flex items-center gap-3">
           {editorMode !== "read" ? (
             <div className="min-w-0 flex-1">
@@ -1418,6 +1428,7 @@ export function MarkdownEditor({
                   }}
                   onCreateEditor={(view) => {
                     viewRef.current = view;
+                    setViewEpoch((epoch) => epoch + 1);
                     setSelectedAssetEmbed(
                       findAssetEmbedAtSelection(view, assetLinkMap),
                     );
@@ -1434,7 +1445,10 @@ export function MarkdownEditor({
               </DocumentCanvas>
             ) : null}
             {editorMode === "read" ? (
-              <div className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8">
+              <div
+                ref={readPreviewRef}
+                className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8"
+              >
                 <DocumentCanvas
                   documentId={documentId}
                   snippetCss={snippetCss || null}
