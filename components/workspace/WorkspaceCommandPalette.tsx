@@ -32,16 +32,19 @@ import {
   Slash,
   Sticker,
   UserRound,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
 
+import { rankCommands } from "@/components/workspace/command-ranking";
 import { useVaultTheme } from "@/components/theme-provider";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import { useGlobalShortcuts } from "@/components/shortcuts/KeybindingsProvider";
 import {
   useActiveDocumentCommand,
   useRecentWorkspacePages,
+  useWorkspaceIsAdmin,
 } from "@/components/workspace/WorkspaceChrome";
 import type {
   WorkspacePageDescriptor,
@@ -104,12 +107,17 @@ export function WorkspaceCommandPalette() {
   const router = useRouter();
   const { setTheme } = useVaultTheme();
   const activeDocument = useActiveDocumentCommand();
+  const isAdmin = useWorkspaceIsAdmin();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CommandSearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // Only keyboard-driven selection changes scroll the list; mouse hover also
+  // moves the selection, and scrolling on hover would yank the list around.
+  const keyboardNavRef = useRef(false);
   const trimmedQuery = query.trim();
 
   // `/` flips the bar from search into command mode; the text after the slash
@@ -173,6 +181,15 @@ export function WorkspaceCommandPalette() {
         run: navigate("/docs"),
       },
       {
+        id: "go-friends",
+        slug: "friends",
+        label: "Open friends",
+        group: "Go to",
+        keywords: "requests people social contacts",
+        icon: Users,
+        run: navigate("/dashboard/friends"),
+      },
+      {
         id: "open-settings",
         slug: "settings",
         label: "Open settings",
@@ -200,6 +217,18 @@ export function WorkspaceCommandPalette() {
         run: () => openWorkspaceSettings("account"),
       },
     ];
+
+    if (isAdmin) {
+      list.push({
+        id: "go-admin",
+        slug: "admin",
+        label: "Open admin",
+        group: "Go to",
+        keywords: "moderation users manage dashboard tags",
+        icon: ShieldCheck,
+        run: navigate("/dashboard/admin"),
+      });
+    }
 
     const themes: { id: Parameters<typeof setTheme>[0]; label: string }[] = [
       { id: "dark", label: "Dark" },
@@ -363,7 +392,7 @@ export function WorkspaceCommandPalette() {
     });
 
     return list;
-  }, [router, setTheme, activeDocument]);
+  }, [router, setTheme, activeDocument, isAdmin]);
 
   const recentPages = useRecentWorkspacePages();
 
@@ -374,21 +403,15 @@ export function WorkspaceCommandPalette() {
       ? "search"
       : "recent";
 
+  // Empty command term (just `/`) → all commands in browse order (rendered
+  // grouped). A query → relevance-ranked flat list (rendered without groups, so
+  // section order never buries the best match).
   const filteredCommands = useMemo(() => {
     if (!isCommandMode) {
       return [];
     }
 
-    if (!commandTerm) {
-      return commands;
-    }
-
-    const terms = commandTerm.split(/\s+/).filter(Boolean);
-    return commands.filter((command) => {
-      const haystack =
-        `${command.slug} ${command.label} ${command.group} ${command.keywords}`.toLowerCase();
-      return terms.every((term) => haystack.includes(term));
-    });
+    return rankCommands(commands, commandTerm);
   }, [isCommandMode, commandTerm, commands]);
 
   const groupedResults = useMemo(() => groupResults(results), [results]);
@@ -459,8 +482,22 @@ export function WorkspaceCommandPalette() {
   }, [open, mode, trimmedQuery]);
 
   useEffect(() => {
+    // Snap back so the reset selection is visible even if the list was scrolled.
+    keyboardNavRef.current = true;
     setSelectedIndex(0);
-  }, [mode, commandTerm, results, recentPages]);
+  }, [mode, trimmedQuery, results, recentPages]);
+
+  useEffect(() => {
+    if (!keyboardNavRef.current) {
+      return;
+    }
+
+    keyboardNavRef.current = false;
+    const selected = listRef.current?.querySelector(
+      '[data-selected="true"], [aria-selected="true"]',
+    );
+    selected?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex, mode, filteredCommands, results, recentPages]);
 
   const label = useMemo(() => {
     if (mode === "command") {
@@ -491,6 +528,7 @@ export function WorkspaceCommandPalette() {
   function onInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      keyboardNavRef.current = true;
       setSelectedIndex((current) =>
         itemCount === 0 ? 0 : (current + 1) % itemCount,
       );
@@ -499,6 +537,7 @@ export function WorkspaceCommandPalette() {
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      keyboardNavRef.current = true;
       setSelectedIndex((current) =>
         itemCount === 0 ? 0 : (current - 1 + itemCount) % itemCount,
       );
@@ -553,14 +592,33 @@ export function WorkspaceCommandPalette() {
             <X className="size-4" />
           </button>
         </div>
-        <div className="max-h-[min(32rem,65vh)] overflow-y-auto p-2">
+        <div ref={listRef} className="max-h-[min(32rem,65vh)] overflow-y-auto p-2">
           <p className="px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {loading && mode === "search" ? "Searching" : label}
           </p>
           {mode === "command" ? (
-            <div className="grid gap-3">
-              {groupedCommands.length > 0 ? (
-                groupedCommands.map((group) => (
+            filteredCommands.length === 0 ? (
+              <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                No matching command.
+              </p>
+            ) : commandTerm ? (
+              // Active query → flat, relevance-ranked list (no section headers,
+              // so the best match is always at the top).
+              <div className="grid gap-1">
+                {filteredCommands.map((command, index) => (
+                  <CommandActionRow
+                    key={command.id}
+                    command={command}
+                    selected={index === selectedIndex}
+                    onFocus={() => setSelectedIndex(index)}
+                    onRun={() => runCommand(command)}
+                  />
+                ))}
+              </div>
+            ) : (
+              // Empty query → grouped browse view.
+              <div className="grid gap-3">
+                {groupedCommands.map((group) => (
                   <section key={group.label} className="grid gap-1">
                     <p className="px-2 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
                       {group.label}
@@ -575,13 +633,9 @@ export function WorkspaceCommandPalette() {
                       />
                     ))}
                   </section>
-                ))
-              ) : (
-                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-                  No matching command.
-                </p>
-              )}
-            </div>
+                ))}
+              </div>
+            )
           ) : mode === "recent" ? (
             <div className="grid gap-1">
               {recentPages.length > 0 ? (

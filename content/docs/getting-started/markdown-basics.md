@@ -10,6 +10,16 @@ public: true
 
 Vault stores documents as Markdown. The editor adds buttons and live preview on top, but the saved content is plain Markdown text.
 
+## Slash commands
+
+Type `/` at the start of a line (or after a space) to open the slash command menu, then keep typing to filter it. Press **Enter** or **Tab** to insert the highlighted block; the `/query` text you typed is replaced by the block.
+
+The menu inserts the same blocks as the toolbar — headings, bullet/numbered/task lists, quotes, code blocks, tables, callouts, math blocks, dividers, foldable regions, image uploads, asset groups, and wiki links — plus any blocks added by your enabled extensions (for example, a calendar). Enabled extensions appear automatically.
+
+The slash menu never triggers inside a code block, inside inline `code`, in the document's Properties/frontmatter, or in the middle of a word — so `either/or` and `https://` in ordinary text are left alone.
+
+To turn the menu off, open **Settings → Editor → Slash command menu**.
+
 ## Headings
 
 Use one or more `#` characters at the start of a line.

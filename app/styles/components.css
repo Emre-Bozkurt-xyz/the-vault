@@ -2534,6 +2534,62 @@
   .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon {
     color: var(--muted-foreground);
     opacity: 0.75;
+    box-sizing: content-box;
+    min-width: 1.4em;
+    padding-right: 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+
+  /* Slash command glyphs (see components/markdown/slash-commands.ts icon types). */
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-heading::after {
+    content: "H";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-bullet::after {
+    content: "•";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-number::after {
+    content: "1.";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-task::after {
+    content: "✓";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-quote::after {
+    content: "❝";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-code::after {
+    content: "{}";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-table::after {
+    content: "▦";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-callout::after {
+    content: "!";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-math::after {
+    content: "∑";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-region::after {
+    content: "▸";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-divider::after {
+    content: "—";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-image::after {
+    content: "▨";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-gallery::after {
+    content: "⊞";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-link::after {
+    content: "[[";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-block::after {
+    content: "▪";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-extension::after {
+    content: "✦";
   }
 
   .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionLabel {

@@ -465,10 +465,35 @@ affect app chrome, other pages, or the network.
 
 ---
 
+## Phase 18 - Editor Slash Commands
+
+Reference plan: `docs/18_EDITOR_SLASH_COMMANDS_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Write editor slash commands plan | Two-surface rule: markdown insertions → editor slash menu, non-markdown operations → workspace command bar; calendar is dual-surface, stickers stay bar-only |
+| [x] | Slice 1 — core slash completion source | Done 2026-07-11: `components/markdown/slash-commands.ts` registered as a 4th `autocompletion` override in `MarkdownEditor`; 15 core items reuse `applyFormat`/`insertBlock`; triggers only at line start/after whitespace, excluded in frontmatter/fenced/inline code; uses CodeMirror's native filter (token+keywords in `label`, human name in `displayLabel`, `validFor`) so Enter/Tab accept via the existing `acceptCompletion` binding; `apply` deletes the `/query` then inserts. 10-test vitest (`slash-commands.test.ts`) covers the exit criteria |
+| [x] | Slice 2 — extension slash contributions | Done 2026-07-11: `SlashCommandContribution` type + `markdown.slashCommands` manifest field (markdown-only, no `MarkdownFormat` coupling; factory `insert.markdown` for per-insert ids); registry `getSlashCommandContributions()`; `vault.calendar` declares its slash item in the catalog; editor builds enabled items from the registry filtered by a new `enabledExtensionIds` prop (client-side, since the `insert` factory can't cross the RSC boundary) and passes them to the source. Calendar now appears in the slash menu only when enabled; 3 added tests |
+| [x] | Ranking pass (both surfaces) | Done 2026-07-11: slash menu no longer sets a CodeMirror completion `section` (sections were ordered by array position, burying a fully typed `/calendar` under "Blocks"); ranking is now pure fuzzy score. Command palette command-mode gained `components/workspace/command-ranking.ts` (`rankCommands`: exact > token-prefix > word-boundary > substring > keyword tiers + whole-query prefix bonus) and renders a flat ranked list while querying, grouped browse only when empty. Tested (`command-ranking.test.ts`) |
+| [x] | Slice 3 — polish | Done 2026-07-11: `editor/defaults.slashMenu` toggle (Settings → Editor, default on) wired through `buildPreferences` → `slashMenuEnabled` editor prop → conditional source registration; tooltip glyph icons per item via CodeMirror `type` + `.cm-completionIcon-vault-*` CSS in `components.css`; `content/docs/getting-started/markdown-basics.md` gains a Slash commands section. No grouping (per decision). Deferred: none |
+| [x] | Command palette navigation commands | Done 2026-07-11: added Friends (all users) and Admin (gated on new `useWorkspaceIsAdmin` from `WorkspaceChrome`) navigation commands to `/` command mode. Decision (2026-07-11): app-section navigation lives behind `/` only — a brief experiment that also injected nav commands into plain-text content search was reverted because it conflated "find content" with "go to a section" (VS Code–style separation: `/` = commands/navigation, plain text = content search) |
+
+Exit criteria:
+
+```txt
+Typing "/" in an editable document opens a filtered insert menu at the cursor;
+picking an item replaces the "/query" text with the block; extension items
+appear only when the extension is enabled; literal slashes in prose and URLs
+never trigger the menu.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |
 |---|---|---:|---|
+| [x] | Command palette arrow keys didn't scroll the results container | Med | Fixed 2026-07-10: keyboard-driven selection now `scrollIntoView({ block: "nearest" })`s the selected row; mouse-hover selection intentionally never scrolls |
 | [ ] |  |  |  |
 
 ---
@@ -481,6 +506,7 @@ affect app chrome, other pages, or the network.
 | 2026-05-26 | Use Postgres | Reliable, self-hostable, strong data model |
 | 2026-05-26 | Use Drizzle | SQL-like, lightweight, good for showing DB skill |
 | 2026-05-26 | Delay Yjs until post-MVP | Avoid drowning in collaboration complexity |
+| 2026-07-11 | Command palette: `/` for commands/navigation, plain text for content search only | Injecting section-navigation commands into content search conflated "find content" with "go to a section" and confused testing; VS Code–style separation is clearer. Don't re-add nav commands to search mode |
 
 ---
 

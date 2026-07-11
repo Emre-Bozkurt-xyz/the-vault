@@ -260,6 +260,12 @@ export function EditorSettingsSection({
           onChange={(spellcheck) => update({ ...state, spellcheck })}
         />
       </SettingRow>
+      <SettingRow title="Slash command menu" description="Type / in the editor to insert blocks (headings, tables, callouts, and more).">
+        <ToggleControl
+          checked={state.slashMenu}
+          onChange={(slashMenu) => update({ ...state, slashMenu })}
+        />
+      </SettingRow>
       <SettingRow title="Autosave delay" description="Delay in milliseconds before a quiet editor saves.">
         <NumberControl
           value={state.autoSaveDelayMs}

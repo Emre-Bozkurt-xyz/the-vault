@@ -5,11 +5,17 @@ import type {
   LiveBlockInstance,
   LiveBlockSpec,
   MarkdownPreprocessor,
+  SlashCommandContribution,
   VaultExtension,
   VaultExtensionAgentAction,
   WorkspacePageContribution,
   WorkspacePanelContribution,
 } from "@/lib/extensions/types";
+
+export type SlashCommandContributionEntry = SlashCommandContribution & {
+  sourceExtensionId: string;
+  sourceExtensionName: string;
+};
 
 export type AgentActionEntry = {
   action: VaultExtensionAgentAction;
@@ -43,6 +49,7 @@ export type VaultExtensionRegistry = {
   getCommandContributions: () => Array<
     CommandContribution & { sourceExtensionId: string }
   >;
+  getSlashCommandContributions: () => SlashCommandContributionEntry[];
   getAgentActions: () => AgentActionEntry[];
   getAgentAction: (actionId: string) => AgentActionEntry | null;
 };
@@ -173,6 +180,15 @@ export function createVaultExtensionRegistry(
         (extension.workspace?.commands ?? []).map((contribution) => ({
           ...contribution,
           sourceExtensionId: extension.id,
+        })),
+      );
+    },
+    getSlashCommandContributions() {
+      return orderedExtensions.flatMap((extension) =>
+        (extension.markdown?.slashCommands ?? []).map((contribution) => ({
+          ...contribution,
+          sourceExtensionId: extension.id,
+          sourceExtensionName: extension.name,
         })),
       );
     },

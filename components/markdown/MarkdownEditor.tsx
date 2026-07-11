@@ -76,6 +76,10 @@ import {
   MarkdownToolbar,
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
+import {
+  createSlashCommandCompletionSource,
+  type ExtensionSlashCommand,
+} from "@/components/markdown/slash-commands";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
 import { dispatchWorkspaceDocumentChanged } from "@/components/workspace/workspace-events";
@@ -102,6 +106,7 @@ import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
 import type { CalendarWeekStart } from "@/lib/calendar";
+import { localExtensionRegistry } from "@/lib/extensions/catalog";
 import type { ExtensionStateVisibility } from "@/lib/extensions/types";
 import {
   formatTagInput,
@@ -140,6 +145,10 @@ type MarkdownEditorProps = {
   assetLinks?: AssetEmbedResolutionMap;
   stickersEnabled?: boolean;
   calendarEnabled?: boolean;
+  /** Ids of the user's enabled extensions, used to gate extension slash items. */
+  enabledExtensionIds?: string[];
+  /** Whether the in-editor `/` slash command menu is active (user preference). */
+  slashMenuEnabled?: boolean;
   calendarWeekStartsOn?: CalendarWeekStart;
   calendarVisibility?: ExtensionStateVisibility;
   /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
@@ -215,6 +224,8 @@ export function MarkdownEditor({
   assetLinks,
   stickersEnabled = false,
   calendarEnabled = false,
+  enabledExtensionIds,
+  slashMenuEnabled = true,
   calendarWeekStartsOn = 0,
   calendarVisibility = "private",
   snippetCss = "",
@@ -258,10 +269,33 @@ export function MarkdownEditor({
   const assetUploadHandlerRef = useRef<
     ((file: File, view: EditorView | null) => Promise<void>) | null
   >(null);
+  // `applyFormat` is defined below the extension memo, so the slash-command
+  // source reaches it through this ref rather than closing over it directly.
+  const applyFormatRef = useRef<((format: MarkdownFormat) => void) | null>(null);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
   );
+  // Slash items contributed by the user's enabled extensions. Keyed on a joined
+  // string (rebuilt inside) so a fresh `enabledExtensionIds` array reference
+  // doesn't churn this memo — and, downstream, reconfigure the whole editor.
+  const enabledExtensionKey = (enabledExtensionIds ?? []).join("|");
+  const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(() => {
+    const enabled = new Set(
+      enabledExtensionKey ? enabledExtensionKey.split("|") : [],
+    );
+    return localExtensionRegistry
+      .getSlashCommandContributions()
+      .filter((contribution) => enabled.has(contribution.sourceExtensionId))
+      .map((contribution) => ({
+        id: contribution.id,
+        label: contribution.label,
+        title: contribution.title,
+        section: contribution.section ?? contribution.sourceExtensionName,
+        keywords: contribution.keywords,
+        insert: contribution.insert,
+      }));
+  }, [enabledExtensionKey]);
   const { bindings: editorBindings, editorShortcutsEnabled } = useKeybindings();
   const wikiLinkMapStore = useMemo(
     () => createWikiLinkMapStore(wikiLinks ?? {}),
@@ -870,6 +904,15 @@ export function MarkdownEditor({
       baseExtensions.push(
         autocompletion({
           override: [
+            ...(slashMenuEnabled
+              ? [
+                  createSlashCommandCompletionSource({
+                    applyFormat: (format) => applyFormatRef.current?.(format),
+                    insertBlock,
+                    extensionCommands: extensionSlashCommands,
+                  }),
+                ]
+              : []),
             htmlCompletionSource,
             createWikiLinkCompletionSource(
               wikiLinkMapStore,
@@ -927,6 +970,8 @@ export function MarkdownEditor({
       shareLinkId,
       calendarWeekStartsOn,
       calendarVisibility,
+      extensionSlashCommands,
+      slashMenuEnabled,
     ],
   );
 
@@ -1100,6 +1145,7 @@ export function MarkdownEditor({
       toggleLinePrefix(view, prefix, format);
     }
   }, []);
+  applyFormatRef.current = applyFormat;
 
   // The `/insert-calendar` and `/insert-sticker` command palette actions reach
   // the active editor through the document command bus. Each is a no-op unless

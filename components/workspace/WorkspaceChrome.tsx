@@ -62,6 +62,7 @@ type WorkspaceChromeContextValue = {
   activeDocument: ActiveDocumentCommandContext | null;
   setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
   recentPages: WorkspacePageDescriptor[];
+  isAdmin: boolean;
 };
 
 const WorkspaceChromeContext =
@@ -78,6 +79,11 @@ export function useActiveDocumentCommand(): ActiveDocumentCommandContext | null 
 /** Recently opened workspace pages, most-recent first. Consumed by the palette. */
 export function useRecentWorkspacePages(): WorkspacePageDescriptor[] {
   return useContext(WorkspaceChromeContext)?.recentPages ?? [];
+}
+
+/** Whether the signed-in user is an admin. Gates admin-only palette commands. */
+export function useWorkspaceIsAdmin(): boolean {
+  return useContext(WorkspaceChromeContext)?.isAdmin ?? false;
 }
 
 export function WorkspaceChrome({
@@ -166,8 +172,9 @@ export function WorkspaceChrome({
       activeDocument,
       setActiveDocument,
       recentPages,
+      isAdmin,
     }),
-    [handleSetActivePage, upsertDocument, activeDocument, recentPages],
+    [handleSetActivePage, upsertDocument, activeDocument, recentPages, isAdmin],
   );
 
   return (

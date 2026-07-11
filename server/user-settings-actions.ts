@@ -100,6 +100,7 @@ export async function saveEditorSettingsAction(input: unknown) {
       readableLineLength: z.boolean(),
       autoSaveDelayMs: z.coerce.number().int().min(300).max(5000),
       spellcheck: z.boolean(),
+      slashMenu: z.boolean(),
     })
     .parse(input);
 

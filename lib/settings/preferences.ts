@@ -29,6 +29,8 @@ export type Preferences = {
     readableLineLength: boolean;
     autoSaveDelayMs: number;
     spellcheck: boolean;
+    /** Whether typing `/` opens the in-editor slash command menu. */
+    slashMenu: boolean;
   };
   filesAssets: {
     defaultImageLayout: "block" | "wrap" | "inline";
@@ -118,6 +120,7 @@ export function buildPreferences(rows: UserSettingRows): Preferences {
         900,
       ),
       spellcheck: readBoolean(get("editor", "defaults").spellcheck, true),
+      slashMenu: readBoolean(get("editor", "defaults").slashMenu, true),
     },
     filesAssets: {
       defaultImageLayout: readEnum(

@@ -47,7 +47,8 @@ import {
 import { listFriendsForUser } from "@/server/friends";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
-import { getUserExtensionSetting } from "@/server/user-settings";
+import { getUserExtensionSetting, getUserSetting } from "@/server/user-settings";
+import { buildPreferences } from "@/lib/settings/preferences";
 import {
   getActiveSnippetCssForDocument,
   getViewerStylingPreference,
@@ -94,6 +95,7 @@ export default async function DocumentPage({
     privateEmbeddedAssets,
     stickersExtSetting,
     calendarExtSetting,
+    editorSetting,
   ] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -131,9 +133,20 @@ export default async function DocumentPage({
       document.access.canEdit
         ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calendar" })
         : Promise.resolve(null),
+      document.access.canEdit
+        ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
+        : Promise.resolve(null),
     ]);
   const stickersEnabled = stickersExtSetting?.enabled ?? false;
   const calendarEnabled = calendarExtSetting?.enabled ?? false;
+  const slashMenuEnabled = buildPreferences(
+    editorSetting ? [editorSetting] : [],
+  ).editor.slashMenu;
+  // Enabled-extension ids gate extension-contributed editor slash commands.
+  const enabledExtensionIds = [
+    calendarEnabled ? "vault.calendar" : null,
+    stickersEnabled ? "vault.stickers" : null,
+  ].filter((id): id is string => id !== null);
   const calendarSettings = calendarSettingsSchema.safeParse(
     calendarExtSetting?.settings ?? {},
   );
@@ -254,6 +267,8 @@ export default async function DocumentPage({
             assetLinks={assetLinks}
             stickersEnabled={stickersEnabled}
             calendarEnabled={calendarEnabled}
+            enabledExtensionIds={enabledExtensionIds}
+            slashMenuEnabled={slashMenuEnabled}
             calendarWeekStartsOn={calendarWeekStartsOn}
             calendarVisibility={calendarVisibility}
             snippetCss={editorSnippetCss}

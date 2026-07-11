@@ -269,6 +269,33 @@ export type CompletionContribution = {
   source: CompletionSource;
 };
 
+/**
+ * An item an extension adds to the in-editor `/` slash menu. Kept deliberately
+ * markdown-only (no editor `MarkdownFormat` coupling): an item inserts a block
+ * of markdown, so `lib/extensions` stays independent of `components/markdown`.
+ * `markdown` may be a factory to allow per-insert dynamic content (e.g. a fresh
+ * calendar id), so the whole contribution stays client-importable and never
+ * needs to cross the RSC boundary as a prop.
+ */
+export type SlashCommandContribution = {
+  /** Globally unique, namespaced under the extension id. */
+  id: string;
+  /** The `/token` (without the slash) that filters/selects the item. */
+  label: string;
+  /** Human name shown in the menu, e.g. "Calendar". */
+  title: string;
+  /** Extra terms (besides label/title) used for fuzzy filtering. */
+  keywords?: string;
+  /** Tooltip section; defaults to the source extension's name. */
+  section?: string;
+  insert: {
+    /** Block markdown to insert; a factory runs per insertion. */
+    markdown: string | (() => string);
+    /** Cursor offset within the inserted text; omitted → cursor after the block. */
+    cursorOffset?: number;
+  };
+};
+
 export type ToolbarContribution = {
   id: string;
   label: string;
@@ -366,6 +393,7 @@ export type VaultExtension = {
     renderers?: MarkdownRendererContribution[];
     completions?: CompletionContribution[];
     toolbarItems?: ToolbarContribution[];
+    slashCommands?: SlashCommandContribution[];
   };
   documentState?: {
     schemas: ExtensionStateSchema[];

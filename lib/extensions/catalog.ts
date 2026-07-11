@@ -271,6 +271,18 @@ export const localBuiltInExtensions: VaultExtension[] = [
         },
       ],
     },
+    markdown: {
+      slashCommands: [
+        {
+          id: "vault.calendar.slash",
+          label: "calendar",
+          title: "Calendar",
+          keywords: "month tasks events reminder schedule",
+          // A factory so each insertion gets a fresh calendar id.
+          insert: { markdown: () => formatCalendarFence(generateCalendarId()) },
+        },
+      ],
+    },
     workspace: {
       commands: [
         {
