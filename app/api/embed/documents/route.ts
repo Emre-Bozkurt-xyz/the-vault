@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { resolveBearerToken } from "@/lib/embed-auth";
 import { resolveAccessToken } from "@/lib/mcp/oauth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isUserActiveById } from "@/server/authz";
+import { listEmbedDocumentsForUser } from "@/server/embed-documents";
 import {
   cloneDocumentIntoGroup,
   createGroupOwnedDocument,
@@ -38,6 +40,73 @@ const cloneSchema = z.object({
   groupId: z.string().uuid(),
   title: z.string().trim().min(1).max(200).optional(),
 });
+
+const listQuerySchema = z.object({
+  query: z.string().trim().max(200).optional(),
+  scope: z.enum(["owned", "shared", "all"]).default("all"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+/**
+ * Clone-picker source list (docs/DEN_EMBED_BRIDGE.md §4, contract revision
+ * 2026-07-27). Bearer is the **acting user's** OAuth token, not a service
+ * token — this returns what that user can see, so it is a user-delegated read
+ * exactly like `/api/me` and the metadata route.
+ *
+ * Group-owned documents are excluded by owner decision; see
+ * `listEmbedDocumentsForUser`.
+ */
+export async function GET(request: Request) {
+  const actingUser = await resolveBearerToken(request);
+
+  if (!actingUser) {
+    return NextResponse.json(
+      { error: "invalid_token", error_description: "Missing or invalid bearer token." },
+      { status: 401 },
+    );
+  }
+
+  if (!(await isUserActiveById(actingUser.userId))) {
+    return NextResponse.json({ documents: [] }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  const rateLimit = checkRateLimit(`embed-documents-list:${actingUser.userId}`, 60, 60_000);
+
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rateLimit.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
+
+  const url = new URL(request.url);
+  const parsed = listQuerySchema.safeParse({
+    query: url.searchParams.get("query") ?? undefined,
+    scope: url.searchParams.get("scope") ?? undefined,
+    limit: url.searchParams.get("limit") ?? undefined,
+  });
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  }
+
+  const documents = await listEmbedDocumentsForUser({
+    userId: actingUser.userId,
+    scope: parsed.data.scope,
+    query: parsed.data.query,
+    limit: parsed.data.limit,
+  });
+
+  return NextResponse.json(
+    { documents },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}
 
 export async function POST(request: Request) {
   const service = await resolveServiceBearerToken(request);

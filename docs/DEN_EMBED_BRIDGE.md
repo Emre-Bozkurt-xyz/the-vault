@@ -139,6 +139,7 @@ Origins: Den `den.ems-place.com`, Vault `vault.ems-place.com`, collab `NEXT_PUBL
 - `GET /api/embed/documents/:id/rendered` (bearer) → `{ html, assets }` (sanitized, permission-resolved, no shell).
 
 **C. Edit / portal / ownership**
+- `GET /api/embed/documents` (acting-user bearer) `?query=&scope=&limit=` → `{ documents: [{ id, title, folderPath, ownerName, visibility, updatedAt, snippet }] }` — clone-picker source list; excludes group-owned docs. **Added 2026-07-27**, see the contract-addition block below.
 - `POST /api/embed/editor-session` (bearer) `{ documentId }` → `{ embedUrl }` (short-lived single-use boot URL).
 - Route `GET /embed/editor/:docId?boot=…` → boots Live-mode editor + slim toolbar; `CSP: frame-ancestors https://den.ems-place.com`.
 - `POST /api/embed/groups` (service bearer) `{ name }` → `{ groupId }`.
@@ -178,6 +179,33 @@ Origins: Den `den.ems-place.com`, Vault `vault.ems-place.com`, collab `NEXT_PUBL
 > | 7 | Acting user can read `sourceDocumentId` | `404` |
 >
 > **Why check 6 exists** (the non-obvious one): the service can already *read* the user's documents with their consented token, so the read itself is nothing new. But cloning **re-exposes that content to other people** — every member of the destination group. Requiring the acting user to belong to that group keeps the clone inside a circle they are already part of, and stops a service from copying one user's private documents into a group of strangers. Practically, for Den this is always true anyway: the user is cloning from a chat they're in.
+>
+> ### ⚠️ Contract addition 2026-07-27 — `GET /api/embed/documents` (clone-picker list)
+>
+> **Why it exists.** Den's clone modal needs "documents this user could bring into the chat", and nothing served that — the embed API had no list or search endpoint at all.
+>
+> **Why not MCP.** Vault's MCP server already exposes `list_documents`/`search_documents`, but those are JSON-RPC tools over a streamable HTTP transport at `/api/mcp/mcp`, with responses wrapped in content blocks — Den would be parsing JSON out of a text block to fill a picker. There is also nothing to reuse *at* that layer: the MCP tools are themselves thin wrappers over `listDocumentsForUser`/`listSharedDocumentsForUser` in `server/documents.ts`. This route calls the same two functions, so both surfaces stay wrappers over one source of truth and neither duplicates permission logic.
+>
+> ```http
+> GET /api/embed/documents?query=&scope=owned|shared|all&limit=50
+> Authorization: Bearer <user_oauth_token>     # the ACTING USER, not a service token
+>
+> → 200 { "documents": [
+>          { "id": "<uuid>", "title": "Spec",
+>            "folderPath": "Work/Specs" | null,
+>            "ownerName": "Ada" | null,        # null when the user owns it
+>            "visibility": "private" | "public",
+>            "updatedAt": "<ISO 8601>",
+>            "snippet": "first ~200 chars, frontmatter stripped" } ] }
+> ```
+>
+> **Parameters.** All optional. `query` matches title and body, case-insensitive, max 200 chars. `scope` defaults to `all`. `limit` is 1–100, default 50. Invalid values → `400`. Rate limit 60/min per user → `429` with `Retry-After`.
+>
+> **Auth is the user's OAuth token, not the service token** — this returns what that user can see, so it is a user-delegated read like `/api/me`. An invalid or expired token → `401`. A banned user gets `200` with an empty list rather than an error, matching the "never confirm existence" posture elsewhere.
+>
+> **What it returns:** documents the user owns, documents shared with them directly, and documents reachable through a shared ancestor folder (the shared query walks the folder chain). Sorted most-recently-updated first, de-duplicated when a document arrives via more than one route.
+>
+> **What it deliberately excludes: group-owned documents** (owner decision 2026-07-27). The picker means "documents of yours you could bring into this chat", not everything readable. Note this makes the list **narrower than what clone will accept** — clone authorizes against `getDocumentAccess`, which does honor group membership. That asymmetry is intentional, not a bug: a document absent from the list can still be cloned by id if the user can genuinely read it.
 >
 > **Den-side checklist:**
 > 1. Send the acting user's OAuth access token in `X-Vault-Acting-User-Token` on every clone call.
