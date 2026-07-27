@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0d0d0d" />
+  <circle cx="400.1" cy="315.7" r="8" fill="#ededed" /><circle cx="315.7" cy="400.1" r="8" fill="#ededed" /><circle cx="196.3" cy="400.1" r="8" fill="#ededed" /><circle cx="111.9" cy="315.7" r="8" fill="#ededed" /><circle cx="111.9" cy="196.3" r="8" fill="#ededed" /><circle cx="196.3" cy="111.9" r="8" fill="#ededed" /><circle cx="315.7" cy="111.9" r="8" fill="#ededed" /><circle cx="400.1" cy="196.3" r="8" fill="#ededed" />
+  <circle cx="256" cy="256" r="134" fill="none" stroke="#ededed" stroke-width="20" />
+  <line x1="277.2" y1="277.2" x2="335.2" y2="335.2" stroke="#ededed" stroke-width="18" stroke-linecap="round" /><line x1="234.8" y1="277.2" x2="176.8" y2="335.2" stroke="#ededed" stroke-width="18" stroke-linecap="round" /><line x1="234.8" y1="234.8" x2="176.8" y2="176.8" stroke="#ededed" stroke-width="18" stroke-linecap="round" /><line x1="277.2" y1="234.8" x2="335.2" y2="176.8" stroke="#ededed" stroke-width="18" stroke-linecap="round" />
+  <circle cx="256" cy="256" r="46" fill="#ededed" />
+  <circle cx="256" cy="256" r="18" fill="#0d0d0d" />
+</svg>

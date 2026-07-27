@@ -489,6 +489,26 @@ never trigger the menu.
 
 ---
 
+## Phase 19 - PWA and Mobile Safe-Area
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Web app manifest + icons | Done 2026-07-23: `app/manifest.ts` (`display: standalone`, `start_url: /workspace`, dark theme/background, `any`+`maskable` icons); grayscale "vault door" icons generated with `sharp` (`app/icon.svg`, `app/apple-icon.png`, `public/icons/icon-{192,512}.png`) |
+| [x] | Standalone display + iOS/Android meta | Done 2026-07-23: `viewport` export with `viewportFit: "cover"` + dark/light `themeColor`; `appleWebApp`/`applicationName`/`formatDetection` metadata; Next 16 emits `mobile-web-app-capable` and iOS 16.4+ uses the manifest `display` |
+| [x] | Update-safe service worker + registration | Done 2026-07-23: `public/sw.js` network-first for navigations/HTML, cache-first only for fingerprinted immutable assets, `skipWaiting`+`clients.claim`; registered production-only via `components/pwa/ServiceWorkerRegistrar.tsx` (`updateViaCache: "none"`, reload once on `controllerchange`) |
+| [x] | Safe-area insets (notch / home indicator) | Done 2026-07-23: `.pt-safe`/`.pb-safe`/`.pl-safe`/`.pr-safe` utilities applied to `VaultWorkspaceShell` container + both mobile drawers so chrome/scroll content clears the notch, iOS home indicator, and landscape cutouts (0 in browser/non-notched — no visual change). Bottom-center tap targets already avoided (fixed bottom buttons are desktop-only) |
+| [~] | Manual on-device visual pass (iPhone + Android) | Build/head-tag/manifest verified; real-device install + standalone look + safe-area feel on physical iPhone/Android still worth a manual check |
+
+Exit criteria:
+
+```txt
+On mobile, "Add to Home Screen" installs Vault; launching it shows the app
+without browser UI (standalone), with the workspace chrome and content clearing
+the notch and home indicator; deployments appear without a stale-content delay.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |
@@ -507,6 +527,7 @@ never trigger the menu.
 | 2026-05-26 | Use Drizzle | SQL-like, lightweight, good for showing DB skill |
 | 2026-05-26 | Delay Yjs until post-MVP | Avoid drowning in collaboration complexity |
 | 2026-07-11 | Command palette: `/` for commands/navigation, plain text for content search only | Injecting section-navigation commands into content search conflated "find content" with "go to a section" and confused testing; VS Code–style separation is clearer. Don't re-add nav commands to search mode |
+| 2026-07-23 | PWA service worker is network-first for HTML, cache-first only for fingerprinted assets | Keeps the installed PWA from ever showing a stale build — new deploys appear immediately — while still satisfying installability and offering offline fallback. Do not precache HTML/navigations |
 
 ---
 

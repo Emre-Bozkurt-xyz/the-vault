@@ -210,7 +210,7 @@ export function VaultWorkspaceShell({
                 : null;
 
   return (
-    <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground pt-safe pb-safe pl-safe pr-safe">
       <WorkspaceIconRail mode={panelMode} onModeChange={changeMode} isAdmin={isAdmin} />
 
       <aside
@@ -344,7 +344,7 @@ export function VaultWorkspaceShell({
 
       {mobilePanelOpen ? (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm md:hidden">
-          <div className="flex h-full w-[min(20rem,86vw)] flex-col border-r border-border/70 bg-sidebar text-sidebar-foreground shadow-2xl">
+          <div className="flex h-full w-[min(20rem,86vw)] flex-col border-r border-border/70 bg-sidebar text-sidebar-foreground shadow-2xl pt-safe pl-safe">
             <div className="flex items-center justify-between border-b border-border/70 p-2">
               <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
                 {mobilePanelItems(isAdmin).map((item) => {
@@ -379,7 +379,7 @@ export function VaultWorkspaceShell({
                 <X className="size-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
               {activePanel ?? <PlaceholderPanel mode={panelMode} />}
             </div>
           </div>
@@ -388,7 +388,7 @@ export function VaultWorkspaceShell({
 
       {rightPanel && mobileRightPanelOpen ? (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm lg:hidden">
-          <div className="ml-auto flex h-full w-[min(24rem,90vw)] flex-col border-l border-border/70 bg-card text-card-foreground shadow-2xl">
+          <div className="ml-auto flex h-full w-[min(24rem,90vw)] flex-col border-l border-border/70 bg-card text-card-foreground shadow-2xl pt-safe pr-safe">
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/70 px-3">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Context
@@ -402,7 +402,7 @@ export function VaultWorkspaceShell({
                 <X className="size-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
               {rightPanel}
             </div>
           </div>
