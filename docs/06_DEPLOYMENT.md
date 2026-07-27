@@ -324,6 +324,61 @@ For MVP, manual is fine.
 
 ---
 
+## Running one-off scripts in production (`scripts/*.mjs`)
+
+⚠️ **Do not run these from the host shell.** The `postgres` service publishes no
+host port — it is reachable only on the `vault_internal` Compose network — and
+`DATABASE_URL` names the host `postgres`, which does not resolve outside Docker.
+Running `node scripts/<name>.mjs` on the mini-PC directly fails with:
+
+```txt
+Error: getaddrinfo EAI_AGAIN postgres
+```
+
+⚠️ **The `vault-web` container cannot run them either.** The `runner` stage copies
+only `.next/standalone`, `.next/static`, and `public` — it has no `scripts/`
+directory and no full `node_modules`.
+
+Use the **`migrate` service image** (`target: builder`), which has the whole repo
+and full dependencies. `docker compose run` overrides the default command:
+
+```bash
+cd /opt/apps/vault/repo
+docker compose -f docker-compose.production.yml --profile migrate run --rm migrate \
+  node scripts/<name>.mjs <args>
+```
+
+### Registering a service principal (Den embed bridge)
+
+`services`/`service_tokens` arrive in migration `0020`, so **migrate first** or
+the seed fails on a missing table:
+
+```bash
+# 1. apply migrations (0020 creates services/groups/group_members/service_tokens)
+docker compose -f docker-compose.production.yml --profile migrate run --rm --build migrate
+
+# 2. create the service, its principal user, and the first token
+docker compose -f docker-compose.production.yml --profile migrate run --rm migrate \
+  node scripts/seed-service.mjs --slug den --name "Den"
+```
+
+The script is idempotent by `--slug`: re-running it will not create a second
+service. **The token is printed once and is not recoverable** — only its SHA-256
+hash is stored. Copy it straight into the consuming service's secrets.
+
+To rotate later, mint an additional token for the existing service:
+
+```bash
+docker compose -f docker-compose.production.yml --profile migrate run --rm migrate \
+  node scripts/seed-service.mjs --slug den --name "Den" --new-token --label "rotated 2026-07"
+```
+
+Revoking a token currently means updating `service_tokens.revoked_at` by hand —
+the `/dashboard/admin/services` UI is deferred future work (see
+`docs/01_PROGRESS_TRACKER.md` Phase 20).
+
+---
+
 ## 11. Health Endpoint
 
 Implement:
