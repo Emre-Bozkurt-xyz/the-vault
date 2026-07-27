@@ -339,26 +339,37 @@ Error: getaddrinfo EAI_AGAIN postgres
 only `.next/standalone`, `.next/static`, and `public` — it has no `scripts/`
 directory and no full `node_modules`.
 
+⚠️ **`--env-file .env.production` is required**, matching `dc()` in
+`scripts/deploy.sh`. Compose interpolates `${POSTGRES_PASSWORD:?…}` in the
+compose file from its *own* environment — the `env_file:` directive on a service
+only populates that container, it is not used for interpolation. Omitting the
+flag fails before anything starts:
+
+```txt
+error while interpolating services.postgres.environment.POSTGRES_PASSWORD:
+required variable POSTGRES_PASSWORD is missing a value
+```
+
 Use the **`migrate` service image** (`target: builder`), which has the whole repo
 and full dependencies. `docker compose run` overrides the default command:
 
 ```bash
 cd /opt/apps/vault/repo
-docker compose -f docker-compose.production.yml --profile migrate run --rm migrate \
-  node scripts/<name>.mjs <args>
+docker compose --env-file .env.production -f docker-compose.production.yml \
+  --profile migrate run --rm migrate node scripts/<name>.mjs <args>
 ```
 
 ### Registering a service principal (Den embed bridge)
 
-`services`/`service_tokens` arrive in migration `0020`, so **migrate first** or
-the seed fails on a missing table:
+`services`/`service_tokens` arrive in migration `0020`. **`scripts/deploy.sh`
+already runs migrations on every deploy**, so a normal deploy of this revision
+is sufficient — only run migrations by hand if you are seeding against a
+database that has not been deployed to since `0020` landed.
 
 ```bash
-# 1. apply migrations (0020 creates services/groups/group_members/service_tokens)
-docker compose -f docker-compose.production.yml --profile migrate run --rm --build migrate
-
-# 2. create the service, its principal user, and the first token
-docker compose -f docker-compose.production.yml --profile migrate run --rm migrate \
+cd /opt/apps/vault/repo
+docker compose --env-file .env.production -f docker-compose.production.yml \
+  --profile migrate run --rm migrate \
   node scripts/seed-service.mjs --slug den --name "Den"
 ```
 
@@ -369,7 +380,8 @@ hash is stored. Copy it straight into the consuming service's secrets.
 To rotate later, mint an additional token for the existing service:
 
 ```bash
-docker compose -f docker-compose.production.yml --profile migrate run --rm migrate \
+docker compose --env-file .env.production -f docker-compose.production.yml \
+  --profile migrate run --rm migrate \
   node scripts/seed-service.mjs --slug den --name "Den" --new-token --label "rotated 2026-07"
 ```
 
