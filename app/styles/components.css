@@ -2325,10 +2325,19 @@
     transition: opacity 140ms ease;
   }
 
+  /* Hover hit-area that keeps the fan open while the pointer travels down to
+     the lower buttons. Flush on the right on purpose: the switch is the last
+     item in the toolbar row (`ml-auto`), so it sits against the document
+     column's right edge, and any slop there overflows the page. The editor's
+     mobile gutter is `px-4` (1rem), so a 1.25rem right inset overflowed by 4px
+     — invisible in the workspace, where `<main>` contains it, but enough to
+     enable page-level horizontal panning in the Den embed, which has no such
+     scrolling ancestor. The fan expands downward from `left: 0` at the
+     switch's own width, so the right slop covered nothing anyway. */
   .vault-editor-mode-switch::before {
     content: "";
     position: absolute;
-    inset: -1rem -1.25rem -5.75rem -1.25rem;
+    inset: -1rem 0 -5.75rem -1.25rem;
     z-index: 0;
   }
 
