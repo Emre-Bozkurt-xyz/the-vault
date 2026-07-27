@@ -149,7 +149,16 @@ export default async function EmbedEditorPage({
     : null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    // `overflow-x-clip` stands in for the workspace's scrolling `<main>`
+    // (VaultWorkspaceShell.tsx:239), which contains any stray horizontal
+    // overflow from the editor's chrome. This page mounts `MarkdownEditor`
+    // directly under the root layout, so without it a few overflowing pixels
+    // reach the body and let Den's iframe pan sideways on a phone. `clip`
+    // rather than `hidden`: it does not create a scroll container, so the
+    // sticky toolbar row and the editor's own scrollers (code fences, tables,
+    // CodeMirror) keep working. Nothing here legitimately needs page-level
+    // horizontal scroll — wide content carries its own `overflow-x: auto`.
+    <div className="min-h-screen overflow-x-clip bg-background text-foreground">
       <EmbedThemeSync theme={theme ?? null} />
       <MarkdownEditor
         documentId={document.id}
