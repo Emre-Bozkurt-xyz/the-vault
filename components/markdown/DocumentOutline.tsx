@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type RefObject,
 } from "react";
-import { ChevronRight, List, PanelLeftClose, X } from "lucide-react";
+import { List, PanelRightClose, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -21,55 +21,83 @@ export type OutlineHeading = {
 const collapsedStorageKey = "vault.outline.collapsed";
 const collapsedChangeEvent = "vault:outline-collapsed-change";
 
-/** Minimum left-gutter (px) needed to seat the rail (12rem + 1.75rem + buffer). */
-const outlineGutterNeeded = 224;
+/** Gap (px) kept between the rail and the left edge of the document column. */
+const outlineRailGap = 20;
+/**
+ * Breathing room (px) kept on the rail's other side, so it does not sit flush
+ * against the workspace side panel. Yields before the rail does: it is given up
+ * as the gutter tightens, rather than costing a layout its rail.
+ */
+const outlineRailInset = 16;
+/** Widest the rail ever gets; it shrinks to fit a narrower gutter. */
+const outlineRailMaxWidth = 192;
+/** Narrower than this the rail is unreadable, so the drawer is used instead. */
+const outlineRailMinWidth = 132;
 
 /**
- * Left edge (viewport px) of the nearest scrolling ancestor, so the gutter is
- * measured within the actual content area (e.g. the workspace `<main>` right of
- * the side panels) rather than the raw viewport. Falls back to 0 (window).
+ * Nearest scrolling ancestor, so the gutter is measured inside the actual
+ * content area (e.g. the workspace `<main>` right of the side panels) rather
+ * than against the raw viewport. `null` means the window is the scroller.
  */
-function findScrollParentLeft(element: HTMLElement): number {
+function findScrollParent(element: HTMLElement): HTMLElement | null {
   let node: HTMLElement | null = element.parentElement;
   while (node) {
     const style = getComputedStyle(node);
     if (/(auto|scroll)/.test(`${style.overflowY}${style.overflowX}`)) {
-      return node.getBoundingClientRect().left;
+      return node;
     }
     node = node.parentElement;
   }
-  return 0;
+  return null;
 }
 
 /**
- * Whether the left gutter of the content block (the sentinel's parent) is wide
- * enough to seat the outline rail without overlapping content or the workspace
- * panels. `null` until measured (SSR / first paint). Re-measures on any resize,
- * including side-panel width changes.
+ * Width (px) of the left gutter of the content block (the sentinel's parent) —
+ * the empty margin the rail is allowed to overlay. `null` until measured
+ * (SSR / first paint).
+ *
+ * The gutter changes whenever the content block *moves* rather than resizes: a
+ * workspace side panel opening shifts a max-width-capped column sideways without
+ * changing its size. So the scroll parent is observed alongside the block
+ * itself; observing only the block leaves a stale measurement behind, which is
+ * why live and read mode used to disagree about the same layout (live
+ * re-measured on every keystroke-driven reflow, read never re-measured at all).
  */
-function useOutlineGutter(): [boolean | null, RefObject<HTMLSpanElement | null>] {
+function useOutlineGutter(
+  enabled: boolean,
+): [number | null, RefObject<HTMLSpanElement | null>] {
   const sentinelRef = useRef<HTMLSpanElement | null>(null);
-  const [hasGutter, setHasGutter] = useState<boolean | null>(null);
+  const [gutter, setGutter] = useState<number | null>(null);
 
   useEffect(() => {
     const parent = sentinelRef.current?.parentElement;
-    if (!parent) {
+    if (!enabled || !parent) {
       return;
     }
+    const scrollParent = findScrollParent(parent);
     const measure = () => {
-      const gutter =
-        parent.getBoundingClientRect().left - findScrollParentLeft(parent);
-      setHasGutter(gutter >= outlineGutterNeeded);
+      const origin = scrollParent
+        ? scrollParent.getBoundingClientRect().left
+        : 0;
+      setGutter(parent.getBoundingClientRect().left - origin);
     };
     // ResizeObserver fires an initial async callback on observe(), so the first
     // measurement happens off the effect body (no synchronous setState).
     const observer = new ResizeObserver(measure);
     observer.observe(parent);
     observer.observe(document.documentElement);
-    return () => observer.disconnect();
-  }, []);
+    if (scrollParent) {
+      observer.observe(scrollParent);
+    }
+    window.addEventListener("resize", measure);
 
-  return [hasGutter, sentinelRef];
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [enabled]);
+
+  return [gutter, sentinelRef];
 }
 
 /**
@@ -122,8 +150,12 @@ type DocumentOutlineProps = {
  * surface-specific navigation (anchor scroll for rendered docs, scroll-to-line
  * for the CodeMirror editor).
  *
- * Renders a sticky left rail on `lg+` and a toggle + overlay drawer below `lg`.
- * The rail collapses to a slim reopen button; that preference is stored in
+ * Renders a sticky rail in the document's left gutter, sized to whatever gutter
+ * the surface actually has, identically for every mode and surface. When the
+ * gutter is too narrow for a readable rail it degrades to an in-flow toggle plus
+ * an overlay drawer — in flow rather than floating, so it can never land on top
+ * of the workspace shell's fixed corner buttons. The rail collapses to a reopen
+ * button in the same spot as the collapse button; that preference is stored in
  * localStorage. Renders nothing when there are fewer than two headings.
  */
 export function DocumentOutline({
@@ -134,12 +166,27 @@ export function DocumentOutline({
   className,
 }: DocumentOutlineProps) {
   const [collapsed, toggleCollapsed] = useOutlineCollapsed();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [hasGutter, sentinelRef] = useOutlineGutter();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const enabled = headings.length >= 2;
+  const [gutter, sentinelRef] = useOutlineGutter(enabled);
 
-  if (headings.length < 2) {
+  if (!enabled) {
     return null;
   }
+
+  // Space left of the document column the rail may occupy. The inset comes out
+  // of the rail's width, but never at the cost of dropping below the readable
+  // minimum — so the set of layouts that get a rail is unchanged.
+  const available = gutter == null ? null : gutter - outlineRailGap;
+  const hasRail = available != null && available >= outlineRailMinWidth;
+  const railWidth = hasRail
+    ? Math.min(
+        outlineRailMaxWidth,
+        Math.max(available - outlineRailInset, outlineRailMinWidth),
+      )
+    : null;
+  // `null` while unmeasured, so neither affordance flashes before first paint.
+  const hasDrawer = gutter != null && !hasRail;
 
   const minLevel = headings.reduce(
     (min, heading) => Math.min(min, heading.level),
@@ -148,7 +195,7 @@ export function DocumentOutline({
 
   const handleSelect = (heading: OutlineHeading) => {
     onSelect(heading);
-    setMobileOpen(false);
+    setDrawerOpen(false);
   };
 
   const list = (
@@ -184,8 +231,11 @@ export function DocumentOutline({
       <span ref={sentinelRef} hidden aria-hidden="true" />
 
       {/* Enough gutter → rail overlaying the left margin (never displaces content) */}
-      {hasGutter === true ? (
-        <div className="vault-outline-anchor">
+      {railWidth != null ? (
+        <div
+          className="vault-outline-anchor"
+          style={{ width: railWidth, marginRight: outlineRailGap }}
+        >
           <nav
             aria-label="Document outline"
             className={cn("vault-outline", className)}
@@ -213,7 +263,8 @@ export function DocumentOutline({
                     title="Hide outline"
                     aria-label="Hide outline"
                   >
-                    <PanelLeftClose className="size-4" aria-hidden="true" />
+                    {/* Mirrored: the rail collapses rightwards, onto this spot. */}
+                    <PanelRightClose className="size-4" aria-hidden="true" />
                   </button>
                 </div>
                 {list}
@@ -224,32 +275,31 @@ export function DocumentOutline({
       ) : null}
 
       {/* Not enough gutter (narrow / panels open) → toggle + overlay drawer */}
-      {hasGutter === false ? (
+      {hasDrawer ? (
         <button
           type="button"
-          onClick={() => setMobileOpen(true)}
-          className="vault-outline-mobile-toggle"
-          aria-label="Show document outline"
+          onClick={() => setDrawerOpen(true)}
+          className="vault-outline-inline-toggle"
         >
           <List className="size-4" aria-hidden="true" />
-          <ChevronRight className="size-3.5 opacity-60" aria-hidden="true" />
+          <span>On this page</span>
         </button>
       ) : null}
 
-      {hasGutter === false && mobileOpen ? (
+      {hasDrawer && drawerOpen ? (
         <div className="vault-outline-overlay" role="dialog" aria-modal="true">
           <button
             type="button"
             className="vault-outline-overlay-backdrop"
             aria-label="Close outline"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => setDrawerOpen(false)}
           />
           <div className="vault-outline-overlay-panel">
             <div className="vault-outline-header">
               <span className="vault-outline-heading">On this page</span>
               <button
                 type="button"
-                onClick={() => setMobileOpen(false)}
+                onClick={() => setDrawerOpen(false)}
                 className="vault-outline-collapse"
                 aria-label="Close outline"
               >

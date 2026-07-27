@@ -2698,17 +2698,16 @@
   }
 
   /* The outline overlays the left gutter and never displaces the centered
-     document: it is absolutely positioned just left of the content block. It is
-     only rendered (by the component) when the measured gutter is wide enough to
-     hold it; otherwise the mobile toggle + overlay drawer are used so nothing
+     document: it is absolutely positioned just left of the content block. Its
+     `width`/`margin-right` are set inline from the measured gutter so the rail
+     always fits the space it has; when even a narrow rail would not fit, the
+     component swaps in the in-flow toggle + overlay drawer instead, so nothing
      overlaps the document or forces a horizontal scrollbar. */
   .vault-outline-anchor {
     position: absolute;
     top: 0;
     bottom: 0;
     right: 100%;
-    width: 12rem;
-    margin-right: 1.75rem;
   }
 
   .vault-outline {
@@ -2739,18 +2738,27 @@
     color: var(--muted-foreground);
   }
 
+  /* Collapsed, the rail is just the reopen button — pushed to the rail's right
+     edge so it lands exactly where the collapse button was, instead of the
+     control jumping across the gutter between the two states. */
+  .vault-outline[data-collapsed] {
+    display: flex;
+    justify-content: flex-end;
+  }
+
   .vault-outline-collapse,
   .vault-outline-reopen {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: none;
+    /* Identical boxes, so the icon does not shift between the two states. */
+    width: 1.75rem;
+    height: 1.75rem;
     color: var(--muted-foreground);
     border-radius: var(--radius-md);
-    transition: color 0.15s ease, background-color 0.15s ease;
-  }
-
-  .vault-outline-collapse {
-    padding: 0.2rem;
+    transition: color 0.15s ease, background-color 0.15s ease,
+      border-color 0.15s ease;
   }
 
   .vault-outline-collapse:hover {
@@ -2759,8 +2767,6 @@
   }
 
   .vault-outline-reopen {
-    width: 2rem;
-    height: 2rem;
     border: 1px solid var(--border);
     background: var(--card);
   }
@@ -2811,20 +2817,28 @@
     border-left-color: var(--primary);
   }
 
-  .vault-outline-mobile-toggle {
-    position: fixed;
-    left: 0.75rem;
-    bottom: 0.75rem;
-    z-index: 40;
+  /* Narrow-gutter fallback. Deliberately in flow at the top of the document
+     rather than floating: a fixed corner button collides with the workspace
+     shell's own fixed panel/settings buttons. */
+  .vault-outline-inline-toggle {
+    align-self: flex-start;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.7rem;
-    border-radius: 999px;
+    gap: 0.4rem;
+    width: fit-content;
+    margin-bottom: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--card);
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .vault-outline-inline-toggle:hover {
     color: var(--foreground);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    border-color: color-mix(in oklab, var(--foreground) 25%, var(--border));
   }
 
   .vault-outline-overlay {
