@@ -221,6 +221,119 @@ export const folderPermissions = pgTable(
   ],
 );
 
+// --- Group ownership (Den embed bridge, docs/DEN_EMBED_BRIDGE.md §C.7-10) ---
+//
+// An integrating service (e.g. Den) is itself data, not a code branch: a
+// `services` row ties its OAuth identity (`mcp_clients`, from the existing
+// dynamic registration at `/oauth/register`) to a principal `users` row that
+// acts as the durable owner of everything the service creates. `groups` are
+// the reusable "who can edit this" unit — a chat room, a team, etc. — and
+// `group_members` grants its members editor access (never more) to any
+// document owned by that group, via the `getDocumentAccess` chokepoint in
+// `lib/permissions.ts`. `service_tokens` authenticates the service itself
+// (distinct from a user's OAuth token) for the owner-op APIs
+// (`/api/embed/groups`, `/api/embed/documents`).
+export const services = pgTable(
+  "services",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    displayName: text("display_name").notNull(),
+    icon: text("icon"),
+    // Nullable: a service can be bootstrapped (seed script) before or without
+    // ever completing OAuth dynamic client registration.
+    oauthClientId: text("oauth_client_id").references(() => mcpClients.id, {
+      onDelete: "set null",
+    }),
+    // The principal is protected with `onDelete: "restrict"` rather than
+    // `cascade` (unlike every other users.id FK in this file): documents.ownerId
+    // cascades on user delete, so cascading the principal's deletion would
+    // silently destroy every document the service owns.
+    principalUserId: uuid("principal_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("services_slug_unique").on(table.slug),
+    index("services_principal_user_id_idx").on(table.principalUserId),
+    index("services_revoked_at_idx").on(table.revokedAt),
+  ],
+);
+
+export const groups = pgTable(
+  "groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    // Nullable by design: a group with no service is a plain user-created
+    // group, the reusable `workspace`-visibility direction docs/03 §2 already
+    // reserves. Costs nothing to allow now even though only service-owned
+    // groups are created by anything in this codebase today.
+    serviceId: uuid("service_id").references(() => services.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("groups_service_id_idx").on(table.serviceId),
+    index("groups_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const groupMembers = pgTable(
+  "group_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("group_members_group_user_unique").on(
+      table.groupId,
+      table.userId,
+    ),
+    index("group_members_group_id_idx").on(table.groupId),
+    index("group_members_user_id_idx").on(table.userId),
+  ],
+);
+
+// Bearer credential for the service itself (distinct from a user's OAuth
+// token). Only the SHA-256 hash is stored, mirroring `mcp_tokens`/
+// `resolveAccessToken` in `lib/mcp/oauth.ts`.
+export const serviceTokens = pgTable(
+  "service_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    label: text("label"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("service_tokens_service_id_idx").on(table.serviceId),
+    index("service_tokens_revoked_at_idx").on(table.revokedAt),
+  ],
+);
+
 export const documents = pgTable(
   "documents",
   {
@@ -229,6 +342,16 @@ export const documents = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     folderId: uuid("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
+    // A group-owned document (Den embed bridge, docs/DEN_EMBED_BRIDGE.md §C.7).
+    // `ownerId` for a group doc is always the owning service's principal user
+    // (see `services.principalUserId`) — forced because `ownerId` is NOT NULL
+    // + cascades on user delete, and pointing it at a human would let that
+    // human's account deletion cascade-delete the group's document. Group
+    // membership (`group_members`) grants editor access through
+    // `getDocumentAccess`; it never changes who the structural owner is.
+    owningGroupId: uuid("owning_group_id").references(() => groups.id, {
       onDelete: "set null",
     }),
     title: text("title").notNull(),
@@ -246,6 +369,7 @@ export const documents = pgTable(
   (table) => [
     index("documents_owner_id_idx").on(table.ownerId),
     index("documents_folder_id_idx").on(table.folderId),
+    index("documents_owning_group_id_idx").on(table.owningGroupId),
     index("documents_visibility_idx").on(table.visibility),
     index("documents_updated_at_idx").on(table.updatedAt),
     uniqueIndex("documents_public_slug_unique").on(table.publicSlug),
@@ -750,6 +874,10 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
     fields: [documents.folderId],
     references: [folders.id],
   }),
+  owningGroup: one(groups, {
+    fields: [documents.owningGroupId],
+    references: [groups.id],
+  }),
   collabState: one(documentCollabStates, {
     fields: [documents.id],
     references: [documentCollabStates.documentId],
@@ -1125,3 +1253,63 @@ export const mcpTokens = pgTable(
     index("mcp_tokens_refresh_token_hash_idx").on(table.refreshTokenHash),
   ],
 );
+
+// Records each embed boot token (see lib/embed-boot-token.ts) as it is
+// redeemed by `GET /embed/editor/[docId]`, enforcing single-use via the `jti`
+// primary key: a replayed token collides on insert and is rejected. Rows are
+// opportunistically pruned past `expiresAt` by the consuming query rather than
+// a cron job, since tokens live at most 60 seconds.
+export const embedBootTokenUses = pgTable(
+  "embed_boot_token_uses",
+  {
+    jti: text("jti").primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    usedAt: timestamp("used_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("embed_boot_token_uses_expires_at_idx").on(table.expiresAt)],
+);
+
+export const servicesRelations = relations(services, ({ one, many }) => ({
+  principal: one(users, {
+    fields: [services.principalUserId],
+    references: [users.id],
+  }),
+  oauthClient: one(mcpClients, {
+    fields: [services.oauthClientId],
+    references: [mcpClients.id],
+  }),
+  groups: many(groups),
+  tokens: many(serviceTokens),
+}));
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  service: one(services, {
+    fields: [groups.serviceId],
+    references: [services.id],
+  }),
+  members: many(groupMembers),
+  documents: many(documents),
+}));
+
+export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupMembers.groupId],
+    references: [groups.id],
+  }),
+  user: one(users, {
+    fields: [groupMembers.userId],
+    references: [users.id],
+  }),
+}));
+
+export const serviceTokensRelations = relations(serviceTokens, ({ one }) => ({
+  service: one(services, {
+    fields: [serviceTokens.serviceId],
+    references: [services.id],
+  }),
+}));

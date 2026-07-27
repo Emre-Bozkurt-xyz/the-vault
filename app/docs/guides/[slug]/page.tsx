@@ -80,6 +80,7 @@ export default async function OfficialDocPage({
             binRetentionDays={workspace.binRetentionDays}
             folders={workspace.folders}
             sharedFolders={workspace.sharedFolders}
+            services={workspace.services}
             activeHref={`/docs/guides/${doc.slug}`}
           />
         }

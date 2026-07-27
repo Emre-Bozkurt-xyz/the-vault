@@ -81,6 +81,27 @@ const server = new Server({
             where fc.owner_id = ${payload.userId}
                or fp.role = 'editor'
           )
+          or exists (
+            -- Group-inherited editor access (Den embed bridge,
+            -- docs/DEN_EMBED_BRIDGE.md §C.7): membership in the document's
+            -- owning group grants editor, at most. This is the ONLY thing
+            -- that makes revocation work at all -- the room token's role
+            -- claim is never trusted here; membership is re-resolved from the
+            -- DB on every connect. Must stay in exact agreement with
+            -- isMemberOfGroup() in lib/permissions.ts, condition for
+            -- condition: a group_members row for this user, on a group that
+            -- is not soft-deleted, whose service (if any) is not revoked.
+            -- Dropping either of the latter two would leave former members
+            -- editing documents the rest of the system treats as gone.
+            select 1
+            from group_members gm
+            join groups g on g.id = gm.group_id
+            left join services s on s.id = g.service_id
+            where gm.group_id = d.owning_group_id
+              and gm.user_id = ${payload.userId}
+              and g.deleted_at is null
+              and (g.service_id is null or s.revoked_at is null)
+          )
         )
       limit 1
     `;

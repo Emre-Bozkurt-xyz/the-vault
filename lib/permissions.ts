@@ -1,9 +1,12 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
   documentPermissions,
   documents,
+  groupMembers,
+  groups,
+  services,
   type DocumentRole,
   type FolderRole,
 } from "@/db/schema";
@@ -35,6 +38,7 @@ export async function getDocumentAccess(
       ownerId: documents.ownerId,
       visibility: documents.visibility,
       folderId: documents.folderId,
+      owningGroupId: documents.owningGroupId,
     })
     .from(documents)
     .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
@@ -66,7 +70,7 @@ export async function getDocumentAccess(
     };
   }
 
-  const [[permission], inheritedFolderRole] = await Promise.all([
+  const [[permission], inheritedFolderRole, isGroupMember] = await Promise.all([
     db
       .select({ role: documentPermissions.role })
       .from(documentPermissions)
@@ -78,17 +82,26 @@ export async function getDocumentAccess(
       )
       .limit(1),
     getInheritedFolderRole(userId, document.folderId),
+    isMemberOfGroup(userId, document.owningGroupId),
   ]);
 
   // A document share grants its role directly; a folder share (or owning an
-  // ancestor folder) grants at most editor — structural rights (share/delete/
-  // publish) stay tied to document ownership, never folder membership.
+  // ancestor folder) grants at most editor; group membership (Den embed
+  // bridge, docs/DEN_EMBED_BRIDGE.md §C.7) is a third "at most editor"
+  // source. Structural rights (share/delete/publish) stay tied to document
+  // ownership, never folder membership or group membership — mirroring the
+  // folder-inheritance decision below. Because a group doc's `ownerId` is
+  // always the owning service's principal (never a human), the owner branch
+  // above never fires for a group member: they top out at editor by
+  // construction, with no special-casing needed here.
   const directRole = permission?.role ?? null;
   const isDocOwner = directRole === "owner";
+  const groupRole: "editor" | null = isGroupMember ? "editor" : null;
   const canEdit =
     directRole === "owner" ||
     directRole === "editor" ||
-    inheritedFolderRole === "editor";
+    inheritedFolderRole === "editor" ||
+    groupRole === "editor";
   const canRead =
     canEdit ||
     directRole === "viewer" ||
@@ -162,6 +175,54 @@ async function getInheritedFolderRole(
   }
 
   return null;
+}
+
+/**
+ * Whether a user belongs to the *live* group that owns a document (Den embed
+ * bridge, docs/DEN_EMBED_BRIDGE.md §C.7). `groupId` is null for documents with
+ * no owning group, which always resolves to false without a query.
+ *
+ * Membership alone is not enough — the grant is also void when the group has
+ * been soft-deleted (`groups.deleted_at`, e.g. the chat it mirrors was
+ * deleted) or when its owning service has been revoked
+ * (`services.revoked_at`). Both are the only mechanisms that exist to turn a
+ * whole group's access off at once, so the permission layer has to honor them:
+ * `server/services.ts` already filters on both when listing groups for the
+ * workspace UI and when resolving a group for the owner-op APIs, and a
+ * permission layer that ignored them would leave every former member with
+ * editor access to documents the rest of the system treats as gone.
+ * A group with no service (`service_id is null`) is a plain user group and has
+ * no service to revoke.
+ *
+ * ⚠️ `scripts/collab-server.mjs` `onAuthenticate` hand-maintains a SQL twin of
+ * this exact check for the collab connect-time re-check — including these two
+ * conditions. The two must stay in agreement, or a removed group member could
+ * keep editing collaboratively past the point this function would deny them.
+ */
+async function isMemberOfGroup(
+  userId: string,
+  groupId: string | null,
+): Promise<boolean> {
+  if (!groupId) {
+    return false;
+  }
+
+  const [membership] = await db
+    .select({ id: groupMembers.id })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .leftJoin(services, eq(services.id, groups.serviceId))
+    .where(
+      and(
+        eq(groupMembers.groupId, groupId),
+        eq(groupMembers.userId, userId),
+        isNull(groups.deletedAt),
+        or(isNull(groups.serviceId), isNull(services.revokedAt)),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(membership);
 }
 
 export async function canReadDocument(userId: string | null, documentId: string) {

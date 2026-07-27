@@ -134,6 +134,20 @@
       "when": 1783004495737,
       "tag": "0018_rainy_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785127557222,
+      "tag": "0019_lazy_slyde",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785166494660,
+      "tag": "0020_military_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }

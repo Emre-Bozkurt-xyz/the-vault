@@ -16,7 +16,8 @@
     "assets:audit": "node scripts/reconcile-assets.mjs",
     "assets:repair-quota": "node scripts/reconcile-assets.mjs --repair-quota --apply",
     "assets:delete-orphans": "node scripts/reconcile-assets.mjs --delete-orphans --apply",
-    "assets:export": "node scripts/export-assets.mjs"
+    "assets:export": "node scripts/export-assets.mjs",
+    "seed:service": "node scripts/seed-service.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.205",

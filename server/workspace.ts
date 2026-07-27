@@ -18,6 +18,7 @@ import {
 } from "@/server/folders";
 import { requireCompletedProfile } from "@/server/profile";
 import { listPublishedOfficialDocs } from "@/server/official-docs";
+import { listServiceGroupsForUser } from "@/server/services";
 import { listUserSettings } from "@/server/user-settings";
 import { buildPreferences } from "@/lib/settings/preferences";
 import {
@@ -65,6 +66,7 @@ export async function getWorkspaceData() {
     folderRows,
     sharedFolderRows,
     archivedDocuments,
+    services,
   ] = await Promise.all([
     listDocumentsForUser(session.user.id),
     listDocumentsInOwnedFoldersFromOthers(session.user.id),
@@ -74,6 +76,7 @@ export async function getWorkspaceData() {
     listFoldersForUser(session.user.id),
     listSharedFoldersForUser(session.user.id),
     listArchivedDocumentsForUser(session.user.id),
+    listServiceGroupsForUser(session.user.id),
   ]);
 
   const ownedDocs: WorkspaceDocumentItem[] = ownedDocuments.map((document) => ({
@@ -193,6 +196,7 @@ export async function getWorkspaceData() {
     binRetentionDays,
     folders,
     sharedFolders,
+    services,
     publicDocuments,
     guideGroups,
     recent: [...owned, ...shared]

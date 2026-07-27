@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   AssetError,
   linkExistingAssetToDocument,
-  requireAssetUser,
+  requireAssetUserFromRequest,
 } from "@/server/assets";
 import { canEditDocumentWithOptionalShareLink } from "@/server/documents";
 
@@ -17,7 +17,9 @@ type RouteContext = {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const user = await requireAssetUser();
+    // Falls back to an embed session bearer token when there is no Vault
+    // session cookie (the embed editor is framed cross-origin and gets none).
+    const user = await requireAssetUserFromRequest(request);
     const { assetId } = await context.params;
     const body = await request.json();
 

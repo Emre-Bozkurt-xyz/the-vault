@@ -31,6 +31,34 @@ const iframeFrameSrc = [
   "https://*.bandcamp.com",
 ];
 
+// Default frame-ancestors origin for the `/embed/...` route family when
+// `EMBED_FRAME_ANCESTORS` is unset. Keep this the only Den-specific value in
+// this file — the mechanism itself is generic (any allow-listed origin family
+// could be configured here for a future embed consumer).
+const defaultEmbedFrameAncestors = ["https://den.ems-place.com"];
+
+/**
+ * Comma-separated allow-list of origins permitted to frame `/embed/...`
+ * routes, read from `EMBED_FRAME_ANCESTORS`. Falls back to the default Den
+ * origin when unset or empty — this never silently degrades to `*`: a
+ * misconfigured env var (e.g. accidentally set to `*` or a blank string)
+ * still resolves to the safe default rather than opening framing to anyone.
+ */
+function embedFrameAncestors(): string[] {
+  const raw = process.env.EMBED_FRAME_ANCESTORS;
+
+  if (!raw || !raw.trim()) {
+    return defaultEmbedFrameAncestors;
+  }
+
+  const origins = raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0 && origin !== "*");
+
+  return origins.length > 0 ? origins : defaultEmbedFrameAncestors;
+}
+
 function collabConnectSrc(): string[] {
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL;
 
@@ -58,16 +86,26 @@ function serialize(directives: Record<string, string[]>): string {
     .join("; ");
 }
 
-export function buildEnforcedCsp(): string {
+export type CspOptions = {
+  /**
+   * Set for requests under `/embed/...`: swaps `frame-ancestors 'self'` for
+   * the configured embed allow-list so the route can be framed by Den (or
+   * whatever origin `EMBED_FRAME_ANCESTORS` names). Every other route keeps
+   * `'self'` — framing stays locked down by default.
+   */
+  embed?: boolean;
+};
+
+export function buildEnforcedCsp(options: CspOptions = {}): string {
   return serialize({
-    "frame-ancestors": ["'self'"],
+    "frame-ancestors": options.embed ? embedFrameAncestors() : ["'self'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
   });
 }
 
-export function buildReportOnlyCsp(nonce: string): string {
+export function buildReportOnlyCsp(nonce: string, options: CspOptions = {}): string {
   const nonceSource = `'nonce-${nonce}'`;
 
   return serialize({
@@ -81,7 +119,7 @@ export function buildReportOnlyCsp(nonce: string): string {
     "font-src": ["'self'", "data:"],
     "connect-src": ["'self'", ...collabConnectSrc()],
     "frame-src": iframeFrameSrc,
-    "frame-ancestors": ["'self'"],
+    "frame-ancestors": options.embed ? embedFrameAncestors() : ["'self'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

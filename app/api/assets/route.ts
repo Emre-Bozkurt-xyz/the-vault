@@ -5,6 +5,7 @@ import {
   createUploadedAsset,
   listAssetsForUser,
   requireAssetUser,
+  requireAssetUserFromRequest,
 } from "@/server/assets";
 import { canEditDocumentWithOptionalShareLink } from "@/server/documents";
 
@@ -22,7 +23,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireAssetUser();
+    // Falls back to an embed session bearer token when there is no Vault
+    // session cookie (the embed editor is framed cross-origin and gets none).
+    const user = await requireAssetUserFromRequest(request);
     const formData = await request.formData();
     const file = formData.get("file");
     const documentId = stringOrNull(formData.get("documentId"));

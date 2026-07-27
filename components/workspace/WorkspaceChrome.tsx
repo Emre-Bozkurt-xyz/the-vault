@@ -30,6 +30,7 @@ import type {
   WorkspaceLayoutState,
   WorkspacePageDescriptor,
   WorkspacePublicDocumentItem,
+  WorkspaceServiceItem,
   WorkspaceSharedFolderItem,
   WorkspaceTab,
 } from "@/components/workspace/workspace-types";
@@ -51,6 +52,7 @@ type WorkspaceChromeData = {
   binRetentionDays: number | null;
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
+  services: WorkspaceServiceItem[];
   publicDocuments: WorkspacePublicDocumentItem[];
   guideGroups: WorkspaceGuideGroup[];
 };
@@ -195,6 +197,7 @@ export function WorkspaceChrome({
             binRetentionDays={workspaceState.binRetentionDays}
             folders={workspaceState.folders}
             sharedFolders={workspaceState.sharedFolders}
+            services={workspaceState.services}
             activeHref={currentHref.split("?")[0]}
           />
         }

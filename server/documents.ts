@@ -263,59 +263,12 @@ export async function saveMarkdownDocumentAction(
     notFound();
   }
 
-  await db.transaction(async (tx) => {
-    const [currentDocument] = await tx
-      .select({
-        id: documents.id,
-        title: documents.title,
-        markdown: documents.markdown,
-      })
-      .from(documents)
-      .where(
-        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-      )
-      .limit(1);
-
-    if (!currentDocument) {
-      notFound();
-    }
-
-    await maybeCreateAutomaticDocumentVersion(tx, {
-      document: currentDocument,
-      actorId: user.id,
-      reason: "auto",
-      nextTitle: parsed.data.title,
-      nextMarkdown: parsed.data.markdown,
-    });
-
-    await tx
-      .update(documents)
-      .set({
-        title: parsed.data.title,
-        markdown: parsed.data.markdown,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-      );
-
-    await tx
-      .delete(documentCollabStates)
-      .where(eq(documentCollabStates.documentId, parsed.data.documentId));
-  });
-  await reconcileDocumentAssetLinks({
+  return saveMarkdownDocumentCore({
     documentId: parsed.data.documentId,
+    title: parsed.data.title,
     markdown: parsed.data.markdown,
+    actorId: user.id,
   });
-  await syncDocumentMetadata({
-    documentId: parsed.data.documentId,
-    markdown: parsed.data.markdown,
-  });
-
-  return {
-    ok: true,
-    updatedAt: new Date().toISOString(),
-  };
 }
 
 export async function saveDocumentTitleAction(
@@ -345,6 +298,30 @@ export async function saveDocumentTitleAction(
     notFound();
   }
 
+  return saveDocumentTitleCore({
+    documentId: parsed.data.documentId,
+    title: parsed.data.title,
+    actorId: user.id,
+  });
+}
+
+/**
+ * Post-authentication core of {@link saveMarkdownDocumentAction}: updates a
+ * document's title + Markdown body, snapshotting a version when the diff is
+ * significant, and drops any live collab state so the next load re-derives
+ * the Y.Doc from the newly saved Markdown. Callers MUST already have checked
+ * edit access (`canEditDocumentWithOptionalShareLink`/`getDocumentAccess`) —
+ * this performs no permission check itself. Shared by the session-cookie
+ * server action above and `POST /api/embed/documents/[id]/content`
+ * (docs/DEN_EMBED_BRIDGE.md), which authenticates via a bearer embed session
+ * token instead of the Vault session cookie.
+ */
+export async function saveMarkdownDocumentCore(input: {
+  documentId: string;
+  title: string;
+  markdown: string;
+  actorId: string;
+}): Promise<{ ok: true; updatedAt: string }> {
   await db.transaction(async (tx) => {
     const [currentDocument] = await tx
       .select({
@@ -353,9 +330,7 @@ export async function saveDocumentTitleAction(
         markdown: documents.markdown,
       })
       .from(documents)
-      .where(
-        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-      )
+      .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)))
       .limit(1);
 
     if (!currentDocument) {
@@ -364,21 +339,83 @@ export async function saveDocumentTitleAction(
 
     await maybeCreateAutomaticDocumentVersion(tx, {
       document: currentDocument,
-      actorId: user.id,
+      actorId: input.actorId,
       reason: "auto",
-      nextTitle: parsed.data.title,
+      nextTitle: input.title,
+      nextMarkdown: input.markdown,
+    });
+
+    await tx
+      .update(documents)
+      .set({
+        title: input.title,
+        markdown: input.markdown,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)));
+
+    await tx
+      .delete(documentCollabStates)
+      .where(eq(documentCollabStates.documentId, input.documentId));
+  });
+  await reconcileDocumentAssetLinks({
+    documentId: input.documentId,
+    markdown: input.markdown,
+  });
+  await syncDocumentMetadata({
+    documentId: input.documentId,
+    markdown: input.markdown,
+  });
+
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Post-authentication core of {@link saveDocumentTitleAction} — the
+ * title-only save used while a collab room is live (the Markdown body is
+ * owned by the Y.Doc in that case, so only the `documents.title` column
+ * needs a plain write). Same caller contract as
+ * {@link saveMarkdownDocumentCore}: no permission check here, edit access
+ * must already be verified.
+ */
+export async function saveDocumentTitleCore(input: {
+  documentId: string;
+  title: string;
+  actorId: string;
+}): Promise<{ ok: true; updatedAt: string }> {
+  await db.transaction(async (tx) => {
+    const [currentDocument] = await tx
+      .select({
+        id: documents.id,
+        title: documents.title,
+        markdown: documents.markdown,
+      })
+      .from(documents)
+      .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)))
+      .limit(1);
+
+    if (!currentDocument) {
+      notFound();
+    }
+
+    await maybeCreateAutomaticDocumentVersion(tx, {
+      document: currentDocument,
+      actorId: input.actorId,
+      reason: "auto",
+      nextTitle: input.title,
       nextMarkdown: currentDocument.markdown,
     });
 
     await tx
       .update(documents)
       .set({
-        title: parsed.data.title,
+        title: input.title,
         updatedAt: sql`now()`,
       })
-      .where(
-        and(eq(documents.id, parsed.data.documentId), isNull(documents.deletedAt)),
-      );
+      .where(and(eq(documents.id, input.documentId), isNull(documents.deletedAt)));
   });
 
   return {

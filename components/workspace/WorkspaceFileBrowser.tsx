@@ -11,6 +11,7 @@ import {
   type DragEvent,
 } from "react";
 import {
+  Boxes,
   ChevronRight,
   FilePlus2,
   FileText,
@@ -58,6 +59,7 @@ import type {
   WorkspaceArchivedItem,
   WorkspaceDocumentItem,
   WorkspaceFolderItem,
+  WorkspaceServiceItem,
   WorkspaceSharedFolderItem,
 } from "@/components/workspace/workspace-types";
 
@@ -69,6 +71,7 @@ type WorkspaceFileBrowserProps = {
   binRetentionDays: number | null;
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
+  services: WorkspaceServiceItem[];
   activeHref?: string;
 };
 
@@ -87,6 +90,7 @@ export function WorkspaceFileBrowser({
   binRetentionDays,
   folders,
   sharedFolders,
+  services,
   activeHref,
 }: WorkspaceFileBrowserProps) {
   const [isPending, startTransition] = useTransition();
@@ -408,6 +412,7 @@ export function WorkspaceFileBrowser({
           onDropOn={handleDropOn}
           activeHref={activeHref}
         />
+        <ServicesSection services={services} activeHref={activeHref} />
         <FlatSection
           title="Published"
           items={published}
@@ -929,6 +934,137 @@ function formatBinCountdown(deletedAt: Date, retentionDays: number | null) {
   }
 
   return daysLeft === 1 ? "1 day left" : `${daysLeft} days left`;
+}
+
+/**
+ * Generic Service -> Group -> Documents section (Den embed bridge,
+ * docs/DEN_EMBED_BRIDGE.md §C, "Design settled"): iterates whatever
+ * `services` rows the user belongs to a group of — no service-specific code
+ * path, no "Den" string anywhere here. Read-only by design: a Vault-side
+ * leave/join control would just be undone by the owning service's next
+ * reconciliation sweep, so this section only displays membership, never
+ * mutates it. Hidden entirely when the user has no service group
+ * memberships, since that's the common case.
+ */
+function ServicesSection({
+  services,
+  activeHref,
+}: {
+  services: WorkspaceServiceItem[];
+  activeHref?: string;
+}) {
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  if (services.length === 0) {
+    return null;
+  }
+
+  const totalDocuments = services.reduce(
+    (sum, service) =>
+      sum + service.groups.reduce((groupSum, group) => groupSum + group.documents.length, 0),
+    0,
+  );
+
+  function toggleGroup(id: string) {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <section className="mb-3">
+      <div className="flex items-center justify-between px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Services</span>
+        <span>{totalDocuments}</span>
+      </div>
+
+      <div className="grid gap-2">
+        {services.map((service) => (
+          <div key={service.id}>
+            <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+              {service.icon ? (
+                <span className="shrink-0 text-sm leading-none">{service.icon}</span>
+              ) : (
+                <Boxes className="size-3.5 shrink-0 opacity-70" />
+              )}
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {service.displayName}
+              </span>
+            </div>
+
+            <div className="grid gap-0.5">
+              {service.groups.map((group) => {
+                const isOpen = expandedGroups.has(group.id);
+
+                return (
+                  <div key={group.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.id)}
+                      style={{ paddingLeft: 16 }}
+                      className="group flex min-w-0 w-full items-center gap-1 rounded-[5px] py-1.5 pr-1 text-left text-sm text-foreground/90 transition hover:bg-sidebar-accent"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "size-3.5 shrink-0 text-muted-foreground transition",
+                          isOpen && "rotate-90",
+                        )}
+                      />
+                      {isOpen ? (
+                        <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                      {group.documents.length > 0 && !isOpen ? (
+                        <span className="shrink-0 text-[0.65rem] text-muted-foreground/70">
+                          {group.documents.length}
+                        </span>
+                      ) : null}
+                    </button>
+
+                    {isOpen ? (
+                      <div>
+                        {group.documents.map((doc) => (
+                          <Link
+                            key={doc.id}
+                            href={doc.href}
+                            style={{ paddingLeft: 40 }}
+                            className={cn(
+                              "group flex min-w-0 items-center gap-2 rounded-[5px] py-1.5 pr-2 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                              activeHref === doc.href &&
+                                "bg-sidebar-accent text-sidebar-accent-foreground",
+                            )}
+                          >
+                            <FileText className="size-3.5 shrink-0 opacity-70" />
+                            <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+                          </Link>
+                        ))}
+                        {group.documents.length === 0 ? (
+                          <p
+                            className="py-1 text-xs text-muted-foreground/60"
+                            style={{ paddingLeft: 40 }}
+                          >
+                            Empty
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function SharedSection({

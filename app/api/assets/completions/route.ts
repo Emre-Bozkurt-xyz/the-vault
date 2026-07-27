@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   AssetError,
   listAssetCompletionsForDocument,
-  requireAssetUser,
+  requireAssetUserFromRequest,
 } from "@/server/assets";
 import { canEditDocumentWithOptionalShareLink } from "@/server/documents";
 
@@ -11,7 +11,9 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
-    const user = await requireAssetUser();
+    // Falls back to an embed session bearer token when there is no Vault
+    // session cookie (the embed editor is framed cross-origin and gets none).
+    const user = await requireAssetUserFromRequest(request);
     const url = new URL(request.url);
     const documentId = url.searchParams.get("documentId")?.trim();
     const shareLinkId = url.searchParams.get("shareLinkId")?.trim() || null;

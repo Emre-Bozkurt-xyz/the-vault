@@ -31,6 +31,7 @@ import {
   contentSearchIsEmpty,
 } from "@/lib/content-search-query";
 import { normalizeTagSlug } from "@/lib/content-metadata";
+import { verifyEmbedSessionToken } from "@/lib/embed-session-token";
 import { canReadDocument } from "@/lib/permissions";
 import { deleteAssetObject, getR2Bucket, putAssetObject } from "@/lib/storage/r2";
 import { isUserBanActive } from "@/server/authz";
@@ -152,6 +153,110 @@ export async function requireAssetUser() {
   return user;
 }
 
+/**
+ * Resolves the embed session bearer token's `vaultUserId` into an
+ * {@link ActiveAssetUser}, exactly like a cookie session would. This is an
+ * **identity assertion only** (docs/DEN_EMBED_BRIDGE.md) — it answers "who is
+ * asking", never "are they allowed". Every caller must still run its own
+ * permission check (`getReadableAsset`, `canEditDocumentWithOptionalShareLink`,
+ * etc.) against the returned id; this function does not and must not bypass,
+ * short-circuit, or widen any of those checks.
+ */
+async function resolveAssetUserFromEmbedSessionToken(
+  token: string | null,
+): Promise<ActiveAssetUser | null> {
+  if (!token) {
+    return null;
+  }
+
+  const payload = verifyEmbedSessionToken(token);
+
+  if (!payload) {
+    return null;
+  }
+
+  const [user] = await db
+    .select({
+      id: users.id,
+      bannedAt: users.bannedAt,
+      bannedUntil: users.bannedUntil,
+      storageUsedBytes: users.storageUsedBytes,
+      storageQuotaBytes: users.storageQuotaBytes,
+    })
+    .from(users)
+    .where(eq(users.id, payload.vaultUserId))
+    .limit(1);
+
+  if (!user || isUserBanActive(user)) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    storageUsedBytes: user.storageUsedBytes,
+    storageQuotaBytes: user.storageQuotaBytes,
+  };
+}
+
+/**
+ * Identity resolution for `/api/assets/[assetId]/content`, which an `<img>`
+ * tag hits directly and therefore cannot attach an `Authorization` header —
+ * the embed session token travels as a `?embed=` query param there instead
+ * (see `buildAssetContentUrl`). Tries the Vault session cookie first, exactly
+ * like every non-embed caller; only falls back to the token when there is no
+ * cookie session.
+ */
+export async function getOptionalAssetUserForContentRequest(
+  request: Request,
+): Promise<ActiveAssetUser | null> {
+  const cookieUser = await getOptionalAssetUser();
+
+  if (cookieUser) {
+    return cookieUser;
+  }
+
+  const embedToken = new URL(request.url).searchParams.get("embed");
+  return resolveAssetUserFromEmbedSessionToken(embedToken);
+}
+
+/**
+ * Identity resolution for the embed-aware asset routes that DO receive a
+ * normal `Authorization` header from `fetch` calls inside the embed editor
+ * (`/api/assets/completions`, `/api/assets/[id]/link`, `POST /api/assets`).
+ * Same cookie-first, token-fallback contract as
+ * {@link getOptionalAssetUserForContentRequest}.
+ */
+export async function getOptionalAssetUserFromRequest(
+  request: Request,
+): Promise<ActiveAssetUser | null> {
+  const cookieUser = await getOptionalAssetUser();
+
+  if (cookieUser) {
+    return cookieUser;
+  }
+
+  const header =
+    request.headers.get("authorization") ?? request.headers.get("Authorization");
+  const match = header?.match(/^Bearer\s+(.+)$/i);
+
+  return resolveAssetUserFromEmbedSessionToken(match?.[1]?.trim() ?? null);
+}
+
+/**
+ * {@link requireAssetUser}, but also accepting an embed session bearer token
+ * when there is no Vault session cookie. Used by the upload/completions/link
+ * routes so the embed editor (framed cross-origin, no cookie) can reach them.
+ */
+export async function requireAssetUserFromRequest(request: Request) {
+  const user = await getOptionalAssetUserFromRequest(request);
+
+  if (!user) {
+    throw new AssetError("Sign in to upload assets.", 401, "UNAUTHENTICATED");
+  }
+
+  return user;
+}
+
 export function getAssetUploadLimits() {
   return {
     imageMaxBytes: readByteEnv("MAX_IMAGE_UPLOAD_BYTES", ASSET_LIMITS.imageMaxBytes),
@@ -164,10 +269,33 @@ export function buildAssetMarkdown(assetId: string, label?: string | null) {
   return cleanLabel ? `![[asset:${assetId}|${cleanLabel}]]` : `![[asset:${assetId}]]`;
 }
 
-export function buildAssetContentUrl(assetId: string, documentId?: string | null) {
+/**
+ * Builds the content URL for an asset. The single URL-construction chokepoint
+ * for every asset link/embed in the app (docs/DEN_EMBED_BRIDGE.md). `embedSessionToken`
+ * is optional and only ever supplied by the embed editor page: an `<img>` tag
+ * can't attach an `Authorization` header, so the embed session token travels
+ * as a query param instead and `/api/assets/[assetId]/content` reads it back
+ * as an identity assertion (see `getOptionalAssetUserForContentRequest`) —
+ * the normal permission check still runs against the resolved user.
+ */
+export function buildAssetContentUrl(
+  assetId: string,
+  documentId?: string | null,
+  embedSessionToken?: string | null,
+) {
   const basePath = process.env.ASSET_ROUTE_BASE_PATH || "/api/assets";
-  const query = documentId ? `?doc=${encodeURIComponent(documentId)}` : "";
-  return `${basePath.replace(/\/$/, "")}/${assetId}/content${query}`;
+  const params = new URLSearchParams();
+
+  if (documentId) {
+    params.set("doc", documentId);
+  }
+
+  if (embedSessionToken) {
+    params.set("embed", embedSessionToken);
+  }
+
+  const query = params.toString();
+  return `${basePath.replace(/\/$/, "")}/${assetId}/content${query ? `?${query}` : ""}`;
 }
 
 export async function createUploadedAsset(input: {
@@ -899,6 +1027,7 @@ export async function listAssetResolutionsForDocument(
   documentId: string,
   userId: string | null,
   markdown?: string | null,
+  embedSessionToken?: string | null,
 ) {
   const canRead = await canReadDocument(userId, documentId);
 
@@ -971,7 +1100,7 @@ export async function listAssetResolutionsForDocument(
         altText: row.altText,
         mimeType: row.mimeType,
         sizeBytes: row.sizeBytes,
-        url: buildAssetContentUrl(row.id, documentId),
+        url: buildAssetContentUrl(row.id, documentId, embedSessionToken),
       } satisfies AssetResolution,
     ]),
   );

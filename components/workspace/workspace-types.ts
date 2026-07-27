@@ -116,6 +116,32 @@ export type WorkspaceGuideGroup = {
   docs: WorkspaceGuideItem[];
 };
 
+/**
+ * A document owned by a service-managed group, surfaced under the workspace
+ * file browser's "Services" section (docs/DEN_EMBED_BRIDGE.md §C, "Design
+ * settled" — Service -> Group -> Documents, read-only in Vault).
+ */
+export type WorkspaceServiceDocumentItem = {
+  id: string;
+  title: string;
+  href: string;
+  updatedAt: Date;
+};
+
+export type WorkspaceServiceGroupItem = {
+  id: string;
+  name: string;
+  documents: WorkspaceServiceDocumentItem[];
+};
+
+export type WorkspaceServiceItem = {
+  id: string;
+  slug: string;
+  displayName: string;
+  icon: string | null;
+  groups: WorkspaceServiceGroupItem[];
+};
+
 export type WorkspaceNavItem = {
   label: string;
   href?: string;

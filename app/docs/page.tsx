@@ -47,6 +47,7 @@ export default async function OfficialDocsIndexPage() {
             binRetentionDays={workspace.binRetentionDays}
             folders={workspace.folders}
             sharedFolders={workspace.sharedFolders}
+            services={workspace.services}
             activeHref="/docs"
           />
         }

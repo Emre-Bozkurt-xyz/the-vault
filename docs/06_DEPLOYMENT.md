@@ -167,6 +167,10 @@ ASSET_ROUTE_BASE_PATH=/api/assets
 # MAX_PDF_UPLOAD_BYTES=26214400
 ASSET_PRIVATE_CACHE_SECONDS=0
 ASSET_PUBLIC_CACHE_SECONDS=3600
+
+# Den embed bridge (docs/DEN_EMBED_BRIDGE.md). Comma-separated origins allowed
+# to frame /embed/...; defaults to https://den.ems-place.com when unset.
+EMBED_FRAME_ANCESTORS=https://den.ems-place.com
 ```
 
 Do not commit `.env.production`.

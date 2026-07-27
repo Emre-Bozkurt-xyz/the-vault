@@ -143,6 +143,15 @@ type MarkdownEditorProps = {
   } | null;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
+  /**
+   * Bearer token for `/embed/editor/[docId]` (docs/DEN_EMBED_BRIDGE.md). When
+   * present, saving and the cookie-dependent editor fetches (asset
+   * completions/link/upload, wiki-link lookups) authenticate with this
+   * bearer instead of the Vault session cookie, which the cross-origin embed
+   * iframe never receives. Absent in the normal `/docs/[docId]` editor, whose
+   * behavior is unchanged.
+   */
+  embedSessionToken?: string | null;
   stickersEnabled?: boolean;
   calendarEnabled?: boolean;
   /** Ids of the user's enabled extensions, used to gate extension slash items. */
@@ -214,6 +223,57 @@ type SelectedAssetEmbed = {
   asset: AssetEmbedResolutionMap[string] | null;
 };
 
+/**
+ * Embed-session sibling of `saveDocumentTitleAction`/`saveMarkdownDocumentAction`
+ * (docs/DEN_EMBED_BRIDGE.md) — used instead of those server actions when
+ * `embedSessionToken` is set, since the embed editor is framed cross-origin
+ * and never carries the Vault session cookie the actions rely on. Hits
+ * `POST /api/embed/documents/[id]/content` with the bearer token and
+ * normalizes the response into the same `{ok, ...}` shape the actions return
+ * so `saveDocument` doesn't need two result-handling branches.
+ */
+async function saveDocumentViaEmbedSession({
+  documentId,
+  token,
+  title,
+  markdown,
+}: {
+  documentId: string;
+  token: string;
+  title: string;
+  markdown: string | undefined;
+}): Promise<{ ok: true; updatedAt: string } | { ok: false; message: string }> {
+  try {
+    const response = await fetch(`/api/embed/documents/${documentId}/content`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(
+        markdown === undefined ? { title } : { title, markdown },
+      ),
+    });
+
+    const payload = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      updatedAt?: string;
+      message?: string;
+    } | null;
+
+    if (!response.ok || !payload?.ok || !payload.updatedAt) {
+      return {
+        ok: false,
+        message: payload?.message ?? "This document could not be saved.",
+      };
+    }
+
+    return { ok: true, updatedAt: payload.updatedAt };
+  } catch {
+    return { ok: false, message: "This document could not be saved." };
+  }
+}
+
 export function MarkdownEditor({
   documentId,
   title,
@@ -222,6 +282,7 @@ export function MarkdownEditor({
   collaboration = null,
   wikiLinks,
   assetLinks,
+  embedSessionToken = null,
   stickersEnabled = false,
   calendarEnabled = false,
   enabledExtensionIds,
@@ -521,18 +582,25 @@ export function MarkdownEditor({
     setSaving(true);
     setSaveError(null);
 
-    const result = isCollaborative
-      ? await saveDocumentTitleAction({
+    const result = embedSessionToken
+      ? await saveDocumentViaEmbedSession({
           documentId,
+          token: embedSessionToken,
           title: titleAtSave,
-          shareLinkId,
+          markdown: isCollaborative ? undefined : markdownAtSave,
         })
-      : await saveMarkdownDocumentAction({
-          documentId,
-          title: titleAtSave,
-          markdown: markdownAtSave,
-          shareLinkId,
-        });
+      : isCollaborative
+        ? await saveDocumentTitleAction({
+            documentId,
+            title: titleAtSave,
+            shareLinkId,
+          })
+        : await saveMarkdownDocumentAction({
+            documentId,
+            title: titleAtSave,
+            markdown: markdownAtSave,
+            shareLinkId,
+          });
 
     savingRef.current = false;
     setSaving(false);
@@ -554,7 +622,7 @@ export function MarkdownEditor({
       titleValueRef.current !== titleAtSave ||
         (!isCollaborative && markdownValueRef.current !== markdownAtSave),
     );
-  }, [documentId, isCollaborative, shareLinkId]);
+  }, [documentId, embedSessionToken, isCollaborative, shareLinkId]);
 
   const applyDocumentMetadata = useCallback(
     (metadata: ParsedDocumentMetadata) => {
@@ -917,10 +985,12 @@ export function MarkdownEditor({
             createWikiLinkCompletionSource(
               wikiLinkMapStore,
               wikiCompletionDismissal,
+              embedSessionToken,
             ),
             createAssetCompletionSource({
               documentId,
               shareLinkId,
+              embedSessionToken,
               onResolvedAsset(asset) {
                 setAssetUploadError(null);
                 setAssetLinkMap((current) => ({
@@ -968,6 +1038,7 @@ export function MarkdownEditor({
       wikiLinkMapStore,
       documentId,
       shareLinkId,
+      embedSessionToken,
       calendarWeekStartsOn,
       calendarVisibility,
       extensionSlashCommands,
@@ -1008,6 +1079,9 @@ export function MarkdownEditor({
         const response = await fetch("/api/assets", {
           method: "POST",
           body: formData,
+          headers: embedSessionToken
+            ? { Authorization: `Bearer ${embedSessionToken}` }
+            : undefined,
         });
         const payload = (await response.json()) as {
           asset?: {
@@ -1048,7 +1122,7 @@ export function MarkdownEditor({
         setUploadingAsset(false);
       }
     },
-    [documentId, shareLinkId],
+    [documentId, embedSessionToken, shareLinkId],
   );
   assetUploadHandlerRef.current = uploadAssetFile;
 
@@ -4195,6 +4269,7 @@ function safeExternalImageSrc(target: string) {
 function createWikiLinkCompletionSource(
   wikiLinkMapStore: WikiLinkMapStore,
   wikiCompletionDismissal: WikiCompletionDismissalStore,
+  embedSessionToken?: string | null,
 ) {
   return async (context: CompletionContext) => {
     const region = getOpenWikiLinkCompletionRegion(context.state, context.pos);
@@ -4214,7 +4289,10 @@ function createWikiLinkCompletionSource(
       return null;
     }
 
-    const freshWikiLinks = await fetchWikiLinkCompletionMap(wikiLinkMapStore.get());
+    const freshWikiLinks = await fetchWikiLinkCompletionMap(
+      wikiLinkMapStore.get(),
+      embedSessionToken,
+    );
     wikiLinkMapStore.set(freshWikiLinks);
 
     return {
@@ -4235,11 +4313,13 @@ function createWikiLinkCompletionSource(
 function createAssetCompletionSource({
   documentId,
   shareLinkId,
+  embedSessionToken,
   onResolvedAsset,
   onError,
 }: {
   documentId: string;
   shareLinkId: string | null;
+  embedSessionToken?: string | null;
   onResolvedAsset: (asset: AssetCompletionItem) => void;
   onError: (message: string) => void;
 }) {
@@ -4255,6 +4335,7 @@ function createAssetCompletionSource({
     const assets = await fetchAssetCompletionItems({
       documentId,
       shareLinkId,
+      embedSessionToken,
     });
     const options = assets
       .filter((asset) => matchesAssetCompletionQuery(asset, query))
@@ -4263,6 +4344,7 @@ function createAssetCompletionSource({
           asset,
           documentId,
           shareLinkId,
+          embedSessionToken,
           hasClosingMarker: region.hasClosingMarker,
           onResolvedAsset,
           onError,
@@ -4281,9 +4363,11 @@ function createAssetCompletionSource({
 async function fetchAssetCompletionItems({
   documentId,
   shareLinkId,
+  embedSessionToken,
 }: {
   documentId: string;
   shareLinkId: string | null;
+  embedSessionToken?: string | null;
 }) {
   const params = new URLSearchParams({ documentId });
 
@@ -4295,6 +4379,9 @@ async function fetchAssetCompletionItems({
     const response = await fetch(`/api/assets/completions?${params}`, {
       cache: "no-store",
       credentials: "same-origin",
+      headers: embedSessionToken
+        ? { Authorization: `Bearer ${embedSessionToken}` }
+        : undefined,
     });
 
     if (!response.ok) {
@@ -4315,6 +4402,7 @@ function createAssetCompletionOption({
   asset,
   documentId,
   shareLinkId,
+  embedSessionToken,
   hasClosingMarker,
   onResolvedAsset,
   onError,
@@ -4322,6 +4410,7 @@ function createAssetCompletionOption({
   asset: AssetCompletionItem;
   documentId: string;
   shareLinkId: string | null;
+  embedSessionToken?: string | null;
   hasClosingMarker: boolean;
   onResolvedAsset: (asset: AssetCompletionItem) => void;
   onError: (message: string) => void;
@@ -4340,6 +4429,7 @@ function createAssetCompletionOption({
         asset,
         documentId,
         shareLinkId,
+        embedSessionToken,
         hasClosingMarker,
         onResolvedAsset,
         onError,
@@ -4357,6 +4447,7 @@ async function applyAssetCompletion({
   asset,
   documentId,
   shareLinkId,
+  embedSessionToken,
   hasClosingMarker,
   onResolvedAsset,
   onError,
@@ -4368,6 +4459,7 @@ async function applyAssetCompletion({
   asset: AssetCompletionItem;
   documentId: string;
   shareLinkId: string | null;
+  embedSessionToken?: string | null;
   hasClosingMarker: boolean;
   onResolvedAsset: (asset: AssetCompletionItem) => void;
   onError: (message: string) => void;
@@ -4375,7 +4467,12 @@ async function applyAssetCompletion({
   try {
     const response = await fetch(`/api/assets/${asset.id}/link`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(embedSessionToken
+          ? { Authorization: `Bearer ${embedSessionToken}` }
+          : {}),
+      },
       credentials: "same-origin",
       body: JSON.stringify({ documentId, shareLinkId }),
     });
@@ -4510,11 +4607,17 @@ function isInsideDismissedWikiCompletionRegion(
   return region?.markerFrom === dismissal.markerFrom;
 }
 
-async function fetchWikiLinkCompletionMap(fallback: WikiLinkResolutionMap) {
+async function fetchWikiLinkCompletionMap(
+  fallback: WikiLinkResolutionMap,
+  embedSessionToken?: string | null,
+) {
   try {
     const response = await fetch("/api/documents/wiki-links", {
       cache: "no-store",
       credentials: "same-origin",
+      headers: embedSessionToken
+        ? { Authorization: `Bearer ${embedSessionToken}` }
+        : undefined,
     });
 
     if (!response.ok) {

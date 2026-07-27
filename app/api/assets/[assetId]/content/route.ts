@@ -3,7 +3,10 @@ import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 
 import { getAssetObject } from "@/lib/storage/r2";
-import { getOptionalAssetUser, getReadableAsset } from "@/server/assets";
+import {
+  getOptionalAssetUserForContentRequest,
+  getReadableAsset,
+} from "@/server/assets";
 
 export const runtime = "nodejs";
 
@@ -27,7 +30,12 @@ async function serveAsset(
   headOnly: boolean,
 ) {
   const { assetId } = await context.params;
-  const user = await getOptionalAssetUser();
+  // Falls back to the embed session token (`?embed=`) when there is no Vault
+  // session cookie — an `<img>` tag can't set an Authorization header, so the
+  // embed editor page threads the token through the URL instead. The token is
+  // an identity assertion only: getReadableAsset below still runs its full,
+  // unmodified permission check against whatever id is resolved either way.
+  const user = await getOptionalAssetUserForContentRequest(request);
   const url = new URL(request.url);
   const documentId = url.searchParams.get("doc");
   const asset = await getReadableAsset({

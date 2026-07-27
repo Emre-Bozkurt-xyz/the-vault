@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildEnforcedCsp,
@@ -35,6 +35,58 @@ describe("buildReportOnlyCsp", () => {
     expect(csp).toContain("https://www.youtube-nocookie.com");
     expect(csp).toContain("https://*.bandcamp.com");
     expect(csp).toContain("img-src 'self' https: data: blob:");
+  });
+});
+
+describe("embed frame-ancestors", () => {
+  const originalEnv = process.env.EMBED_FRAME_ANCESTORS;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.EMBED_FRAME_ANCESTORS;
+    } else {
+      process.env.EMBED_FRAME_ANCESTORS = originalEnv;
+    }
+  });
+
+  it("non-embed requests keep frame-ancestors 'self' regardless of the env var", () => {
+    process.env.EMBED_FRAME_ANCESTORS = "https://den.ems-place.com";
+    expect(buildEnforcedCsp()).toContain("frame-ancestors 'self'");
+    expect(buildReportOnlyCsp("n")).toContain("frame-ancestors 'self'");
+  });
+
+  it("embed requests get the configured allow-list", () => {
+    process.env.EMBED_FRAME_ANCESTORS = "https://den.ems-place.com,https://other.example.com";
+    const enforced = buildEnforcedCsp({ embed: true });
+    const reportOnly = buildReportOnlyCsp("n", { embed: true });
+    expect(enforced).toContain(
+      "frame-ancestors https://den.ems-place.com https://other.example.com",
+    );
+    expect(reportOnly).toContain(
+      "frame-ancestors https://den.ems-place.com https://other.example.com",
+    );
+    expect(enforced).not.toContain("frame-ancestors 'self'");
+  });
+
+  it("an absent env var defaults embed requests to the Den origin, not '*'", () => {
+    delete process.env.EMBED_FRAME_ANCESTORS;
+    const csp = buildEnforcedCsp({ embed: true });
+    expect(csp).toContain("frame-ancestors https://den.ems-place.com");
+    expect(csp).not.toContain("*");
+  });
+
+  it("an empty env var does not degrade into '*'", () => {
+    process.env.EMBED_FRAME_ANCESTORS = "";
+    const csp = buildEnforcedCsp({ embed: true });
+    expect(csp).toContain("frame-ancestors https://den.ems-place.com");
+    expect(csp).not.toContain("*");
+  });
+
+  it("a literal '*' in the env var does not pass through", () => {
+    process.env.EMBED_FRAME_ANCESTORS = "*";
+    const csp = buildEnforcedCsp({ embed: true });
+    expect(csp).toContain("frame-ancestors https://den.ems-place.com");
+    expect(csp).not.toMatch(/frame-ancestors [^;]*\*/);
   });
 });
 

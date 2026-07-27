@@ -27,13 +27,26 @@ export function proxy(request: NextRequest) {
     request: { headers: requestHeaders },
   });
 
-  response.headers.set("Content-Security-Policy", buildEnforcedCsp());
+  // `/embed/...` (the Den embed editor) is meant to be framed cross-origin,
+  // so it gets an allow-listed `frame-ancestors` instead of `'self'` and must
+  // NOT carry `X-Frame-Options` — XFO has no allow-list concept and would
+  // block the framing outright regardless of what CSP says. Every other route
+  // keeps today's behavior exactly: `frame-ancestors 'self'` + `X-Frame-Options:
+  // SAMEORIGIN`.
+  const isEmbedRoute = request.nextUrl.pathname.startsWith("/embed/");
+
+  response.headers.set(
+    "Content-Security-Policy",
+    buildEnforcedCsp({ embed: isEmbedRoute }),
+  );
   response.headers.set(
     "Content-Security-Policy-Report-Only",
-    buildReportOnlyCsp(nonce),
+    buildReportOnlyCsp(nonce, { embed: isEmbedRoute }),
   );
   response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("X-Frame-Options", "SAMEORIGIN");
+  if (!isEmbedRoute) {
+    response.headers.set("X-Frame-Options", "SAMEORIGIN");
+  }
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set(
     "Permissions-Policy",
