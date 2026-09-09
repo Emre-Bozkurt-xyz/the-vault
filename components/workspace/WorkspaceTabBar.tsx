@@ -1,15 +1,28 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { cn } from "@/lib/utils";
 import { subscribeToWorkspaceDocumentRemovals } from "@/components/workspace/workspace-events";
@@ -57,23 +70,9 @@ export function WorkspaceTabBar({
       id: canonicalActiveHref,
     }),
   );
-  const [draggedHref, setDraggedHref] = useState<string | null>(null);
-  // Pointer-based reordering (works for mouse, touch, and pen). HTML5 drag was
-  // replaced because `dragstart`/`dragover` never fire on touch. On touch we
-  // require a short press-and-hold before a drag begins so a quick horizontal
-  // swipe still scrolls the tab strip; mouse/pen start on a small move.
-  const dragRef = useRef<{
-    pointerId: number;
-    href: string;
-    element: HTMLElement;
-    startX: number;
-    startY: number;
-    longPressTimer: number | null;
-    dragging: boolean;
-  } | null>(null);
-  // Set when a drag ends so the click synthesized right after it does not
-  // navigate the tab's link. Reset on the next pointer down (a fresh gesture),
-  // so a real tap is never swallowed even when no post-drag click fires.
+  // Set when a drag begins so the click that fires right after the drop does
+  // not navigate the tab's link. Reset on the next pointer down (a fresh
+  // gesture), so a real tap is never swallowed.
   const justDraggedRef = useRef(false);
   // Mirrors `tabs` so the removal handler can read the freshest list and decide
   // the neighbor tab synchronously (no side effects inside a state updater).
@@ -81,6 +80,19 @@ export function WorkspaceTabBar({
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  // Mouse drags start after a small move; touch drags need a short press-and-
+  // hold (so a quick horizontal swipe still scrolls the overflowing strip);
+  // keyboard reordering works via the sortable coordinate getter.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -145,226 +157,155 @@ export function WorkspaceTabBar({
     });
   }
 
-  function reorderTabs(fromHref: string, toHref: string) {
-    if (fromHref === toHref) {
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
       return;
     }
 
     setTabs((currentTabs) => {
-      const fromIndex = currentTabs.findIndex((tab) => tab.href === fromHref);
-      const toIndex = currentTabs.findIndex((tab) => tab.href === toHref);
+      const fromIndex = currentTabs.findIndex((tab) => tab.href === active.id);
+      const toIndex = currentTabs.findIndex((tab) => tab.href === over.id);
 
       if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
         return currentTabs;
       }
 
-      const nextTabs = [...currentTabs];
-      const [movedTab] = nextTabs.splice(fromIndex, 1);
-
-      if (!movedTab) {
-        return currentTabs;
-      }
-
-      nextTabs.splice(toIndex, 0, movedTab);
+      const nextTabs = arrayMove(currentTabs, fromIndex, toIndex);
       writeWorkspaceTabsCookie(nextTabs);
       return nextTabs;
     });
   }
 
-  const dragThresholdPx = 6;
-  const touchHoldMs = 280;
-
-  function clearLongPress() {
-    const state = dragRef.current;
-    if (state?.longPressTimer != null) {
-      window.clearTimeout(state.longPressTimer);
-      state.longPressTimer = null;
-    }
-  }
-
-  function beginDrag(state: NonNullable<typeof dragRef.current>) {
-    state.dragging = true;
-    setDraggedHref(state.href);
-    try {
-      state.element.setPointerCapture(state.pointerId);
-    } catch {
-      // Pointer may already be gone; capture is best-effort.
-    }
-  }
-
-  /** The href of the tab sitting under the given viewport point, if any. */
-  function tabHrefFromPoint(x: number, y: number) {
-    const node = document.elementFromPoint(x, y)?.closest("[data-tab-href]");
-    return node?.getAttribute("data-tab-href") ?? null;
-  }
-
-  function handleTabPointerDown(
-    event: ReactPointerEvent<HTMLDivElement>,
-    tab: WorkspaceTab,
-  ) {
-    // Only the primary mouse button starts a drag; let middle/right through to
-    // the existing close/aux handlers. A press on the close button is ignored.
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-    if ((event.target as HTMLElement).closest("[data-tab-close]")) {
-      return;
-    }
-
-    // A fresh gesture: any prior drag-end guard no longer applies.
-    justDraggedRef.current = false;
-
-    const state = {
-      pointerId: event.pointerId,
-      href: tab.href,
-      element: event.currentTarget,
-      startX: event.clientX,
-      startY: event.clientY,
-      longPressTimer: null as number | null,
-      dragging: false,
-    };
-    dragRef.current = state;
-
-    if (event.pointerType === "touch") {
-      state.longPressTimer = window.setTimeout(() => {
-        if (dragRef.current === state && !state.dragging) {
-          beginDrag(state);
-        }
-      }, touchHoldMs);
-    }
-  }
-
-  function handleTabPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    const state = dragRef.current;
-    if (!state || state.pointerId !== event.pointerId) {
-      return;
-    }
-
-    if (!state.dragging) {
-      const movedX = Math.abs(event.clientX - state.startX);
-      const movedY = Math.abs(event.clientY - state.startY);
-
-      if (event.pointerType === "touch") {
-        // Movement before the hold fires means the user is scrolling the strip;
-        // abandon the drag candidate so the browser can pan.
-        if (movedX > dragThresholdPx || movedY > dragThresholdPx) {
-          clearLongPress();
-          dragRef.current = null;
-        }
-        return;
-      }
-
-      // Mouse/pen: begin once the pointer has moved past the threshold.
-      if (movedX > dragThresholdPx || movedY > dragThresholdPx) {
-        beginDrag(state);
-      } else {
-        return;
-      }
-    }
-
-    // Prevent text selection / scroll while actively dragging.
-    event.preventDefault();
-    const targetHref = tabHrefFromPoint(event.clientX, event.clientY);
-    if (targetHref && targetHref !== state.href) {
-      reorderTabs(state.href, targetHref);
-    }
-  }
-
-  function handleTabPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-    const state = dragRef.current;
-    if (!state || state.pointerId !== event.pointerId) {
-      return;
-    }
-
-    clearLongPress();
-    if (state.dragging) {
-      justDraggedRef.current = true;
-      setDraggedHref(null);
-      try {
-        state.element.releasePointerCapture(event.pointerId);
-      } catch {
-        // Capture may have already been released.
-      }
-    }
-    dragRef.current = null;
-  }
-
   return (
     <div className="flex h-10 shrink-0 min-w-0 items-end overflow-x-auto border-b border-border/70 bg-background/95">
-      <div className="flex min-w-max items-end px-1">
-        {tabs.map((tab) => {
-          const Icon = iconByType[tab.type] ?? FileText;
-          const active = tab.href === canonicalActiveHref;
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        modifiers={[restrictToHorizontalAxis]}
+        onDragStart={() => {
+          justDraggedRef.current = true;
+        }}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex min-w-max items-end px-1">
+          <SortableContext
+            items={tabs.map((tab) => tab.href)}
+            strategy={horizontalListSortingStrategy}
+          >
+            {tabs.map((tab) => (
+              <SortableTab
+                key={tab.href}
+                tab={tab}
+                isActive={tab.href === canonicalActiveHref}
+                justDraggedRef={justDraggedRef}
+                onClose={closeTab}
+              />
+            ))}
+          </SortableContext>
+          <Link
+            href="/workspace"
+            aria-label="Open new tab"
+            className="flex h-9 w-9 flex-none items-center justify-center border-r border-border/60 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+          >
+            <Plus className="size-4" />
+          </Link>
+        </div>
+      </DndContext>
+    </div>
+  );
+}
 
-          return (
-            <div
-              key={tab.href}
-              data-tab-href={tab.href}
-              onAuxClick={(event) => {
-                if (event.button === 1) {
-                  event.preventDefault();
-                  closeTab(tab);
-                }
-              }}
-              onMouseDown={(event) => {
-                if (event.button === 1) {
-                  event.preventDefault();
-                }
-              }}
-              onPointerDown={(event) => handleTabPointerDown(event, tab)}
-              onPointerMove={handleTabPointerMove}
-              onPointerUp={handleTabPointerUp}
-              onPointerCancel={handleTabPointerUp}
-              className={cn(
-                "group flex h-9 min-w-36 max-w-56 flex-none touch-pan-x cursor-grab select-none items-center gap-2 border-r border-border/60 px-3 text-sm transition active:cursor-grabbing sm:min-w-44",
-                active
-                  ? "border-t border-t-border bg-card text-foreground"
-                  : "bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                draggedHref === tab.href && "opacity-55",
-              )}
-            >
-              <Link
-                href={tab.href}
-                onClick={(event) => {
-                  // Swallow the click synthesized right after a drag so it does
-                  // not navigate to the tab we just dropped.
-                  if (justDraggedRef.current) {
-                    event.preventDefault();
-                  }
-                }}
-                onAuxClick={(event) => {
-                  if (event.button === 1) {
-                    event.preventDefault();
-                  }
-                }}
-                className="flex min-w-0 flex-1 items-center gap-2"
-              >
-                <Icon className="size-3.5 shrink-0" />
-                <span className="truncate">{tab.title}</span>
-              </Link>
-              <button
-                type="button"
-                data-tab-close
-                aria-label={`Close ${tab.title}`}
-                onClick={() => closeTab(tab)}
-                className={cn(
-                  "rounded-sm p-0.5 text-muted-foreground opacity-70 transition hover:bg-muted hover:text-foreground",
-                  active ? "opacity-100" : "group-hover:opacity-100",
-                )}
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          );
-        })}
-        <Link
-          href="/workspace"
-          aria-label="Open new tab"
-          className="flex h-9 w-9 flex-none items-center justify-center border-r border-border/60 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
-        >
-          <Plus className="size-4" />
-        </Link>
-      </div>
+function SortableTab({
+  tab,
+  isActive,
+  justDraggedRef,
+  onClose,
+}: {
+  tab: WorkspaceTab;
+  isActive: boolean;
+  justDraggedRef: RefObject<boolean>;
+  onClose: (tab: WorkspaceTab) => void;
+}) {
+  const Icon = iconByType[tab.type] ?? FileText;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tab.href });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      // `touch-pan-x` keeps the strip horizontally scrollable on touch; the
+      // TouchSensor's press-and-hold delay is what distinguishes a scroll from
+      // a reorder. `select-none` + no-callout stop text selection / the mobile
+      // link menu that a long-press on the inner <a> would otherwise trigger.
+      className={cn(
+        "group relative flex h-9 min-w-36 max-w-56 flex-none touch-pan-x cursor-grab select-none items-center gap-2 border-r border-border/60 px-3 text-sm [-webkit-touch-callout:none] active:cursor-grabbing sm:min-w-44",
+        isActive
+          ? "border-t border-t-border bg-card text-foreground"
+          : "bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+        isDragging ? "z-10 opacity-95 shadow-lg shadow-black/30" : null,
+      )}
+      onPointerDownCapture={() => {
+        // Fresh gesture: any prior drag-end click guard no longer applies.
+        justDraggedRef.current = false;
+      }}
+      onContextMenu={(event) => event.preventDefault()}
+      onAuxClick={(event) => {
+        if (event.button === 1) {
+          event.preventDefault();
+          onClose(tab);
+        }
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      <Link
+        href={tab.href}
+        draggable={false}
+        onClick={(event) => {
+          // Swallow the click synthesized right after a drag so it does not
+          // navigate to the tab we just dropped.
+          if (justDraggedRef.current) {
+            event.preventDefault();
+          }
+        }}
+        onAuxClick={(event) => {
+          if (event.button === 1) {
+            event.preventDefault();
+          }
+        }}
+        className="flex min-w-0 flex-1 items-center gap-2"
+      >
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{tab.title}</span>
+      </Link>
+      <button
+        type="button"
+        data-tab-close
+        aria-label={`Close ${tab.title}`}
+        // Keep a press on the close button from starting a drag: stop the
+        // sensor activator events (mouse/touch) from reaching the tab's
+        // drag listeners on the parent.
+        onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={() => onClose(tab)}
+        className={cn(
+          "rounded-sm p-0.5 text-muted-foreground opacity-70 transition hover:bg-muted hover:text-foreground",
+          isActive ? "opacity-100" : "group-hover:opacity-100",
+        )}
+      >
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }
