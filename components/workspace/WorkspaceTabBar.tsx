@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
@@ -52,6 +58,23 @@ export function WorkspaceTabBar({
     }),
   );
   const [draggedHref, setDraggedHref] = useState<string | null>(null);
+  // Pointer-based reordering (works for mouse, touch, and pen). HTML5 drag was
+  // replaced because `dragstart`/`dragover` never fire on touch. On touch we
+  // require a short press-and-hold before a drag begins so a quick horizontal
+  // swipe still scrolls the tab strip; mouse/pen start on a small move.
+  const dragRef = useRef<{
+    pointerId: number;
+    href: string;
+    element: HTMLElement;
+    startX: number;
+    startY: number;
+    longPressTimer: number | null;
+    dragging: boolean;
+  } | null>(null);
+  // Set when a drag ends so the click synthesized right after it does not
+  // navigate the tab's link. Reset on the next pointer down (a fresh gesture),
+  // so a real tap is never swallowed even when no post-drag click fires.
+  const justDraggedRef = useRef(false);
   // Mirrors `tabs` so the removal handler can read the freshest list and decide
   // the neighbor tab synchronously (no side effects inside a state updater).
   const tabsRef = useRef(tabs);
@@ -148,25 +171,122 @@ export function WorkspaceTabBar({
     });
   }
 
-  function handleDragStart(event: DragEvent<HTMLDivElement>, tab: WorkspaceTab) {
-    setDraggedHref(tab.href);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", tab.href);
-  }
+  const dragThresholdPx = 6;
+  const touchHoldMs = 280;
 
-  function handleDragOver(event: DragEvent<HTMLDivElement>, tab: WorkspaceTab) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-
-    const sourceHref = draggedHref || event.dataTransfer.getData("text/plain");
-    if (sourceHref) {
-      reorderTabs(sourceHref, tab.href);
+  function clearLongPress() {
+    const state = dragRef.current;
+    if (state?.longPressTimer != null) {
+      window.clearTimeout(state.longPressTimer);
+      state.longPressTimer = null;
     }
   }
 
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
+  function beginDrag(state: NonNullable<typeof dragRef.current>) {
+    state.dragging = true;
+    setDraggedHref(state.href);
+    try {
+      state.element.setPointerCapture(state.pointerId);
+    } catch {
+      // Pointer may already be gone; capture is best-effort.
+    }
+  }
+
+  /** The href of the tab sitting under the given viewport point, if any. */
+  function tabHrefFromPoint(x: number, y: number) {
+    const node = document.elementFromPoint(x, y)?.closest("[data-tab-href]");
+    return node?.getAttribute("data-tab-href") ?? null;
+  }
+
+  function handleTabPointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+    tab: WorkspaceTab,
+  ) {
+    // Only the primary mouse button starts a drag; let middle/right through to
+    // the existing close/aux handlers. A press on the close button is ignored.
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    if ((event.target as HTMLElement).closest("[data-tab-close]")) {
+      return;
+    }
+
+    // A fresh gesture: any prior drag-end guard no longer applies.
+    justDraggedRef.current = false;
+
+    const state = {
+      pointerId: event.pointerId,
+      href: tab.href,
+      element: event.currentTarget,
+      startX: event.clientX,
+      startY: event.clientY,
+      longPressTimer: null as number | null,
+      dragging: false,
+    };
+    dragRef.current = state;
+
+    if (event.pointerType === "touch") {
+      state.longPressTimer = window.setTimeout(() => {
+        if (dragRef.current === state && !state.dragging) {
+          beginDrag(state);
+        }
+      }, touchHoldMs);
+    }
+  }
+
+  function handleTabPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const state = dragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (!state.dragging) {
+      const movedX = Math.abs(event.clientX - state.startX);
+      const movedY = Math.abs(event.clientY - state.startY);
+
+      if (event.pointerType === "touch") {
+        // Movement before the hold fires means the user is scrolling the strip;
+        // abandon the drag candidate so the browser can pan.
+        if (movedX > dragThresholdPx || movedY > dragThresholdPx) {
+          clearLongPress();
+          dragRef.current = null;
+        }
+        return;
+      }
+
+      // Mouse/pen: begin once the pointer has moved past the threshold.
+      if (movedX > dragThresholdPx || movedY > dragThresholdPx) {
+        beginDrag(state);
+      } else {
+        return;
+      }
+    }
+
+    // Prevent text selection / scroll while actively dragging.
     event.preventDefault();
-    setDraggedHref(null);
+    const targetHref = tabHrefFromPoint(event.clientX, event.clientY);
+    if (targetHref && targetHref !== state.href) {
+      reorderTabs(state.href, targetHref);
+    }
+  }
+
+  function handleTabPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const state = dragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+
+    clearLongPress();
+    if (state.dragging) {
+      justDraggedRef.current = true;
+      setDraggedHref(null);
+      try {
+        state.element.releasePointerCapture(event.pointerId);
+      } catch {
+        // Capture may have already been released.
+      }
+    }
+    dragRef.current = null;
   }
 
   return (
@@ -179,7 +299,7 @@ export function WorkspaceTabBar({
           return (
             <div
               key={tab.href}
-              draggable
+              data-tab-href={tab.href}
               onAuxClick={(event) => {
                 if (event.button === 1) {
                   event.preventDefault();
@@ -191,12 +311,12 @@ export function WorkspaceTabBar({
                   event.preventDefault();
                 }
               }}
-              onDragStart={(event) => handleDragStart(event, tab)}
-              onDragOver={(event) => handleDragOver(event, tab)}
-              onDrop={handleDrop}
-              onDragEnd={() => setDraggedHref(null)}
+              onPointerDown={(event) => handleTabPointerDown(event, tab)}
+              onPointerMove={handleTabPointerMove}
+              onPointerUp={handleTabPointerUp}
+              onPointerCancel={handleTabPointerUp}
               className={cn(
-                "group flex h-9 min-w-36 max-w-56 flex-none cursor-grab items-center gap-2 border-r border-border/60 px-3 text-sm transition active:cursor-grabbing sm:min-w-44",
+                "group flex h-9 min-w-36 max-w-56 flex-none touch-pan-x cursor-grab select-none items-center gap-2 border-r border-border/60 px-3 text-sm transition active:cursor-grabbing sm:min-w-44",
                 active
                   ? "border-t border-t-border bg-card text-foreground"
                   : "bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
@@ -205,6 +325,13 @@ export function WorkspaceTabBar({
             >
               <Link
                 href={tab.href}
+                onClick={(event) => {
+                  // Swallow the click synthesized right after a drag so it does
+                  // not navigate to the tab we just dropped.
+                  if (justDraggedRef.current) {
+                    event.preventDefault();
+                  }
+                }}
                 onAuxClick={(event) => {
                   if (event.button === 1) {
                     event.preventDefault();
@@ -217,6 +344,7 @@ export function WorkspaceTabBar({
               </Link>
               <button
                 type="button"
+                data-tab-close
                 aria-label={`Close ${tab.title}`}
                 onClick={() => closeTab(tab)}
                 className={cn(
