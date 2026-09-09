@@ -281,7 +281,10 @@ export const localBuiltInExtensions: VaultExtension[] = [
           label: "calc",
           title: "Calc value",
           keywords: "calculate money currency total sum expression",
-          insert: { markdown: ":calc[]", cursorOffset: 6 },
+          // Inline, not block: an inline value belongs inside the sentence
+          // being written, so it must not break the paragraph the way every
+          // other extension insertion does.
+          insert: { markdown: ":calc[]", cursorOffset: 6, placement: "inline" },
         },
         {
           id: "vault.calc.slash-block",

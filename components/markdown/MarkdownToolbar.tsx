@@ -62,7 +62,8 @@ export type MarkdownFormat =
   | "table"
   | "region"
   | "horizontalRule"
-  | "calendar";
+  | "calendar"
+  | "calcBlock";
 
 export function MarkdownToolbar({ onFormat, extensionItems }: MarkdownToolbarProps) {
   const { bindings, isMac, editorShortcutsEnabled } = useKeybindings();

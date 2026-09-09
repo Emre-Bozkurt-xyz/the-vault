@@ -47,6 +47,7 @@ import {
   BookOpenText,
   CheckCircle2,
   Eye,
+  Calculator,
   CalendarPlus,
   FileCode2,
   Grid3x3,
@@ -165,6 +166,7 @@ type MarkdownEditorProps = {
   embedSessionToken?: string | null;
   stickersEnabled?: boolean;
   calendarEnabled?: boolean;
+  calcEnabled?: boolean;
   /** Ids of the user's enabled extensions, used to gate extension slash items. */
   enabledExtensionIds?: string[];
   /** Whether the in-editor `/` slash command menu is active (user preference). */
@@ -296,6 +298,7 @@ export function MarkdownEditor({
   embedSessionToken = null,
   stickersEnabled = false,
   calendarEnabled = false,
+  calcEnabled = false,
   enabledExtensionIds,
   slashMenuEnabled = true,
   calendarWeekStartsOn = 0,
@@ -990,6 +993,7 @@ export function MarkdownEditor({
                   createSlashCommandCompletionSource({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
+                    insertInline,
                     extensionCommands: extensionSlashCommands,
                   }),
                 ]
@@ -1202,6 +1206,11 @@ export function MarkdownEditor({
       return;
     }
 
+    if (format === "calcBlock") {
+      insertCalcBlock(view);
+      return;
+    }
+
     const linePrefix: Record<MarkdownFormat, string | null> = {
       heading1: "# ",
       heading2: "## ",
@@ -1221,6 +1230,7 @@ export function MarkdownEditor({
       region: null,
       horizontalRule: null,
       calendar: null,
+      calcBlock: null,
     };
     const prefix = linePrefix[format];
 
@@ -1425,11 +1435,16 @@ export function MarkdownEditor({
               <MarkdownToolbar
                 onFormat={applyFormat}
                 extensionItems={
-                  stickersEnabled || calendarEnabled ? (
+                  stickersEnabled || calendarEnabled || calcEnabled ? (
                     <>
                       {calendarEnabled ? (
                         <CalendarToolbarGroup
                           onInsert={() => applyFormat("calendar")}
+                        />
+                      ) : null}
+                      {calcEnabled ? (
+                        <CalcToolbarGroup
+                          onInsert={() => applyFormat("calcBlock")}
                         />
                       ) : null}
                       {stickersEnabled ? (
@@ -1653,6 +1668,25 @@ function CalendarToolbarGroup({ onInsert }: { onInsert: () => void }) {
         className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
       >
         <CalendarPlus className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+function CalcToolbarGroup({ onInsert }: { onInsert: () => void }) {
+  return (
+    <div
+      data-slot="button-group"
+      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
+    >
+      <button
+        type="button"
+        title="Insert calc block"
+        aria-label="Insert calc block"
+        onClick={onInsert}
+        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
+      >
+        <Calculator className="size-4" />
       </button>
     </div>
   );
@@ -5578,6 +5612,47 @@ function insertBlock(view: EditorView, text: string, cursorOffset: number | null
     scrollIntoView: true,
   });
   view.focus();
+}
+
+/**
+ * Drops text at the cursor without disturbing the paragraph, replacing any
+ * selection. The mid-sentence counterpart to `insertBlock`: an inline
+ * `:calc[…]` typed after "The total is " must not become its own block.
+ */
+function insertInline(
+  view: EditorView,
+  text: string,
+  cursorOffset: number | null,
+) {
+  const selection = view.state.selection.main;
+  const cursorPosition =
+    selection.from + (cursorOffset === null ? text.length : cursorOffset);
+
+  view.dispatch({
+    changes: { from: selection.from, to: selection.to, insert: text },
+    selection: EditorSelection.cursor(cursorPosition),
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
+/**
+ * Inserts a `:::calc` declarations block.
+ *
+ * A selection becomes the body, so lines already written as `rent = 1200 CAD`
+ * can be turned into a block in place; with nothing selected the cursor lands
+ * on a blank first statement line, ready for the first binding.
+ */
+function insertCalcBlock(view: EditorView) {
+  const selection = view.state.selection.main;
+  const selected = view.state.sliceDoc(selection.from, selection.to).trim();
+  const opening = ":::calc\n";
+
+  insertBlock(
+    view,
+    `${opening}${selected}\n:::`,
+    selected ? null : opening.length,
+  );
 }
 
 function insertMarkdownAtSelection(view: EditorView, markdown: string) {

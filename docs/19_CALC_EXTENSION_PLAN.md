@@ -226,18 +226,16 @@ Per `docs/12_EXTENSION_REGISTRY_PLAN.md`, this is the extension that proves the
   read-mode pipeline is hardcoded in `MarkdownDocument.tsx`.
 - No per-render data channel for an extension to receive resolved data (the rate
   table) during render.
-- `ExtensionSlashCommand.insert` routes through `insertBlock`, documented as
+- ~~`ExtensionSlashCommand.insert` routes through `insertBlock`, documented as
   placing text "on its own line". An inline `:calc[]` must not break the
-  paragraph, so the contribution needs an inline variant:
+  paragraph, so the contribution needs an inline variant.~~ **Closed.**
+  `SlashCommandContribution["insert"]` gained `placement?: "block" | "inline"`
+  (default `"block"`, so every existing contribution is unchanged), and the
+  editor supplies an `insertInline` action alongside `insertBlock`. `/calc`
+  declares `placement: "inline"` and lands `:calc[]` at the cursor mid-sentence.
 
-```ts
-insert: {
-  markdown: string | (() => string);
-  cursorOffset?: number;
-  inline?: boolean;          // insert at cursor, no leading break
-  chainCompletion?: boolean; // wiki-link-style: open a source after inserting
-}
-```
+  Still open on the same field: `chainCompletion` — wiki-link-style, opening a
+  completion source after inserting (see *Typing ergonomics* below).
 
 ### Typing ergonomics
 
@@ -247,8 +245,16 @@ wiki-link precedent in `slash-commands.ts`, which inserts `[[`, seats the cursor
 then calls `startCompletion(view)`:
 
 - `/calc` inserts `:calc[]`, cursor inside, then opens a completion source.
+  **Half done**: the insertion and cursor seating ship; the completion source
+  does not.
 - That source offers currency codes and names already bound **earlier in this
-  document**, so `:calc[re` completes to `rent`.
+  document**, so `:calc[re` completes to `rent`. **Not built.**
+
+Alongside them, `/calcblock` inserts `:::calc\n\n:::` with the cursor on the
+blank statement line, and a toolbar button (`applyFormat("calcBlock")`, gated on
+the extension being enabled for the user, like the calendar's) does the same —
+except that it wraps a selection when there is one, so lines already written as
+`rent = 1200 CAD` become a block in place.
 
 `findSlashQuery` already matches `/` after whitespace as well as at line start,
 so inline invocation needs no change there. `isInsideCode` already recognizes

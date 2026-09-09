@@ -14,6 +14,7 @@ import {
 const source = createSlashCommandCompletionSource({
   applyFormat: () => {},
   insertBlock: () => {},
+  insertInline: () => {},
 });
 
 /**
@@ -141,6 +142,7 @@ describe("extension slash commands", () => {
     const withExtension = createSlashCommandCompletionSource({
       applyFormat: () => {},
       insertBlock: () => {},
+      insertInline: () => {},
       extensionCommands: [calendarCommand],
     });
 
@@ -159,6 +161,65 @@ describe("extension slash commands", () => {
   it("omits extension items when none are enabled", () => {
     // The default source has no extension commands.
     expect(displayLabels(runSourceAt("/‸"))).not.toContain("Calendar");
+  });
+
+  /**
+   * Routing an insertion to the wrong helper is silent and destructive: an
+   * inline `:calc[…]` sent through `insertBlock` gets `\n\n` prepended and a
+   * `\n` appended, so "The total is /calc" becomes a broken paragraph with the
+   * value stranded on its own line. These assert the two paths stay distinct.
+   */
+  describe("insertion placement", () => {
+    function insertionFor(command: ExtensionSlashCommand) {
+      const calls: Array<{ kind: string; text: string; offset: number | null }> =
+        [];
+      const record =
+        (kind: string) => (_view: unknown, text: string, offset: number | null) =>
+          void calls.push({ kind, text, offset });
+      const runner = createSlashCommandCompletionSource({
+        applyFormat: () => {},
+        insertBlock: record("block"),
+        insertInline: record("inline"),
+        extensionCommands: [command],
+      });
+      const result = runSourceAt("The total is /‸", runner);
+      const option = result?.options.find(
+        (candidate) => candidate.displayLabel === command.title,
+      );
+
+      if (typeof option?.apply !== "function") {
+        throw new Error(`no applicable option for ${command.title}`);
+      }
+
+      // `apply` dispatches once to drop the `/query`, then hands off to the
+      // item's `run`; a stub view is enough because neither helper is real here.
+      option.apply(
+        { dispatch: () => {} } as never,
+        option,
+        "The total is /".length,
+        "The total is /".length,
+      );
+
+      return calls;
+    }
+
+    it("sends a block contribution to insertBlock", () => {
+      expect(insertionFor(calendarCommand)).toEqual([
+        { kind: "block", text: "```calendar\nid: test\n```", offset: null },
+      ]);
+    });
+
+    it("sends an inline contribution to insertInline, with its cursor offset", () => {
+      expect(
+        insertionFor({
+          id: "vault.calc.slash",
+          label: "calc",
+          title: "Calc value",
+          section: "Calc",
+          insert: { markdown: ":calc[]", cursorOffset: 6, placement: "inline" },
+        }),
+      ).toEqual([{ kind: "inline", text: ":calc[]", offset: 6 }]);
+    });
   });
 });
 

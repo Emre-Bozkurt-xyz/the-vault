@@ -299,10 +299,17 @@ export type SlashCommandContribution = {
   /** Tooltip section; defaults to the source extension's name. */
   section?: string;
   insert: {
-    /** Block markdown to insert; a factory runs per insertion. */
+    /** Markdown to insert; a factory runs per insertion. */
     markdown: string | (() => string);
-    /** Cursor offset within the inserted text; omitted → cursor after the block. */
+    /** Cursor offset within the inserted text; omitted → cursor after it. */
     cursorOffset?: number;
+    /**
+     * `"block"` (the default) puts the text on its own line, breaking the
+     * paragraph if the cursor is mid-line. `"inline"` drops it at the cursor
+     * untouched, for contributions that belong *inside* a sentence — an inline
+     * `:calc[…]` typed after "The total is " must not become its own paragraph.
+     */
+    placement?: "block" | "inline";
   };
 };
 

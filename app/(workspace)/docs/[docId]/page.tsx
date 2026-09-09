@@ -97,6 +97,7 @@ export default async function DocumentPage({
     privateEmbeddedAssets,
     stickersExtSetting,
     calendarExtSetting,
+    calcExtSetting,
     editorSetting,
   ] =
     await Promise.all([
@@ -136,11 +137,18 @@ export default async function DocumentPage({
         ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calendar" })
         : Promise.resolve(null),
       document.access.canEdit
+        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calc" })
+        : Promise.resolve(null),
+      document.access.canEdit
         ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
         : Promise.resolve(null),
     ]);
   const stickersEnabled = stickersExtSetting?.enabled ?? false;
   const calendarEnabled = calendarExtSetting?.enabled ?? false;
+  // Gates the calc toolbar button and its slash commands only. Calc VALUES
+  // always render, for the same reason calendars do: a document must read the
+  // same for every viewer, whatever they have switched on for themselves.
+  const calcEnabled = calcExtSetting?.enabled ?? false;
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
@@ -148,6 +156,7 @@ export default async function DocumentPage({
   const enabledExtensionIds = [
     calendarEnabled ? "vault.calendar" : null,
     stickersEnabled ? "vault.stickers" : null,
+    calcEnabled ? "vault.calc" : null,
   ].filter((id): id is string => id !== null);
   const calendarSettings = calendarSettingsSchema.safeParse(
     calendarExtSetting?.settings ?? {},
@@ -280,6 +289,7 @@ export default async function DocumentPage({
             assetLinks={assetLinks}
             stickersEnabled={stickersEnabled}
             calendarEnabled={calendarEnabled}
+            calcEnabled={calcEnabled}
             enabledExtensionIds={enabledExtensionIds}
             slashMenuEnabled={slashMenuEnabled}
             calendarWeekStartsOn={calendarWeekStartsOn}

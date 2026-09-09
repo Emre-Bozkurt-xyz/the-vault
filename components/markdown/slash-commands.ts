@@ -22,10 +22,17 @@ import { type MarkdownFormat } from "./MarkdownToolbar";
  * - `insertBlock` is the raw block inserter for the few items that have no
  *   `MarkdownFormat` (callout, math), placing `text` on its own line and
  *   optionally seating the cursor at `cursorOffset` within it.
+ * - `insertInline` is its mid-sentence twin, for contributions that belong
+ *   inside a paragraph rather than beside one.
  */
 export type SlashCommandActions = {
   applyFormat: (format: MarkdownFormat) => void;
   insertBlock: (
+    view: EditorView,
+    text: string,
+    cursorOffset: number | null,
+  ) => void;
+  insertInline: (
     view: EditorView,
     text: string,
     cursorOffset: number | null,
@@ -35,8 +42,8 @@ export type SlashCommandActions = {
 /**
  * An enabled extension's slash item, resolved to a flat client shape by the
  * editor (from the registry's `getSlashCommandContributions`, filtered to the
- * user's enabled extensions). Kept markdown-only: it inserts a block via the
- * shared `insertBlock` helper.
+ * user's enabled extensions). Kept markdown-only: it inserts through one of the
+ * shared `insertBlock` / `insertInline` helpers.
  */
 export type ExtensionSlashCommand = {
   id: string;
@@ -50,6 +57,8 @@ export type ExtensionSlashCommand = {
   insert: {
     markdown: string | (() => string);
     cursorOffset?: number;
+    /** Defaults to `"block"`; see `SlashCommandContribution`. */
+    placement?: "block" | "inline";
   };
 };
 
@@ -242,12 +251,14 @@ const SLASH_ITEMS: SlashItem[] = [
 export function createSlashCommandCompletionSource(options: {
   applyFormat: SlashCommandActions["applyFormat"];
   insertBlock: SlashCommandActions["insertBlock"];
+  insertInline: SlashCommandActions["insertInline"];
   /** Slash items from the user's enabled extensions (empty when none). */
   extensionCommands?: ExtensionSlashCommand[];
 }): CompletionSource {
   const actions: SlashCommandActions = {
     applyFormat: options.applyFormat,
     insertBlock: options.insertBlock,
+    insertInline: options.insertInline,
   };
   // Core items first, then extension items — declaration order is the tie-break
   // CodeMirror falls back to when the query is empty or scores are equal.
@@ -304,7 +315,12 @@ function toExtensionItem(command: ExtensionSlashCommand): SlashItem {
         typeof command.insert.markdown === "function"
           ? command.insert.markdown()
           : command.insert.markdown;
-      actions.insertBlock(view, markdown, command.insert.cursorOffset ?? null);
+      const insert =
+        command.insert.placement === "inline"
+          ? actions.insertInline
+          : actions.insertBlock;
+
+      insert(view, markdown, command.insert.cursorOffset ?? null);
     },
   };
 }

@@ -116,6 +116,20 @@ export type SlashCommandContribution = {
 };
 ```
 
+**As shipped**, `insert` is the markdown branch only (no `format` branch was
+needed), and it gained a third field:
+
+```ts
+placement?: "block" | "inline";   // defaults to "block"
+```
+
+`"block"` routes through `insertBlock`, which breaks the paragraph and puts the
+text on its own line — right for a calendar or a declarations block, and wrong
+for anything that belongs *inside* a sentence. `vault.calc.slash` inserts an
+inline `:calc[…]`, so "The total is /calc" must not become a stranded line;
+it declares `placement: "inline"` and routes through `insertInline`. Covered by
+`components/markdown/slash-commands.test.ts` → *insertion placement*.
+
 Registry gets `getSlashCommandContributions()` (flatMap over
 `markdown.slashCommands`, tagged with `sourceExtensionId`), mirroring
 `getCommandContributions()`. The editor filters contributions through the same

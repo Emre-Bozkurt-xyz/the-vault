@@ -285,6 +285,21 @@ describe("splitCalcBlockSegments", () => {
     ]);
   });
 
+  // `insertBlock` (the toolbar button and `/calcblock`) does not force a blank
+  // line before what it inserts, so a block frequently ends up butted straight
+  // against the paragraph above it. Both surfaces locate blocks line by line —
+  // Live mode via `scanCalcBlocks`, Read mode here — so neither treats it as a
+  // lazy paragraph continuation, and the two cannot disagree about it.
+  it("recognizes a block butted straight against the paragraph above", () => {
+    const segments = splitCalcBlockSegments("Tail paragraph.\n:::calc\na = 1 CAD\n:::");
+
+    expect(segments[0]).toEqual({
+      type: "markdown",
+      markdown: "Tail paragraph.",
+    });
+    expect(segments[1].type).toBe("calc-block");
+  });
+
   it("drops blank lines inside a block", () => {
     const segments = splitCalcBlockSegments(":::calc\na = 1\n\nb = 2\n:::");
     const block = segments[0];

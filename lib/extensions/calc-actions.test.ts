@@ -220,4 +220,29 @@ describe("the calc extension registration", () => {
       calc?.markdown?.slashCommands?.map((command) => command.label),
     ).toEqual(["calc", "calcblock"]);
   });
+
+  // The two differ in more than their markdown: an inline value typed into a
+  // sentence must not be inserted as its own block, which is what every other
+  // extension contribution does and what the default placement still means.
+  it("marks the inline value inline and leaves the block a block", () => {
+    const [inline, block] = calc?.markdown?.slashCommands ?? [];
+
+    expect(inline.insert.placement).toBe("inline");
+    expect(inline.insert.markdown).toBe(":calc[]");
+    expect(block.insert.placement ?? "block").toBe("block");
+    expect(block.insert.markdown).toBe(":::calc\n\n:::");
+  });
+
+  // The cursor has to land inside the brackets and on the blank statement line
+  // respectively, or every insertion needs the same two keystrokes to fix up.
+  it("seats the cursor where the author types next", () => {
+    const [inline, block] = calc?.markdown?.slashCommands ?? [];
+
+    expect((inline.insert.markdown as string).slice(inline.insert.cursorOffset)).toBe(
+      "]",
+    );
+    expect((block.insert.markdown as string).slice(block.insert.cursorOffset)).toBe(
+      "\n:::",
+    );
+  });
 });
