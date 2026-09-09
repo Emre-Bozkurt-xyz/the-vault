@@ -747,6 +747,43 @@ that asset is explicitly public.
 
 ---
 
+## 10.5 FX Rates (`fx_rates`)
+
+Cached daily foreign-exchange rates for the `:calc` extension
+(`docs/19_CALC_EXTENSION_PLAN.md` §6). Added in migration
+`0021_hot_triathlon.sql`.
+
+```txt
+fx_rates
+  id          uuid primary key
+  base        text not null            -- currency quoted against (always EUR today)
+  quote       text not null            -- currency being priced
+  rate_date   date not null            -- publication day, YYYY-MM-DD
+  rate        numeric(24,12) not null  -- units of quote per 1 base
+  provider    text not null            -- shown in the value's provenance tooltip
+  fetched_at  timestamptz not null default now()
+
+unique(base, quote, rate_date)
+index(base, rate_date)
+```
+
+Properties that make this table unlike every other one here:
+
+- **No owner and no permission model.** It is provider-sourced public reference
+  data, so no read or write path needs an access check. It is the only table in
+  the app where that is true — do not use it as precedent for anything holding
+  user data.
+- **Day-scoped, not timestamped.** A report needs "the rate on 2026-09-08", not
+  "the rate right now". Pinning a document to a date is what makes its totals
+  reproducible rather than drifting on each page load.
+- **Written a whole base table at a time.** One provider request (~29 pairs for
+  ECB) serves every conversion in every document that day; cross rates are
+  triangulated through the base rather than stored per pair.
+- **`numeric`, never a float**, because the value feeds money arithmetic.
+
+`fetched_at` is what the cache-age check reads, so a re-fetch of a day the
+provider has revised must upsert (not skip) to correct the stored rate.
+
 ## 11. Audit Logs
 
 Not MVP, but good later.

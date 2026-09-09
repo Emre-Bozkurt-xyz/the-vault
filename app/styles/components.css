@@ -849,6 +849,163 @@
     overflow: hidden;
   }
 
+  /* Calc extension — see docs/19_CALC_EXTENSION_PLAN.md.
+     Deliberately styled like `abbr`, not like a widget: a computed figure has to
+     read as part of the sentence, or the document has become the spreadsheet
+     this feature exists to avoid. The dotted rule is also the affordance the
+     conversion-provenance tooltip will hang off in the FX slice. */
+  /* Derived from --muted-foreground, not --border: `--border` is tuned for card
+     edges (white at ~14% alpha) and is invisible as a 1px rule under text on the
+     dark theme. --muted-foreground is contrast-aware against the background in
+     both themes, which is what a hairline under prose needs. */
+  .vault-calc {
+    border-bottom: 1px dotted
+      color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+  }
+
+  .vault-calc-name,
+  .vault-calc-expr {
+    color: var(--muted-foreground);
+  }
+
+  .vault-calc-op {
+    margin: 0 0.25rem;
+    color: var(--muted-foreground);
+    opacity: 0.7;
+  }
+
+  /* Tabular figures so a column of amounts in a block lines up, and no wrap so a
+     formatted amount never breaks across lines mid-number. */
+  .vault-calc-value {
+    color: var(--foreground);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* A converted figure is marked so a reader can see at a glance that it was
+     priced rather than written, and knows to hover for the rate. Solid rather
+     than a colour change: currency conversion is not a warning. */
+  .vault-calc[data-calc-state="converted"] {
+    border-bottom-style: solid;
+    border-bottom-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 45%,
+      transparent
+    );
+  }
+
+  /* Priced from a table the provider could not confirm. Dashed reads as
+     provisional without the alarm of an error colour — the number is probably
+     right, just not vouched for. */
+  .vault-calc[data-calc-state="stale"] {
+    border-bottom-style: dashed;
+    border-bottom-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 70%,
+      transparent
+    );
+  }
+
+  .vault-calc[data-calc-state="error"] {
+    border-bottom-color: color-mix(
+      in oklab,
+      var(--destructive) 55%,
+      transparent
+    );
+  }
+
+  .vault-calc[data-calc-state="error"] .vault-calc-expr {
+    color: color-mix(in oklab, var(--destructive) 82%, var(--foreground));
+  }
+
+  /* The Live-mode widget. Internal (`.vault-cm-*` is explicitly non-contract),
+     and only sets what differs from the Read-mode value: the editor uses a
+     monospace stack, so the rendered figure must opt back into the prose font
+     or it reads as source rather than as a result. */
+  .vault-cm-calc {
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    cursor: text;
+  }
+
+  .vault-cm-calc-block {
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    cursor: text;
+  }
+
+  /* An authored `{collapsed}` block still shows its rows while editing: the
+     fold is for readers, and hiding declarations from the person writing them
+     would make the block impossible to work on. The marker stays visible so the
+     author can see the flag is set. */
+  .vault-cm-calc-block[data-calc-collapsed="true"]::before {
+    content: "collapsed for readers";
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+  }
+
+  .vault-calc-block {
+    margin: 1rem 0;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in oklab, var(--muted) 30%, transparent);
+  }
+
+  /* `display: contents` on the rows lifts every name/`=`/value into one grid, so
+     the `=` aligns down the whole block instead of only within a row. */
+  .vault-calc-block-body {
+    display: grid;
+    grid-template-columns: max-content max-content minmax(0, 1fr);
+    column-gap: 0.1rem;
+    row-gap: 0.15rem;
+    align-items: baseline;
+  }
+
+  .vault-calc-block-row,
+  .vault-calc-block-row > .vault-calc {
+    display: contents;
+  }
+
+  /* The dotted rule earns its keep inline, where a value sits in prose; repeated
+     down every row of a declarations block it is just noise. */
+  .vault-calc-block-row > .vault-calc {
+    border-bottom: none;
+  }
+
+  .vault-calc-block-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    color: var(--muted-foreground);
+    font-size: 0.9rem;
+    list-style: none;
+  }
+
+  .vault-calc-block-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .vault-calc-block-caret {
+    width: 0;
+    height: 0;
+    border-top: 0.3rem solid transparent;
+    border-bottom: 0.3rem solid transparent;
+    border-left: 0.4rem solid currentColor;
+    transition: transform 120ms ease;
+  }
+
+  .vault-calc-block-foldable[open] .vault-calc-block-caret {
+    transform: rotate(90deg);
+  }
+
+  .vault-calc-block-foldable[open] .vault-calc-block-summary {
+    margin-bottom: 0.4rem;
+  }
+
   .vault-md-strong {
     font-weight: 700;
   }

@@ -13,9 +13,22 @@ public API**: renaming or removing a contract class is a breaking change and
 needs a deprecation path. Non-contract classes (below) are internal and may
 change freely.
 
-The classes here are exactly what the raw-HTML class allowlist
-(`lib/html-class.ts`) and the snippet compiler's selector policy permit content
-to reference. Keep the three in sync.
+Two related mechanisms are often confused with this contract. Neither is the
+same thing:
+
+- **`lib/html-class.ts`** governs what *authors* may put in a `class` attribute
+  on raw HTML, so a shared document cannot borrow app chrome to spoof the UI. It
+  is much narrower than this contract — `.vault-md-p` is contract but is not in
+  that allowlist. Generated classes appear there only when a transform emits
+  them as an HTML *string* that flows back through the sanitizer (asset embeds,
+  wiki links). Classes applied by a React component in
+  `createMarkdownComponents` are added after the rehype pipeline and never need
+  an allowlist entry.
+- **The snippet compiler** (`lib/snippets/compile.ts`) has **no class allowlist
+  at all**. `selectorIsSafe` rejects only `html`/`body`/`:root`/`:host` and
+  over-deep selectors; every other selector is scope-prefixed and allowed. So
+  exposing new markup to snippet authors requires stable class names and an
+  entry here — not a compiler change.
 
 ## Scope
 
@@ -85,6 +98,34 @@ Single-embed layout modifiers: `.vault-asset-width-*`, `.vault-asset-align-*`,
 `.vault-md-wiki-link` (+ `-ambiguous` / `-private`), `.vault-md-hidden-anchor`,
 `.vault-md-region` (+ `-foldable` / `-static`), `.vault-md-document-embed`
 (+ header/title/body/message parts), `.vault-region`.
+
+## Calc values
+
+Inline computed values (`:calc[…]`) and `:::calc` blocks. See
+`docs/19_CALC_EXTENSION_PLAN.md`.
+
+| Class | Element |
+|---|---|
+| `.vault-calc` | inline value root |
+| `.vault-calc-name` | the bound name, when shown |
+| `.vault-calc-op` | the `=` separator |
+| `.vault-calc-expr` | the source expression (`show=expr`, and error bodies) |
+| `.vault-calc-value` | the formatted result |
+| `.vault-calc-block` | a `:::calc` declarations block |
+| `.vault-calc-block-body` / `-row` | the row grid and one declaration |
+| `.vault-calc-block-summary` / `-title` / `-caret` | the `{collapsed}` fold header |
+
+State is a data attribute rather than modifier classes, matching the callout
+precedent: `.vault-calc[data-calc-state="<state>"]` where `<state>` ∈ `ok`,
+`error`. The FX slice adds `converted` and `stale`; styling `[data-calc-state]`
+generally is forward-compatible, so new states never need new contract classes.
+
+`.vault-calc-block-foldable` marks a block rendered as `<details>`; use
+`[open]` for the expanded state.
+
+Every one of these is applied by `CalcValue`/`CalcBlock` after the rehype
+pipeline, so none appear in `lib/html-class.ts` and authored raw HTML cannot
+mint them.
 
 ## Author hook classes
 

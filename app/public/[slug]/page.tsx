@@ -7,6 +7,8 @@ import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDispl
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { getFxRateTable } from "@/server/fx-rates";
+import { parseCalcSettings } from "@/lib/calc/settings";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createMarkdownExcerpt } from "@/lib/markdown";
 import { listAssetResolutionsForDocument } from "@/server/assets";
@@ -118,6 +120,16 @@ export default async function PublicDocumentPage({
     getViewerStylingPreference(viewer.userId ?? null),
     getCspNonce(),
   ]);
+
+  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
+  // anything is cached, and returns null rather than throwing when it is not —
+  // conversions then report `missing-rate` and the document still renders.
+  // `calc_rate_date` pins the report to a day, so its totals stay the same
+  // on every reading instead of drifting with the market.
+  const fxTable = await getFxRateTable({
+    date: parseCalcSettings(document.markdown).rateDate ?? undefined,
+  });
+
   const snippetCss = applyStyling
     ? await getActiveSnippetCssForDocument(document.id)
     : "";
@@ -177,6 +189,7 @@ export default async function PublicDocumentPage({
                     assetLinks={assetLinks}
                     documentId={document.id}
                     calendarStates={calendarStates}
+                    fxTable={fxTable}
                   />
                 </DocumentStyling>
               </PublicStickerDisplay>

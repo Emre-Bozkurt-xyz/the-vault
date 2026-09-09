@@ -27,6 +27,7 @@ import {
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
 import { getAssetForUser } from "@/server/assets";
 import { getDocumentForUser } from "@/server/documents";
+import { getFxRateTable } from "@/server/fx-rates";
 import {
   deleteDocumentExtensionStateForUser,
   getDocumentExtensionStateForUser,
@@ -398,7 +399,18 @@ export async function runAgentActionForUser({
 
   const parsedInput = entry.action.input.parse(input ?? {});
 
-  const context: ExtensionAgentActionContext = { user: { id: userId } };
+  let fxTable: Awaited<ReturnType<typeof getFxRateTable>> | undefined;
+
+  const context: ExtensionAgentActionContext = {
+    user: { id: userId },
+    fx: {
+      // Memoized per call so an action reading rates twice makes one request.
+      getTable: async () => {
+        fxTable ??= await getFxRateTable();
+        return fxTable;
+      },
+    },
+  };
 
   if (entry.action.scope === "document") {
     if (!documentId) {

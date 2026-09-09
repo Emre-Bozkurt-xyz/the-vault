@@ -569,6 +569,10 @@ verification).
 | 2026-05-26 | Delay Yjs until post-MVP | Avoid drowning in collaboration complexity |
 | 2026-07-11 | Command palette: `/` for commands/navigation, plain text for content search only | Injecting section-navigation commands into content search conflated "find content" with "go to a section" and confused testing; VS Code–style separation is clearer. Don't re-add nav commands to search mode |
 | 2026-07-23 | PWA service worker is network-first for HTML, cache-first only for fingerprinted assets | Keeps the installed PWA from ever showing a stale build — new deploys appear immediately — while still satisfying installability and offering offline fallback. Do not precache HTML/navigations |
+| 2026-09-08 | Inline extensions use the `:name[…]{attrs}` directive form, never a sigil inside inline code | Inline code is Markdown's escape hatch, so any marker placed inside it is a heuristic on the one node type that means "do not interpret this" — `` `x = 5` `` in a doc about the feature would evaluate itself. A directive is a different mdast node, so immunity is structural rather than a tuned false-positive rate. Also matches the existing `:::calendar{id=…}` block family. See `docs/19_CALC_EXTENSION_PLAN.md` |
+| 2026-09-08 | `:calc` conversion is display-only and never rewrites the Markdown | The authored amount stays the source of truth, so swapping currency back is free and no exchange rate is silently frozen into document text where it becomes wrong later without provenance. Display currency belongs in `document_extension_states` |
+| 2026-09-08 | `:calc` is an expression grammar with no user-defined functions | The risk was never the parser, it is scope creep: once authors can define abstractions, a note app contains a language runtime. Named values only; a document needing more needs a code block |
+| 2026-09-08 | Always slice a directive's expression from raw source via `node.position` | Directive content between `[…]` is parsed as inline Markdown, so `:calc[a * b * c]` pairs the asterisks into emphasis before the evaluator sees them. Reading `node.children` silently corrupts expressions |
 
 ---
 

@@ -66,6 +66,8 @@ import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { EditorOutline } from "@/components/markdown/EditorOutline";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import type { FxRateTable } from "@/lib/calc/fx";
+import { createCalcLiveExtension } from "@/components/markdown/live-calc";
 import {
   createLiveBlockDecorationExtension,
   getLiveBlockLineNumbers,
@@ -128,6 +130,12 @@ import {
 import type { PickerAsset } from "@/server/asset-picker-actions";
 
 type MarkdownEditorProps = {
+  /**
+   * Daily FX rates for `:calc` conversions in the read-mode preview, passed
+   * down from the server page. Without it an author would see `missing-rate`
+   * while readers of the same document see converted values.
+   */
+  fxTable?: FxRateTable | null;
   documentId: string;
   title: string;
   markdown: string;
@@ -291,6 +299,7 @@ export function MarkdownEditor({
   calendarVisibility = "private",
   snippetCss = "",
   snippetNonce,
+  fxTable,
 }: MarkdownEditorProps) {
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
@@ -964,6 +973,7 @@ export function MarkdownEditor({
             calendarWeekStartsOn,
             calendarVisibility,
           }),
+          createCalcLiveExtension({ fxTable }),
           createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
         );
@@ -1043,6 +1053,7 @@ export function MarkdownEditor({
       calendarVisibility,
       extensionSlashCommands,
       slashMenuEnabled,
+      fxTable,
     ],
   );
 
@@ -1579,6 +1590,7 @@ export function MarkdownEditor({
                     wikiLinks={wikiLinkMap}
                     assetLinks={assetLinkMap}
                     contained={false}
+                    fxTable={fxTable}
                   />
                 </DocumentCanvas>
               </div>

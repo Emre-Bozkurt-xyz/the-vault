@@ -5,6 +5,8 @@ import { BookOpen, Home } from "lucide-react";
 import { auth } from "@/auth";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { getFxRateTable } from "@/server/fx-rates";
+import type { FxRateTable } from "@/lib/calc/fx";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +51,11 @@ export default async function OfficialDocPage({
     ...publicWikiLinks,
     ...guideWikiLinks,
   };
+
+  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
+  // anything is cached, and returns null rather than throwing when it is not —
+  // conversions then report `missing-rate` and the document still renders.
+  const fxTable = await getFxRateTable();
 
   if (!doc) {
     notFound();
@@ -113,7 +120,7 @@ export default async function OfficialDocPage({
           />
         }
       >
-        <GuideContent doc={doc} wikiLinks={wikiLinks} />
+        <GuideContent doc={doc} wikiLinks={wikiLinks} fxTable={fxTable} />
       </VaultWorkspaceShell>
       <WorkspaceSettingsModalMount profile={workspace.profile} />
       </>
@@ -128,7 +135,7 @@ export default async function OfficialDocPage({
         <section className="min-w-0 border-border/60 lg:border-l">
           <DocsTopbar />
 
-          <GuideContent doc={doc} wikiLinks={wikiLinks} />
+          <GuideContent doc={doc} wikiLinks={wikiLinks} fxTable={fxTable} />
         </section>
       </div>
     </main>
@@ -138,9 +145,11 @@ export default async function OfficialDocPage({
 function GuideContent({
   doc,
   wikiLinks,
+  fxTable,
 }: {
   doc: NonNullable<Awaited<ReturnType<typeof getPublishedOfficialDocBySlug>>>;
   wikiLinks: WikiLinkResolutionMap;
+  fxTable: FxRateTable | null;
 }) {
   return (
     <article className="mx-auto w-full max-w-4xl px-0 py-8 sm:px-4 lg:px-8">
@@ -162,6 +171,7 @@ function GuideContent({
             markdown={doc.markdown}
             className="max-w-4xl"
             wikiLinks={wikiLinks}
+            fxTable={fxTable}
           />
         </DocumentReadingFrame>
       </div>

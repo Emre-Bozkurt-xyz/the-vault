@@ -20,6 +20,8 @@ import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPan
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { getFxRateTable } from "@/server/fx-rates";
+import { parseCalcSettings } from "@/lib/calc/settings";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
@@ -169,6 +171,16 @@ export default async function DocumentPage({
   // only affects other authors' styling in the non-owner read view.
   const attachedSnippetCss = await getActiveSnippetCssForDocument(document.id);
   const cspNonce = attachedSnippetCss ? await getCspNonce() : undefined;
+
+  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
+  // anything is cached, and returns null rather than throwing when it is not —
+  // conversions then report `missing-rate` and the document still renders.
+  // `calc_rate_date` pins the report to a day, so its totals stay the same
+  // on every reading instead of drifting with the market.
+  const fxTable = await getFxRateTable({
+    date: parseCalcSettings(document.markdown).rateDate ?? undefined,
+  });
+
   const applyStyling = document.access.canEdit
     ? true
     : await getViewerStylingPreference(session.user.id);
@@ -259,6 +271,7 @@ export default async function DocumentPage({
       <div className="vault-fade-up min-h-full">
         {document.access.canEdit ? (
           <MarkdownEditor
+            fxTable={fxTable}
             documentId={document.id}
             title={document.title}
             markdown={markdown}
@@ -305,6 +318,7 @@ export default async function DocumentPage({
                   wikiLinks={wikiLinks}
                   assetLinks={assetLinks}
                   documentId={document.id}
+                  fxTable={fxTable}
                 />
               </DocumentStyling>
             </DocumentReadingFrame>

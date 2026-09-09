@@ -25,16 +25,31 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
 
 import {
   transformAssetEmbeds,
   type AssetEmbedResolutionMap,
 } from "@/lib/asset-embeds";
+import { CalcBlock } from "@/components/extensions/CalcBlock";
+import { CalcValue } from "@/components/extensions/CalcValue";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { splitCalendarSegments } from "@/lib/calendar";
+import {
+  calcRemarkPlugins,
+  remarkCalc,
+  splitCalcBlockSegments,
+  type CalcBlockLine,
+} from "@/lib/markdown/calc-directive";
+import type { FxRateTable } from "@/lib/calc/fx";
+import { parseCalcSettings } from "@/lib/calc/settings";
+import {
+  buildCalcDocument,
+  calcKey,
+  EMPTY_CALC_DOCUMENT,
+  type CalcPiece,
+  type ResolvedCalc,
+} from "@/lib/markdown/calc-document";
 import type { CalendarState } from "@/lib/extensions/catalog";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
 import { inlineStyleToReactStyle } from "@/lib/html-style";
@@ -71,6 +86,14 @@ type MarkdownDocumentProps = {
    */
   documentId?: string;
   calendarStates?: Record<string, CalendarState>;
+  /**
+   * Daily FX rates for `:calc` conversions. Server surfaces fetch this with
+   * `getFxRateTable()` and pass it down; omitted, conversions report
+   * `missing-rate` and every other value still renders. Passed as a prop rather
+   * than fetched here so `MarkdownDocument` stays synchronous and usable from
+   * client components.
+   */
+  fxTable?: FxRateTable | null;
 };
 
 const maxWikiEmbedDepth = 2;
@@ -288,6 +311,7 @@ function normalizeSelfClosingIframes(markdown: string) {
 function createMarkdownComponents(
   disableLinks: boolean,
   headingIds: Map<string, number>,
+  calcResults: Map<string, ResolvedCalc>,
 ): Components {
   const headingProps = (
     children: ReactNode,
@@ -516,7 +540,16 @@ function createMarkdownComponents(
   input(props) {
     return <input {...props} className="vault-md-checkbox" disabled />;
   },
-  };
+  // `remarkCalc` emits `<vault-calc data-calc-key>` for each inline `:calc[…]`.
+  // The element carries only the key; the component supplies every class, which
+  // is what keeps calc's contract classes out of the raw-HTML className filter
+  // in `rehypeSanitizeContent`.
+  "vault-calc": (props: { "data-calc-key"?: string }) => (
+    <CalcValue
+      resolved={calcResults.get(props["data-calc-key"] ?? "") ?? null}
+    />
+  ),
+  } as Components;
 }
 
 function Callout({
@@ -839,6 +872,7 @@ export function MarkdownDocument({
   embedTrail = [],
   documentId,
   calendarStates,
+  fxTable,
 }: MarkdownDocumentProps) {
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
@@ -849,6 +883,31 @@ export function MarkdownDocument({
   );
   const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);
   const headingIds = new Map<string, number>();
+
+  // Calc values are evaluated once, here, before anything renders: names bind
+  // top-to-bottom across the whole document, but the document is rendered as
+  // several independent `MarkdownSegment`s, so no segment can evaluate on its
+  // own. Splitting therefore happens once and each piece keeps a stable index.
+  // Pure in its inputs (the accumulator is created fresh per render), so a
+  // StrictMode double-render produces identical indices.
+  const calcPieces: CalcPiece[] = [];
+  const blockParts = blocks.map((block) =>
+    block.type === "markdown"
+      ? planMarkdownParts(block.markdown, Boolean(documentId), calcPieces)
+      : null,
+  );
+  // `calc_currency` is read here rather than passed in, so every surface that
+  // renders a document honours it — including previews and embeds that never
+  // touch a page component. `calc_rate_date` cannot work this way: it decides
+  // which table to *fetch*, which has to happen before render (see the pages).
+  const calcSettings = parseCalcSettings(bodyMarkdown);
+  const calcDocument =
+    calcPieces.length > 0
+      ? buildCalcDocument(calcPieces, {
+          fxTable,
+          displayCurrency: calcSettings.displayCurrency,
+        })
+      : EMPTY_CALC_DOCUMENT;
 
   return (
     <div
@@ -863,13 +922,14 @@ export function MarkdownDocument({
         block.type === "markdown" ? (
           <MarkdownBlock
             key={`markdown-${index}`}
-            markdown={block.markdown}
+            parts={blockParts[index] ?? []}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
             documentId={documentId}
             calendarStates={calendarStates}
+            calcResults={calcDocument.results}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -953,65 +1013,109 @@ function VaultRegion({
   );
 }
 
+/**
+ * One renderable piece of a markdown block, after calendar and `:::calc`
+ * splitting. Markdown and calc-block parts carry the index of their entry in the
+ * document's calc piece list, which is how a rendered value finds its
+ * pre-computed result.
+ */
+type MarkdownPart =
+  | { kind: "markdown"; markdown: string; pieceIndex: number }
+  | {
+      kind: "calc-block";
+      lines: CalcBlockLine[];
+      collapsed: boolean;
+      pieceIndex: number;
+    }
+  | { kind: "calendar"; id: string | null };
+
+/**
+ * Splits one markdown block into ordered parts, appending every calc-bearing
+ * piece to `pieces` so the caller can evaluate them in document order.
+ *
+ * Appends to a caller-owned array rather than returning one because piece
+ * indices must be unique across the *whole* document, not per block.
+ */
+function planMarkdownParts(
+  markdown: string,
+  withCalendars: boolean,
+  pieces: CalcPiece[],
+): MarkdownPart[] {
+  // Calendars only render where a documentId is in scope (the doc viewer /
+  // public page). Without it (e.g. nested entry-text renders) the fence is left
+  // as-is, exactly as before.
+  const segments = withCalendars
+    ? splitCalendarSegments(markdown)
+    : [{ type: "markdown" as const, markdown }];
+
+  const parts: MarkdownPart[] = [];
+
+  for (const segment of segments) {
+    if (segment.type === "calendar") {
+      parts.push({ kind: "calendar", id: segment.id });
+      continue;
+    }
+
+    for (const piece of splitCalcBlockSegments(segment.markdown)) {
+      const pieceIndex = pieces.length;
+
+      if (piece.type === "markdown") {
+        pieces.push({ type: "markdown", markdown: piece.markdown });
+        parts.push({ kind: "markdown", markdown: piece.markdown, pieceIndex });
+        continue;
+      }
+
+      pieces.push({
+        type: "calc-block",
+        lines: piece.lines,
+        presentation: piece.presentation,
+        collapsed: piece.collapsed,
+      });
+      parts.push({
+        kind: "calc-block",
+        lines: piece.lines,
+        collapsed: piece.collapsed,
+        pieceIndex,
+      });
+    }
+  }
+
+  return parts;
+}
+
 function MarkdownBlock({
-  markdown,
+  parts,
   disableLinks,
   wikiLinks,
   assetLinks,
   headingIds,
   documentId,
   calendarStates,
+  calcResults,
 }: {
-  markdown: string;
+  parts: MarkdownPart[];
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
   documentId?: string;
   calendarStates?: Record<string, CalendarState>;
+  calcResults: Map<string, ResolvedCalc>;
 }) {
-  // Calendars only render where a documentId is in scope (the doc viewer / public
-  // page). Without it (e.g. nested entry-text renders) we leave the fence as-is.
-  if (!documentId) {
-    return (
-      <MarkdownSegment
-        markdown={markdown}
-        disableLinks={disableLinks}
-        wikiLinks={wikiLinks}
-        assetLinks={assetLinks}
-        headingIds={headingIds}
-      />
-    );
-  }
-
-  const segments = splitCalendarSegments(markdown);
-
-  if (segments.length === 1 && segments[0].type === "markdown") {
-    return (
-      <MarkdownSegment
-        markdown={markdown}
-        disableLinks={disableLinks}
-        wikiLinks={wikiLinks}
-        assetLinks={assetLinks}
-        headingIds={headingIds}
-      />
-    );
-  }
-
   return (
     <>
-      {segments.map((segment, index) => {
-        if (segment.type === "calendar") {
+      {parts.map((part, index) => {
+        if (part.kind === "calendar") {
           return (
             <CalendarBlock
-              key={`calendar-${index}-${segment.id ?? "none"}`}
-              documentId={documentId}
-              calendarId={segment.id}
+              key={`calendar-${index}-${part.id ?? "none"}`}
+              documentId={documentId as string}
+              calendarId={part.id}
               canEdit={false}
               prefetchedState={
                 calendarStates
-                  ? segment.id
-                    ? calendarStates[segment.id] ?? null
+                  ? part.id
+                    ? calendarStates[part.id] ?? null
                     : null
                   : undefined
               }
@@ -1021,18 +1125,33 @@ function MarkdownBlock({
           );
         }
 
-        if (!segment.markdown.trim()) {
+        if (part.kind === "calc-block") {
+          return (
+            <CalcBlock
+              key={`calc-${index}`}
+              collapsed={part.collapsed}
+              rows={part.lines.map(
+                (_line, row) =>
+                  calcResults.get(calcKey(part.pieceIndex, row)) ?? null,
+              )}
+            />
+          );
+        }
+
+        if (!part.markdown.trim()) {
           return null;
         }
 
         return (
           <MarkdownSegment
             key={`markdown-${index}`}
-            markdown={segment.markdown}
+            markdown={part.markdown}
             disableLinks={disableLinks}
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
+            keyPrefix={String(part.pieceIndex)}
+            calcResults={calcResults}
           />
         );
       })}
@@ -1046,12 +1165,16 @@ function MarkdownSegment({
   wikiLinks,
   assetLinks,
   headingIds,
+  keyPrefix,
+  calcResults,
 }: {
   markdown: string;
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
+  keyPrefix: string;
+  calcResults: Map<string, ResolvedCalc>;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1060,14 +1183,17 @@ function MarkdownSegment({
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      // `calcRemarkPlugins` is shared with the pre-pass that produced
+      // `calcResults`: both must walk identical trees or a key assigned here
+      // would point at another expression's result.
+      remarkPlugins={[...calcRemarkPlugins, [remarkCalc, { keyPrefix }]]}
       rehypePlugins={[
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],
         rehypeSanitizeContent,
         rehypeKatex,
       ]}
-      components={createMarkdownComponents(disableLinks, headingIds)}
+      components={createMarkdownComponents(disableLinks, headingIds, calcResults)}
     >
       {renderedMarkdown}
     </ReactMarkdown>

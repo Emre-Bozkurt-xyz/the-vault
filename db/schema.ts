@@ -4,9 +4,11 @@ import {
   bigint,
   boolean,
   customType,
+  date,
   index,
   integer,
   jsonb,
+  numeric,
   primaryKey,
   pgTable,
   text,
@@ -1313,3 +1315,49 @@ export const serviceTokensRelations = relations(serviceTokens, ({ one }) => ({
     references: [services.id],
   }),
 }));
+
+/**
+ * Cached daily foreign-exchange rates for the `:calc` extension
+ * (docs/19_CALC_EXTENSION_PLAN.md §6).
+ *
+ * Not user data: this is a shared, provider-sourced cache with no owner and no
+ * permission model — every row is public reference data, so nothing here needs
+ * an access check.
+ *
+ * Day-scoped, not timestamped. A finance report needs "the rate on 2026-09-08",
+ * not "the rate right now"; pinning a document to a date is what makes its
+ * totals reproducible instead of drifting on every page load.
+ *
+ * Rows are stored per pair but written a whole base table at a time (one
+ * provider request covers every conversion in every document that day).
+ * `rate` is `numeric`, never a float — it feeds money arithmetic.
+ */
+export const fxRates = pgTable(
+  "fx_rates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Currency the rate is quoted against, e.g. `EUR`. */
+    base: text("base").notNull(),
+    /** Currency being priced, e.g. `CAD`. */
+    quote: text("quote").notNull(),
+    /** Publication day, `YYYY-MM-DD`. */
+    rateDate: date("rate_date", { mode: "string" }).notNull(),
+    /** Units of `quote` per 1 `base`. */
+    rate: numeric("rate", { precision: 24, scale: 12 }).notNull(),
+    /** Provider id, shown in the value's provenance tooltip. */
+    provider: text("provider").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("fx_rates_base_quote_date_unique").on(
+      table.base,
+      table.quote,
+      table.rateDate,
+    ),
+    // Serves "the most recent table on or before X", the lookup every render
+    // makes, including the weekend case where the requested day never published.
+    index("fx_rates_base_date_idx").on(table.base, table.rateDate),
+  ],
+);

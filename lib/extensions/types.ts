@@ -4,6 +4,7 @@ import type { Decoration, KeyBinding, WidgetType } from "@codemirror/view";
 import type { ZodType } from "zod";
 
 import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
+import type { FxRateTable } from "@/lib/calc/fx";
 import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
 
 export type VaultExtensionKind = "core" | "built-in";
@@ -173,6 +174,15 @@ export type ExtensionAgentWorkspaceContext = {
  */
 export type ExtensionAgentActionContext = {
   user: { id: string };
+  /**
+   * Daily FX rates, for actions that report converted money.
+   *
+   * Deliberately behind no permission: `fx_rates` is provider-sourced public
+   * reference data with no owner, so gating it would be theatre. Lazy so an
+   * action that never converts pays nothing for it, and it resolves to null
+   * rather than throwing when no rates are available.
+   */
+  fx?: { getTable: () => Promise<FxRateTable | null> };
   /** Present for `scope: "document"` actions. */
   document?: ExtensionAgentDocumentContext;
   /** Present for `scope: "workspace"` actions. */

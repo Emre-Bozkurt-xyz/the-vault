@@ -43,6 +43,11 @@ export const safeHtmlSchema: Schema = {
     "br",
     "img",
     "iframe",
+    // Emitted by `remarkCalc` for each inline `:calc[…]`, and mapped to the
+    // `CalcValue` component by react-markdown. It must survive sanitization to
+    // reach that mapping, so it is allowed as a tag — but it carries no content
+    // of its own, only the lookup key below.
+    "vault-calc",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -97,6 +102,12 @@ export const safeHtmlSchema: Schema = {
       "disabled",
     ],
     time: [...(defaultSchema.attributes?.time ?? []), "dateTime"],
+    // Scoped to the calc element rather than added to `"*"`: the key is only
+    // meaningful on this tag, and widening the wildcard would let any authored
+    // element carry it. Worst case for authored raw HTML is re-displaying a
+    // value already computed elsewhere in the *same* document — the lookup map
+    // is built per render, so it reaches no private or cross-document data.
+    "vault-calc": ["data-calc-key", "dataCalcKey"],
   },
   protocols: {
     ...defaultSchema.protocols,
