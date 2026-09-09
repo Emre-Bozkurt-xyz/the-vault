@@ -225,7 +225,7 @@ export function SettingsModal({
         <main className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto">
           <div className="border-b border-border/70 px-4 py-4 md:px-6">
             <DialogHeader>
-              <DialogTitle className="text-xl vault-display md:text-2xl">
+              <DialogTitle className="text-xl font-semibold tracking-tight md:text-2xl">
                 {section.label}
               </DialogTitle>
               <DialogDescription>{section.description}</DialogDescription>

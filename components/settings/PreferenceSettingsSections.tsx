@@ -690,33 +690,25 @@ export function CoreCommandsSettingsSection() {
   );
 }
 
+// The section title + description already live in the settings modal header, so
+// this group only wraps the controls and shows the autosave status. `icon`,
+// `title`, and `description` stay in the props (call sites still pass them) but
+// are intentionally not rendered — they would duplicate the modal header.
 function SettingsGroup({
-  icon,
-  title,
-  description,
   saving,
   children,
 }: {
-  icon: ReactNode;
-  title: string;
-  description: string;
+  icon?: ReactNode;
+  title?: string;
+  description?: string;
   saving?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="grid gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-[6px] border border-border/70 bg-card text-muted-foreground">
-            {icon}
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">{title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        <span className="min-w-16 text-right text-xs text-muted-foreground">
-          {saving ? "Saving..." : "Saved"}
+    <section className="grid gap-2">
+      <div className="flex h-4 justify-end">
+        <span className="text-xs text-muted-foreground">
+          {saving ? "Saving…" : "Saved"}
         </span>
       </div>
       <div className="overflow-hidden rounded-[8px] border border-border/70 bg-card/45">
@@ -736,14 +728,16 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid gap-3 border-b border-border/70 px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="grid gap-2.5 border-b border-border/70 px-4 py-3.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
       <div className="min-w-0">
-        <p className="text-base font-medium">{title}</p>
-        <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
+        <p className="text-sm font-medium sm:text-base">{title}</p>
+        <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground sm:text-sm">
           {description}
         </p>
       </div>
-      <div className="flex min-w-32 justify-start sm:justify-end">{children}</div>
+      <div className="flex min-w-0 justify-start sm:min-w-32 sm:justify-end">
+        {children}
+      </div>
     </div>
   );
 }
@@ -762,7 +756,7 @@ function ToggleControl({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={[
-        "relative h-7 w-12 rounded-full border transition",
+        "relative h-6 w-11 shrink-0 rounded-full border transition",
         checked
           ? "border-primary bg-primary"
           : "border-border bg-muted",
@@ -771,7 +765,7 @@ function ToggleControl({
       <span
         className={[
           "absolute top-1/2 size-5 -translate-y-1/2 rounded-full bg-background shadow transition",
-          checked ? "left-[1.45rem]" : "left-1",
+          checked ? "left-[1.375rem]" : "left-0.5",
         ].join(" ")}
       />
     </button>

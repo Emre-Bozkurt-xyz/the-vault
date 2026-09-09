@@ -49,11 +49,11 @@ export function AccountSettingsSection({
               <AvatarFallback>{fallback}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <h2 className="truncate text-xl font-semibold tracking-tight vault-display sm:text-2xl">
+              <h2 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">
                 {name}
               </h2>
-              <p className="truncate text-sm text-muted-foreground">
-                @{profile.username} - {profile.email}
+              <p className="truncate text-xs text-muted-foreground sm:text-sm">
+                @{profile.username} · {profile.email}
               </p>
             </div>
           </div>
