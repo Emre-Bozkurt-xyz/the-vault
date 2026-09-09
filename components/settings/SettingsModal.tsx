@@ -181,7 +181,7 @@ export function SettingsModal({
         className="grid h-[min(88dvh,760px)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden rounded-[8px] border border-border/80 bg-background p-0 shadow-2xl sm:max-w-none md:grid-cols-[15.5rem_minmax(0,1fr)] md:grid-rows-1"
         showCloseButton
       >
-        <aside className="min-h-0 border-b border-border/70 bg-sidebar/80 md:border-r md:border-b-0">
+        <aside className="min-h-0 min-w-0 border-b border-border/70 bg-sidebar/80 md:border-r md:border-b-0">
           <div className="border-b border-border/70 px-4 py-3">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Vault
@@ -222,16 +222,16 @@ export function SettingsModal({
           </nav>
         </aside>
 
-        <main className="min-h-0 overflow-y-auto">
-          <div className="border-b border-border/70 px-6 py-4">
+        <main className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto">
+          <div className="border-b border-border/70 px-4 py-4 md:px-6">
             <DialogHeader>
-              <DialogTitle className="text-2xl vault-display">
+              <DialogTitle className="text-xl vault-display md:text-2xl">
                 {section.label}
               </DialogTitle>
               <DialogDescription>{section.description}</DialogDescription>
             </DialogHeader>
           </div>
-          <div className="px-6 py-5">
+          <div className="px-4 py-4 md:px-6 md:py-5">
             {activeSection === "account" ? (
               accountSection
             ) : activeSection === "workspace" && workspaceSection ? (

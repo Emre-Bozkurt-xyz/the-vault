@@ -217,7 +217,7 @@ export function VaultWorkspaceShell({
                 : null;
 
   return (
-    <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground pt-safe pb-safe pl-safe pr-safe">
+    <div className="fixed inset-0 flex min-h-0 overflow-hidden bg-background text-foreground pt-safe pb-safe pl-safe pr-safe">
       <WorkspaceIconRail mode={panelMode} onModeChange={changeMode} isAdmin={isAdmin} />
 
       <aside

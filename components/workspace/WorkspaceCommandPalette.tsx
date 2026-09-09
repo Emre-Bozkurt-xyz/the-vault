@@ -590,7 +590,16 @@ export function WorkspaceCommandPalette() {
   }
 
   return (
-    <div className="fixed inset-0 z-[80] bg-background/72 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[80] bg-background/72 backdrop-blur-sm"
+      // Tapping the backdrop (not the panel) closes the palette — the only
+      // dismiss affordance on touch, where there is no Escape key.
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          closePalette();
+        }
+      }}
+    >
       <div className="mx-auto mt-[12vh] w-[min(44rem,calc(100vw-1.5rem))] overflow-hidden rounded-md border border-border/80 bg-card shadow-2xl shadow-black/45">
         <div className="flex h-12 items-center gap-3 border-b border-border/70 px-3">
           {mode === "command" ? (

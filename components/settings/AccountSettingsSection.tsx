@@ -41,15 +41,15 @@ export function AccountSettingsSection({
 
   return (
     <div className="grid gap-4">
-      <div className="border border-border/60 bg-card/45 p-5 text-card-foreground">
+      <div className="border border-border/60 bg-card/45 p-4 text-card-foreground sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-4">
-            <Avatar className="size-14 shrink-0">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <Avatar className="size-12 shrink-0 sm:size-14">
               <AvatarImage src={profile.image ?? undefined} alt={name} />
               <AvatarFallback>{fallback}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <h2 className="truncate text-2xl font-semibold tracking-tight vault-display">
+              <h2 className="truncate text-xl font-semibold tracking-tight vault-display sm:text-2xl">
                 {name}
               </h2>
               <p className="truncate text-sm text-muted-foreground">
@@ -73,7 +73,7 @@ export function AccountSettingsSection({
         </div>
       </div>
 
-      <section className="border border-border/60 bg-card/45 p-5 text-card-foreground">
+      <section className="border border-border/60 bg-card/45 p-4 text-card-foreground sm:p-5">
         <UserRoundCog className="mb-4 size-6 text-primary" />
         <h2 className="text-lg font-semibold">Profile</h2>
         <div className="mt-5 max-w-md">
@@ -87,7 +87,7 @@ export function AccountSettingsSection({
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="border border-border/60 bg-card/45 p-5 text-card-foreground">
+        <section className="border border-border/60 bg-card/45 p-4 text-card-foreground sm:p-5">
           <KeyRound className="mb-4 size-6 text-primary" />
           <h2 className="text-lg font-semibold">Authentication</h2>
           {connected === "google" || connected === "github" ? (
@@ -119,7 +119,7 @@ export function AccountSettingsSection({
           </div>
         </section>
 
-        <section className="border border-border/60 bg-card/45 p-5 text-card-foreground">
+        <section className="border border-border/60 bg-card/45 p-4 text-card-foreground sm:p-5">
           <ShieldCheck className="mb-4 size-6 text-primary" />
           <h2 className="text-lg font-semibold">Privacy model</h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
