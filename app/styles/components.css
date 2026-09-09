@@ -2777,6 +2777,18 @@
     content: "✦";
   }
 
+  /* Calc operand glyphs (see components/markdown/calc-completions.ts). */
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-calc-name::after {
+    content: "x";
+    font-style: italic;
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-calc-currency::after {
+    content: "¤";
+  }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-calc-function::after {
+    content: "ƒ";
+  }
+
   .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionLabel {
     font-family: var(--font-mono);
     font-size: 0.82rem;

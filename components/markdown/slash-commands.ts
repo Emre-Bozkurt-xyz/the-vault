@@ -5,10 +5,12 @@ import {
   type CompletionResult,
   type CompletionSource,
 } from "@codemirror/autocomplete";
-import { syntaxTree } from "@codemirror/language";
 import { EditorSelection, type EditorState } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
 
+import { isInsideCalcBlock } from "@/lib/calc/scan";
+
+import { getFrontmatterEndLine, isInsideCode } from "./completion-context";
 import { type MarkdownFormat } from "./MarkdownToolbar";
 
 /**
@@ -54,6 +56,8 @@ export type ExtensionSlashCommand = {
   /** Tooltip section, already defaulted to the extension name by the editor. */
   section: string;
   keywords?: string;
+  /** The `:::name` this item opens, when it opens one. See `SlashItem`. */
+  directive?: string;
   insert: {
     markdown: string | (() => string);
     cursorOffset?: number;
@@ -73,6 +77,17 @@ type SlashItem = {
   keywords?: string;
   /** CodeMirror completion `type` → `.cm-completionIcon-<type>` glyph (see components.css). */
   iconType?: string;
+  /**
+   * The directive name this item opens, for items that insert a `:::name` block.
+   *
+   * Declared rather than sniffed out of the inserted markdown, because an
+   * extension may build its insertion from a factory (a calendar mints a fresh
+   * id per insert) and calling one merely to read its first line would have side
+   * effects. Presence here is also the *only* thing that puts an item in the
+   * `:::` menu, so an extension chooses to appear there rather than being
+   * conscripted by the shape of its own string.
+   */
+  directive?: string;
   run: (view: EditorView, actions: SlashCommandActions) => void;
 };
 
@@ -230,6 +245,7 @@ const SLASH_ITEMS: SlashItem[] = [
     detail: "Asset group",
     section: SECTION_INSERT,
     keywords: "images grid assets group",
+    directive: "assets",
     run: (_view, actions) => actions.applyFormat("assetGroup"),
   },
   {
@@ -243,32 +259,48 @@ const SLASH_ITEMS: SlashItem[] = [
 ];
 
 /**
- * Slash menu completion source. Registered alongside the html/wiki-link/asset
- * sources in the editor's `autocompletion({ override })`. Returns null (so the
- * tooltip never opens) unless a `/query` sits at the cursor at a line start or
- * after whitespace, outside frontmatter and code.
+ * Options shared by the two menus this module serves. Both draw from one item
+ * list so that `/calcblock` and `:::calc` can never insert different things.
  */
-export function createSlashCommandCompletionSource(options: {
+export type InsertionMenuOptions = {
   applyFormat: SlashCommandActions["applyFormat"];
   insertBlock: SlashCommandActions["insertBlock"];
   insertInline: SlashCommandActions["insertInline"];
   /** Slash items from the user's enabled extensions (empty when none). */
   extensionCommands?: ExtensionSlashCommand[];
-}): CompletionSource {
-  const actions: SlashCommandActions = {
+};
+
+function toActions(options: InsertionMenuOptions): SlashCommandActions {
+  return {
     applyFormat: options.applyFormat,
     insertBlock: options.insertBlock,
     insertInline: options.insertInline,
   };
+}
+
+function buildItems(options: InsertionMenuOptions): SlashItem[] {
   // Core items first, then extension items — declaration order is the tie-break
   // CodeMirror falls back to when the query is empty or scores are equal.
-  const items: SlashItem[] = [
+  return [
     ...SLASH_ITEMS.map((item) => ({
       ...item,
       iconType: CORE_ICON_TYPES[item.id] ?? "vault-block",
     })),
     ...(options.extensionCommands ?? []).map(toExtensionItem),
   ];
+}
+
+/**
+ * Slash menu completion source. Registered alongside the html/wiki-link/asset
+ * sources in the editor's `autocompletion({ override })`. Returns null (so the
+ * tooltip never opens) unless a `/query` sits at the cursor at a line start or
+ * after whitespace, outside frontmatter and code.
+ */
+export function createSlashCommandCompletionSource(
+  options: InsertionMenuOptions,
+): CompletionSource {
+  const actions = toActions(options);
+  const items = buildItems(options);
 
   return (context: CompletionContext): CompletionResult | null => {
     const slash = findSlashQuery(context.state, context.pos);
@@ -302,6 +334,56 @@ export function createSlashCommandCompletionSource(options: {
   };
 }
 
+/**
+ * `:::` menu completion source. The same items the slash menu offers, narrowed
+ * to those that open a directive block and reached by typing the fence itself —
+ * `:::cal` finds the calc block the same way `/calc` does, and inserts exactly
+ * the same markdown, because it runs exactly the same item.
+ *
+ * Triggers only on a line whose entire content so far is `:::` plus an optional
+ * partial name: a directive fence is line-level, so `:::` mid-sentence is prose.
+ */
+export function createDirectiveCompletionSource(
+  options: InsertionMenuOptions,
+): CompletionSource {
+  const actions = toActions(options);
+  const items = buildItems(options).filter((item) => item.directive);
+
+  return (context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const beforeCursor = context.state.sliceDoc(line.from, context.pos);
+
+    if (!/^:::[A-Za-z][\w-]*$|^:::$/.test(beforeCursor)) {
+      return null;
+    }
+
+    if (line.number <= getFrontmatterEndLine(context.state.doc)) {
+      return null;
+    }
+
+    if (isInsideCode(context.state, line.from)) {
+      return null;
+    }
+
+    // Below an open `:::calc`, a `:::` is how you *close* the block — and the
+    // menu's own Enter key would turn that into a nested one. Suppressing it
+    // here is what makes the fence safe to type. Calc is the only body-bearing
+    // directive today; a second would want this generalised, not repeated.
+    if (isInsideCalcBlock(context.state.doc.toString(), line.number)) {
+      return null;
+    }
+
+    return {
+      // Just past the `:::`, so the typed name filters natively and the fence
+      // stays put while the menu is open.
+      from: line.from + 3,
+      to: context.pos,
+      validFor: /^[\w-]*$/,
+      options: items.map((item) => toDirectiveCompletion(item, actions)),
+    };
+  };
+}
+
 function toExtensionItem(command: ExtensionSlashCommand): SlashItem {
   return {
     id: command.id,
@@ -309,6 +391,7 @@ function toExtensionItem(command: ExtensionSlashCommand): SlashItem {
     detail: command.title,
     section: command.section,
     keywords: command.keywords,
+    directive: command.directive,
     iconType: "vault-extension",
     run: (view, actions) => {
       const markdown =
@@ -355,6 +438,33 @@ function toCompletion(
   };
 }
 
+function toDirectiveCompletion(
+  item: SlashItem,
+  actions: SlashCommandActions,
+): Completion {
+  const directive = item.directive as string;
+
+  return {
+    // Matched on the directive name, which is what the author is typing after
+    // the fence; keywords still ride along so `:::money` finds calc.
+    label: item.keywords ? `${directive} ${item.keywords}` : directive,
+    displayLabel: item.detail,
+    detail: `:::${directive}`,
+    type: item.iconType,
+    apply: (view, _completion, from, to) => {
+      // `from` is just past the `:::`, so `from - 3` reaches back over the fence
+      // the author typed. Clearing it first leaves an empty line, which is what
+      // `insertBlock` expects — otherwise the item's own `:::name` would land
+      // after the partial fence and produce `::::::calc`.
+      view.dispatch({
+        changes: { from: from - 3, to },
+        selection: EditorSelection.cursor(from - 3),
+      });
+      item.run(view, actions);
+    },
+  };
+}
+
 /**
  * Locates an open `/query` immediately before the cursor. Only matches when the
  * slash follows start-of-line or whitespace, so `either/or` and `https://` in
@@ -373,46 +483,6 @@ function findSlashQuery(
   }
 
   return { from: pos - match[1].length - 1 };
-}
-
-function isInsideCode(state: EditorState, pos: number): boolean {
-  const tree = syntaxTree(state);
-  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(
-    pos,
-    -1,
-  );
-
-  while (node) {
-    if (
-      node.name === "FencedCode" ||
-      node.name === "CodeBlock" ||
-      node.name === "InlineCode"
-    ) {
-      return true;
-    }
-    node = node.parent;
-  }
-
-  return false;
-}
-
-/**
- * Line number of the closing `---` of a leading YAML frontmatter block, or `0`
- * when the document does not open with one. Mirrors the editor's own
- * frontmatter scan so the slash menu never opens inside the Properties block.
- */
-function getFrontmatterEndLine(doc: EditorState["doc"]): number {
-  if (doc.lines < 2 || doc.line(1).text.trim() !== "---") {
-    return 0;
-  }
-
-  for (let lineNumber = 2; lineNumber <= doc.lines; lineNumber += 1) {
-    if (doc.line(lineNumber).text.trim() === "---") {
-      return lineNumber;
-    }
-  }
-
-  return 0;
 }
 
 function insertWikiLinkTrigger(view: EditorView) {

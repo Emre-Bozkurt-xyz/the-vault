@@ -243,9 +243,21 @@ function isActive(state: EditorState, from: number, to: number): boolean {
   );
 }
 
-type LocatedOccurrence = CalcOccurrence & {
+export type LocatedOccurrence = CalcOccurrence & {
+  /** Start of the range the decoration covers — the whole block, for a block. */
   from: number;
+  /** End of that range. */
   to: number;
+  /**
+   * Start of this occurrence's *own* source, which for a block statement is its
+   * line rather than the block's opening fence.
+   *
+   * The two differ only for blocks, and only the decoration cares about the
+   * block-wide range. Anything reasoning about scope needs the statement's own
+   * position: every statement in a block otherwise reports the same offset, and
+   * "which names are bound above this line" collapses to all-or-nothing.
+   */
+  sourceFrom: number;
   collapsed?: boolean;
 };
 
@@ -256,8 +268,13 @@ type LocatedOccurrence = CalcOccurrence & {
  * reads it — and in the editor the document is one flat text, so offset order
  * *is* document order. Block statements and inline values interleave by
  * position exactly as a reader would meet them.
+ *
+ * Exported because the operand completion menu
+ * (`components/markdown/calc-completions.ts`) has to agree with the rendered
+ * values about what this document binds. Offering a name the renderer does not
+ * actually bind — or hiding one it does — would make the menu lie.
  */
-function locateOccurrences(state: EditorState): LocatedOccurrence[] {
+export function locateCalcOccurrences(state: EditorState): LocatedOccurrence[] {
   const text = state.doc.toString();
   const exclusions = getExclusions(state);
   const blocks = scanCalcBlocks(text);
@@ -280,6 +297,7 @@ function locateOccurrences(state: EditorState): LocatedOccurrence[] {
         context: "block",
         from: block.from,
         to: block.to,
+        sourceFrom: statement.from,
         collapsed,
       });
     });
@@ -303,6 +321,7 @@ function locateOccurrences(state: EditorState): LocatedOccurrence[] {
       context: "inline",
       from: match.from,
       to: match.to,
+      sourceFrom: match.from,
     });
   }
 
@@ -355,7 +374,7 @@ function buildCalcDecorations(
   state: EditorState,
   options: CalcLiveOptions,
 ): DecorationSet {
-  const located = locateOccurrences(state);
+  const located = locateCalcOccurrences(state);
 
   if (located.length === 0) {
     return Decoration.none;

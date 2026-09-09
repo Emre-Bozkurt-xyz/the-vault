@@ -291,6 +291,7 @@ export const localBuiltInExtensions: VaultExtension[] = [
           label: "calcblock",
           title: "Calc declarations",
           keywords: "calculate money variables inputs block",
+          directive: "calc",
           // Cursor lands on the blank middle line, ready for the first binding.
           insert: { markdown: ":::calc\n\n:::", cursorOffset: 8 },
         },
@@ -479,6 +480,7 @@ export const localBuiltInExtensions: VaultExtension[] = [
           label: "calendar",
           title: "Calendar",
           keywords: "month tasks events reminder schedule",
+          directive: "calendar",
           // A factory so each insertion gets a fresh calendar id.
           insert: { markdown: () => formatCalendarFence(generateCalendarId()) },
         },

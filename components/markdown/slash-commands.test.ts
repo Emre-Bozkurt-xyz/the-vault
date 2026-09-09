@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { localExtensionRegistry } from "@/lib/extensions/catalog";
 
 import {
+  createDirectiveCompletionSource,
   createSlashCommandCompletionSource,
   type ExtensionSlashCommand,
 } from "./slash-commands";
@@ -234,5 +235,142 @@ describe("registry slash contributions", () => {
     expect(calendar?.sourceExtensionId).toBe("vault.calendar");
     expect(calendar?.label).toBe("calendar");
     expect(typeof calendar?.insert.markdown).toBe("function");
+  });
+
+  it("declares a directive on the two contributions that open one", () => {
+    // The `:::` menu is built from this field alone, so a missing declaration is
+    // an item silently absent from a menu rather than a type error.
+    const byId = new Map(
+      localExtensionRegistry
+        .getSlashCommandContributions()
+        .map((contribution) => [contribution.id, contribution]),
+    );
+
+    expect(byId.get("vault.calc.slash-block")?.directive).toBe("calc");
+    expect(byId.get("vault.calendar.slash")?.directive).toBe("calendar");
+    // The inline value is not a block and must not be reachable from `:::`.
+    expect(byId.get("vault.calc.slash")?.directive).toBeUndefined();
+  });
+});
+
+describe("directive completion source", () => {
+  const calcBlockCommand: ExtensionSlashCommand = {
+    id: "vault.calc.slash-block",
+    label: "calcblock",
+    title: "Calc declarations",
+    section: "Calc",
+    keywords: "money variables",
+    directive: "calc",
+    insert: { markdown: ":::calc\n\n:::", cursorOffset: 8 },
+  };
+
+  const directiveSource = createDirectiveCompletionSource({
+    applyFormat: () => {},
+    insertBlock: () => {},
+    insertInline: () => {},
+    extensionCommands: [calcBlockCommand],
+  });
+
+  const run = (withCursor: string) => runSourceAt(withCursor, directiveSource);
+
+  it("opens on a bare `:::` fence, anchored just past it", () => {
+    const result = run(":::‸");
+    expect(result).not.toBeNull();
+    expect(displayLabels(result)).toContain("Calc declarations");
+    // `from` past the fence so the typed name filters, not the colons.
+    expect(result?.from).toBe(3);
+  });
+
+  it("keeps filtering while the directive name is typed", () => {
+    const result = run(":::cal‸");
+    expect(result).not.toBeNull();
+    expect(result?.from).toBe(3);
+    expect(displayLabels(result)).toContain("Calc declarations");
+  });
+
+  it("offers only items that open a directive block", () => {
+    const labels = displayLabels(run(":::‸"));
+    // Core items reachable from `/` but meaningless after `:::`.
+    expect(labels).not.toContain("Table");
+    expect(labels).not.toContain("Heading 1");
+    // The one core item that *is* a directive.
+    expect(labels).toContain("Asset group");
+  });
+
+  it("matches on the directive name, not the slash token", () => {
+    // `/calcblock` vs `:::calc` — the fence menu is filtered by what follows the
+    // colons, so the searchable label has to lead with the directive name.
+    expect(searchLabelFor(run(":::‸"), "Calc declarations")).toMatch(/^calc\b/);
+  });
+
+  it("does not trigger on `:::` mid-sentence", () => {
+    // A directive fence is line-level; three colons in prose are prose.
+    expect(run("see :::‸")).toBeNull();
+  });
+
+  it("does not trigger inside a fenced code block", () => {
+    expect(run("```\n:::‸\n```")).toBeNull();
+  });
+
+  it("does not trigger inside frontmatter", () => {
+    expect(run("---\nx: :::‸\n---\nbody")).toBeNull();
+  });
+
+  /**
+   * The hazard that makes this menu safe to type: inside a block body `:::` is
+   * how you *close* the block, and an open menu would turn the Enter that
+   * follows into a nested block insertion.
+   */
+  it("stays shut on the line that closes an open `:::calc`", () => {
+    expect(run(":::calc\nrent = 1200 CAD\n:::‸")).toBeNull();
+  });
+
+  it("stays shut when the close is typed part-way down a body", () => {
+    // The statements below are about to be orphaned, but the intent is still
+    // "close this block" — never "open a nested one".
+    expect(run(":::calc\nrent = 1200 CAD\n:::‸\ndomains = 42 CAD\n:::")).toBeNull();
+  });
+
+  it("opens again below a closed block", () => {
+    expect(run(":::calc\nrent = 1200 CAD\n:::\n\n:::‸")).not.toBeNull();
+  });
+
+  it("clears the typed fence before inserting, so it cannot double up", () => {
+    const inserted: Array<{ text: string; offset: number | null }> = [];
+    const runner = createDirectiveCompletionSource({
+      applyFormat: () => {},
+      insertBlock: (_view, text, offset) => void inserted.push({ text, offset }),
+      insertInline: () => {},
+      extensionCommands: [calcBlockCommand],
+    });
+    const result = runSourceAt(":::cal‸", runner);
+    const option = result?.options.find(
+      (candidate) => candidate.displayLabel === "Calc declarations",
+    );
+
+    if (typeof option?.apply !== "function") {
+      throw new Error("no applicable option for Calc declarations");
+    }
+
+    const dispatched: Array<{
+      changes: { from: number; to: number };
+      selection: { from: number; to: number };
+    }> = [];
+    option.apply(
+      { dispatch: (spec: never) => void dispatched.push(spec) } as never,
+      option,
+      3,
+      ":::cal".length,
+    );
+
+    // Reaches back over the three colons the author typed, leaving an empty line
+    // with the cursor on it.
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].changes).toEqual({ from: 0, to: 6 });
+    expect(dispatched[0].selection.from).toBe(0);
+    expect(dispatched[0].selection.to).toBe(0);
+    // Then inserts the *same* markdown `/calcblock` would, cursor on the middle
+    // line, ready for the first binding.
+    expect(inserted).toEqual([{ text: ":::calc\n\n:::", offset: 8 }]);
   });
 });

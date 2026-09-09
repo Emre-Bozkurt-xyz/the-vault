@@ -272,6 +272,7 @@ so inline invocation needs no change there. `isInsideCode` already recognizes
 | 4 | Live-mode inline decorations (the new registry contribution point) + cursor reveal | **Done**, browser-verified in the editor |
 | 5 | Per-document display currency + pinned rate date, in **frontmatter** (see 9d) | **Done**, browser-verified |
 | 6 | Agent actions: `listValues`, `evaluate` | **Done** |
+| 7 | Authoring ergonomics: toolbar button, slash commands, operand autocomplete (see 9e) | **Done**, browser-verified |
 
 Slices 1–2 ship real value with zero network and zero schema change. Slice 3 is
 the first that touches the database.
@@ -610,6 +611,67 @@ Rates reach handlers through a new `context.fx.getTable()`, lazy so an action
 that never converts pays nothing. It sits behind **no permission**
 deliberately: `fx_rates` is provider-sourced public reference data with no
 owner, so gating it would be theatre.
+
+## 9e. Slice 7 Implementation Notes — operand autocomplete
+
+`components/markdown/calc-completions.ts`, registered as one more source in the
+editor's single `autocompletion({ override })` list. It therefore reuses the
+wiki-link/asset/slash tooltip wholesale: keyboard navigation, fuzzy filtering,
+match highlighting, and styling all come free, and there is no second popup to
+keep in visual sync.
+
+### Position decides what may be completed
+
+A menu that offered all 160-odd ISO codes beside every bound name at every
+cursor would be noise, and most of those options would not *parse* where they
+were offered. The grammar is small enough to do better, and its own
+disambiguation rule (`lib/calc/currency.ts`) does most of the work: an uppercase
+token is money, a lowercase one is an identifier.
+
+| Left of the token | Offered |
+|---|---|
+| `… in` / `… to` | currencies only — the parser *requires* a code there |
+| a bare amount, e.g. `1200 ` | currencies only — an identifier cannot follow a number |
+| anything else | bound names + functions; currencies once the token is uppercase |
+
+So `re` offers `rent` and never `Real`; `CA` offers `CAD`. The bare-amount test
+carries a leading boundary so `rent2 ` reads as a name, not an amount —
+without it every name ending in a digit would flip the menu to currencies.
+
+`validFor` re-filters as the token grows, but **re-queries when the token
+crosses the case boundary**: an empty token carries no currencies, so `C` has to
+re-ask rather than filter a list that never contained `CAD`. That is a change in
+which options *exist*, not merely which ones match.
+
+### Scope is positional, like the evaluator's
+
+Names come from the real `evaluateDocument`, run over the occurrences whose
+`sourceFrom` lies above the statement being edited — so the menu holds exactly
+what the evaluator would hold at that point. A name bound below is not offered
+(it would render `unknown-name` the instant it was accepted), and neither is one
+whose own binding expression failed, because a failed binding does not bind.
+Pattern-matching for `name =` would have got both wrong.
+
+This is why `locateOccurrences` became the exported `locateCalcOccurrences` and
+gained `sourceFrom`. Every statement in a block previously reported the block's
+own `from` — fine for the decoration, which covers the whole block, but it makes
+"which names are bound above this line" collapse to all-or-nothing.
+
+Each name carries its current value as the hint (`rent — CA$1,200.00`), in the
+currency it was bound in. A document-level `calc_currency` may re-denominate it
+on the page; the hint answers "what did I call `1200 CAD`?", which is the
+question a half-typed name is asking.
+
+### Where it opens
+
+Inline `:calc[…]` (matched on the line, since expressions cannot span lines) and
+`:::calc` block bodies (via `findCalcBlockBody`, which excludes both fences — a
+cursor on `:::calc` is on the fence, not in a statement). Never inside inline or
+fenced code, where the syntax is quoted rather than meant.
+
+Gated on the calc extension but **not** on the slash-menu setting: these are the
+document's own names, and an author who never opens an insert menu still needs
+them spelled correctly.
 
 ## 10. Open Questions
 

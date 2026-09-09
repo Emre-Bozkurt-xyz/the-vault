@@ -68,6 +68,7 @@ import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { EditorOutline } from "@/components/markdown/EditorOutline";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import type { FxRateTable } from "@/lib/calc/fx";
+import { createCalcCompletionSource } from "@/components/markdown/calc-completions";
 import {
   createCalcLiveExtension,
   getCalcBlockLineNumbers,
@@ -83,6 +84,7 @@ import {
   type MarkdownFormat,
 } from "@/components/markdown/MarkdownToolbar";
 import {
+  createDirectiveCompletionSource,
   createSlashCommandCompletionSource,
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
@@ -345,8 +347,8 @@ export function MarkdownEditor({
   const assetUploadHandlerRef = useRef<
     ((file: File, view: EditorView | null) => Promise<void>) | null
   >(null);
-  // `applyFormat` is defined below the extension memo, so the slash-command
-  // source reaches it through this ref rather than closing over it directly.
+  // `applyFormat` is defined below the extension memo, so the insertion-menu
+  // sources reach it through this ref rather than closing over it directly.
   const applyFormatRef = useRef<((format: MarkdownFormat) => void) | null>(null);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
@@ -369,6 +371,7 @@ export function MarkdownEditor({
         title: contribution.title,
         section: contribution.section ?? contribution.sourceExtensionName,
         keywords: contribution.keywords,
+        directive: contribution.directive,
         insert: contribution.insert,
       }));
   }, [enabledExtensionKey]);
@@ -996,8 +999,22 @@ export function MarkdownEditor({
                     insertInline,
                     extensionCommands: extensionSlashCommands,
                   }),
+                  // The `:::` fence is the other way into the same items, so it
+                  // rides the same settings toggle: turning the insert menu off
+                  // has to turn off every way of reaching it.
+                  createDirectiveCompletionSource({
+                    applyFormat: (format) => applyFormatRef.current?.(format),
+                    insertBlock,
+                    insertInline,
+                    extensionCommands: extensionSlashCommands,
+                  }),
                 ]
               : []),
+            // Operand completion inside `:calc[…]` and `:::calc` bodies. Gated
+            // on the extension, not on the insert-menu toggle: these are the
+            // document's own names, and an author who never opens a menu still
+            // needs them spelled correctly.
+            ...(calcEnabled ? [createCalcCompletionSource({ fxTable })] : []),
             htmlCompletionSource,
             createWikiLinkCompletionSource(
               wikiLinkMapStore,
@@ -1060,6 +1077,7 @@ export function MarkdownEditor({
       calendarVisibility,
       extensionSlashCommands,
       slashMenuEnabled,
+      calcEnabled,
       fxTable,
     ],
   );

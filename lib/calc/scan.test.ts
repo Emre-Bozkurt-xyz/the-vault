@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { scanCalcBlocks, scanInlineCalc } from "@/lib/calc/scan";
+import {
+  findCalcBlockBody,
+  isInsideCalcBlock,
+  scanCalcBlocks,
+  scanInlineCalc,
+} from "@/lib/calc/scan";
 import { collectInlineCalcOccurrences } from "@/lib/markdown/calc-directive";
 
 describe("scanInlineCalc", () => {
@@ -172,5 +177,68 @@ describe("scanCalcBlocks", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0].lines).toEqual(["a = 1"]);
     expect(blocks[1].lines).toEqual(["b = 2"]);
+  });
+});
+
+/**
+ * Both editor menus hang off this: the operand menu only completes inside a
+ * statement, and the `:::` menu must stay shut on the line where `:::` closes a
+ * block rather than opening one.
+ */
+describe("findCalcBlockBody", () => {
+  const text = "Intro.\n:::calc\nrent = 1200 CAD\n:::\nOutro.";
+
+  it("finds the block a statement line belongs to", () => {
+    expect(findCalcBlockBody(text, 3)?.lines).toEqual(["rent = 1200 CAD"]);
+  });
+
+  it("excludes both fences — they are not body", () => {
+    expect(findCalcBlockBody(text, 2)).toBeNull();
+    expect(findCalcBlockBody(text, 4)).toBeNull();
+  });
+
+  it("excludes lines outside the block", () => {
+    expect(findCalcBlockBody(text, 1)).toBeNull();
+    expect(findCalcBlockBody(text, 5)).toBeNull();
+  });
+
+  it("treats an unterminated block's last line as body, having no fence to skip", () => {
+    expect(findCalcBlockBody(":::calc\nrent = 1200 CAD", 2)).not.toBeNull();
+  });
+
+  it("ignores a block inside fenced code", () => {
+    expect(
+      findCalcBlockBody("```md\n:::calc\nrent = 1 CAD\n:::\n```", 3),
+    ).toBeNull();
+  });
+});
+
+describe("isInsideCalcBlock", () => {
+  const text = "Intro.\n:::calc\nrent = 1200 CAD\n:::\nOutro.";
+
+  /**
+   * The one case that separates this from `findCalcBlockBody`, and the reason it
+   * exists: the closing fence is where a `:::` menu would be dangerous.
+   */
+  it("counts the closing fence, which the body predicate excludes", () => {
+    expect(isInsideCalcBlock(text, 4)).toBe(true);
+    expect(findCalcBlockBody(text, 4)).toBeNull();
+  });
+
+  it("does not count the opening fence", () => {
+    expect(isInsideCalcBlock(text, 2)).toBe(false);
+  });
+
+  it("counts statement lines", () => {
+    expect(isInsideCalcBlock(text, 3)).toBe(true);
+  });
+
+  it("does not count lines outside the block", () => {
+    expect(isInsideCalcBlock(text, 1)).toBe(false);
+    expect(isInsideCalcBlock(text, 5)).toBe(false);
+  });
+
+  it("runs to the end of an unterminated block", () => {
+    expect(isInsideCalcBlock(":::calc\nrent = 1200 CAD", 2)).toBe(true);
   });
 });

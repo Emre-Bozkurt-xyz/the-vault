@@ -298,6 +298,16 @@ export type SlashCommandContribution = {
   keywords?: string;
   /** Tooltip section; defaults to the source extension's name. */
   section?: string;
+  /**
+   * The `:::name` this item opens, for contributions that insert a directive
+   * block. Declaring it also lists the item in the editor's `:::` menu, where
+   * `:::cal` reaches the same insertion `/calcblock` does.
+   *
+   * Declared rather than read back out of `insert.markdown`, because that may be
+   * a factory whose output is not free to inspect — a calendar mints a fresh id
+   * on every call.
+   */
+  directive?: string;
   insert: {
     /** Markdown to insert; a factory runs per insertion. */
     markdown: string | (() => string);

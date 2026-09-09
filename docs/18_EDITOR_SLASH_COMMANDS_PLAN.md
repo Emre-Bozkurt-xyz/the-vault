@@ -130,6 +130,47 @@ inline `:calc[…]`, so "The total is /calc" must not become a stranded line;
 it declares `placement: "inline"` and routes through `insertInline`. Covered by
 `components/markdown/slash-commands.test.ts` → *insertion placement*.
 
+It later gained a fourth field, for the `:::` menu below:
+
+```ts
+directive?: string;   // the `:::name` this item opens
+```
+
+### 3.4 The `:::` directive menu (shipped)
+
+`createDirectiveCompletionSource` in the same module. Typing a fence opens the
+*same item list*, narrowed to items that declare a `directive`, and accepting one
+runs that item's own `run` — so `:::cal` and `/calcblock` insert identical
+markdown and cannot drift apart. One declaration, two ways in.
+
+```txt
+:::‸        -> Asset group (:::assets) / Calc declarations (:::calc) / Calendar
+:::cal‸     -> Calc declarations
+accepting   -> deletes the typed `:::`, then `insertBlock(":::calc\n\n:::", 8)`
+               i.e. the cursor lands on the blank middle line
+```
+
+Membership is **declared, not sniffed** out of `insert.markdown`: a contribution
+may build its markdown from a factory (a calendar mints a fresh id per insert),
+and calling one merely to read its first line would have side effects. Declaring
+it also means an extension chooses to appear in the fence menu rather than being
+conscripted by the shape of its own string.
+
+Trigger rules mirror the slash source (line-level only, outside code and
+frontmatter), plus one that is specific to this menu:
+
+```txt
+- the line's whole content so far must be `:::` + an optional partial name —
+  three colons mid-sentence are prose, not a fence
+- NEVER open where a `:::` would close an open directive block
+  (`isInsideCalcBlock`). This is the load-bearing rule: an author typing `:::`
+  to close a `:::calc` block will press Enter next, and an open menu would turn
+  that Enter into a nested block insertion.
+```
+
+Both menus ride the same `slashMenu` setting — turning the insert menu off has
+to turn off every way of reaching it.
+
 Registry gets `getSlashCommandContributions()` (flatMap over
 `markdown.slashCommands`, tagged with `sourceExtensionId`), mirroring
 `getCommandContributions()`. The editor filters contributions through the same

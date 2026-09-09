@@ -198,3 +198,43 @@ export function scanCalcBlocks(text: string): CalcBlockScan[] {
 
   return blocks;
 }
+
+/**
+ * The `:::calc` block whose *body* contains `line` (1-based), or null.
+ *
+ * The fences themselves are not body: a cursor on `:::calc` is on the opening
+ * fence, and a cursor on the closing `:::` is on the closing fence. Both editor
+ * menus depend on that distinction — the operand menu only completes inside a
+ * statement, and the `:::` menu must stay shut on the line where `:::` means
+ * "close this block" rather than "open a new one".
+ *
+ * An unterminated block has no closing fence to exclude, so its body runs to the
+ * last line the scan reached.
+ */
+export function findCalcBlockBody(
+  text: string,
+  line: number,
+): CalcBlockScan | null {
+  return (
+    scanCalcBlocks(text).find(
+      (block) =>
+        line > block.startLine &&
+        (block.closed ? line < block.endLine : line <= block.endLine),
+    ) ?? null
+  );
+}
+
+/**
+ * True when `line` falls inside a `:::calc` block, counting the closing fence
+ * but not the opening one.
+ *
+ * The wider question {@link findCalcBlockBody} deliberately does not answer. The
+ * `:::` menu needs it because the closing fence is precisely where the menu is
+ * dangerous: a `:::` typed anywhere below an unclosed `:::calc` *is* the close,
+ * and an open menu would turn the Enter that follows into a nested block.
+ */
+export function isInsideCalcBlock(text: string, line: number): boolean {
+  return scanCalcBlocks(text).some(
+    (block) => line > block.startLine && line <= block.endLine,
+  );
+}
