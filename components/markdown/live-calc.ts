@@ -1,5 +1,10 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState, type Range } from "@codemirror/state";
+import {
+  EditorSelection,
+  StateField,
+  type EditorState,
+  type Range,
+} from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -28,29 +33,6 @@ import { parseAttributeString, parseCalcPresentation } from "@/lib/markdown/calc
  * inline contribution point `docs/12_EXTENSION_REGISTRY_PLAN.md` says the
  * registry is missing.
  *
- * ## Why a `:::calc` block is *not* replaced by a block widget
- *
- * It used to be, and that was wrong twice over.
- *
- * A replace widget is opaque to CodeMirror: it has no idea which source
- * character any pixel inside it stands for, so every click in the block landed
- * on `from` or `to`. For a callout or a table that is tolerable, because the
- * rendered form is what you want to look at and the source is markup noise. A
- * declarations block is the opposite case — `rent = 1200 CAD` *is* the content,
- * and the only thing rendering adds is the computed figure beside it. So the
- * statement lines stay real, editable, selectable text and the value is
- * appended as a small inline widget. Clicking, dragging and typing then work
- * because there is nothing there but text.
- *
- * It was also the cause of a document-wide coordinate bug. CodeMirror measures
- * a block widget with `getBoundingClientRect()`, which excludes margins, so the
- * `margin: 1rem 0` on `.vault-calc-block` was invisible to the height map and
- * every line *below* a calc block sat 32px lower than CodeMirror believed —
- * clicks in the rest of the document landed a line or two off. (This is what
- * `applyStableBlockWidgetSpacing` in `live-blocks.ts` exists to prevent; the
- * rule is that a block widget must carry its spacing as padding, never margin.)
- * Decorating lines in place removes the block widget, and with it the hazard.
- *
  * ## Consistency with Read mode
  *
  * Occurrences are located by raw-text scan (`lib/calc/scan.ts`) rather than by
@@ -58,106 +40,122 @@ import { parseAttributeString, parseCalcPresentation } from "@/lib/markdown/calc
  * The two locators are held equivalent by `lib/calc/scan.test.ts`, and both then
  * go through the *same* `resolveCalcOccurrences`, so a figure is identical in
  * the editor and on the page.
+ *
+ * ## Two hazards a block widget carries, and how each is handled here
+ *
+ * **Margins are invisible to CodeMirror.** A block widget is measured with
+ * `getBoundingClientRect()`, which excludes margin, so the `margin: 1rem 0` on
+ * the Read-mode `.vault-calc-block` card left the height map 32px short and put
+ * *every line below the block in the document* out of step with its own
+ * coordinates — clicks landed a line or two off for the rest of the page. The
+ * widget therefore renders the card inside a spacing frame that carries the gap
+ * as padding, the same rule `applyStableBlockWidgetSpacing` enforces in
+ * `live-blocks.ts`. Never put vertical margin on a block widget's root.
+ *
+ * **A replace widget is opaque to the cursor.** CodeMirror cannot know which
+ * source character a pixel inside a widget stands for, so every click resolves
+ * to the widget's `from` or `to`. For a callout or table that is tolerable; for
+ * a declarations block it means clicking the row you want to edit dumps you at
+ * the top or bottom of the block. Because each rendered row corresponds exactly
+ * to one statement line, this widget can do better: it remembers which row was
+ * pressed and, on mouse *up* with an empty selection — a click, not a drag —
+ * moves the cursor to the end of that row's source line. Mouse-up rather than
+ * mouse-down so CodeMirror's own selection handling is left completely alone
+ * and dragging still works exactly as it did.
  */
 
 export type CalcLiveOptions = {
   fxTable?: FxRateTable | null;
 };
 
-/** The `:::calc` opening fence, shown as a label instead of its source. */
-class CalcFenceWidget extends WidgetType {
-  constructor(private readonly collapsed: boolean) {
-    super();
-  }
-
-  eq(other: CalcFenceWidget): boolean {
-    return other.collapsed === this.collapsed;
-  }
-
-  toDOM(): HTMLElement {
-    const root = document.createElement("span");
-    root.className = "vault-cm-calc-fence";
-
-    const label = document.createElement("span");
-    label.className = "vault-cm-calc-fence-label";
-    label.textContent = "calc";
-    root.append(label);
-
-    if (this.collapsed) {
-      const note = document.createElement("span");
-      note.className = "vault-cm-calc-fence-note";
-      note.textContent = "collapsed for readers";
-      root.append(note);
-    }
-
-    return root;
-  }
-
-  ignoreEvent(): boolean {
-    return false;
-  }
-}
+/**
+ * Which rendered row of a block widget the current press started on.
+ *
+ * Set on mousedown while the widget DOM is still attached, read on mouseup once
+ * CodeMirror has settled the selection. Deliberately module-scoped: a press and
+ * its release are one gesture, and there is only ever one at a time.
+ */
+let pressedRowIndex: number | null = null;
 
 /**
- * The computed figure for one statement line, appended after its source.
- *
- * A point widget rather than a replacement: the statement stays as text, so the
- * cursor can be put anywhere in it and the value re-computes as it is edited.
+ * A `:::calc` declarations block, rendered as the same definition list Read
+ * mode shows. Reveals its source when the cursor enters it, matching how the
+ * callout and table live blocks behave — a block that stayed as raw source
+ * while inline values beside it showed results read as inconsistent.
  */
-class CalcRowValueWidget extends WidgetType {
-  constructor(private readonly resolved: ResolvedCalc) {
+class CalcBlockWidget extends WidgetType {
+  constructor(
+    private readonly rows: ResolvedCalc[],
+    private readonly collapsed: boolean,
+  ) {
     super();
   }
 
-  eq(other: CalcRowValueWidget): boolean {
+  eq(other: CalcBlockWidget): boolean {
     return (
-      other.resolved.value === this.resolved.value &&
-      other.resolved.state === this.resolved.state &&
-      other.resolved.message === this.resolved.message &&
-      other.resolved.provenance === this.resolved.provenance
+      other.collapsed === this.collapsed &&
+      other.rows.length === this.rows.length &&
+      other.rows.every((row, index) => {
+        const mine = this.rows[index];
+        return (
+          row.value === mine.value &&
+          row.label === mine.label &&
+          row.state === mine.state
+        );
+      })
     );
   }
 
   toDOM(): HTMLElement {
-    const root = document.createElement("span");
-    root.className = "vault-cm-calc-row";
+    // The card's own vertical gap lives on this frame as padding, where
+    // CodeMirror can measure it. See the header note on margins.
+    const frame = document.createElement("div");
+    frame.className = "vault-cm-calc-block-frame";
 
-    // The name and the working are already on screen in the source, so the
-    // widget shows the result alone — repeating the label would double every
-    // line. An error shows its reason instead, for the same reason: echoing
-    // back the expression the author is looking at says nothing.
-    if (this.resolved.state === "error") {
-      root.classList.add("vault-cm-calc-row-error");
-      root.title = this.resolved.message ?? "Could not evaluate.";
-      root.textContent = this.resolved.message ?? "Could not evaluate.";
-      return root;
+    const root = document.createElement("div");
+    root.className = "vault-calc-block vault-cm-calc-block";
+
+    if (this.collapsed) {
+      root.dataset.calcCollapsed = "true";
     }
 
-    const markup = calcValueMarkup({
-      ...this.resolved,
-      label: null,
-      labelKind: null,
-    });
+    const body = document.createElement("div");
+    body.className = "vault-calc-block-body";
 
-    const value = document.createElement("span");
-    value.className = `${markup.rootClassName} vault-cm-calc`;
-    value.dataset.calcState = markup.state;
-    value.title = markup.title;
+    this.rows.forEach((resolved, index) => {
+      const markup = calcValueMarkup(resolved);
+      const row = document.createElement("div");
+      row.className = "vault-calc-block-row";
+      // Recorded, not acted on: acting here would mean pre-empting CodeMirror's
+      // mousedown, and with it the drag that starts one.
+      row.addEventListener("mousedown", (event) => {
+        pressedRowIndex = event.button === 0 ? index : null;
+      });
 
-    for (const part of markup.parts) {
-      const span = document.createElement("span");
-      span.className = part.className;
-      span.textContent = part.text;
+      const value = document.createElement("span");
+      value.className = `${markup.rootClassName} vault-cm-calc`;
+      value.dataset.calcState = markup.state;
+      value.title = markup.title;
 
-      if (part.decorative) {
-        span.setAttribute("aria-hidden", "true");
+      for (const part of markup.parts) {
+        const span = document.createElement("span");
+        span.className = part.className;
+        span.textContent = part.text;
+
+        if (part.decorative) {
+          span.setAttribute("aria-hidden", "true");
+        }
+
+        value.append(span);
       }
 
-      value.append(span);
-    }
+      row.append(value);
+      body.append(row);
+    });
 
-    root.append(value);
-    return root;
+    root.append(body);
+    frame.append(root);
+    return frame;
   }
 
   ignoreEvent(): boolean {
@@ -217,19 +215,6 @@ class CalcInlineWidget extends WidgetType {
   }
 }
 
-const calcBlockLine = Decoration.line({ class: "vault-cm-calc-block-line" });
-const calcBlockFirstLine = Decoration.line({
-  class: "vault-cm-calc-block-line vault-cm-calc-block-line-first",
-});
-const calcBlockLastLine = Decoration.line({
-  class: "vault-cm-calc-block-line vault-cm-calc-block-line-last",
-});
-/** The closing fence with its `:::` hidden, collapsed to a thin bottom edge. */
-const calcBlockClosedLine = Decoration.line({
-  class:
-    "vault-cm-calc-block-line vault-cm-calc-block-line-last vault-cm-calc-block-line-closed",
-});
-
 /** Ranges a `:calc` must not be recognized inside. */
 function getExclusions(state: EditorState): Array<{ from: number; to: number }> {
   const ranges: Array<{ from: number; to: number }> = [];
@@ -261,16 +246,7 @@ function isActive(state: EditorState, from: number, to: number): boolean {
 type LocatedOccurrence = CalcOccurrence & {
   from: number;
   to: number;
-};
-
-type LocatedBlock = {
-  from: number;
-  to: number;
-  startLine: number;
-  endLine: number;
-  closed: boolean;
-  collapsed: boolean;
-  statements: Array<{ key: string; from: number; to: number }>;
+  collapsed?: boolean;
 };
 
 /**
@@ -281,52 +257,32 @@ type LocatedBlock = {
  * *is* document order. Block statements and inline values interleave by
  * position exactly as a reader would meet them.
  */
-function locateOccurrences(state: EditorState): {
-  occurrences: LocatedOccurrence[];
-  blocks: LocatedBlock[];
-} {
+function locateOccurrences(state: EditorState): LocatedOccurrence[] {
   const text = state.doc.toString();
   const exclusions = getExclusions(state);
-  const scanned = scanCalcBlocks(text);
+  const blocks = scanCalcBlocks(text);
 
   const inBlock = (offset: number) =>
-    scanned.some((block) => offset >= block.from && offset < block.to);
+    blocks.some((block) => offset >= block.from && offset < block.to);
 
-  const occurrences: LocatedOccurrence[] = [];
-  const blocks: LocatedBlock[] = [];
+  const found: LocatedOccurrence[] = [];
 
-  for (const block of scanned) {
+  for (const block of blocks) {
     const attributes = parseAttributeString(block.attributes);
     const presentation = parseCalcPresentation(attributes);
-    const located: LocatedBlock = {
-      from: block.from,
-      to: block.to,
-      startLine: block.startLine,
-      endLine: block.endLine,
-      closed: block.closed,
-      collapsed: Object.hasOwn(attributes, "collapsed"),
-      statements: [],
-    };
+    const collapsed = Object.hasOwn(attributes, "collapsed");
 
-    for (const statement of block.statements) {
-      const key = `b${statement.from}`;
-
-      occurrences.push({
-        key,
+    block.statements.forEach((statement, index) => {
+      found.push({
+        key: `b${block.from}:${index}`,
         expression: statement.source,
         presentation,
         context: "block",
-        from: statement.from,
-        to: statement.to,
+        from: block.from,
+        to: block.to,
+        collapsed,
       });
-      located.statements.push({
-        key,
-        from: statement.from,
-        to: statement.to,
-      });
-    }
-
-    blocks.push(located);
+    });
   }
 
   for (const match of scanInlineCalc(text, (from, to) =>
@@ -338,7 +294,7 @@ function locateOccurrences(state: EditorState): {
       continue;
     }
 
-    occurrences.push({
+    found.push({
       key: `i${match.from}`,
       expression: match.expression,
       presentation: parseCalcPresentation(
@@ -350,18 +306,16 @@ function locateOccurrences(state: EditorState): {
     });
   }
 
-  occurrences.sort((a, b) => a.from - b.from);
-
-  return { occurrences, blocks };
+  return found.sort((a, b) => a.from - b.from);
 }
 
 /**
  * Line numbers a `:::calc` block occupies.
  *
  * The editor's markdown live-preview pass consults this so it leaves calc
- * statements alone: `total = rent * 3 + cost * 2` is arithmetic, and letting the
- * markdown parser read the asterisks as emphasis would hide them and silently
- * change the expression the author is looking at.
+ * statements alone once a block has revealed its source: `total = rent * 3 +
+ * cost * 2` is arithmetic, and letting the markdown parser read those asterisks
+ * as emphasis would hide them from the author mid-expression.
  */
 export function getCalcBlockLineNumbers(state: EditorState): Set<number> {
   const lineNumbers = new Set<number>();
@@ -375,13 +329,35 @@ export function getCalcBlockLineNumbers(state: EditorState): Set<number> {
   return lineNumbers;
 }
 
+/**
+ * Where the cursor belongs after a click on a rendered row: the end of that
+ * row's source line, ready to keep typing.
+ *
+ * Read from live state rather than from anything captured when the widget was
+ * built, so an edit elsewhere in the document cannot leave a stale offset
+ * behind. Returns null when the press did not resolve to a statement, in which
+ * case CodeMirror's own placement stands.
+ */
+function statementPositionForPressedRow(state: EditorState): number | null {
+  if (pressedRowIndex === null) {
+    return null;
+  }
+
+  const head = state.selection.main.head;
+  const block = scanCalcBlocks(state.doc.toString()).find(
+    (candidate) => head >= candidate.from && head <= candidate.to,
+  );
+
+  return block?.statements[pressedRowIndex]?.to ?? null;
+}
+
 function buildCalcDecorations(
   state: EditorState,
   options: CalcLiveOptions,
 ): DecorationSet {
-  const { occurrences, blocks } = locateOccurrences(state);
+  const located = locateOccurrences(state);
 
-  if (occurrences.length === 0 && blocks.length === 0) {
+  if (located.length === 0) {
     return Decoration.none;
   }
 
@@ -391,15 +367,39 @@ function buildCalcDecorations(
   // server, so a pin edited mid-session takes effect on the next load.
   const { displayCurrency } = parseCalcSettings(state.doc.toString());
 
-  const { results } = resolveCalcOccurrences(occurrences, {
+  const { results } = resolveCalcOccurrences(located, {
     fxTable: options.fxTable ?? null,
     displayCurrency,
   });
 
   const ranges: Range<Decoration>[] = [];
+  const blocks = new Map<
+    string,
+    { from: number; to: number; collapsed: boolean; rows: ResolvedCalc[] }
+  >();
 
-  for (const occurrence of occurrences) {
-    if (occurrence.context === "block" || isActive(state, occurrence.from, occurrence.to)) {
+  for (const occurrence of located) {
+    if (occurrence.context === "block") {
+      const resolved = results.get(occurrence.key);
+
+      if (!resolved) {
+        continue;
+      }
+
+      const id = String(occurrence.from);
+      const group = blocks.get(id) ?? {
+        from: occurrence.from,
+        to: occurrence.to,
+        collapsed: occurrence.collapsed ?? false,
+        rows: [],
+      };
+
+      group.rows.push(resolved);
+      blocks.set(id, group);
+      continue;
+    }
+
+    if (isActive(state, occurrence.from, occurrence.to)) {
       continue;
     }
 
@@ -417,55 +417,17 @@ function buildCalcDecorations(
     );
   }
 
-  for (const block of blocks) {
-    const openLine = state.doc.line(block.startLine);
-    const closeLine = block.closed ? state.doc.line(block.endLine) : null;
-    const closeHidden =
-      closeLine !== null && !isActive(state, closeLine.from, closeLine.to);
-
-    for (let number = block.startLine; number <= block.endLine; number += 1) {
-      const decoration =
-        number === block.startLine
-          ? calcBlockFirstLine
-          : closeLine && number === block.endLine
-            ? closeHidden
-              ? calcBlockClosedLine
-              : calcBlockLastLine
-            : calcBlockLine;
-
-      ranges.push(decoration.range(state.doc.line(number).from));
+  for (const block of blocks.values()) {
+    if (isActive(state, block.from, block.to) || block.rows.length === 0) {
+      continue;
     }
 
-    // The fences carry no information once the block is framed, so the opening
-    // one becomes a label and the closing one disappears into the bottom edge —
-    // but only while the cursor is elsewhere, since an author editing a fence
-    // needs to see what they are editing.
-    if (!isActive(state, openLine.from, openLine.to)) {
-      ranges.push(
-        Decoration.replace({
-          widget: new CalcFenceWidget(block.collapsed),
-        }).range(openLine.from, openLine.to),
-      );
-    }
-
-    if (closeLine && closeHidden) {
-      ranges.push(Decoration.replace({}).range(closeLine.from, closeLine.to));
-    }
-
-    for (const statement of block.statements) {
-      const resolved = results.get(statement.key);
-
-      if (!resolved) {
-        continue;
-      }
-
-      ranges.push(
-        Decoration.widget({
-          widget: new CalcRowValueWidget(resolved),
-          side: 1,
-        }).range(statement.to),
-      );
-    }
+    ranges.push(
+      Decoration.replace({
+        block: true,
+        widget: new CalcBlockWidget(block.rows, block.collapsed),
+      }).range(block.from, block.to),
+    );
   }
 
   return Decoration.set(ranges, true);
@@ -477,13 +439,13 @@ function buildCalcDecorations(
  * source.
  */
 export function createCalcLiveExtension(options: CalcLiveOptions) {
-  return StateField.define<DecorationSet>({
+  const decorations = StateField.define<DecorationSet>({
     create(state) {
       return buildCalcDecorations(state, options);
     },
-    update(decorations, transaction) {
+    update(current, transaction) {
       if (!transaction.docChanged && !transaction.selection) {
-        return decorations;
+        return current;
       }
 
       return buildCalcDecorations(transaction.state, options);
@@ -492,4 +454,29 @@ export function createCalcLiveExtension(options: CalcLiveOptions) {
       return EditorView.decorations.from(field);
     },
   });
+
+  return [
+    decorations,
+    EditorView.domEventHandlers({
+      // A click on a rendered row lands the cursor on that row's source line
+      // instead of at the block's edge. Only for a click: a non-empty selection
+      // means the press turned into a drag, and that selection is the user's.
+      mouseup(_event, view) {
+        const position = view.state.selection.main.empty
+          ? statementPositionForPressedRow(view.state)
+          : null;
+        pressedRowIndex = null;
+
+        if (position === null || position === view.state.selection.main.head) {
+          return false;
+        }
+
+        view.dispatch({
+          selection: EditorSelection.cursor(position),
+          scrollIntoView: true,
+        });
+        return false;
+      },
+    }),
+  ];
 }

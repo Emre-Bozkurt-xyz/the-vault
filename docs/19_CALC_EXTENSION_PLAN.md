@@ -506,30 +506,46 @@ by position exactly as a reader meets them. No piece model is needed.
 re-resolves every value in the document; without content equality, every widget
 on the page would be torn down and rebuilt on each keystroke.
 
-### Blocks keep their source visible in Live mode
+### Blocks render as the Read-mode card in Live mode
 
-The block's statement lines stay real, editable text; the computed figure is
-appended to each as an inline widget, and the two fence lines are hidden (the
-opener behind a small `calc` label, the closer collapsed into the bottom edge)
-while the cursor is elsewhere. A set of `Decoration.line` classes draws the
-frame. See `docs/project-knowledge.md` → *Calc live block cursor bugs* for the
-two attempts that came before this and why they failed.
+`CalcBlockWidget` is a `Decoration.replace({ block: true })` over the fence
+range, drawing the same `.vault-calc-block` definition list a reader gets —
+names and figures in a grid with the `=` aligned down the block — and revealing
+its source when the cursor enters, matching the callout and table specs.
 
-An authored `{collapsed}` block still shows its statements in the editor, with a
-`collapsed for readers` note on the fence label: the fold is for readers, and
-hiding declarations from the person writing them would make the block impossible
-to work on.
+An in-place variant was tried (statement lines left as real text with the value
+appended, fences hidden behind a label) to make clicking work. It did make the
+cursor behave, but at the cost of the design: no card, no aligned `=`, source
+instead of `name = value`. **The two are separable and were wrongly traded
+against each other** — the card is back, and the cursor problems are addressed
+directly, below.
 
-### A block widget must never carry vertical margin
+An authored `{collapsed}` block still shows its rows in the editor with a
+`collapsed for readers` marker: the fold is for readers, and hiding declarations
+from the person writing them would make the block impossible to work on.
 
-CodeMirror measures a block widget with `getBoundingClientRect()`, which excludes
-margins. Any `margin-block` on a block widget's root is therefore invisible to
-the height map, and **every line below it in the document** sits that much lower
-than CodeMirror believes — so clicks land on the wrong line for the rest of the
-page, not just inside the widget. `live-blocks.ts` has
-`applyStableBlockWidgetSpacing` for exactly this; anything reaching for
-`Decoration.replace({ block: true })` must use it or convert its spacing to
-padding.
+### Two hazards a block widget carries
+
+**A block widget must never carry vertical margin.** CodeMirror measures it with
+`getBoundingClientRect()`, which excludes margins, so the `margin: 1rem 0` on
+`.vault-calc-block` was invisible to the height map and **every line below the
+block in the document** sat 32px lower than CodeMirror believed — clicks landed
+on the wrong line for the rest of the page, not just inside the widget. The
+widget renders the card inside a `.vault-cm-calc-block-frame` that carries the
+gap as padding. `live-blocks.ts` has `applyStableBlockWidgetSpacing` for the same
+reason; anything reaching for `Decoration.replace({ block: true })` must do one
+or the other.
+
+**A replace widget is opaque to the cursor.** CodeMirror cannot know which
+source character a pixel inside a widget stands for, so every click resolves to
+the widget's `from` or `to` — clicking the row you meant to edit dumps you at the
+top or bottom of the block. Each rendered row corresponds to exactly one
+statement line, so the widget can do better: a `mousedown` handler records which
+row was pressed, and a `mouseup` handler moves the cursor to the end of that
+row's source line — but only when the selection is empty, i.e. it was a click
+rather than a drag. Recording on mousedown and acting on mouseup is what keeps
+CodeMirror's own selection handling, and therefore drag-select, untouched.
+
 
 ## 9d. Slices 5 and 6
 
