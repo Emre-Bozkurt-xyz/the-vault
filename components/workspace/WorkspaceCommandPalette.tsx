@@ -103,6 +103,17 @@ function documentForm(documentId: string): FormData {
   return form;
 }
 
+export const openCommandPaletteEventName = "vault:open-command-palette";
+
+/** Opens the command palette from non-keyboard entry points (mobile chrome). */
+export function openWorkspaceCommandPalette() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event(openCommandPaletteEventName));
+}
+
 export function WorkspaceCommandPalette() {
   const router = useRouter();
   const { setTheme } = useVaultTheme();
@@ -429,6 +440,18 @@ export function WorkspaceCommandPalette() {
   useGlobalShortcuts({
     "global.commandPalette": () => setOpen(true),
   });
+
+  // Touch devices have no keyboard shortcut, so the mobile chrome opens the
+  // palette through this event instead.
+  useEffect(() => {
+    function onOpenRequest() {
+      setOpen(true);
+    }
+
+    window.addEventListener(openCommandPaletteEventName, onOpenRequest);
+    return () =>
+      window.removeEventListener(openCommandPaletteEventName, onOpenRequest);
+  }, []);
 
   useEffect(() => {
     if (!open) {

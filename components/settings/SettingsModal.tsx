@@ -178,17 +178,19 @@ export function SettingsModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="grid h-[min(82vh,760px)] w-[min(72rem,calc(100vw-2rem))] max-w-none grid-cols-[15.5rem_minmax(0,1fr)] gap-0 overflow-hidden rounded-[8px] border border-border/80 bg-background p-0 shadow-2xl sm:max-w-none"
+        className="grid h-[min(88dvh,760px)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden rounded-[8px] border border-border/80 bg-background p-0 shadow-2xl sm:max-w-none md:grid-cols-[15.5rem_minmax(0,1fr)] md:grid-rows-1"
         showCloseButton
       >
-        <aside className="min-h-0 border-r border-border/70 bg-sidebar/80">
+        <aside className="min-h-0 border-b border-border/70 bg-sidebar/80 md:border-r md:border-b-0">
           <div className="border-b border-border/70 px-4 py-3">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Vault
             </p>
             <h2 className="mt-1 text-base font-semibold">Settings</h2>
           </div>
-          <nav className="min-h-0 overflow-y-auto px-2 py-2">
+          {/* Horizontal, scrollable section strip on mobile; the descriptive
+              vertical list returns at md+ where the sidebar has room. */}
+          <nav className="flex min-h-0 gap-1 overflow-x-auto px-2 py-2 md:block md:overflow-y-auto">
             {settingsSections.map((item) => {
               const Icon = item.icon;
               const active = item.id === activeSection;
@@ -199,18 +201,18 @@ export function SettingsModal({
                   type="button"
                   onClick={() => setActiveSection(item.id)}
                   className={cn(
-                    "grid w-full grid-cols-[1rem_1fr] gap-x-2 rounded-[5px] px-2 py-2 text-left text-sm transition",
+                    "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[5px] px-2 py-2 text-left text-sm transition md:grid md:w-full md:shrink md:grid-cols-[1rem_1fr] md:gap-x-2 md:whitespace-normal",
                     active
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   )}
                 >
-                  <Icon className="mt-0.5 size-3.5" />
+                  <Icon className="size-3.5 md:mt-0.5" />
                   <span className="min-w-0">
                     <span className="block truncate font-medium">
                       {item.label}
                     </span>
-                    <span className="mt-0.5 block text-xs leading-4 opacity-70">
+                    <span className="mt-0.5 hidden text-xs leading-4 opacity-70 md:block">
                       {item.description}
                     </span>
                   </span>

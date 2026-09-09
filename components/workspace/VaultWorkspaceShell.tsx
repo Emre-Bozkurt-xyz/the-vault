@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   BookOpen,
   Files,
@@ -14,15 +15,21 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  X,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { subscribeToOpenRightPanel } from "@/lib/document-command-events";
 import { cn } from "@/lib/utils";
 import { WorkspaceIconRail } from "@/components/workspace/WorkspaceIconRail";
-import { WorkspaceCommandPalette } from "@/components/workspace/WorkspaceCommandPalette";
+import {
+  WorkspaceCommandPalette,
+  openWorkspaceCommandPalette,
+} from "@/components/workspace/WorkspaceCommandPalette";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import {
   clampWidth,
@@ -243,30 +250,6 @@ export function VaultWorkspaceShell({
                 contentClassName,
               )}
             >
-              <div className="mb-4 flex items-center gap-2 md:hidden">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setMobilePanelOpen(true)}
-                  className="gap-2"
-                >
-                  <PanelLeftOpen className="size-4" />
-                  Panel
-                </Button>
-                {rightPanel ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMobileRightPanelOpen(true)}
-                    className="gap-2"
-                  >
-                    <PanelRightOpen className="size-4" />
-                    Context
-                  </Button>
-                ) : null}
-              </div>
               {children}
             </div>
           </main>
@@ -317,7 +300,56 @@ export function VaultWorkspaceShell({
             )
           ) : null}
         </div>
+
+        {/* Persistent touch chrome: lives outside the scrolling content so it
+            never scrolls away, and carries the only entry points to the panels,
+            command palette, and settings that mobile has (no icon rail, no
+            keyboard shortcuts). */}
+        {/* No safe-area padding here: this bar sits inside the root div, which
+            already carries `pb-safe`. The fixed drawers below escape that root
+            padding and re-apply their own. */}
+        <nav
+          aria-label="Workspace actions"
+          className="flex shrink-0 items-stretch border-t border-border/70 bg-background/95 md:hidden"
+        >
+          <MobileActionButton
+            icon={PanelLeftOpen}
+            label="Panel"
+            onClick={() => setMobilePanelOpen(true)}
+          />
+          {rightPanel ? (
+            <MobileActionButton
+              icon={PanelRightOpen}
+              label="Context"
+              onClick={() => setMobileRightPanelOpen(true)}
+            />
+          ) : null}
+          <MobileActionButton
+            icon={Search}
+            label="Search"
+            onClick={() => openWorkspaceCommandPalette()}
+          />
+          <MobileActionButton
+            icon={Settings}
+            label="Settings"
+            onClick={() => openWorkspaceSettings("account")}
+          />
+        </nav>
       </div>
+
+      {/* Tablet band (md–lg): the desktop left rail/panel are visible but the
+          context panel is still `lg`-only, so this is its only trigger there. */}
+      {rightPanel ? (
+        <button
+          type="button"
+          onClick={() => setMobileRightPanelOpen(true)}
+          aria-label="Show context panel"
+          title="Show context panel"
+          className="fixed bottom-3 right-3 hidden size-8 items-center justify-center rounded-md border border-border/70 bg-background/90 text-muted-foreground shadow-sm transition hover:bg-muted hover:text-foreground md:flex lg:hidden"
+        >
+          <PanelRightOpen className="size-4" />
+        </button>
+      ) : null}
 
       <button
         type="button"
@@ -342,71 +374,72 @@ export function VaultWorkspaceShell({
         <Settings className="size-4" />
       </button>
 
-      {mobilePanelOpen ? (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm md:hidden">
-          <div className="flex h-full w-[min(20rem,86vw)] flex-col border-r border-border/70 bg-sidebar text-sidebar-foreground shadow-2xl pt-safe pl-safe">
-            <div className="flex items-center justify-between border-b border-border/70 p-2">
-              <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-                {mobilePanelItems(isAdmin).map((item) => {
-                  const Icon = item.icon;
-                  const active = panelMode === item.mode;
+      <Sheet open={mobilePanelOpen} onOpenChange={setMobilePanelOpen}>
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="w-[min(20rem,86vw)] max-w-none gap-0 border-border/70 bg-sidebar p-0 pl-safe pt-safe text-sidebar-foreground"
+        >
+          <SheetTitle className="sr-only">Workspace navigation</SheetTitle>
+          <div className="flex items-center gap-1 overflow-x-auto border-b border-border/70 p-2">
+            {mobilePanelItems(isAdmin).map((item) => {
+              const Icon = item.icon;
+              const active = panelMode === item.mode;
+              const className = cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                active && "bg-sidebar-accent text-sidebar-accent-foreground",
+              );
 
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      title={item.label}
-                      aria-label={item.label}
-                      onClick={() => {
-                        changeMode(item.mode);
-                      }}
-                      className={cn(
-                        "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                        active && "bg-sidebar-accent text-sidebar-accent-foreground",
-                      )}
-                    >
-                      <Icon className="size-4" />
-                    </button>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                onClick={() => setMobilePanelOpen(false)}
-                className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                aria-label="Close files panel"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
-              {activePanel ?? <PlaceholderPanel mode={panelMode} />}
-            </div>
+              if (item.href) {
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    title={item.label}
+                    aria-label={item.label}
+                    onClick={() => setMobilePanelOpen(false)}
+                    className={className}
+                  >
+                    <Icon className="size-4" />
+                  </Link>
+                );
+              }
+
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  title={item.label}
+                  aria-label={item.label}
+                  onClick={() => changeMode(item.mode)}
+                  className={className}
+                >
+                  <Icon className="size-4" />
+                </button>
+              );
+            })}
           </div>
-        </div>
-      ) : null}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
+            {activePanel ?? <PlaceholderPanel mode={panelMode} />}
+          </div>
+        </SheetContent>
+      </Sheet>
 
-      {rightPanel && mobileRightPanelOpen ? (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm lg:hidden">
-          <div className="ml-auto flex h-full w-[min(24rem,90vw)] flex-col border-l border-border/70 bg-card text-card-foreground shadow-2xl pt-safe pr-safe">
-            <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/70 px-3">
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Context
-              </p>
-              <button
-                type="button"
-                onClick={() => setMobileRightPanelOpen(false)}
-                className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                aria-label="Close context panel"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
+      {rightPanel ? (
+        <Sheet open={mobileRightPanelOpen} onOpenChange={setMobileRightPanelOpen}>
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            className="w-[min(24rem,90vw)] max-w-none gap-0 border-border/70 bg-card p-0 pr-safe pt-safe text-card-foreground"
+          >
+            <SheetTitle className="flex h-12 shrink-0 items-center border-b border-border/70 px-3 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Context
+            </SheetTitle>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
               {rightPanel}
             </div>
-          </div>
-        </div>
+          </SheetContent>
+        </Sheet>
       ) : null}
 
       <WorkspaceCommandPalette />
@@ -414,15 +447,53 @@ export function VaultWorkspaceShell({
   );
 }
 
-function mobilePanelItems(isAdmin: boolean) {
+function MobileActionButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Files;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[0.6rem] font-medium text-muted-foreground transition hover:bg-muted/50 hover:text-foreground active:bg-muted"
+    >
+      <Icon className="size-5" />
+      {label}
+    </button>
+  );
+}
+
+type MobilePanelItem = {
+  label: string;
+  mode: WorkspacePanelMode;
+  icon: typeof Files;
+  href?: string;
+};
+
+// Mirrors `WorkspaceIconRail`: gallery/assets/admin navigate to their routes,
+// the rest just switch the active panel in place.
+function mobilePanelItems(isAdmin: boolean): MobilePanelItem[] {
   return [
-    { label: "Files", mode: "files" as const, icon: Files },
-    { label: "Search", mode: "search" as const, icon: Search },
-    { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid },
-    { label: "Assets", mode: "assets" as const, icon: ImageIcon },
-    { label: "Docs", mode: "docs" as const, icon: BookOpen },
+    { label: "Files", mode: "files", icon: Files },
+    { label: "Search", mode: "search", icon: Search },
+    { label: "Gallery", mode: "gallery", icon: LayoutGrid, href: "/gallery" },
+    { label: "Assets", mode: "assets", icon: ImageIcon, href: "/assets" },
+    { label: "Docs", mode: "docs", icon: BookOpen },
     ...(isAdmin
-      ? [{ label: "Admin", mode: "admin" as const, icon: ShieldCheck }]
+      ? [
+          {
+            label: "Admin" as const,
+            mode: "admin" as const,
+            icon: ShieldCheck,
+            href: "/dashboard/admin",
+          },
+        ]
       : []),
   ];
 }
