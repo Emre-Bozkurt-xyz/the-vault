@@ -79,6 +79,25 @@ export function scanInlineCalc(
 const CALC_BLOCK_OPEN = /^:::calc(?:\{([^}\n]*)\})?\s*$/i;
 const CALC_BLOCK_CLOSE = /^:::\s*$/;
 
+/**
+ * One statement line inside a block, located in the document.
+ *
+ * Live mode decorates the statement lines in place rather than replacing the
+ * block with one opaque widget, so it needs each line's own offsets — a widget
+ * covering the whole block gives CodeMirror nothing to map a click onto but the
+ * block's two ends.
+ */
+export type CalcBlockStatement = {
+  /** 1-based, to match CodeMirror. */
+  line: number;
+  /** Offset of the line's first character. */
+  from: number;
+  /** Offset just past the line's last character. */
+  to: number;
+  /** The trimmed statement source. */
+  source: string;
+};
+
 export type CalcBlockScan = {
   /** Offset of the opening fence's first character. */
   from: number;
@@ -86,9 +105,13 @@ export type CalcBlockScan = {
   to: number;
   startLine: number;
   endLine: number;
+  /** False when the block runs to the end of the document unterminated. */
+  closed: boolean;
   attributes: string | null;
   /** Statement sources, blank lines dropped. */
   lines: string[];
+  /** The same statements, with their positions. */
+  statements: CalcBlockStatement[];
 };
 
 /**
@@ -138,19 +161,25 @@ export function scanCalcBlocks(text: string): CalcBlockScan[] {
     }
 
     const startLine = index;
-    const body: string[] = [];
+    const statements: CalcBlockStatement[] = [];
     index += 1;
 
     while (index < lines.length && !CALC_BLOCK_CLOSE.test(lines[index].trim())) {
       const statement = lines[index].trim();
 
       if (statement) {
-        body.push(statement);
+        statements.push({
+          line: index + 1,
+          from: offsets[index],
+          to: offsets[index] + lines[index].length,
+          source: statement,
+        });
       }
 
       index += 1;
     }
 
+    const closed = index < lines.length;
     const endLine = Math.min(index, lines.length - 1);
 
     blocks.push({
@@ -158,8 +187,10 @@ export function scanCalcBlocks(text: string): CalcBlockScan[] {
       to: offsets[endLine] + lines[endLine].length,
       startLine: startLine + 1,
       endLine: endLine + 1,
+      closed,
       attributes: open[1] ?? null,
-      lines: body,
+      lines: statements.map((statement) => statement.source),
+      statements,
     });
 
     index += 1;

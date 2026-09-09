@@ -28,6 +28,29 @@ import { parseAttributeString, parseCalcPresentation } from "@/lib/markdown/calc
  * inline contribution point `docs/12_EXTENSION_REGISTRY_PLAN.md` says the
  * registry is missing.
  *
+ * ## Why a `:::calc` block is *not* replaced by a block widget
+ *
+ * It used to be, and that was wrong twice over.
+ *
+ * A replace widget is opaque to CodeMirror: it has no idea which source
+ * character any pixel inside it stands for, so every click in the block landed
+ * on `from` or `to`. For a callout or a table that is tolerable, because the
+ * rendered form is what you want to look at and the source is markup noise. A
+ * declarations block is the opposite case — `rent = 1200 CAD` *is* the content,
+ * and the only thing rendering adds is the computed figure beside it. So the
+ * statement lines stay real, editable, selectable text and the value is
+ * appended as a small inline widget. Clicking, dragging and typing then work
+ * because there is nothing there but text.
+ *
+ * It was also the cause of a document-wide coordinate bug. CodeMirror measures
+ * a block widget with `getBoundingClientRect()`, which excludes margins, so the
+ * `margin: 1rem 0` on `.vault-calc-block` was invisible to the height map and
+ * every line *below* a calc block sat 32px lower than CodeMirror believed —
+ * clicks in the rest of the document landed a line or two off. (This is what
+ * `applyStableBlockWidgetSpacing` in `live-blocks.ts` exists to prevent; the
+ * rule is that a block widget must carry its spacing as padding, never margin.)
+ * Decorating lines in place removes the block widget, and with it the hazard.
+ *
  * ## Consistency with Read mode
  *
  * Occurrences are located by raw-text scan (`lib/calc/scan.ts`) rather than by
@@ -41,73 +64,99 @@ export type CalcLiveOptions = {
   fxTable?: FxRateTable | null;
 };
 
-/**
- * A `:::calc` declarations block, rendered as the same definition list Read
- * mode shows. Reveals its source when the cursor enters it, matching how the
- * callout and table live blocks behave — a block that stayed as raw source
- * while inline values beside it showed results read as inconsistent.
- */
-class CalcBlockWidget extends WidgetType {
-  constructor(
-    private readonly rows: ResolvedCalc[],
-    private readonly collapsed: boolean,
-  ) {
+/** The `:::calc` opening fence, shown as a label instead of its source. */
+class CalcFenceWidget extends WidgetType {
+  constructor(private readonly collapsed: boolean) {
     super();
   }
 
-  eq(other: CalcBlockWidget): boolean {
+  eq(other: CalcFenceWidget): boolean {
+    return other.collapsed === this.collapsed;
+  }
+
+  toDOM(): HTMLElement {
+    const root = document.createElement("span");
+    root.className = "vault-cm-calc-fence";
+
+    const label = document.createElement("span");
+    label.className = "vault-cm-calc-fence-label";
+    label.textContent = "calc";
+    root.append(label);
+
+    if (this.collapsed) {
+      const note = document.createElement("span");
+      note.className = "vault-cm-calc-fence-note";
+      note.textContent = "collapsed for readers";
+      root.append(note);
+    }
+
+    return root;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/**
+ * The computed figure for one statement line, appended after its source.
+ *
+ * A point widget rather than a replacement: the statement stays as text, so the
+ * cursor can be put anywhere in it and the value re-computes as it is edited.
+ */
+class CalcRowValueWidget extends WidgetType {
+  constructor(private readonly resolved: ResolvedCalc) {
+    super();
+  }
+
+  eq(other: CalcRowValueWidget): boolean {
     return (
-      other.collapsed === this.collapsed &&
-      other.rows.length === this.rows.length &&
-      other.rows.every((row, index) => {
-        const mine = this.rows[index];
-        return (
-          row.value === mine.value &&
-          row.label === mine.label &&
-          row.state === mine.state
-        );
-      })
+      other.resolved.value === this.resolved.value &&
+      other.resolved.state === this.resolved.state &&
+      other.resolved.message === this.resolved.message &&
+      other.resolved.provenance === this.resolved.provenance
     );
   }
 
   toDOM(): HTMLElement {
-    const root = document.createElement("div");
-    root.className = "vault-calc-block vault-cm-calc-block";
+    const root = document.createElement("span");
+    root.className = "vault-cm-calc-row";
 
-    if (this.collapsed) {
-      root.dataset.calcCollapsed = "true";
+    // The name and the working are already on screen in the source, so the
+    // widget shows the result alone — repeating the label would double every
+    // line. An error shows its reason instead, for the same reason: echoing
+    // back the expression the author is looking at says nothing.
+    if (this.resolved.state === "error") {
+      root.classList.add("vault-cm-calc-row-error");
+      root.title = this.resolved.message ?? "Could not evaluate.";
+      root.textContent = this.resolved.message ?? "Could not evaluate.";
+      return root;
     }
 
-    const body = document.createElement("div");
-    body.className = "vault-calc-block-body";
+    const markup = calcValueMarkup({
+      ...this.resolved,
+      label: null,
+      labelKind: null,
+    });
 
-    for (const resolved of this.rows) {
-      const markup = calcValueMarkup(resolved);
-      const row = document.createElement("div");
-      row.className = "vault-calc-block-row";
+    const value = document.createElement("span");
+    value.className = `${markup.rootClassName} vault-cm-calc`;
+    value.dataset.calcState = markup.state;
+    value.title = markup.title;
 
-      const value = document.createElement("span");
-      value.className = `${markup.rootClassName} vault-cm-calc`;
-      value.dataset.calcState = markup.state;
-      value.title = markup.title;
+    for (const part of markup.parts) {
+      const span = document.createElement("span");
+      span.className = part.className;
+      span.textContent = part.text;
 
-      for (const part of markup.parts) {
-        const span = document.createElement("span");
-        span.className = part.className;
-        span.textContent = part.text;
-
-        if (part.decorative) {
-          span.setAttribute("aria-hidden", "true");
-        }
-
-        value.append(span);
+      if (part.decorative) {
+        span.setAttribute("aria-hidden", "true");
       }
 
-      row.append(value);
-      body.append(row);
+      value.append(span);
     }
 
-    root.append(body);
+    root.append(value);
     return root;
   }
 
@@ -168,6 +217,19 @@ class CalcInlineWidget extends WidgetType {
   }
 }
 
+const calcBlockLine = Decoration.line({ class: "vault-cm-calc-block-line" });
+const calcBlockFirstLine = Decoration.line({
+  class: "vault-cm-calc-block-line vault-cm-calc-block-line-first",
+});
+const calcBlockLastLine = Decoration.line({
+  class: "vault-cm-calc-block-line vault-cm-calc-block-line-last",
+});
+/** The closing fence with its `:::` hidden, collapsed to a thin bottom edge. */
+const calcBlockClosedLine = Decoration.line({
+  class:
+    "vault-cm-calc-block-line vault-cm-calc-block-line-last vault-cm-calc-block-line-closed",
+});
+
 /** Ranges a `:calc` must not be recognized inside. */
 function getExclusions(state: EditorState): Array<{ from: number; to: number }> {
   const ranges: Array<{ from: number; to: number }> = [];
@@ -199,7 +261,16 @@ function isActive(state: EditorState, from: number, to: number): boolean {
 type LocatedOccurrence = CalcOccurrence & {
   from: number;
   to: number;
-  collapsed?: boolean;
+};
+
+type LocatedBlock = {
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  closed: boolean;
+  collapsed: boolean;
+  statements: Array<{ key: string; from: number; to: number }>;
 };
 
 /**
@@ -210,35 +281,52 @@ type LocatedOccurrence = CalcOccurrence & {
  * *is* document order. Block statements and inline values interleave by
  * position exactly as a reader would meet them.
  */
-function locateOccurrences(state: EditorState): LocatedOccurrence[] {
+function locateOccurrences(state: EditorState): {
+  occurrences: LocatedOccurrence[];
+  blocks: LocatedBlock[];
+} {
   const text = state.doc.toString();
   const exclusions = getExclusions(state);
-  const blocks = scanCalcBlocks(text);
+  const scanned = scanCalcBlocks(text);
 
   const inBlock = (offset: number) =>
-    blocks.some((block) => offset >= block.from && offset < block.to);
+    scanned.some((block) => offset >= block.from && offset < block.to);
 
-  const found: LocatedOccurrence[] = [];
+  const occurrences: LocatedOccurrence[] = [];
+  const blocks: LocatedBlock[] = [];
 
-  for (const block of blocks) {
-    const presentation = parseCalcPresentation(
-      parseAttributeString(block.attributes),
-    );
+  for (const block of scanned) {
+    const attributes = parseAttributeString(block.attributes);
+    const presentation = parseCalcPresentation(attributes);
+    const located: LocatedBlock = {
+      from: block.from,
+      to: block.to,
+      startLine: block.startLine,
+      endLine: block.endLine,
+      closed: block.closed,
+      collapsed: Object.hasOwn(attributes, "collapsed"),
+      statements: [],
+    };
 
-    block.lines.forEach((expression, index) => {
-      found.push({
-        key: `b${block.from}:${index}`,
-        expression,
+    for (const statement of block.statements) {
+      const key = `b${statement.from}`;
+
+      occurrences.push({
+        key,
+        expression: statement.source,
         presentation,
         context: "block",
-        from: block.from,
-        to: block.to,
-        collapsed: Object.hasOwn(
-          parseAttributeString(block.attributes),
-          "collapsed",
-        ),
+        from: statement.from,
+        to: statement.to,
       });
-    });
+      located.statements.push({
+        key,
+        from: statement.from,
+        to: statement.to,
+      });
+    }
+
+    blocks.push(located);
   }
 
   for (const match of scanInlineCalc(text, (from, to) =>
@@ -250,7 +338,7 @@ function locateOccurrences(state: EditorState): LocatedOccurrence[] {
       continue;
     }
 
-    found.push({
+    occurrences.push({
       key: `i${match.from}`,
       expression: match.expression,
       presentation: parseCalcPresentation(
@@ -262,16 +350,38 @@ function locateOccurrences(state: EditorState): LocatedOccurrence[] {
     });
   }
 
-  return found.sort((a, b) => a.from - b.from);
+  occurrences.sort((a, b) => a.from - b.from);
+
+  return { occurrences, blocks };
+}
+
+/**
+ * Line numbers a `:::calc` block occupies.
+ *
+ * The editor's markdown live-preview pass consults this so it leaves calc
+ * statements alone: `total = rent * 3 + cost * 2` is arithmetic, and letting the
+ * markdown parser read the asterisks as emphasis would hide them and silently
+ * change the expression the author is looking at.
+ */
+export function getCalcBlockLineNumbers(state: EditorState): Set<number> {
+  const lineNumbers = new Set<number>();
+
+  for (const block of scanCalcBlocks(state.doc.toString())) {
+    for (let line = block.startLine; line <= block.endLine; line += 1) {
+      lineNumbers.add(line);
+    }
+  }
+
+  return lineNumbers;
 }
 
 function buildCalcDecorations(
   state: EditorState,
   options: CalcLiveOptions,
 ): DecorationSet {
-  const located = locateOccurrences(state);
+  const { occurrences, blocks } = locateOccurrences(state);
 
-  if (located.length === 0) {
+  if (occurrences.length === 0 && blocks.length === 0) {
     return Decoration.none;
   }
 
@@ -281,39 +391,15 @@ function buildCalcDecorations(
   // server, so a pin edited mid-session takes effect on the next load.
   const { displayCurrency } = parseCalcSettings(state.doc.toString());
 
-  const { results } = resolveCalcOccurrences(located, {
+  const { results } = resolveCalcOccurrences(occurrences, {
     fxTable: options.fxTable ?? null,
     displayCurrency,
   });
 
   const ranges: Range<Decoration>[] = [];
-  const blocks = new Map<
-    string,
-    { from: number; to: number; collapsed: boolean; rows: ResolvedCalc[] }
-  >();
 
-  for (const occurrence of located) {
-    if (occurrence.context === "block") {
-      const resolved = results.get(occurrence.key);
-
-      if (!resolved) {
-        continue;
-      }
-
-      const id = String(occurrence.from);
-      const group = blocks.get(id) ?? {
-        from: occurrence.from,
-        to: occurrence.to,
-        collapsed: occurrence.collapsed ?? false,
-        rows: [],
-      };
-
-      group.rows.push(resolved);
-      blocks.set(id, group);
-      continue;
-    }
-
-    if (isActive(state, occurrence.from, occurrence.to)) {
+  for (const occurrence of occurrences) {
+    if (occurrence.context === "block" || isActive(state, occurrence.from, occurrence.to)) {
       continue;
     }
 
@@ -331,17 +417,55 @@ function buildCalcDecorations(
     );
   }
 
-  for (const block of blocks.values()) {
-    if (isActive(state, block.from, block.to) || block.rows.length === 0) {
-      continue;
+  for (const block of blocks) {
+    const openLine = state.doc.line(block.startLine);
+    const closeLine = block.closed ? state.doc.line(block.endLine) : null;
+    const closeHidden =
+      closeLine !== null && !isActive(state, closeLine.from, closeLine.to);
+
+    for (let number = block.startLine; number <= block.endLine; number += 1) {
+      const decoration =
+        number === block.startLine
+          ? calcBlockFirstLine
+          : closeLine && number === block.endLine
+            ? closeHidden
+              ? calcBlockClosedLine
+              : calcBlockLastLine
+            : calcBlockLine;
+
+      ranges.push(decoration.range(state.doc.line(number).from));
     }
 
-    ranges.push(
-      Decoration.replace({
-        block: true,
-        widget: new CalcBlockWidget(block.rows, block.collapsed),
-      }).range(block.from, block.to),
-    );
+    // The fences carry no information once the block is framed, so the opening
+    // one becomes a label and the closing one disappears into the bottom edge —
+    // but only while the cursor is elsewhere, since an author editing a fence
+    // needs to see what they are editing.
+    if (!isActive(state, openLine.from, openLine.to)) {
+      ranges.push(
+        Decoration.replace({
+          widget: new CalcFenceWidget(block.collapsed),
+        }).range(openLine.from, openLine.to),
+      );
+    }
+
+    if (closeLine && closeHidden) {
+      ranges.push(Decoration.replace({}).range(closeLine.from, closeLine.to));
+    }
+
+    for (const statement of block.statements) {
+      const resolved = results.get(statement.key);
+
+      if (!resolved) {
+        continue;
+      }
+
+      ranges.push(
+        Decoration.widget({
+          widget: new CalcRowValueWidget(resolved),
+          side: 1,
+        }).range(statement.to),
+      );
+    }
   }
 
   return Decoration.set(ranges, true);

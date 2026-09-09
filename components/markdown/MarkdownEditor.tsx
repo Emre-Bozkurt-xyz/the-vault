@@ -67,7 +67,10 @@ import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { EditorOutline } from "@/components/markdown/EditorOutline";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import type { FxRateTable } from "@/lib/calc/fx";
-import { createCalcLiveExtension } from "@/components/markdown/live-calc";
+import {
+  createCalcLiveExtension,
+  getCalcBlockLineNumbers,
+} from "@/components/markdown/live-calc";
 import {
   createLiveBlockDecorationExtension,
   getLiveBlockLineNumbers,
@@ -3139,7 +3142,13 @@ function buildLivePreviewDecorations(
     ? []
     : view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
-  const liveBlockLines = getLiveBlockLineNumbers(view.state);
+  // Calc statements join the live-block lines so the markdown pass leaves them
+  // alone: `total = rent * 3 + cost * 2` is arithmetic, and reading those
+  // asterisks as emphasis would hide them from the author mid-expression.
+  const liveBlockLines = new Set([
+    ...getLiveBlockLineNumbers(view.state),
+    ...getCalcBlockLineNumbers(view.state),
+  ]);
   const doc = view.state.doc;
   const frontmatterEndLine = getFrontmatterEndLine(doc);
 

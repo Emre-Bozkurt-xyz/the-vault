@@ -125,6 +125,45 @@ describe("scanCalcBlocks", () => {
     const [block] = scanCalcBlocks(":::calc\nrent = 1 CAD");
 
     expect(block.lines).toEqual(["rent = 1 CAD"]);
+    expect(block.closed).toBe(false);
+  });
+
+  // Live mode decorates the statement lines in place instead of replacing the
+  // block, so every statement has to carry the range it occupies — without it
+  // there is nothing to hang a per-line value widget on, and a click inside the
+  // block has no source position to land on.
+  it("locates each statement in the document", () => {
+    const text = "Intro.\n:::calc\nrent = 1200 CAD\n\ndomains = 42 USD\n:::";
+    const [block] = scanCalcBlocks(text);
+
+    expect(block.closed).toBe(true);
+    expect(
+      block.statements.map(({ line, source }) => [line, source]),
+    ).toEqual([
+      [3, "rent = 1200 CAD"],
+      [5, "domains = 42 USD"],
+    ]);
+
+    for (const statement of block.statements) {
+      expect(text.slice(statement.from, statement.to)).toBe(statement.source);
+    }
+  });
+
+  it("keeps `lines` in step with `statements`", () => {
+    const [block] = scanCalcBlocks(":::calc\na = 1\n\n  b = 2  \n:::");
+
+    expect(block.lines).toEqual(block.statements.map((s) => s.source));
+    expect(block.lines).toEqual(["a = 1", "b = 2"]);
+  });
+
+  // The source is trimmed for evaluation but the range spans the whole line,
+  // which is where Live mode appends the computed value.
+  it("trims a statement's source but spans its whole line", () => {
+    const text = ":::calc\n   rent = 1 CAD   \n:::";
+    const [statement] = scanCalcBlocks(text)[0].statements;
+
+    expect(statement.source).toBe("rent = 1 CAD");
+    expect(text.slice(statement.from, statement.to)).toBe("   rent = 1 CAD   ");
   });
 
   it("finds several blocks in order", () => {

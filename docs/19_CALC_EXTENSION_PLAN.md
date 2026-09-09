@@ -502,15 +502,28 @@ on the page would be torn down and rebuilt on each keystroke.
 
 ### Blocks keep their source visible in Live mode
 
-**Superseded.** Blocks initially kept their source visible while inline values
-beside them showed results, which read as inconsistent. They now render as the
-same definition list Read mode shows, revealing their source when the cursor
-enters, matching the callout and table specs. `CalcBlockWidget` is a
-`Decoration.replace({ block: true })` over the whole fence range.
+The block's statement lines stay real, editable text; the computed figure is
+appended to each as an inline widget, and the two fence lines are hidden (the
+opener behind a small `calc` label, the closer collapsed into the bottom edge)
+while the cursor is elsewhere. A set of `Decoration.line` classes draws the
+frame. See `docs/project-knowledge.md` → *Calc live block cursor bugs* for the
+two attempts that came before this and why they failed.
 
-An authored `{collapsed}` block still shows its rows in the editor, with a
-`collapsed for readers` marker: the fold is for readers, and hiding declarations
-from the person writing them would make the block impossible to work on.
+An authored `{collapsed}` block still shows its statements in the editor, with a
+`collapsed for readers` note on the fence label: the fold is for readers, and
+hiding declarations from the person writing them would make the block impossible
+to work on.
+
+### A block widget must never carry vertical margin
+
+CodeMirror measures a block widget with `getBoundingClientRect()`, which excludes
+margins. Any `margin-block` on a block widget's root is therefore invisible to
+the height map, and **every line below it in the document** sits that much lower
+than CodeMirror believes — so clicks land on the wrong line for the rest of the
+page, not just inside the widget. `live-blocks.ts` has
+`applyStableBlockWidgetSpacing` for exactly this; anything reaching for
+`Decoration.replace({ block: true })` must use it or convert its spacing to
+padding.
 
 ## 9d. Slices 5 and 6
 

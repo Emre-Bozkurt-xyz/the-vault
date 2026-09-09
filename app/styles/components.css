@@ -928,22 +928,91 @@
     cursor: text;
   }
 
-  .vault-cm-calc-block {
-    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
-    cursor: text;
+  /* A `:::calc` block is framed line by line rather than replaced by a block
+     widget, so its statements stay real text you can click into, select and
+     edit — see the header comment in components/markdown/live-calc.ts. The
+     frame is what tells the author where the block starts and ends once the
+     fences are shown as a label. */
+  .vault-markdown-editor-live .cm-line.vault-cm-calc-block-line {
+    border-left: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-right: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    background: color-mix(in oklab, var(--foreground) 4%, transparent);
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
   }
 
-  /* An authored `{collapsed}` block still shows its rows while editing: the
-     fold is for readers, and hiding declarations from the person writing them
-     would make the block impossible to work on. The marker stays visible so the
-     author can see the flag is set. */
-  .vault-cm-calc-block[data-calc-collapsed="true"]::before {
-    content: "collapsed for readers";
-    display: block;
-    margin-bottom: 0.35rem;
+  .vault-markdown-editor-live .cm-line.vault-cm-calc-block-line-first {
+    border-top: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.65rem 0.65rem 0 0;
+    padding-top: 0.35rem !important;
+  }
+
+  .vault-markdown-editor-live .cm-line.vault-cm-calc-block-line-last {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0 0 0.65rem 0.65rem;
+    padding-bottom: 0.35rem !important;
+  }
+
+  /* With its `:::` hidden the closing fence would still occupy a full blank
+     line at the foot of the block. Collapsed to a thin edge instead — the line
+     springs back to full size the moment the cursor lands on it, because that
+     also restores the source. */
+  .vault-markdown-editor-live .cm-line.vault-cm-calc-block-line-closed {
+    font-size: 0.3rem;
+    line-height: 0.3rem;
+    padding-top: 0 !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  /* The opening fence, shown as a label. Small and quiet: it is a marker for
+     the author, not part of the document's content. */
+  .vault-cm-calc-fence {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--muted-foreground);
-    font-size: 0.75rem;
+  }
+
+  /* An authored `{collapsed}` block still shows its statements while editing:
+     the fold is for readers, and hiding declarations from the person writing
+     them would make the block impossible to work on. The marker stays on the
+     fence so the author can see the flag is set. */
+  .vault-cm-calc-fence-note {
     letter-spacing: 0.02em;
+    text-transform: none;
+    opacity: 0.75;
+  }
+
+  /* The computed figure, appended after a statement's source. The source says
+     what is being computed, so this shows only the result. */
+  .vault-cm-calc-row {
+    margin-left: 0.9rem;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  }
+
+  /* An arrow rather than `=`: a statement line already contains its own `=`,
+     and `rent = 1200 CAD = CA$1,200.00` reads as two equations. */
+  .vault-cm-calc-row::before {
+    content: "→";
+    margin-right: 0.45rem;
+    color: var(--muted-foreground);
+    opacity: 0.55;
+  }
+
+  /* The dotted rule earns its keep inline, where a value sits in prose;
+     repeated down every row of a declarations block it is just noise — the same
+     call Read mode makes for `.vault-calc-block-row`. */
+  .vault-cm-calc-row .vault-calc {
+    border-bottom: none;
+  }
+
+  .vault-cm-calc-row-error {
+    color: color-mix(in oklab, var(--destructive) 82%, var(--foreground));
+    font-size: 0.85em;
   }
 
   .vault-calc-block {
