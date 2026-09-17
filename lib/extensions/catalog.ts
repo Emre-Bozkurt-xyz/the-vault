@@ -86,6 +86,11 @@ const removeStickerInputSchema = z.object({
 export const dictionarySettingsSchema = z.object({
   /** Folder `/def` files new definitions into; null means beside the document. */
   newDefinitionFolderId: z.string().uuid().nullable().default(null),
+  /**
+   * How links to definitions are emphasized when *you* read. A reading
+   * preference, so it never changes what other readers see.
+   */
+  definitionEmphasis: z.enum(["every", "first"]).default("every"),
 });
 
 export const calendarSettingsSchema = z.object({
@@ -341,8 +346,25 @@ export const localBuiltInExtensions: VaultExtension[] = [
     permissions: ["document:read", "document:write"],
     settings: {
       schema: dictionarySettingsSchema,
-      defaults: { newDefinitionFolderId: null },
+      defaults: { newDefinitionFolderId: null, definitionEmphasis: "every" },
       sections: [
+        {
+          id: "reading",
+          label: "Reading",
+          fields: [
+            {
+              type: "select",
+              key: "definitionEmphasis",
+              label: "Emphasize defined terms",
+              description:
+                "Every mention stays linked and previews on hover; this only changes which are emphasized.",
+              options: [
+                { label: "Every mention", value: "every" },
+                { label: "First mention in a document", value: "first" },
+              ],
+            },
+          ],
+        },
         {
           id: "authoring",
           label: "Authoring",

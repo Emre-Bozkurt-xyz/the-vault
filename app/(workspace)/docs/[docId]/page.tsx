@@ -28,7 +28,10 @@ import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
-import { calendarSettingsSchema } from "@/lib/extensions/catalog";
+import {
+  calendarSettingsSchema,
+  dictionarySettingsSchema,
+} from "@/lib/extensions/catalog";
 import type { ExtensionStateVisibility } from "@/lib/extensions/types";
 import type { CalendarWeekStart } from "@/lib/calendar";
 import {
@@ -145,9 +148,9 @@ export default async function DocumentPage({
       document.access.canEdit
         ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calc" })
         : Promise.resolve(null),
-      document.access.canEdit
-        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.dictionary" })
-        : Promise.resolve(null),
+      // Fetched for every viewer, not only editors: besides gating `/def`, it
+      // carries the viewer's own reading preference for definition links.
+      getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.dictionary" }),
       document.access.canEdit
         ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
         : Promise.resolve(null),
@@ -163,6 +166,15 @@ export default async function DocumentPage({
   // Gates `/def` and `/term` only. Definition hover previews always render, for
   // the same reason: a document must read the same for every viewer.
   const dictionaryEnabled = dictionaryExtSetting?.enabled ?? false;
+  const dictionarySettings = dictionarySettingsSchema.safeParse(
+    dictionaryExtSetting?.settings ?? {},
+  );
+  // Only honoured while the extension is on: disabling it removes its settings
+  // page, and a preference nobody can see must not keep applying.
+  const definitionEmphasis =
+    dictionaryEnabled && dictionarySettings.success
+      ? dictionarySettings.data.definitionEmphasis
+      : "every";
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
@@ -301,6 +313,7 @@ export default async function DocumentPage({
             markdown={markdown}
             folderPath={folderPath}
             folderId={document.folderId}
+            definitionEmphasis={definitionEmphasis}
             inheritedTags={inheritedTags}
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}
@@ -348,6 +361,7 @@ export default async function DocumentPage({
                   assetLinks={assetLinks}
                   documentId={document.id}
                   fxTable={fxTable}
+                  definitionEmphasis={definitionEmphasis}
                 />
               </DocumentStyling>
             </DocumentReadingFrame>

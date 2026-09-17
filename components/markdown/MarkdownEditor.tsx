@@ -89,7 +89,10 @@ import {
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
-import { DefinitionHoverCard } from "@/components/markdown/DefinitionPreviewCard";
+import {
+  DefinitionCardOpenLink,
+  DefinitionHoverCard,
+} from "@/components/markdown/DefinitionPreviewCard";
 import { NewDefinitionDialog } from "@/components/markdown/NewDefinitionDialog";
 import {
   createDefinitionHoverExtension,
@@ -168,6 +171,8 @@ type MarkdownEditorProps = {
   folderPath?: string | null;
   /** The document's folder, so `/def` can file a new definition beside it. */
   folderId?: string | null;
+  /** The viewer's Dictionary reading preference, for the Read-mode preview. */
+  definitionEmphasis?: "every" | "first";
   /**
    * Tags this document picks up from its folders (see `lib/folder-tags.ts`).
    * Read-only here: they are not part of the Markdown, so the Properties panel
@@ -324,6 +329,7 @@ export function MarkdownEditor({
   markdown,
   folderPath = null,
   folderId = null,
+  definitionEmphasis = "every",
   inheritedTags,
   shareLinkId = null,
   collaboration = null,
@@ -394,7 +400,14 @@ export function MarkdownEditor({
   // `/def` (`lib/extensions/catalog.ts`). Only the term is held here; the view is
   // read from `viewRef` at submit time, so the link lands in the live editor
   // rather than in whatever view instance existed when the dialog opened.
-  const [newDefinitionTerm, setNewDefinitionTerm] = useState<string | null>(null);
+  // `key` remounts the dialog per invocation — the same term can be defined
+  // twice in a row, so the term alone cannot be the key. `linksHere` is false
+  // when defining an existing unresolved link, which must not insert a second.
+  const [newDefinition, setNewDefinition] = useState<{
+    term: string;
+    linksHere: boolean;
+    key: number;
+  } | null>(null);
   const [newDefinitionPending, setNewDefinitionPending] = useState(false);
   const [newDefinitionError, setNewDefinitionError] = useState<string | null>(
     null,
@@ -403,6 +416,9 @@ export function MarkdownEditor({
   // string (rebuilt inside) so a fresh `enabledExtensionIds` array reference
   // doesn't churn this memo — and, downstream, reconfigure the whole editor.
   const enabledExtensionKey = (enabledExtensionIds ?? []).join("|");
+  const dictionaryEnabled = (enabledExtensionIds ?? []).includes(
+    "vault.dictionary",
+  );
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(() => {
     const enabled = new Set(
       enabledExtensionKey ? enabledExtensionKey.split("|") : [],
@@ -747,7 +763,7 @@ export function MarkdownEditor({
       // around. The handlers themselves are module-level, like `insertBlock`.
       const hostCommands = {
         "vault.dictionary.newDefinition": (view: EditorView) =>
-          openNewDefinitionDialog(view, setNewDefinitionTerm, setNewDefinitionError),
+          openNewDefinitionDialog(view, setNewDefinition, setNewDefinitionError),
         "vault.dictionary.insertReference": insertDefinitionReference,
       };
       const baseExtensions = [
@@ -1049,6 +1065,9 @@ export function MarkdownEditor({
           createDefinitionHoverExtension({
             getWikiLinks: () => wikiLinkMapStore.get(),
             onChange: setDefinitionHover,
+            // Previews are for everyone; offering to *define* a term is an
+            // authoring affordance, so it follows the extension switch.
+            offerDefine: dictionaryEnabled,
           }),
         );
       }
@@ -1146,6 +1165,7 @@ export function MarkdownEditor({
       slashMenuEnabled,
       calcEnabled,
       fxTable,
+      dictionaryEnabled,
     ],
   );
 
@@ -1696,6 +1716,7 @@ export function MarkdownEditor({
                     assetLinks={assetLinkMap}
                     contained={false}
                     fxTable={fxTable}
+                    definitionEmphasis={definitionEmphasis}
                   />
                 </DocumentCanvas>
               </div>
@@ -1703,24 +1724,25 @@ export function MarkdownEditor({
           </div>
         </div>
         </DocumentOverlayHost>
-        {newDefinitionTerm !== null ? (
+        {newDefinition ? (
           <NewDefinitionDialog
-            // Remounts per invocation so the field starts from this selection
-            // rather than the previous term.
-            key={newDefinitionTerm}
+            key={newDefinition.key}
             open
-            initialTerm={newDefinitionTerm}
+            initialTerm={newDefinition.term}
+            linksHere={newDefinition.linksHere}
             pending={newDefinitionPending}
             error={newDefinitionError}
             onCancel={() => {
-              setNewDefinitionTerm(null);
+              setNewDefinition(null);
               setNewDefinitionError(null);
             }}
-            onSubmit={(term) => {
+            onSubmit={({ term, summary }) => {
+              const { linksHere } = newDefinition;
               setNewDefinitionPending(true);
               setNewDefinitionError(null);
               void createDefinitionDocumentAction({
                 term,
+                summary,
                 currentFolderId: folderId,
               }).then((result) => {
                 setNewDefinitionPending(false);
@@ -1730,11 +1752,11 @@ export function MarkdownEditor({
                   return;
                 }
 
-                setNewDefinitionTerm(null);
+                setNewDefinition(null);
 
                 const view = viewRef.current;
 
-                if (view) {
+                if (linksHere && view) {
                   // The resolved title, not the typed term: an existing
                   // definition is reused, and the link has to name it.
                   insertInline(
@@ -1742,35 +1764,69 @@ export function MarkdownEditor({
                     `[[${escapeWikiLinkLabel(result.title)}]]`,
                     null,
                   );
-                  view.focus();
                 }
 
-                // A background tab, not a navigation: the author is mid-sentence.
-                dispatchWorkspaceOpenTab({
-                  href: `/docs/${result.documentId}`,
-                  title: result.title,
-                });
+                view?.focus();
+
+                // Only a definition that still needs writing earns a tab — one
+                // created with its definition line is already complete. Never a
+                // navigation either way: the author is mid-sentence.
+                if (result.created && !summary.trim()) {
+                  dispatchWorkspaceOpenTab({
+                    href: `/docs/${result.documentId}`,
+                    title: result.title,
+                  });
+                }
               });
             }}
           />
         ) : null}
         {definitionHover ? (
           <DefinitionHoverCard
-            // Keyed on the anchor so moving between two terms remounts the card
+            // Keyed on the term so moving between two terms remounts the card
             // rather than sliding one popup across the page.
-            key={definitionHover.label}
+            key={
+              definitionHover.kind === "definition"
+                ? `definition:${definitionHover.label}`
+                : `undefined:${definitionHover.target}`
+            }
             anchor={definitionHover.anchor}
-            label={definitionHover.label}
-            preview={
+            label={
+              definitionHover.kind === "definition"
+                ? definitionHover.label
+                : definitionHover.target
+            }
+            footer={
+              definitionHover.kind === "definition" ? (
+                <DefinitionCardOpenLink href={definitionHover.href} />
+              ) : (
+                <button
+                  type="button"
+                  className="vault-md-definition-card-action"
+                  onClick={() => {
+                    const term = definitionHover.target;
+                    setDefinitionHover(null);
+                    setNewDefinitionError(null);
+                    setNewDefinition({ term, linksHere: false, key: Date.now() });
+                  }}
+                >
+                  Define
+                </button>
+              )
+            }
+            onClose={() => setDefinitionHover(null)}
+          >
+            {definitionHover.kind === "definition" ? (
               <MarkdownDocument
                 markdown={definitionHover.preview}
                 disableLinks
                 compact
                 contained={false}
               />
-            }
-            onClose={() => setDefinitionHover(null)}
-          />
+            ) : (
+              <p className="vault-md-definition-card-empty">Not defined yet.</p>
+            )}
+          </DefinitionHoverCard>
         ) : null}
         <p className="sr-only" aria-live="polite">
           {statusText}. {collaborationStatusText}.
@@ -5787,13 +5843,21 @@ function toggleCodeFence(view: EditorView) {
  */
 function openNewDefinitionDialog(
   view: EditorView,
-  setTerm: (term: string) => void,
+  setDefinition: (definition: {
+    term: string;
+    linksHere: boolean;
+    key: number;
+  }) => void,
   setError: (error: string | null) => void,
 ) {
   const { from, to } = view.state.selection.main;
   setError(null);
-  // A selected word is almost always the term being defined.
-  setTerm(from === to ? "" : view.state.sliceDoc(from, to).trim());
+  setDefinition({
+    // A selected word is almost always the term being defined.
+    term: from === to ? "" : view.state.sliceDoc(from, to).trim(),
+    linksHere: true,
+    key: Date.now(),
+  });
 }
 
 /** `/term` — opens a wiki-link completion narrowed to definitions. */

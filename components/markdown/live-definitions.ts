@@ -31,11 +31,24 @@ import {
  *   underline); adding the Read-mode definition weight on top would be
  *   differentiating something that is already distinct.
  */
-export type DefinitionHoverTarget = {
-  anchor: HTMLElement;
-  label: string;
-  preview: string;
-};
+export type DefinitionHoverTarget =
+  | {
+      kind: "definition";
+      anchor: HTMLElement;
+      label: string;
+      preview: string;
+      href: string;
+    }
+  /**
+   * A `[[Term]]` that resolves to nothing. Offered only when the author can act
+   * on it (the Dictionary extension is on), so the card can say "not defined yet"
+   * and offer to define it without the term being retyped.
+   */
+  | {
+      kind: "undefined";
+      anchor: HTMLElement;
+      target: string;
+    };
 
 /** Class the live-preview pass puts on a rendered wiki link's visible text. */
 const wikiLinkClass = "vault-cm-preview-wiki-link";
@@ -78,6 +91,7 @@ export function findDefinitionAtNode(
   view: EditorView,
   node: EventTarget | null,
   wikiLinks: WikiLinkResolutionMap,
+  options: { offerDefine?: boolean } = {},
 ): DefinitionHoverTarget | null {
   const element = node instanceof Element ? node : null;
   const anchor = element?.closest(`.${wikiLinkClass}`);
@@ -102,17 +116,33 @@ export function findDefinitionAtNode(
     return null;
   }
 
-  const resolution = wikiLinks[wikiKeyForTarget(link.target)];
+  const key = wikiKeyForTarget(link.target);
+  const resolution = wikiLinks[key];
 
-  if (!resolution?.isDefinition || !resolution.preview) {
+  if (!resolution) {
+    // Only a *title* link names a term. An unresolved `[[doc:…]]` or
+    // `[[public:…]]` is a broken reference, not something to define.
+    return options.offerDefine && isUndefinedTermKey(key)
+      ? { kind: "undefined", anchor, target: link.target }
+      : null;
+  }
+
+  if (!resolution.isDefinition || !resolution.preview || !resolution.href) {
     return null;
   }
 
   return {
+    kind: "definition",
     anchor,
     label: resolution.label ?? link.label,
     preview: resolution.preview,
+    href: resolution.href,
   };
+}
+
+/** True for a resolution-map key that names a term by title. */
+export function isUndefinedTermKey(key: string) {
+  return key.startsWith("title:") && key.length > "title:".length;
 }
 
 /**
@@ -133,6 +163,8 @@ export function findDefinitionAtNode(
  */
 export function createDefinitionHoverExtension(options: {
   getWikiLinks: () => WikiLinkResolutionMap;
+  /** Also open a "not defined yet" card over unresolved term links. */
+  offerDefine?: boolean;
   /** Stable setter — pass React's `setState`, not a fresh closure per render. */
   onChange: (target: DefinitionHoverTarget | null) => void;
   openDelayMs?: number;
@@ -192,6 +224,7 @@ export function createDefinitionHoverExtension(options: {
           view,
           event.target,
           options.getWikiLinks(),
+          { offerDefine: options.offerDefine },
         );
 
         if (!target) {

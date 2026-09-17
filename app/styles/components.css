@@ -859,6 +859,12 @@
     color: var(--foreground);
   }
 
+  /* A repeat mention under the reader's "first mention" setting: still a link
+     with a card, but reads as plain prose. */
+  .vault-md-definition-link--quiet {
+    font-weight: inherit;
+  }
+
   /* The hover card, drawn as a miniature document page rather than a tooltip:
      it holds rendered Markdown, so it has to look like somewhere prose lives. */
   .vault-md-definition-card {
@@ -890,6 +896,37 @@
     max-height: 14rem;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  .vault-md-definition-card-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  }
+
+  .vault-md-definition-card-action {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-decoration: none;
+    background: none;
+    border: 0;
+    padding: 0.1rem 0.25rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+  }
+
+  .vault-md-definition-card-action:hover,
+  .vault-md-definition-card-action:focus-visible {
+    color: var(--foreground);
+    background: color-mix(in oklab, var(--muted) 60%, transparent);
+  }
+
+  .vault-md-definition-card-empty {
+    margin: 0;
+    color: var(--muted-foreground);
   }
 
   /* The preview renders through MarkdownDocument, whose block spacing is tuned

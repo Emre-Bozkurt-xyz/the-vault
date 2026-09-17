@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { findWikiLinkAt } from "@/components/markdown/live-definitions";
+import {
+  findWikiLinkAt,
+  isUndefinedTermKey,
+} from "@/components/markdown/live-definitions";
+import { wikiKeyForTarget } from "@/lib/wiki-links";
 
 describe("findWikiLinkAt", () => {
   const line = "The handler must be [[Idempotence|idempotent]] on retry.";
@@ -50,5 +54,27 @@ describe("findWikiLinkAt", () => {
   it("returns null for a line with no link", () => {
     expect(findWikiLinkAt("Just prose.", 4)).toBeNull();
     expect(findWikiLinkAt("", 0)).toBeNull();
+  });
+});
+
+describe("isUndefinedTermKey", () => {
+  it("offers to define a link that names a term by title", () => {
+    expect(isUndefinedTermKey(wikiKeyForTarget("Backpressure"))).toBe(true);
+    expect(isUndefinedTermKey(wikiKeyForTarget("Retry Policy#Limits"))).toBe(true);
+  });
+
+  it("never offers to define a broken id, public or guide reference", () => {
+    expect(
+      isUndefinedTermKey(wikiKeyForTarget("doc:11111111-1111-4111-8111-111111111111")),
+    ).toBe(false);
+    expect(
+      isUndefinedTermKey(wikiKeyForTarget("11111111-1111-4111-8111-111111111111")),
+    ).toBe(false);
+    expect(isUndefinedTermKey(wikiKeyForTarget("public:some-slug"))).toBe(false);
+    expect(isUndefinedTermKey(wikiKeyForTarget("guide:getting-started"))).toBe(false);
+  });
+
+  it("rejects an empty title key", () => {
+    expect(isUndefinedTermKey("title:")).toBe(false);
   });
 });

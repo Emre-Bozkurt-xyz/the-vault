@@ -110,6 +110,10 @@ Links pointing at a definition document, and the card shown on hover. See
 | `.vault-md-definition-card` | the hover card popup |
 | `.vault-md-definition-card-title` | the definition's title inside the card |
 | `.vault-md-definition-card-body` | the rendered preview, capped and scrollable |
+| `.vault-md-definition-card-footer` | the card's action row |
+| `.vault-md-definition-card-action` | "Open" / "Define" in the footer |
+| `.vault-md-definition-card-empty` | "Not defined yet." on an unresolved term's card (editor only) |
+| `.vault-md-definition-link--quiet` | a repeat mention under the reader's "first mention" setting |
 
 The link keeps `.vault-md-link` alongside the definition class, so existing
 link styling still applies. All four are applied by `DefinitionPreviewCard`

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { localBuiltInExtensions } from "@/lib/extensions/catalog";
+import {
+  dictionarySettingsSchema,
+  localBuiltInExtensions,
+} from "@/lib/extensions/catalog";
 import type {
   ExtensionAgentActionContext,
   ExtensionAgentDefinitionEntry,
@@ -208,5 +211,34 @@ describe("vault.dictionary.defineTerm", () => {
     await expect(
       defineTerm.handler({ term: "Backoff" }, context({})),
     ).rejects.toThrow(/write access/);
+  });
+});
+
+describe("vault.dictionary settings", () => {
+  const extension = localBuiltInExtensions.find(
+    (candidate) => candidate.id === "vault.dictionary",
+  );
+
+  it("parses an empty stored value to the declared defaults", () => {
+    expect(dictionarySettingsSchema.parse({})).toEqual(extension?.settings?.defaults);
+  });
+
+  it("declares a field for every setting key, so none is invisible", () => {
+    const fieldKeys = (extension?.settings?.sections ?? [])
+      .flatMap((section) => section.fields.map((field) => field.key))
+      .sort();
+
+    expect(fieldKeys).toEqual(
+      Object.keys(dictionarySettingsSchema.parse({})).sort(),
+    );
+  });
+
+  it("rejects a folder id that is not a uuid and an unknown emphasis", () => {
+    expect(
+      dictionarySettingsSchema.safeParse({ newDefinitionFolderId: "nope" }).success,
+    ).toBe(false);
+    expect(
+      dictionarySettingsSchema.safeParse({ definitionEmphasis: "loud" }).success,
+    ).toBe(false);
   });
 });

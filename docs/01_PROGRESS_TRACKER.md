@@ -553,6 +553,23 @@ verification).
 
 ---
 
+## Phase 22 - Settings Pages and Extension Settings
+
+Reference plan: none (grown out of `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md`).
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | One shared settings page builder | Done 2026-09-17. `components/settings/buildSettingsPages.tsx` replaces hand assembly in both `WorkspaceSettingsModalMount` and `/dashboard/settings`, which had drifted (no Snippets page on the dashboard). `SettingsModal` takes `SettingsPage[]` instead of a prop per section, and no longer resets its page from an effect |
+| [x] | Sidebar titles only; page keeps its description | Done 2026-09-17. One-line nav entries; the description is one muted line under the page title |
+| [x] | Extensions group, visually separated | Done 2026-09-17. Below a rule with a small label, no icons, indented to align with core labels |
+| [x] | Merge the two extension pages into one | Done 2026-09-17. "Extension browser" + "Installed extensions" → **Extensions**; a **Settings** button jumps to an extension's own page via `SettingsNavigationContext` |
+| [x] | Generic extension settings form | Done 2026-09-17. `ExtensionSettingsPage` renders declared fields and saves through `upsertUserExtensionSettingsAction`, which already validated but had no UI. Lowkey styling: no card, hairline rows, muted id/version footer with Reset |
+| [x] | Host-rendered `folder` field type | Done 2026-09-17. Options are the user's own folders; a deleted chosen folder shows as "Unavailable folder" |
+| [x] | Revalidate the layout on extension changes | Done 2026-09-17. Enable/disable, save and reset revalidate `"/"` so the layout-mounted modal gains and loses pages without a reload |
+| [ ] | Browser pass over the new settings modal | Not done: Docker/Postgres was stopped before it could run |
+
+---
+
 ## Phase 21 - Dictionary Extension
 
 Reference plan: `docs/20_DICTIONARY_EXTENSION_PLAN.md`
@@ -564,6 +581,11 @@ Reference plan: `docs/20_DICTIONARY_EXTENSION_PLAN.md`
 | [x] | Slice 3 — Live-mode parity | Done 2026-09-17. New `components/markdown/live-definitions.ts`. **Two deviations from the plan, both deliberate**: (1) no per-target `data-` attributes on the wiki-link decoration — the hover handler resolves the target from live document state (`view.posAtDOM` -> `findWikiLinkAt` -> `wikiKeyForTarget`), which is less code *and* cannot go stale the way an attribute baked in at decoration time can; (2) Live-mode definition links keep their existing wiki-link styling (weight 500 + primary underline) rather than gaining the Read-mode weight — a wiki link in the editor already announces itself. Every timer lives in the extension closure: the editor builds extensions inside a `useMemo`, so a React ref read from there is a render-time ref access and a `useMemo` holder is worse (the compiler treats it as immutable) — only React's stable `setState` crosses the boundary. The closure keeps the card open by checking `.vault-md-definition-card:hover` when its close timer fires, which is how the pointer can travel into a card that scrolls. Cards are mouse-only (a tap would open one a reader cannot dismiss), and close on keydown and on scroll. 428 tests (+7 for `findWikiLinkAt`), editor lint back to its exact 8-error baseline |
 | [x] | Slice 4 — Authoring | Done 2026-09-17. Registered `vault.dictionary` (`lib/extensions/catalog.ts`, `defaultEnabled: false`) contributing `/def` and `/term`. **Framework change**: `SlashCommandContribution.insert` is now optional beside `run?: { command: string }` naming a host capability; `buildItems` filters out any item whose command the editor does not provide (and any declaring neither), so an extension can never advertise something that would do nothing when picked. `/def` opens `NewDefinitionDialog` prefilled from the selection, calls the new `server/definitions.ts` `createDefinitionDocumentAction` (reuses an existing same-titled definition rather than duplicating it; writes `tags: definition` into the frontmatter so the document survives a move; syncs metadata immediately so it previews before its first save), inserts `[[Title]]`, and opens a **background tab** via the new `dispatchWorkspaceOpenTab` workspace event — it never navigates away from the sentence being written. `/term` opens the wiki-link completion narrowed to definitions via a new `definitionScopeField` CodeMirror `StateField` keyed to the `[[` it inserted (a React store cannot work here: a memoized object whose handlers mutate it makes the React Compiler lint skip the whole component). New `editor.definitionFolderId` preference with a folder picker in Settings -> Editor, fed by `listDefinitionFolderOptions`; re-validated server-side on every use so a deleted or unshared folder falls back to the current document's folder instead of failing. 432 tests (+4), `MarkdownEditor.tsx` lint **6 errors, below its 8-error baseline** |
 | [x] | Slice 5 — Agent actions | Done 2026-09-17. `listDefinitions` (workspace, read, optional query over terms and aliases), `listUndefinedTerms` (document, read — wiki links that reach no definition, most-referenced first) and `defineTerm` (workspace, mutates — creates with a summary, or reports the existing definition it kept). Handlers import no `db`: a new `context.definitions` capability carries `list` (with `document:read`) and `create` (with `document:write`), built by the dispatcher in `server/extensions.ts` — top-level like `fx`, since it is user-scoped either way. New `server/definitions.ts` `listDefinitionsForUser` (read scoping mirroring `listWikiLinkResolutionsForUser`) and `createDefinitionForUser` (the action core, so the dispatcher need not re-resolve a session). `extractWikiLinkTargets` gained a counting sibling `countWikiLinkTargets` rather than a duplicated scanner, because a `Set` cannot answer "leans on this five times". 447 tests (+15). Read scoping verified against real Postgres: mine, shared-with-me and public appear; another user's private definition, a soft-deleted one and an untagged one do not |
+| [x] | Ergonomics A — `/def` writes the definition | Done 2026-09-17. The dialog gained a Definition line written to `summary:`; without it a fresh `/def` had nothing to preview and its links rendered as plain wiki links. A background tab now opens only when the definition was left blank |
+| [x] | Ergonomics B — a way out of the card | Done 2026-09-17. The **Open** footer link the plan called for and slice 2 omitted |
+| [x] | Ergonomics C — define from an unresolved link | Done 2026-09-17. Hovering an unresolved `[[Term]]` in Live mode offers **Define**, prefilled, inserting no second link. Only title keys qualify (`isUndefinedTermKey`), and it follows the extension switch |
+| [x] | Ergonomics D — emphasize first mention only | Done 2026-09-17. A viewer *reading* preference, not a document property. `definitionMentions` threaded like `headingIds` so it spans every Markdown segment; `--quiet` modifier returns weight to inherit |
+| [ ] | Browser pass over slices 2–5 and A–D | Still not done: Docker/Postgres was stopped before it could run |
 
 Exit criteria:
 
