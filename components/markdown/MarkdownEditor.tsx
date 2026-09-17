@@ -89,6 +89,11 @@ import {
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
+import { DefinitionHoverCard } from "@/components/markdown/DefinitionPreviewCard";
+import {
+  createDefinitionHoverExtension,
+  type DefinitionHoverTarget,
+} from "@/components/markdown/live-definitions";
 import { InheritedTagList } from "@/components/inherited-tag-list";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
@@ -366,6 +371,11 @@ export function MarkdownEditor({
   // `applyFormat` is defined below the extension memo, so the insertion-menu
   // sources reach it through this ref rather than closing over it directly.
   const applyFormatRef = useRef<((format: MarkdownFormat) => void) | null>(null);
+  // The Live-mode definition hover card. All hover timing lives in the
+  // extension's own closure (`live-definitions.ts`); the only thing crossing the
+  // boundary is this setter, which React guarantees is stable.
+  const [definitionHover, setDefinitionHover] =
+    useState<DefinitionHoverTarget | null>(null);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
@@ -1001,6 +1011,13 @@ export function MarkdownEditor({
           createCalcLiveExtension({ fxTable }),
           createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
+          // Reads the map through the store rather than closing over
+          // `wikiLinkMap`, so a definition looked up after the wiki-link
+          // completion refreshed it previews the current text.
+          createDefinitionHoverExtension({
+            getWikiLinks: () => wikiLinkMapStore.get(),
+            onChange: setDefinitionHover,
+          }),
         );
       }
 
@@ -1652,6 +1669,24 @@ export function MarkdownEditor({
           </div>
         </div>
         </DocumentOverlayHost>
+        {definitionHover ? (
+          <DefinitionHoverCard
+            // Keyed on the anchor so moving between two terms remounts the card
+            // rather than sliding one popup across the page.
+            key={definitionHover.label}
+            anchor={definitionHover.anchor}
+            label={definitionHover.label}
+            preview={
+              <MarkdownDocument
+                markdown={definitionHover.preview}
+                disableLinks
+                compact
+                contained={false}
+              />
+            }
+            onClose={() => setDefinitionHover(null)}
+          />
+        ) : null}
         <p className="sr-only" aria-live="polite">
           {statusText}. {collaborationStatusText}.
         </p>

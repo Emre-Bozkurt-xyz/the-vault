@@ -8,17 +8,24 @@ import { PreviewCard } from "@base-ui/react/preview-card";
  * (`docs/20_DICTIONARY_EXTENSION_PLAN.md`). Hovering the term shows a rendered
  * miniature of its definition, so a reader never has to leave the sentence.
  *
+ * Two entry points, one popup:
+ *
+ * - `DefinitionPreviewCard` wraps a link on a read surface, where Base UI owns
+ *   the trigger and therefore the hover timing, the `safePolygon` path into the
+ *   card, focus handling and dismissal.
+ * - `DefinitionHoverCard` is the Live-mode form, anchored to a CodeMirror span
+ *   that is not a React element. There is no trigger for Base UI to attach to,
+ *   so the hover timing lives in the editor extension (`live-definitions.ts`),
+ *   which keeps the card open by checking whether it is `:hover`ed — hence no
+ *   pointer callbacks here.
+ *
+ * Both render `DefinitionCardBody`, so the two surfaces cannot drift.
+ *
  * The rendered preview arrives as a `preview` **node**, not as Markdown: this
  * module would otherwise have to import `MarkdownDocument`, which imports this
- * one, and the resulting cycle is the kind that resolves to `undefined` at
- * module init rather than failing loudly. The caller renders the Markdown and
- * hands it over — which is also what keeps the depth cap honest, since the
- * caller renders it with links disabled.
- *
- * Base UI's preview card supplies the parts that are easy to get wrong by hand:
- * hover-with-delay, a `safePolygon` path so the pointer can travel from the term
- * into the card without it closing, focus and keyboard access, and Escape /
- * outside-press dismissal.
+ * one, and that cycle resolves to `undefined` at module init rather than failing
+ * loudly. The caller renders it — which is also what keeps the depth cap honest,
+ * since the caller renders it with links disabled.
  */
 export function DefinitionPreviewCard({
   href,
@@ -45,14 +52,59 @@ export function DefinitionPreviewCard({
       >
         {children}
       </PreviewCard.Trigger>
-      <PreviewCard.Portal>
-        <PreviewCard.Positioner sideOffset={8} side="top" align="start">
-          <PreviewCard.Popup className="vault-md-definition-card">
-            <p className="vault-md-definition-card-title">{label}</p>
-            <div className="vault-md-definition-card-body">{preview}</div>
-          </PreviewCard.Popup>
-        </PreviewCard.Positioner>
-      </PreviewCard.Portal>
+      <DefinitionCardPopup label={label} preview={preview} />
     </PreviewCard.Root>
+  );
+}
+
+export function DefinitionHoverCard({
+  anchor,
+  label,
+  preview,
+  onClose,
+}: {
+  anchor: HTMLElement;
+  label: string;
+  preview: ReactNode;
+  /** Escape or an outside press — the extension closes on its own otherwise. */
+  onClose: () => void;
+}) {
+  return (
+    <PreviewCard.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
+      <DefinitionCardPopup anchor={anchor} label={label} preview={preview} />
+    </PreviewCard.Root>
+  );
+}
+
+function DefinitionCardPopup({
+  anchor,
+  label,
+  preview,
+}: {
+  anchor?: HTMLElement;
+  label: string;
+  preview: ReactNode;
+}) {
+  return (
+    <PreviewCard.Portal>
+      <PreviewCard.Positioner
+        anchor={anchor}
+        sideOffset={8}
+        side="top"
+        align="start"
+      >
+        <PreviewCard.Popup className="vault-md-definition-card">
+          <p className="vault-md-definition-card-title">{label}</p>
+          <div className="vault-md-definition-card-body">{preview}</div>
+        </PreviewCard.Popup>
+      </PreviewCard.Positioner>
+    </PreviewCard.Portal>
   );
 }
