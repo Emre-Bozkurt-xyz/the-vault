@@ -438,6 +438,22 @@ export type ExtensionSettingsField =
       label: string;
       description?: string;
       placeholder?: string;
+    }
+  /**
+   * One of the user's own folders, or none. A *host-rendered* field: the options
+   * are the user's folders, which an extension cannot supply itself — fields must
+   * stay plain data, both to reach the client settings form and so an extension
+   * never needs a data-loading function of its own. Stored as a folder id or
+   * null, and meant to be re-validated wherever it is used (a folder can be
+   * deleted after it was chosen).
+   */
+  | {
+      type: "folder";
+      key: string;
+      label: string;
+      description?: string;
+      /** Label for the "no folder chosen" option, e.g. "Same folder as the document". */
+      emptyLabel: string;
     };
 
 export type VaultExtension = {

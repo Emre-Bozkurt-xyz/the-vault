@@ -214,9 +214,9 @@ export function WorkspaceCommandPalette() {
         slug: "extensions",
         label: "Open extensions",
         group: "Settings",
-        keywords: "plugins add-ons calendar stickers",
+        keywords: "plugins add-ons calendar stickers calc dictionary",
         icon: Blocks,
-        run: () => openWorkspaceSettings("extension-browser"),
+        run: () => openWorkspaceSettings("extensions"),
       },
       {
         id: "open-account",

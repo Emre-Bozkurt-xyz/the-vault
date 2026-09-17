@@ -29,7 +29,7 @@ import { getAssetForUser } from "@/server/assets";
 import {
   createDefinitionForUser,
   listDefinitionsForUser,
-} from "@/server/definitions";
+} from "@/server/definitions-data";
 import { getDocumentForUser } from "@/server/documents";
 import { getFxRateTable } from "@/server/fx-rates";
 import {

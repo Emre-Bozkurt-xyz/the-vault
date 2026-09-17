@@ -42,7 +42,7 @@ import {
   saveWorkspaceSettingsAction,
 } from "@/server/user-settings-actions";
 
-type Option = [string, string];
+export type Option = [string, string];
 
 export function AppearanceSettingsSection({
   preferences,
@@ -776,7 +776,7 @@ function SettingRow({
   );
 }
 
-function ToggleControl({
+export function ToggleControl({
   checked,
   onChange,
 }: {
@@ -806,7 +806,7 @@ function ToggleControl({
   );
 }
 
-function SelectControl({
+export function SelectControl({
   value,
   options,
   onChange,
@@ -830,7 +830,7 @@ function SelectControl({
   );
 }
 
-function NumberControl({
+export function NumberControl({
   value,
   min,
   max,

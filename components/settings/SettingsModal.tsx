@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Blocks,
-  Command,
   FileImage,
   Keyboard,
   MonitorCog,
@@ -16,6 +15,11 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { SettingsNavigationContext } from "@/components/settings/settings-navigation";
+import type {
+  SettingsIconKey,
+  SettingsPage,
+} from "@/components/settings/settings-pages";
 import {
   Dialog,
   DialogContent,
@@ -25,143 +29,62 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-type SettingsSectionId =
-  | "account"
-  | "workspace"
-  | "editor"
-  | "appearance"
-  | "snippets"
-  | "files-assets"
-  | "hotkeys"
-  | "core-features"
-  | "extension-browser"
-  | "installed-extensions"
-  | "advanced";
+const icons: Record<SettingsIconKey, typeof UserRound> = {
+  account: UserRound,
+  workspace: MonitorCog,
+  editor: SlidersHorizontal,
+  appearance: Paintbrush,
+  snippets: Sparkles,
+  "files-assets": FileImage,
+  hotkeys: Keyboard,
+  "core-features": Settings2,
+  extensions: Blocks,
+  advanced: Wrench,
+};
 
 type SettingsModalProps = {
-  accountSection: ReactNode;
-  workspaceSection?: ReactNode;
-  editorSection?: ReactNode;
-  appearanceSection?: ReactNode;
-  snippetsSection?: ReactNode;
-  filesAssetsSection?: ReactNode;
-  hotkeysSection?: ReactNode;
-  coreFeaturesSection?: ReactNode;
-  extensionBrowserSection?: ReactNode;
-  installedExtensionsSection?: ReactNode;
-  advancedSection?: ReactNode;
-  defaultSection?: SettingsSectionId;
+  pages: SettingsPage[];
+  /** The page shown first when the active page is not controlled. */
+  defaultPageId?: string;
+  /** Controlled active page; pair with `onActivePageChange`. */
+  activePageId?: string;
+  onActivePageChange?: (pageId: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   closeHref?: string;
 };
 
-const settingsSections: Array<{
-  id: SettingsSectionId;
-  label: string;
-  description: string;
-  icon: typeof UserRound;
-}> = [
-  {
-    id: "account",
-    label: "Account",
-    description: "Profile, OAuth providers, and sign out.",
-    icon: UserRound,
-  },
-  {
-    id: "workspace",
-    label: "Workspace",
-    description: "Tabs, panels, and app behavior.",
-    icon: MonitorCog,
-  },
-  {
-    id: "editor",
-    label: "Editor",
-    description: "Markdown editing defaults.",
-    icon: SlidersHorizontal,
-  },
-  {
-    id: "appearance",
-    label: "Appearance",
-    description: "Themes, fonts, and document presentation.",
-    icon: Paintbrush,
-  },
-  {
-    id: "snippets",
-    label: "Snippets",
-    description: "Author CSS snippets to style your documents.",
-    icon: Sparkles,
-  },
-  {
-    id: "files-assets",
-    label: "Files & assets",
-    description: "Uploads, embeds, and asset defaults.",
-    icon: FileImage,
-  },
-  {
-    id: "hotkeys",
-    label: "Hotkeys",
-    description: "Commands and shortcut conflicts.",
-    icon: Keyboard,
-  },
-  {
-    id: "core-features",
-    label: "Core features",
-    description: "Built-in editor and workspace capabilities.",
-    icon: Settings2,
-  },
-  {
-    id: "extension-browser",
-    label: "Extension browser",
-    description: "Browse local built-in extensions.",
-    icon: Blocks,
-  },
-  {
-    id: "installed-extensions",
-    label: "Installed extensions",
-    description: "Enabled extensions and their settings.",
-    icon: Command,
-  },
-  {
-    id: "advanced",
-    label: "Advanced",
-    description: "Diagnostics and reset controls.",
-    icon: Wrench,
-  },
-];
-
 export function SettingsModal({
-  accountSection,
-  workspaceSection,
-  editorSection,
-  appearanceSection,
-  snippetsSection,
-  filesAssetsSection,
-  hotkeysSection,
-  coreFeaturesSection,
-  extensionBrowserSection,
-  installedExtensionsSection,
-  advancedSection,
-  defaultSection = "account",
+  pages,
+  defaultPageId,
+  activePageId: controlledPageId,
+  onActivePageChange,
   open: controlledOpen,
   onOpenChange,
   closeHref,
 }: SettingsModalProps) {
   const router = useRouter();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(true);
-  const [activeSection, setActiveSection] =
-    useState<SettingsSectionId>(defaultSection);
+  const [uncontrolledPageId, setUncontrolledPageId] = useState(
+    defaultPageId ?? pages[0]?.id ?? "",
+  );
   const open = controlledOpen ?? uncontrolledOpen;
-  const section = useMemo(
-    () =>
-      settingsSections.find((candidate) => candidate.id === activeSection) ??
-      settingsSections[0],
-    [activeSection],
+  const requestedPageId = controlledPageId ?? uncontrolledPageId;
+  // Falls back to the first page when the requested one no longer exists — an
+  // extension's page disappears the moment it is disabled from inside the modal.
+  const page = pages.find((candidate) => candidate.id === requestedPageId) ?? pages[0];
+  const corePages = pages.filter((candidate) => candidate.group === "core");
+  const extensionPages = pages.filter(
+    (candidate) => candidate.group === "extensions",
   );
 
-  useEffect(() => {
-    setActiveSection(defaultSection);
-  }, [defaultSection]);
+  function goTo(pageId: string) {
+    if (controlledPageId === undefined) {
+      setUncontrolledPageId(pageId);
+    }
+
+    onActivePageChange?.(pageId);
+  }
 
   function handleOpenChange(nextOpen: boolean) {
     if (controlledOpen === undefined) {
@@ -178,7 +101,7 @@ export function SettingsModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="grid h-[min(88dvh,760px)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden rounded-[8px] border border-border/80 bg-background p-0 shadow-2xl sm:max-w-none md:grid-cols-[15.5rem_minmax(0,1fr)] md:grid-rows-1"
+        className="grid h-[min(88dvh,760px)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden rounded-[8px] border border-border/80 bg-background p-0 shadow-2xl sm:max-w-none md:grid-cols-[14rem_minmax(0,1fr)] md:grid-rows-1"
         showCloseButton
       >
         <aside className="min-h-0 min-w-0 border-b border-border/70 bg-sidebar/80 md:border-r md:border-b-0">
@@ -188,94 +111,104 @@ export function SettingsModal({
             </p>
             <h2 className="mt-1 text-base font-semibold">Settings</h2>
           </div>
-          {/* Horizontal, scrollable section strip on mobile; the descriptive
-              vertical list returns at md+ where the sidebar has room. */}
-          <nav className="flex min-h-0 gap-1 overflow-x-auto px-2 py-2 md:block md:overflow-y-auto">
-            {settingsSections.map((item) => {
-              const Icon = item.icon;
-              const active = item.id === activeSection;
+          {/* A horizontal, scrollable strip on mobile; a vertical list at md+. */}
+          <nav className="flex min-h-0 items-center gap-1 overflow-x-auto px-2 py-2 md:block md:overflow-y-auto">
+            {corePages.map((item) => {
+              const Icon = item.icon ? icons[item.icon] : null;
 
               return (
-                <button
+                <NavButton
                   key={item.id}
-                  type="button"
-                  onClick={() => setActiveSection(item.id)}
-                  className={cn(
-                    "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[5px] px-2 py-2 text-left text-sm transition md:grid md:w-full md:shrink md:grid-cols-[1rem_1fr] md:gap-x-2 md:whitespace-normal",
-                    active
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  )}
+                  active={item.id === page?.id}
+                  onClick={() => goTo(item.id)}
                 >
-                  <Icon className="size-3.5 md:mt-0.5" />
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">
-                      {item.label}
-                    </span>
-                    <span className="mt-0.5 hidden text-xs leading-4 opacity-70 md:block">
-                      {item.description}
-                    </span>
-                  </span>
-                </button>
+                  {Icon ? <Icon className="size-3.5 shrink-0" /> : null}
+                  <span className="truncate">{item.label}</span>
+                </NavButton>
               );
             })}
+
+            {extensionPages.length > 0 ? (
+              <>
+                {/* The extension group reads as separate from the app's own
+                    settings: a rule, a small label, and no icons. */}
+                <div
+                  aria-hidden="true"
+                  className="mx-1 h-5 w-px shrink-0 bg-border/70 md:mx-2 md:mt-3 md:mb-1 md:h-px md:w-auto"
+                />
+                <p className="hidden px-2 pt-1 pb-1 text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80 md:block">
+                  Extensions
+                </p>
+                {extensionPages.map((item) => (
+                  <NavButton
+                    key={item.id}
+                    active={item.id === page?.id}
+                    onClick={() => goTo(item.id)}
+                    quiet
+                  >
+                    <span className="truncate">{item.label}</span>
+                  </NavButton>
+                ))}
+              </>
+            ) : null}
           </nav>
         </aside>
 
         <main className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto">
-          <div className="border-b border-border/70 px-4 py-4 md:px-6">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-semibold tracking-tight md:text-2xl">
-                {section.label}
-              </DialogTitle>
-              <DialogDescription>{section.description}</DialogDescription>
-            </DialogHeader>
-          </div>
-          <div className="px-4 py-4 md:px-6 md:py-5">
-            {activeSection === "account" ? (
-              accountSection
-            ) : activeSection === "workspace" && workspaceSection ? (
-              workspaceSection
-            ) : activeSection === "editor" && editorSection ? (
-              editorSection
-            ) : activeSection === "appearance" && appearanceSection ? (
-              appearanceSection
-            ) : activeSection === "snippets" && snippetsSection ? (
-              snippetsSection
-            ) : activeSection === "files-assets" && filesAssetsSection ? (
-              filesAssetsSection
-            ) : activeSection === "hotkeys" && hotkeysSection ? (
-              hotkeysSection
-            ) : activeSection === "core-features" && coreFeaturesSection ? (
-              coreFeaturesSection
-            ) : activeSection === "extension-browser" &&
-              extensionBrowserSection ? (
-              extensionBrowserSection
-            ) : activeSection === "installed-extensions" &&
-              installedExtensionsSection ? (
-              installedExtensionsSection
-            ) : activeSection === "advanced" && advancedSection ? (
-              advancedSection
-            ) : (
-              <SettingsPlaceholder section={section.label} />
-            )}
-          </div>
+          {page ? (
+            <>
+              <div className="border-b border-border/70 px-4 py-4 md:px-6">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-semibold tracking-tight md:text-2xl">
+                    {page.label}
+                  </DialogTitle>
+                  <DialogDescription
+                    className="truncate"
+                    title={page.description}
+                  >
+                    {page.description}
+                  </DialogDescription>
+                </DialogHeader>
+              </div>
+              <div className="px-4 py-4 md:px-6 md:py-5">
+                <SettingsNavigationContext.Provider value={goTo}>
+                  {page.content}
+                </SettingsNavigationContext.Provider>
+              </div>
+            </>
+          ) : null}
         </main>
       </DialogContent>
     </Dialog>
   );
 }
 
-function SettingsPlaceholder({ section }: { section: string }) {
+function NavButton({
+  active,
+  quiet = false,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  /** Extension pages: no icon column, so their labels line up with core labels. */
+  quiet?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
-    <div className="border border-dashed border-border/70 bg-card/35 p-6">
-      <p className="text-sm font-medium">{section} settings are planned.</p>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-        This section is part of the settings and extension-browser checkpoint.
-        The modal shell is in place first so persistence, theme controls,
-        extension enablement, and generated extension settings can land in
-        focused slices.
-      </p>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[5px] px-2 py-1.5 text-left text-sm transition md:w-full",
+        quiet && "md:pl-[1.875rem]",
+        active
+          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }

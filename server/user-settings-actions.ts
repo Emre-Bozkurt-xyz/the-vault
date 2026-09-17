@@ -44,7 +44,10 @@ export async function setUserExtensionEnabledAction(formData: FormData) {
     allowedExtensionIds: getLocalExtensionIds(),
   });
 
-  revalidatePath("/dashboard/settings");
+  // The whole layout, not just the settings route: the settings modal is mounted
+  // in the workspace layout, and an extension turning on or off adds or removes
+  // its settings page there, as well as its slash commands in any open editor.
+  revalidatePath("/", "layout");
 }
 
 export async function saveAppearanceSettingsAction(input: unknown) {
@@ -255,7 +258,7 @@ export async function resetUserExtensionSettingsAction(formData: FormData) {
     allowedExtensionIds: getLocalExtensionIds(),
   });
 
-  revalidatePath("/dashboard/settings");
+  revalidatePath("/", "layout");
 }
 
 export async function upsertUserExtensionSettingsAction(input: unknown) {
@@ -282,7 +285,7 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
     parsed.settings,
   );
 
-  return upsertUserExtensionSettings({
+  const saved = await upsertUserExtensionSettings({
     userId: user.id,
     extensionId: parsed.extensionId,
     enabled: existing?.enabled ?? extension.defaultEnabled ?? false,
@@ -290,6 +293,13 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
     version: extension.version,
     allowedExtensionIds: getLocalExtensionIds(),
   });
+
+  // Extension settings are read where documents render (a calendar's week start,
+  // where `/def` files definitions), and the modal's own pages are server-built
+  // in the layout; revalidating only the settings route would leave both stale.
+  revalidatePath("/", "layout");
+
+  return saved;
 }
 
 export async function listCurrentUserExtensionSettings() {

@@ -1,63 +1,32 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { SettingsModal } from "@/components/settings/SettingsModal";
-
-type SettingsSectionId =
-  | "account"
-  | "workspace"
-  | "editor"
-  | "appearance"
-  | "snippets"
-  | "files-assets"
-  | "hotkeys"
-  | "core-features"
-  | "extension-browser"
-  | "installed-extensions"
-  | "advanced";
+import type { SettingsPage } from "@/components/settings/settings-pages";
 
 export const openSettingsEventName = "vault:open-settings";
 
 export type OpenSettingsEventDetail = {
-  section?: SettingsSectionId;
+  /** A page id — a core page ("editor") or an extension page ("extension:vault.calc"). */
+  page?: string;
 };
 
-type SettingsModalControllerProps = {
-  accountSection: ReactNode;
-  workspaceSection?: ReactNode;
-  editorSection?: ReactNode;
-  appearanceSection?: ReactNode;
-  snippetsSection?: ReactNode;
-  filesAssetsSection?: ReactNode;
-  hotkeysSection?: ReactNode;
-  coreFeaturesSection?: ReactNode;
-  extensionBrowserSection?: ReactNode;
-  installedExtensionsSection?: ReactNode;
-  advancedSection?: ReactNode;
-};
-
-export function SettingsModalController({
-  accountSection,
-  workspaceSection,
-  editorSection,
-  appearanceSection,
-  snippetsSection,
-  filesAssetsSection,
-  hotkeysSection,
-  coreFeaturesSection,
-  extensionBrowserSection,
-  installedExtensionsSection,
-  advancedSection,
-}: SettingsModalControllerProps) {
+/**
+ * The workspace's settings modal: closed until something dispatches
+ * `openWorkspaceSettings`, then shown on the requested page.
+ */
+export function SettingsModalController({ pages }: { pages: SettingsPage[] }) {
   const [open, setOpen] = useState(false);
-  const [section, setSection] = useState<SettingsSectionId>("account");
+  const [pageId, setPageId] = useState("account");
 
   useEffect(() => {
     function onOpenSettings(event: Event) {
       const detail = (event as CustomEvent<OpenSettingsEventDetail>).detail;
 
-      setSection(isSettingsSection(detail?.section) ? detail.section : "account");
+      // Unknown or absent ids land on Account; the modal itself also falls back
+      // to its first page, so a stale id can never open an empty modal.
+      setPageId(detail?.page ?? "account");
       setOpen(true);
     }
 
@@ -70,43 +39,19 @@ export function SettingsModalController({
 
   return (
     <SettingsModal
-      accountSection={accountSection}
-      workspaceSection={workspaceSection}
-      editorSection={editorSection}
-      appearanceSection={appearanceSection}
-      snippetsSection={snippetsSection}
-      filesAssetsSection={filesAssetsSection}
-      hotkeysSection={hotkeysSection}
-      coreFeaturesSection={coreFeaturesSection}
-      extensionBrowserSection={extensionBrowserSection}
-      installedExtensionsSection={installedExtensionsSection}
-      advancedSection={advancedSection}
-      defaultSection={section}
+      pages={pages}
+      activePageId={pageId}
+      onActivePageChange={setPageId}
       open={open}
       onOpenChange={setOpen}
     />
   );
 }
 
-export function openWorkspaceSettings(section?: SettingsSectionId) {
+export function openWorkspaceSettings(page?: string) {
   window.dispatchEvent(
     new CustomEvent<OpenSettingsEventDetail>(openSettingsEventName, {
-      detail: { section },
+      detail: { page },
     }),
-  );
-}
-
-function isSettingsSection(value: unknown): value is SettingsSectionId {
-  return (
-    value === "account" ||
-    value === "workspace" ||
-    value === "editor" ||
-    value === "appearance" ||
-    value === "files-assets" ||
-    value === "hotkeys" ||
-    value === "core-features" ||
-    value === "extension-browser" ||
-    value === "installed-extensions" ||
-    value === "advanced"
   );
 }
