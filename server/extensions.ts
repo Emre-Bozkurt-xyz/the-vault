@@ -26,6 +26,10 @@ import {
 } from "@/lib/mcp/document-edits";
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
 import { getAssetForUser } from "@/server/assets";
+import {
+  createDefinitionForUser,
+  listDefinitionsForUser,
+} from "@/server/definitions";
 import { getDocumentForUser } from "@/server/documents";
 import { getFxRateTable } from "@/server/fx-rates";
 import {
@@ -401,6 +405,7 @@ export async function runAgentActionForUser({
 
   let fxTable: Awaited<ReturnType<typeof getFxRateTable>> | undefined;
 
+  const actionPermissions = new Set(entry.action.permissions ?? []);
   const context: ExtensionAgentActionContext = {
     user: { id: userId },
     fx: {
@@ -411,6 +416,40 @@ export async function runAgentActionForUser({
       },
     },
   };
+
+  // The dictionary surface. Gated like every other capability: reading needs
+  // `document:read`, and creating a definition is a document write.
+  if (actionPermissions.has("document:read")) {
+    context.definitions = {
+      list: () => listDefinitionsForUser(userId),
+      ...(actionPermissions.has("document:write")
+        ? {
+            create: async ({
+              term,
+              summary,
+            }: {
+              term: string;
+              summary?: string;
+            }) => {
+              const result = await createDefinitionForUser(userId, {
+                term,
+                summary,
+              });
+
+              if (!result.ok) {
+                throw new Error(result.message);
+              }
+
+              return {
+                documentId: result.documentId,
+                term: result.title,
+                created: result.created,
+              };
+            },
+          }
+        : {}),
+    };
+  }
 
   if (entry.action.scope === "document") {
     if (!documentId) {

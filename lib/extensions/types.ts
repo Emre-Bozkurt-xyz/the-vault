@@ -162,6 +162,30 @@ export type ExtensionAgentWorkspaceStateApi = {
   listAcrossDocuments: () => Promise<ExtensionAgentWorkspaceStateEntry[]>;
 };
 
+/** One definition document, as an agent action sees it. */
+export type ExtensionAgentDefinitionEntry = {
+  documentId: string;
+  /** The definition's title — the term itself. */
+  term: string;
+  aliases: string[];
+  summary: string | null;
+};
+
+/**
+ * Dictionary surface for agent actions (`docs/20_DICTIONARY_EXTENSION_PLAN.md`).
+ *
+ * Handlers may not import `db`, so definition lookup and creation arrive here,
+ * pre-bound to the acting user. `create` exists only with `document:write`.
+ */
+export type ExtensionAgentDefinitionsApi = {
+  list: () => Promise<ExtensionAgentDefinitionEntry[]>;
+  create?: (input: {
+    term: string;
+    /** Seeds the definition's `summary:` — the text a reader sees on hover. */
+    summary?: string;
+  }) => Promise<{ documentId: string; term: string; created: boolean }>;
+};
+
 export type ExtensionAgentWorkspaceContext = {
   /** Present with `document:read`. */
   state?: ExtensionAgentWorkspaceStateApi;
@@ -183,6 +207,13 @@ export type ExtensionAgentActionContext = {
    * rather than throwing when no rates are available.
    */
   fx?: { getTable: () => Promise<FxRateTable | null> };
+  /**
+   * Definitions the acting user can read, and (with `document:write`) a way to
+   * create one. Top-level rather than under `document`/`workspace` because it is
+   * user-scoped either way — the same reasoning as `fx`, except this one *is*
+   * permission-gated.
+   */
+  definitions?: ExtensionAgentDefinitionsApi;
   /** Present for `scope: "document"` actions. */
   document?: ExtensionAgentDocumentContext;
   /** Present for `scope: "workspace"` actions. */

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDefinitionsByHref,
+  countWikiLinkTargets,
   buildWikiLinkResolutionMap,
   hrefWithoutFragment,
   wikiDocKey,
@@ -280,5 +281,40 @@ describe("buildDefinitionsByHref", () => {
 
     expect(buildDefinitionsByHref(resolutions)).toBe(first);
     expect(buildDefinitionsByHref({ ...resolutions })).not.toBe(first);
+  });
+});
+
+describe("countWikiLinkTargets", () => {
+  it("counts repeats and keeps first-seen order", () => {
+    const markdown = "See [[B]], then [[A]], then [[B]] again.";
+
+    expect([...countWikiLinkTargets(markdown).entries()]).toEqual([
+      ["B", 2],
+      ["A", 1],
+    ]);
+  });
+
+  it("excludes transclusions", () => {
+    expect(countWikiLinkTargets("![[Doc]] and [[Doc]]").get("Doc")).toBe(1);
+  });
+
+  it("ignores links inside code", () => {
+    const markdown = [
+      "`[[Inline]]`",
+      "",
+      "```",
+      "[[Fenced]]",
+      "```",
+      "",
+      "[[Real]]",
+    ].join("\n");
+
+    expect([...countWikiLinkTargets(markdown).keys()]).toEqual(["Real"]);
+  });
+
+  it("agrees with extractWikiLinkTargets about what counts as a link", () => {
+    const markdown = "[[A]] [[A]] ![[B]] `[[C]]`";
+
+    expect([...countWikiLinkTargets(markdown).keys()]).toEqual(["A"]);
   });
 });

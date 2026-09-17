@@ -1,11 +1,19 @@
 "use server";
 
-import { and, eq, ilike, isNull } from "drizzle-orm";
+import { and, eq, ilike, isNull, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { documentPermissions, documents, folders } from "@/db/schema";
+import {
+  documentMetadata,
+  documentPermissions,
+  documentTags,
+  documents,
+  folders,
+  tags,
+} from "@/db/schema";
+import { updateDocumentMetadataFrontmatter } from "@/lib/content-metadata";
 import { definitionTagSlug } from "@/lib/definitions";
 import { buildFolderPaths } from "@/lib/folder-paths";
 import { canEditFolderContents } from "@/lib/permissions";
@@ -34,6 +42,8 @@ export type CreateDefinitionResult =
     }
   | { ok: false; message: string };
 
+const summarySchema = z.string().trim().max(500);
+
 /**
  * Finds or creates the definition document for `term`.
  *
@@ -52,6 +62,24 @@ export async function createDefinitionDocumentAction(input: {
   preferredFolderId?: string | null;
 }): Promise<CreateDefinitionResult> {
   const user = await requireActiveUser();
+  return createDefinitionForUser(user.id, input);
+}
+
+/**
+ * The same thing for an already-resolved user, so the agent-action dispatcher
+ * (`server/extensions.ts`) can offer definition creation without re-resolving a
+ * session it has already authenticated.
+ */
+export async function createDefinitionForUser(
+  userId: string,
+  input: {
+    term: string;
+    /** Seeds the document's `summary:`, which is the hover text readers see. */
+    summary?: string | null;
+    currentFolderId?: string | null;
+    preferredFolderId?: string | null;
+  },
+): Promise<CreateDefinitionResult> {
   const parsedTerm = termSchema.safeParse(input.term);
 
   if (!parsedTerm.success) {
@@ -59,12 +87,15 @@ export async function createDefinitionDocumentAction(input: {
   }
 
   const term = parsedTerm.data;
+  const summary = input.summary
+    ? summarySchema.safeParse(input.summary).data ?? null
+    : null;
   const [existing] = await db
     .select({ id: documents.id, title: documents.title })
     .from(documents)
     .where(
       and(
-        eq(documents.ownerId, user.id),
+        eq(documents.ownerId, userId),
         isNull(documents.deletedAt),
         ilike(documents.title, term.replace(/[%_]/g, "\\$&")),
       ),
@@ -80,21 +111,28 @@ export async function createDefinitionDocumentAction(input: {
     };
   }
 
-  const folderId = await resolveDefinitionFolderId(user.id, input);
-  // The tag is written into the frontmatter even when the folder would supply
-  // it, so the document stays a definition if it is later moved somewhere that
-  // would not.
-  const markdown = `---\ntags: ${definitionTagSlug}\nsummary:\n---\n\n`;
+  const folderId = await resolveDefinitionFolderId(userId, input);
+  // Built through the shared serializer rather than by hand, so a summary with a
+  // colon or a quote in it is escaped exactly the way the Properties panel would
+  // have escaped it. The tag is written even when the folder would supply it, so
+  // the document stays a definition if it is later moved somewhere that would not.
+  const markdown = updateDocumentMetadataFrontmatter("", {
+    tags: [definitionTagSlug],
+    aliases: [],
+    summary,
+    status: null,
+    project: null,
+  });
 
   const [created] = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(documents)
-      .values({ ownerId: user.id, folderId, title: term, markdown })
+      .values({ ownerId: userId, folderId, title: term, markdown })
       .returning({ id: documents.id });
 
     await tx.insert(documentPermissions).values({
       documentId: row.id,
-      userId: user.id,
+      userId,
       role: "owner",
     });
 
@@ -151,4 +189,51 @@ async function resolveDefinitionFolderId(
   }
 
   return null;
+}
+
+/**
+ * Every definition document the user can read — their own, shared with them, or
+ * public — with its aliases and summary.
+ *
+ * Read-access scoping mirrors `listWikiLinkResolutionsForUser`: a definition the
+ * user cannot open must not appear in a glossary listing either.
+ */
+export async function listDefinitionsForUser(userId: string) {
+  const rows = await db
+    .selectDistinct({
+      documentId: documents.id,
+      term: documents.title,
+      aliases: documentMetadata.aliases,
+      summary: documentMetadata.summary,
+    })
+    .from(documents)
+    .innerJoin(documentTags, eq(documentTags.documentId, documents.id))
+    .innerJoin(tags, eq(documentTags.tagId, tags.id))
+    .leftJoin(documentMetadata, eq(documentMetadata.documentId, documents.id))
+    .leftJoin(
+      documentPermissions,
+      and(
+        eq(documentPermissions.documentId, documents.id),
+        eq(documentPermissions.userId, userId),
+      ),
+    )
+    .where(
+      and(
+        eq(tags.slug, definitionTagSlug),
+        isNull(documents.deletedAt),
+        or(
+          eq(documents.ownerId, userId),
+          eq(documentPermissions.userId, userId),
+          eq(documents.visibility, "public"),
+        ),
+      ),
+    )
+    .orderBy(documents.title);
+
+  return rows.map((row) => ({
+    documentId: row.documentId,
+    term: row.term,
+    aliases: Array.isArray(row.aliases) ? row.aliases : [],
+    summary: row.summary ?? null,
+  }));
 }

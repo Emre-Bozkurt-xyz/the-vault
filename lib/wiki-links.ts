@@ -333,21 +333,35 @@ export function extractMarkdownSection(markdown: string, fragment: string | null
 }
 
 export function extractWikiLinkTargets(markdown: string) {
-  const targets = new Set<string>();
+  return Array.from(countWikiLinkTargets(markdown).keys());
+}
+
+/**
+ * Each distinct `[[target]]` in the document and how many times it appears, in
+ * first-seen order. Transclusions are excluded — `![[doc]]` embeds a document
+ * rather than referring to a term.
+ *
+ * The counting variant exists because "this document leans on X five times and
+ * never defines it" is a more actionable answer than a flat list; it shares the
+ * one fence- and inline-code-aware scanner so both views agree about what counts
+ * as a link.
+ */
+export function countWikiLinkTargets(markdown: string) {
+  const counts = new Map<string, number>();
 
   transformMarkdownText(markdown, (segment) =>
     segment.replace(wikiLinkPattern, (_match, bang: string, body: string) => {
       const parts = parseWikiLinkParts(bang, body);
 
       if (!parts.embed && parts.target) {
-        targets.add(parts.target);
+        counts.set(parts.target, (counts.get(parts.target) ?? 0) + 1);
       }
 
       return "";
     }),
   );
 
-  return Array.from(targets);
+  return counts;
 }
 
 export function transformWikiLinks(
