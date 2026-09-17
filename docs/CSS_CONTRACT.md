@@ -99,6 +99,23 @@ Single-embed layout modifiers: `.vault-asset-width-*`, `.vault-asset-align-*`,
 `.vault-md-region` (+ `-foldable` / `-static`), `.vault-md-document-embed`
 (+ header/title/body/message parts), `.vault-region`.
 
+## Definition links and hover cards
+
+Links pointing at a definition document, and the card shown on hover. See
+`docs/20_DICTIONARY_EXTENSION_PLAN.md`.
+
+| Class | Element |
+|---|---|
+| `.vault-md-definition-link` | the link in prose (weight only — no underline, no colour) |
+| `.vault-md-definition-card` | the hover card popup |
+| `.vault-md-definition-card-title` | the definition's title inside the card |
+| `.vault-md-definition-card-body` | the rendered preview, capped and scrollable |
+
+The link keeps `.vault-md-link` alongside the definition class, so existing
+link styling still applies. All four are applied by `DefinitionPreviewCard`
+after the rehype pipeline, so none appear in `lib/html-class.ts` and authored
+raw HTML cannot mint them.
+
 ## Calc values
 
 Inline computed values (`:calc[…]`) and `:::calc` blocks. See

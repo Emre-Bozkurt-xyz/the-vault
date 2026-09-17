@@ -842,6 +842,66 @@
     color: color-mix(in oklab, var(--destructive) 82%, var(--foreground));
   }
 
+  /* Dictionary extension — see docs/20_DICTIONARY_EXTENSION_PLAN.md.
+     Weight ONLY: no underline, no colour shift, no icon. A dense paragraph can
+     carry a dozen defined terms, and anything louder turns prose into a warning
+     label. Weight is also theme-agnostic, so unlike the calc hairline it needs
+     no per-theme tuning. */
+  .vault-md-definition-link {
+    font-weight: 550;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .vault-md-definition-link:hover,
+  .vault-md-definition-link:focus-visible {
+    text-decoration: none;
+    color: var(--foreground);
+  }
+
+  /* The hover card, drawn as a miniature document page rather than a tooltip:
+     it holds rendered Markdown, so it has to look like somewhere prose lives. */
+  .vault-md-definition-card {
+    width: min(24rem, calc(100vw - 2rem));
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.6rem;
+    background: var(--popover, var(--card));
+    color: var(--foreground);
+    box-shadow:
+      0 12px 32px -12px rgb(0 0 0 / 0.45),
+      0 2px 6px -2px rgb(0 0 0 / 0.3);
+    padding: 0.7rem 0.85rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .vault-md-definition-card-title {
+    margin: 0 0 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Capped and scrollable: a first-paragraph fallback can be several lines, and
+     a card that grows to fit covers the sentence being read. */
+  .vault-md-definition-card-body {
+    max-height: 14rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The preview renders through MarkdownDocument, whose block spacing is tuned
+     for a page. Inside a card the first and last blocks must sit flush. */
+  .vault-md-definition-card-body > .vault-markdown > *:first-child {
+    margin-top: 0;
+  }
+
+  .vault-md-definition-card-body > .vault-markdown > *:last-child {
+    margin-bottom: 0;
+  }
+
   .vault-md-hidden-anchor {
     display: block;
     width: 0;

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildDefinitionsByHref,
   buildWikiLinkResolutionMap,
+  hrefWithoutFragment,
   wikiDocKey,
   wikiPublicKey,
   wikiTitleKey,
@@ -214,5 +216,69 @@ describe("buildWikiLinkResolutionMap", () => {
           ?.embedMarkdown,
       ).toBeUndefined();
     });
+  });
+});
+
+describe("hrefWithoutFragment", () => {
+  it("drops a fragment and leaves a plain href alone", () => {
+    expect(hrefWithoutFragment("/docs/a#section")).toBe("/docs/a");
+    expect(hrefWithoutFragment("/docs/a")).toBe("/docs/a");
+    expect(hrefWithoutFragment("/docs/a#%5Eblock")).toBe("/docs/a");
+  });
+});
+
+describe("buildDefinitionsByHref", () => {
+  const resolutions = buildWikiLinkResolutionMap(
+    [
+      row({
+        id: "def",
+        title: "Idempotence",
+        markdown: [
+          "---",
+          "aliases: idempotent",
+          "summary: Repeating it changes nothing.",
+          "---",
+          "",
+        ].join("\n"),
+      }),
+      row({ id: "plain", title: "Plain" }),
+    ],
+    workspaceHref,
+    { definitionDocumentIds: new Set(["def"]) },
+  );
+
+  it("indexes a definition by its href, once", () => {
+    const definitions = buildDefinitionsByHref(resolutions);
+
+    expect(definitions.size).toBe(1);
+    expect(definitions.get("/docs/def")).toEqual({
+      label: "Idempotence",
+      preview: "Repeating it changes nothing.",
+    });
+  });
+
+  it("excludes non-definitions", () => {
+    expect(buildDefinitionsByHref(resolutions).has("/docs/plain")).toBe(false);
+  });
+
+  it("excludes a definition with nothing to show", () => {
+    const empty = buildWikiLinkResolutionMap(
+      [row({ id: "def", title: "Term", markdown: "" })],
+      workspaceHref,
+      { definitionDocumentIds: new Set(["def"]) },
+    );
+
+    expect(buildDefinitionsByHref(empty).size).toBe(0);
+  });
+
+  it("returns an empty index when there is no resolution map", () => {
+    expect(buildDefinitionsByHref(undefined).size).toBe(0);
+  });
+
+  it("caches per resolution map and re-derives for a different one", () => {
+    const first = buildDefinitionsByHref(resolutions);
+
+    expect(buildDefinitionsByHref(resolutions)).toBe(first);
+    expect(buildDefinitionsByHref({ ...resolutions })).not.toBe(first);
   });
 });

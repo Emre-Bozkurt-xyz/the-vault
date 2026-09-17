@@ -60,6 +60,11 @@ export type WikiLinkAnchor =
     };
 
 export type WikiLinkResolutionMap = Record<string, WikiLinkResolution>;
+/** What the renderer needs to draw one definition's hover card. */
+export type WikiLinkDefinition = {
+  label: string;
+  preview: string;
+};
 export type WikiDocumentEmbedBlock =
   | {
       type: "markdown";
@@ -89,6 +94,11 @@ type WikiLinkParts = {
 };
 
 const wikiLinkPattern = /(!?)\[\[([^\]\n]+)\]\]/g;
+const emptyDefinitions: Map<string, WikiLinkDefinition> = new Map();
+const definitionsByHrefCache = new WeakMap<
+  WikiLinkResolutionMap,
+  Map<string, WikiLinkDefinition>
+>();
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -497,6 +507,61 @@ export function parseWikiLinkParts(bang: string, body: string): WikiLinkParts {
     label,
     fragment,
   };
+}
+
+/**
+ * `href -> definition` index for the renderer's anchor override.
+ *
+ * `transformWikiLinks` turns a resolved link into a plain Markdown link, and a
+ * Markdown link cannot carry attributes — so the renderer recovers which links
+ * are definitions by looking their href back up here. That is deliberately
+ * cheaper than emitting raw HTML with a `data-` attribute, which would mean
+ * widening the sanitizer on every surface that renders a document.
+ *
+ * Only definitions with something to show are included: a card with an empty
+ * body is worse than no card.
+ *
+ * Derivations are cached against the resolution map's own identity, because the
+ * renderer asks once per Markdown segment and one document can have many
+ * segments while the map (passed down from the page) stays the same object.
+ */
+export function buildDefinitionsByHref(
+  resolutions: WikiLinkResolutionMap | undefined,
+): Map<string, WikiLinkDefinition> {
+  if (!resolutions) {
+    return emptyDefinitions;
+  }
+
+  const cached = definitionsByHrefCache.get(resolutions);
+
+  if (cached) {
+    return cached;
+  }
+
+  const definitions = new Map<string, WikiLinkDefinition>();
+
+  for (const resolution of Object.values(resolutions)) {
+    if (!resolution.isDefinition || !resolution.href || !resolution.preview) {
+      continue;
+    }
+
+    definitions.set(hrefWithoutFragment(resolution.href), {
+      label: resolution.label ?? resolution.href,
+      preview: resolution.preview,
+    });
+  }
+
+  definitionsByHrefCache.set(resolutions, definitions);
+  return definitions;
+}
+
+/**
+ * A link's href with any `#fragment` removed. `[[Term#Section]]` resolves to
+ * `/docs/<id>#section`, which still points at the same definition.
+ */
+export function hrefWithoutFragment(href: string) {
+  const hashIndex = href.indexOf("#");
+  return hashIndex === -1 ? href : href.slice(0, hashIndex);
 }
 
 /**

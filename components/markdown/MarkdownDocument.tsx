@@ -34,6 +34,7 @@ import { CalcBlock } from "@/components/extensions/CalcBlock";
 import { CalcValue } from "@/components/extensions/CalcValue";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
+import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
 import { splitCalendarSegments } from "@/lib/calendar";
 import {
   calcRemarkPlugins,
@@ -59,12 +60,15 @@ import {
 } from "@/lib/markdown/sanitize";
 import { cn } from "@/lib/utils";
 import {
+  buildDefinitionsByHref,
   extractMarkdownTarget,
+  hrefWithoutFragment,
   normalizeWikiFragmentForHref,
   splitWikiDocumentEmbeds,
   slugifyMarkdownHeading,
   transformWikiLinks,
   type WikiDocumentEmbedBlock,
+  type WikiLinkDefinition,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
 
@@ -312,6 +316,11 @@ function createMarkdownComponents(
   disableLinks: boolean,
   headingIds: Map<string, number>,
   calcResults: Map<string, ResolvedCalc>,
+  /**
+   * Links that point at a definition document, keyed by href. Empty when the
+   * surface has no resolution map, or inside a hover card — see `a` below.
+   */
+  definitions: Map<string, WikiLinkDefinition>,
 ): Components {
   const headingProps = (
     children: ReactNode,
@@ -525,6 +534,33 @@ function createMarkdownComponents(
     const linkTarget =
       safeTarget ??
       (safeHref.startsWith("/") || safeHref.startsWith("#") ? undefined : "_blank");
+    const definition =
+      isAssetFileCard || isAssetFileAction
+        ? undefined
+        : definitions.get(hrefWithoutFragment(safeHref));
+
+    if (definition) {
+      return (
+        <DefinitionPreviewCard
+          href={safeHref}
+          label={definition.label}
+          preview={
+            // Rendered here rather than inside the card so the card never has to
+            // import this module back. `disableLinks` is also what caps preview
+            // depth at zero: every link inside a card renders as plain text, so
+            // no card can open another.
+            <MarkdownDocument
+              markdown={definition.preview}
+              disableLinks
+              compact
+              contained={false}
+            />
+          }
+        >
+          {children}
+        </DefinitionPreviewCard>
+      );
+    }
 
     return (
       <a
@@ -1180,6 +1216,10 @@ function MarkdownSegment({
     transformAssetEmbeds(markdown, assetLinks),
     wikiLinks,
   );
+  // Derived rather than threaded down beside `wikiLinks`: the derivation is
+  // cached against the map's identity, so asking per segment costs one lookup.
+  // A card's own inner render passes no `wikiLinks`, which is how nesting stops.
+  const definitions = buildDefinitionsByHref(wikiLinks);
 
   return (
     <ReactMarkdown
@@ -1193,7 +1233,12 @@ function MarkdownSegment({
         rehypeSanitizeContent,
         rehypeKatex,
       ]}
-      components={createMarkdownComponents(disableLinks, headingIds, calcResults)}
+      components={createMarkdownComponents(
+        disableLinks,
+        headingIds,
+        calcResults,
+        definitions,
+      )}
     >
       {renderedMarkdown}
     </ReactMarkdown>
