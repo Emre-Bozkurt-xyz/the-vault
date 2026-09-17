@@ -29,7 +29,6 @@ import {
   isMacPlatform,
 } from "@/lib/shortcuts/binding";
 import { shortcuts } from "@/lib/shortcuts/registry";
-import { listDefinitionFolderOptions } from "@/server/definitions";
 import { findConflicts, resolveKeybindings } from "@/lib/shortcuts/resolve";
 import { cn } from "@/lib/utils";
 import {
@@ -212,24 +211,6 @@ export function EditorSettingsSection({
 }) {
   const [state, setState] = useState(preferences);
   const [isPending, startTransition] = useTransition();
-  // Loaded on mount rather than passed in: the folder list is only needed by
-  // this one row, and threading it through the settings modal would make every
-  // settings render pay for a query most visitors never look at.
-  const [folderOptions, setFolderOptions] = useState<Option[] | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void listDefinitionFolderOptions().then((folders) => {
-      if (active) {
-        setFolderOptions(
-          folders.map((folder) => [folder.id, folder.path] as Option),
-        );
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   function update(next: Preferences["editor"]) {
     setState(next);
@@ -283,21 +264,6 @@ export function EditorSettingsSection({
         <ToggleControl
           checked={state.slashMenu}
           onChange={(slashMenu) => update({ ...state, slashMenu })}
-        />
-      </SettingRow>
-      <SettingRow
-        title="New definition folder"
-        description="Where /def files a new definition. By default it lands beside the document you are writing in."
-      >
-        <SelectControl
-          value={state.definitionFolderId ?? ""}
-          onChange={(definitionFolderId) =>
-            update({ ...state, definitionFolderId: definitionFolderId || null })
-          }
-          options={[
-            ["", "Same folder as the document"],
-            ...(folderOptions ?? []),
-          ]}
         />
       </SettingRow>
       <SettingRow title="Autosave delay" description="Delay in milliseconds before a quiet editor saves.">

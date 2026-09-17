@@ -83,6 +83,11 @@ const removeStickerInputSchema = z.object({
     .describe("The sticker id to remove (from vault.stickers.list)."),
 });
 
+export const dictionarySettingsSchema = z.object({
+  /** Folder `/def` files new definitions into; null means beside the document. */
+  newDefinitionFolderId: z.string().uuid().nullable().default(null),
+});
+
 export const calendarSettingsSchema = z.object({
   defaultVisibility: z.enum(["private", "editor-only", "public"]).default("private"),
   weekStartsOn: z.enum(["0", "1"]).default("0"),
@@ -334,6 +339,25 @@ export const localBuiltInExtensions: VaultExtension[] = [
       "Define terms as documents and reference them with ordinary [[wiki links]], with a hover preview of the definition. See docs/20_DICTIONARY_EXTENSION_PLAN.md.",
     defaultEnabled: false,
     permissions: ["document:read", "document:write"],
+    settings: {
+      schema: dictionarySettingsSchema,
+      defaults: { newDefinitionFolderId: null },
+      sections: [
+        {
+          id: "authoring",
+          label: "Authoring",
+          fields: [
+            {
+              type: "folder",
+              key: "newDefinitionFolderId",
+              label: "New definition folder",
+              description: "Where /def files a new definition.",
+              emptyLabel: "Same folder as the document",
+            },
+          ],
+        },
+      ],
+    },
     markdown: {
       slashCommands: [
         {

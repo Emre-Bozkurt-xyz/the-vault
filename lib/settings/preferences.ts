@@ -31,13 +31,6 @@ export type Preferences = {
     spellcheck: boolean;
     /** Whether typing `/` opens the in-editor slash command menu. */
     slashMenu: boolean;
-    /**
-     * Folder `/def` files new definitions into. `null` means "the folder the
-     * document being written in lives in", which is the default and needs no
-     * setting; a chosen folder is validated server-side on every use, so a
-     * folder later deleted or unshared falls back instead of failing.
-     */
-    definitionFolderId: string | null;
   };
   filesAssets: {
     defaultImageLayout: "block" | "wrap" | "inline";
@@ -128,10 +121,6 @@ export function buildPreferences(rows: UserSettingRows): Preferences {
       ),
       spellcheck: readBoolean(get("editor", "defaults").spellcheck, true),
       slashMenu: readBoolean(get("editor", "defaults").slashMenu, true),
-      definitionFolderId:
-        typeof get("editor", "defaults").definitionFolderId === "string"
-          ? (get("editor", "defaults").definitionFolderId as string)
-          : null,
     },
     filesAssets: {
       defaultImageLayout: readEnum(

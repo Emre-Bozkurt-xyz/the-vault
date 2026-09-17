@@ -1,11 +1,15 @@
 "use server";
 
+import {
+  dictionarySettingsSchema,
+  getLocalExtensionIds,
+} from "@/lib/extensions/catalog";
 import { requireActiveUser } from "@/server/authz";
 import {
   createDefinitionForUser,
-  listOwnedFolderOptionsForUser,
   type CreateDefinitionResult,
 } from "@/server/definitions-data";
+import { getUserExtensionSetting } from "@/server/user-settings";
 
 /**
  * Session-resolving server actions for the dictionary extension
@@ -16,18 +20,31 @@ import {
  * `server/definitions-data.ts`, which is `server-only`.
  */
 
-/** `/def` in the editor. See `createDefinitionForUser`. */
+/**
+ * `/def` in the editor. See `createDefinitionForUser`.
+ *
+ * The configured folder is read here from the user's own Dictionary settings
+ * rather than accepted from the client, so the only folder a caller can name is
+ * the one the document they are writing in already lives in — and that one is
+ * permission-checked downstream too.
+ */
 export async function createDefinitionDocumentAction(input: {
   term: string;
+  summary?: string | null;
   currentFolderId?: string | null;
-  preferredFolderId?: string | null;
 }): Promise<CreateDefinitionResult> {
   const user = await requireActiveUser();
-  return createDefinitionForUser(user.id, input);
-}
+  const stored = await getUserExtensionSetting({
+    userId: user.id,
+    extensionId: "vault.dictionary",
+    allowedExtensionIds: getLocalExtensionIds(),
+  });
+  const settings = dictionarySettingsSchema.safeParse(stored?.settings ?? {});
 
-/** The signed-in user's own folders, for the definition folder picker. */
-export async function listDefinitionFolderOptions() {
-  const user = await requireActiveUser();
-  return listOwnedFolderOptionsForUser(user.id);
+  return createDefinitionForUser(user.id, {
+    term: input.term,
+    summary: input.summary,
+    currentFolderId: input.currentFolderId,
+    preferredFolderId: settings.success ? settings.data.newDefinitionFolderId : null,
+  });
 }

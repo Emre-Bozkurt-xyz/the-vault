@@ -163,9 +163,6 @@ export default async function DocumentPage({
   // Gates `/def` and `/term` only. Definition hover previews always render, for
   // the same reason: a document must read the same for every viewer.
   const dictionaryEnabled = dictionaryExtSetting?.enabled ?? false;
-  const editorPreferences = buildPreferences(
-    editorSetting ? [editorSetting] : [],
-  ).editor;
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
@@ -304,7 +301,6 @@ export default async function DocumentPage({
             markdown={markdown}
             folderPath={folderPath}
             folderId={document.folderId}
-            definitionFolderId={editorPreferences.definitionFolderId}
             inheritedTags={inheritedTags}
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}

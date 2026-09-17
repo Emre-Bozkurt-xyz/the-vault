@@ -202,12 +202,6 @@ type MarkdownEditorProps = {
   enabledExtensionIds?: string[];
   /** Whether the in-editor `/` slash command menu is active (user preference). */
   slashMenuEnabled?: boolean;
-  /**
-   * Folder `/def` files new definitions into (`editor.definitionFolderId`).
-   * Null means "beside this document"; validated again server-side, so a stale
-   * id falls back rather than failing.
-   */
-  definitionFolderId?: string | null;
   calendarWeekStartsOn?: CalendarWeekStart;
   calendarVisibility?: ExtensionStateVisibility;
   /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
@@ -341,7 +335,6 @@ export function MarkdownEditor({
   calcEnabled = false,
   enabledExtensionIds,
   slashMenuEnabled = true,
-  definitionFolderId = null,
   calendarWeekStartsOn = 0,
   calendarVisibility = "private",
   snippetCss = "",
@@ -1729,7 +1722,6 @@ export function MarkdownEditor({
               void createDefinitionDocumentAction({
                 term,
                 currentFolderId: folderId,
-                preferredFolderId: definitionFolderId,
               }).then((result) => {
                 setNewDefinitionPending(false);
 

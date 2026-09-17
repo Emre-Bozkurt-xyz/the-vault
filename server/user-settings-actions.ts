@@ -104,12 +104,6 @@ export async function saveEditorSettingsAction(input: unknown) {
       autoSaveDelayMs: z.coerce.number().int().min(300).max(5000),
       spellcheck: z.boolean(),
       slashMenu: z.boolean(),
-      // Empty string is how the "same folder as the document" option arrives
-      // from a `<select>`; stored as null.
-      definitionFolderId: z
-        .union([z.string().uuid(), z.literal(""), z.null()])
-        .optional()
-        .transform((value) => value || null),
     })
     .parse(input);
 
