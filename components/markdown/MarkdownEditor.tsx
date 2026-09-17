@@ -90,14 +90,21 @@ import {
 } from "@/components/markdown/slash-commands";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import { DefinitionHoverCard } from "@/components/markdown/DefinitionPreviewCard";
+import { NewDefinitionDialog } from "@/components/markdown/NewDefinitionDialog";
 import {
   createDefinitionHoverExtension,
+  definitionScopeField,
+  definitionScopeMarker,
+  narrowWikiCompletionToDefinitions,
   type DefinitionHoverTarget,
 } from "@/components/markdown/live-definitions";
 import { InheritedTagList } from "@/components/inherited-tag-list";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
-import { dispatchWorkspaceDocumentChanged } from "@/components/workspace/workspace-events";
+import {
+  dispatchWorkspaceDocumentChanged,
+  dispatchWorkspaceOpenTab,
+} from "@/components/workspace/workspace-events";
 import {
   extractAssetEmbedIds,
   formatAssetEmbedSource,
@@ -140,6 +147,7 @@ import {
   saveDocumentTitleAction,
   saveMarkdownDocumentAction,
 } from "@/server/documents";
+import { createDefinitionDocumentAction } from "@/server/definitions";
 import type { PickerAsset } from "@/server/asset-picker-actions";
 
 type MarkdownEditorProps = {
@@ -158,6 +166,8 @@ type MarkdownEditorProps = {
    * for a name, and two documents can legitimately share one.
    */
   folderPath?: string | null;
+  /** The document's folder, so `/def` can file a new definition beside it. */
+  folderId?: string | null;
   /**
    * Tags this document picks up from its folders (see `lib/folder-tags.ts`).
    * Read-only here: they are not part of the Markdown, so the Properties panel
@@ -192,6 +202,12 @@ type MarkdownEditorProps = {
   enabledExtensionIds?: string[];
   /** Whether the in-editor `/` slash command menu is active (user preference). */
   slashMenuEnabled?: boolean;
+  /**
+   * Folder `/def` files new definitions into (`editor.definitionFolderId`).
+   * Null means "beside this document"; validated again server-side, so a stale
+   * id falls back rather than failing.
+   */
+  definitionFolderId?: string | null;
   calendarWeekStartsOn?: CalendarWeekStart;
   calendarVisibility?: ExtensionStateVisibility;
   /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
@@ -313,6 +329,7 @@ export function MarkdownEditor({
   title,
   markdown,
   folderPath = null,
+  folderId = null,
   inheritedTags,
   shareLinkId = null,
   collaboration = null,
@@ -324,6 +341,7 @@ export function MarkdownEditor({
   calcEnabled = false,
   enabledExtensionIds,
   slashMenuEnabled = true,
+  definitionFolderId = null,
   calendarWeekStartsOn = 0,
   calendarVisibility = "private",
   snippetCss = "",
@@ -379,6 +397,14 @@ export function MarkdownEditor({
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
+  );
+  // `/def` (`lib/extensions/catalog.ts`). Only the term is held here; the view is
+  // read from `viewRef` at submit time, so the link lands in the live editor
+  // rather than in whatever view instance existed when the dialog opened.
+  const [newDefinitionTerm, setNewDefinitionTerm] = useState<string | null>(null);
+  const [newDefinitionPending, setNewDefinitionPending] = useState(false);
+  const [newDefinitionError, setNewDefinitionError] = useState<string | null>(
+    null,
   );
   // Slash items contributed by the user's enabled extensions. Keyed on a joined
   // string (rebuilt inside) so a fresh `enabledExtensionIds` array reference
@@ -721,7 +747,20 @@ export function MarkdownEditor({
 
   const extensions = useMemo(
     () => {
+      // Host capabilities a `run` slash contribution can name
+      // (`lib/extensions/types.ts`). Built here rather than in its own `useMemo`:
+      // these dispatch to the editor view, and a memoized value whose functions
+      // mutate an argument is something the React Compiler will not compile
+      // around. The handlers themselves are module-level, like `insertBlock`.
+      const hostCommands = {
+        "vault.dictionary.newDefinition": (view: EditorView) =>
+          openNewDefinitionDialog(view, setNewDefinitionTerm, setNewDefinitionError),
+        "vault.dictionary.insertReference": insertDefinitionReference,
+      };
       const baseExtensions = [
+      // `/term`'s definitions-only narrowing (`live-definitions.ts`). Registered
+      // for every mode, since the slash menu is not Live-only.
+      definitionScopeField,
       markdownLanguage({
         htmlTagLanguage: html({
           matchClosingTags: false,
@@ -1030,6 +1069,7 @@ export function MarkdownEditor({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
                     insertInline,
+                    hostCommands,
                     extensionCommands: extensionSlashCommands,
                   }),
                   // The `:::` fence is the other way into the same items, so it
@@ -1039,6 +1079,7 @@ export function MarkdownEditor({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
                     insertInline,
+                    hostCommands,
                     extensionCommands: extensionSlashCommands,
                   }),
                 ]
@@ -1669,6 +1710,58 @@ export function MarkdownEditor({
           </div>
         </div>
         </DocumentOverlayHost>
+        {newDefinitionTerm !== null ? (
+          <NewDefinitionDialog
+            // Remounts per invocation so the field starts from this selection
+            // rather than the previous term.
+            key={newDefinitionTerm}
+            open
+            initialTerm={newDefinitionTerm}
+            pending={newDefinitionPending}
+            error={newDefinitionError}
+            onCancel={() => {
+              setNewDefinitionTerm(null);
+              setNewDefinitionError(null);
+            }}
+            onSubmit={(term) => {
+              setNewDefinitionPending(true);
+              setNewDefinitionError(null);
+              void createDefinitionDocumentAction({
+                term,
+                currentFolderId: folderId,
+                preferredFolderId: definitionFolderId,
+              }).then((result) => {
+                setNewDefinitionPending(false);
+
+                if (!result.ok) {
+                  setNewDefinitionError(result.message);
+                  return;
+                }
+
+                setNewDefinitionTerm(null);
+
+                const view = viewRef.current;
+
+                if (view) {
+                  // The resolved title, not the typed term: an existing
+                  // definition is reused, and the link has to name it.
+                  insertInline(
+                    view,
+                    `[[${escapeWikiLinkLabel(result.title)}]]`,
+                    null,
+                  );
+                  view.focus();
+                }
+
+                // A background tab, not a navigation: the author is mid-sentence.
+                dispatchWorkspaceOpenTab({
+                  href: `/docs/${result.documentId}`,
+                  title: result.title,
+                });
+              });
+            }}
+          />
+        ) : null}
         {definitionHover ? (
           <DefinitionHoverCard
             // Keyed on the anchor so moving between two terms remounts the card
@@ -4441,6 +4534,10 @@ function createWikiLinkCompletionSource(
       embedSessionToken,
     );
     wikiLinkMapStore.set(freshWikiLinks);
+    // `/term` narrows one specific `[[`; every other one still offers every
+    // document the author can reach.
+    const definitionsOnly =
+      definitionScopeMarker(context.state) === region.markerFrom;
 
     return {
       from: region.headingFrom ?? region.markerTo,
@@ -4449,6 +4546,7 @@ function createWikiLinkCompletionSource(
         freshWikiLinks,
         region.hasClosingMarker,
         region.query,
+        definitionsOnly,
       ),
       validFor: (text: string) =>
         /^[^\[\]\n]*$/.test(text) &&
@@ -4793,6 +4891,7 @@ function createWikiLinkCompletionOptions(
   wikiLinks?: WikiLinkResolutionMap,
   hasClosingMarker = false,
   query = "",
+  definitionsOnly = false,
 ): Completion[] {
   const options: Completion[] = [];
   const targetOptions = createWikiTargetCompletionOptions(
@@ -4809,6 +4908,7 @@ function createWikiLinkCompletionOptions(
     if (
       !isWikiCompletionDocumentKey(key) ||
       resolution.status !== "resolved" ||
+      (definitionsOnly && !resolution.isDefinition) ||
       !matchesWikiResolutionCompletionQuery(key, resolution, query)
     ) {
       continue;
@@ -5686,6 +5786,36 @@ function toggleCodeFence(view: EditorView) {
   }
 
   insertBlock(view, `\`\`\`txt\n${selectedText || ""}\n\`\`\``, selectedText ? null : 7);
+}
+
+/**
+ * `/def` — opens the term dialog. Module-level, and takes the setters, so the
+ * handler the editor hands to the slash menu is not a memoized closure that
+ * mutates its argument (see `hostCommands` in the extensions memo).
+ */
+function openNewDefinitionDialog(
+  view: EditorView,
+  setTerm: (term: string) => void,
+  setError: (error: string | null) => void,
+) {
+  const { from, to } = view.state.selection.main;
+  setError(null);
+  // A selected word is almost always the term being defined.
+  setTerm(from === to ? "" : view.state.sliceDoc(from, to).trim());
+}
+
+/** `/term` — opens a wiki-link completion narrowed to definitions. */
+function insertDefinitionReference(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  view.dispatch({
+    changes: { from, to, insert: "[[" },
+    selection: EditorSelection.cursor(from + 2),
+  });
+  // Keyed to the marker just inserted, so an unrelated `[[` still offers every
+  // document the author can reach.
+  narrowWikiCompletionToDefinitions(view, from);
+  view.focus();
+  startCompletion(view);
 }
 
 function insertBlock(view: EditorView, text: string, cursorOffset: number | null) {

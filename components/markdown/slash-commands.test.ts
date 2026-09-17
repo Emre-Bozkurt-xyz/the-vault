@@ -165,6 +165,91 @@ describe("extension slash commands", () => {
   });
 
   /**
+   * `run` contributions do something other than insert markdown (`/def` creates
+   * a document). The host owns the implementation, so an item naming a capability
+   * the editor does not have must never reach the menu — it would look available
+   * and then do nothing when picked.
+   */
+  describe("host command contributions", () => {
+    const defineCommand: ExtensionSlashCommand = {
+      id: "vault.dictionary.slash-define",
+      label: "def",
+      title: "Define a term",
+      section: "Dictionary",
+      run: { command: "vault.dictionary.newDefinition" },
+    };
+
+    function sourceWith(hostCommands?: Record<string, () => void>) {
+      return createSlashCommandCompletionSource({
+        applyFormat: () => {},
+        insertBlock: () => {},
+        insertInline: () => {},
+        hostCommands,
+        extensionCommands: [defineCommand],
+      });
+    }
+
+    it("offers the item when the host provides the capability", () => {
+      const result = runSourceAt("/‸", sourceWith({
+        "vault.dictionary.newDefinition": () => {},
+      }));
+
+      expect(displayLabels(result)).toContain("Define a term");
+    });
+
+    it("hides the item when the host does not", () => {
+      expect(displayLabels(runSourceAt("/‸", sourceWith()))).not.toContain(
+        "Define a term",
+      );
+      expect(
+        displayLabels(runSourceAt("/‸", sourceWith({ "other.command": () => {} }))),
+      ).not.toContain("Define a term");
+    });
+
+    it("runs the host capability instead of inserting markdown", () => {
+      const inserts: string[] = [];
+      let ran = 0;
+      const runner = createSlashCommandCompletionSource({
+        applyFormat: () => {},
+        insertBlock: (_view, text) => inserts.push(text),
+        insertInline: (_view, text) => inserts.push(text),
+        hostCommands: { "vault.dictionary.newDefinition": () => { ran += 1; } },
+        extensionCommands: [defineCommand],
+      });
+      const result = runSourceAt("/def‸", runner);
+      const option = result?.options.find(
+        (candidate) => candidate.displayLabel === "Define a term",
+      );
+
+      if (typeof option?.apply !== "function") {
+        throw new Error("no applicable option for Define a term");
+      }
+
+      option.apply({ dispatch: () => {} } as never, option, 1, "/def".length);
+
+      expect(ran).toBe(1);
+      expect(inserts).toEqual([]);
+    });
+
+    it("hides an item that declares neither insert nor run", () => {
+      const broken = {
+        id: "broken",
+        label: "broken",
+        title: "Broken",
+        section: "X",
+      } as ExtensionSlashCommand;
+      const result = runSourceAt("/‸", createSlashCommandCompletionSource({
+        applyFormat: () => {},
+        insertBlock: () => {},
+        insertInline: () => {},
+        extensionCommands: [broken],
+      }));
+
+      expect(displayLabels(result)).not.toContain("Broken");
+    });
+  });
+
+  /**
    * Routing an insertion to the wrong helper is silent and destructive: an
    * inline `:calc[…]` sent through `insertBlock` gets `\n\n` prepended and a
    * `\n` appended, so "The total is /calc" becomes a broken paragraph with the
@@ -234,7 +319,7 @@ describe("registry slash contributions", () => {
     expect(calendar).toBeDefined();
     expect(calendar?.sourceExtensionId).toBe("vault.calendar");
     expect(calendar?.label).toBe("calendar");
-    expect(typeof calendar?.insert.markdown).toBe("function");
+    expect(typeof calendar?.insert?.markdown).toBe("function");
   });
 
   it("declares a directive on the two contributions that open one", () => {

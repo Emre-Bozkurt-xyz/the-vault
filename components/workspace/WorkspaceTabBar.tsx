@@ -25,7 +25,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { cn } from "@/lib/utils";
-import { subscribeToWorkspaceDocumentRemovals } from "@/components/workspace/workspace-events";
+import {
+  subscribeToWorkspaceDocumentRemovals,
+  subscribeToWorkspaceTabOpened,
+} from "@/components/workspace/workspace-events";
 import {
   maxWorkspaceTabs as maxTabs,
   writeWorkspaceTabsCookie,
@@ -119,6 +122,28 @@ export function WorkspaceTabBar({
 
     return () => window.clearTimeout(timeout);
   }, [activePage, canonicalActiveHref]);
+
+  // Opens a tab in the background. Deliberately does not navigate: `/def`
+  // creates a definition while the author is mid-sentence, and the point is that
+  // they keep writing. Reads and writes `tabsRef` so a burst of these cannot
+  // each start from the same stale list.
+  useEffect(() => {
+    return subscribeToWorkspaceTabOpened(({ href, title }) => {
+      const currentTabs = tabsRef.current;
+
+      if (currentTabs.some((tab) => tab.href === href)) {
+        return;
+      }
+
+      const nextTabs = [
+        ...currentTabs,
+        { id: href, href, title, type: "document" as const },
+      ].slice(-maxTabs);
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      writeWorkspaceTabsCookie(nextTabs);
+    });
+  }, []);
 
   useEffect(() => {
     return subscribeToWorkspaceDocumentRemovals(({ id }) => {

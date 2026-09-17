@@ -308,7 +308,16 @@ export type SlashCommandContribution = {
    * on every call.
    */
   directive?: string;
-  insert: {
+  /**
+   * Instead of inserting Markdown, run a named capability the host editor
+   * provides (`/def` creates a document, which no `insert` shape can express).
+   *
+   * The host owns the implementation and an unknown name means the item is
+   * filtered out of the menu, so an extension can never advertise something the
+   * editor cannot actually do. Exactly one of `insert` or `run` must be present.
+   */
+  run?: { command: string };
+  insert?: {
     /** Markdown to insert; a factory runs per insertion. */
     markdown: string | (() => string);
     /** Cursor offset within the inserted text; omitted → cursor after it. */

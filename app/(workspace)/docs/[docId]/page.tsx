@@ -101,6 +101,7 @@ export default async function DocumentPage({
     stickersExtSetting,
     calendarExtSetting,
     calcExtSetting,
+    dictionaryExtSetting,
     editorSetting,
     folderPath,
     inheritedTags,
@@ -145,6 +146,9 @@ export default async function DocumentPage({
         ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calc" })
         : Promise.resolve(null),
       document.access.canEdit
+        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.dictionary" })
+        : Promise.resolve(null),
+      document.access.canEdit
         ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
         : Promise.resolve(null),
       getFolderPathForUser(document.folderId),
@@ -156,6 +160,12 @@ export default async function DocumentPage({
   // always render, for the same reason calendars do: a document must read the
   // same for every viewer, whatever they have switched on for themselves.
   const calcEnabled = calcExtSetting?.enabled ?? false;
+  // Gates `/def` and `/term` only. Definition hover previews always render, for
+  // the same reason: a document must read the same for every viewer.
+  const dictionaryEnabled = dictionaryExtSetting?.enabled ?? false;
+  const editorPreferences = buildPreferences(
+    editorSetting ? [editorSetting] : [],
+  ).editor;
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
@@ -164,6 +174,7 @@ export default async function DocumentPage({
     calendarEnabled ? "vault.calendar" : null,
     stickersEnabled ? "vault.stickers" : null,
     calcEnabled ? "vault.calc" : null,
+    dictionaryEnabled ? "vault.dictionary" : null,
   ].filter((id): id is string => id !== null);
   const calendarSettings = calendarSettingsSchema.safeParse(
     calendarExtSetting?.settings ?? {},
@@ -292,6 +303,8 @@ export default async function DocumentPage({
             title={document.title}
             markdown={markdown}
             folderPath={folderPath}
+            folderId={document.folderId}
+            definitionFolderId={editorPreferences.definitionFolderId}
             inheritedTags={inheritedTags}
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}

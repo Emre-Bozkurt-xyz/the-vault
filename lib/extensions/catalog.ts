@@ -265,6 +265,37 @@ const evaluateOutputSchema = z.object({
 
 export const localBuiltInExtensions: VaultExtension[] = [
   {
+    id: "vault.dictionary",
+    name: "Dictionary",
+    version: 1,
+    kind: "built-in",
+    category: "editor",
+    description:
+      "Define terms as documents and reference them with ordinary [[wiki links]], with a hover preview of the definition. See docs/20_DICTIONARY_EXTENSION_PLAN.md.",
+    defaultEnabled: false,
+    permissions: ["document:read", "document:write"],
+    markdown: {
+      slashCommands: [
+        {
+          id: "vault.dictionary.slash-define",
+          label: "def",
+          title: "Define a term",
+          keywords: "definition dictionary glossary term explain",
+          // `run`, not `insert`: this creates a document, which no markdown
+          // insertion can express. The editor supplies the implementation.
+          run: { command: "vault.dictionary.newDefinition" },
+        },
+        {
+          id: "vault.dictionary.slash-reference",
+          label: "term",
+          title: "Reference a definition",
+          keywords: "definition dictionary glossary lookup link",
+          run: { command: "vault.dictionary.insertReference" },
+        },
+      ],
+    },
+  },
+  {
     id: "vault.calc",
     name: "Calc",
     version: 1,

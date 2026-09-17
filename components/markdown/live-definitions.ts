@@ -1,4 +1,10 @@
-import { type Extension } from "@codemirror/state";
+import {
+  MapMode,
+  StateEffect,
+  StateField,
+  type EditorState,
+  type Extension,
+} from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import {
@@ -226,4 +232,51 @@ export function createDefinitionHoverExtension(options: {
       },
     }),
   ];
+}
+
+/**
+ * Position of the `[[` that `/term` inserted, or null.
+ *
+ * Lives in editor state rather than in a React store because the editor builds
+ * its extensions inside a `useMemo`, and a handler that mutates a memoized
+ * object is something the React Compiler refuses to compile around. It is also
+ * simply where this belongs: the narrowing is a property of one spot in the
+ * document, and `mapPos` keeps it pinned there through edits.
+ */
+const setDefinitionScope = StateEffect.define<number | null>();
+
+export const definitionScopeField = StateField.define<number | null>({
+  create: () => null,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setDefinitionScope)) {
+        return effect.value;
+      }
+    }
+
+    if (value === null) {
+      return null;
+    }
+
+    // `TrackDel` returns null when the marker's own text was deleted, which is
+    // exactly when the narrowing should stop applying.
+    return transaction.changes.mapPos(value, -1, MapMode.TrackDel) ?? null;
+  },
+});
+
+/**
+ * Narrows the next wiki-link completion at `markerFrom` to definitions.
+ *
+ * Never cleared explicitly: a marker that no longer matches the open completion
+ * region simply stops applying, and the next `/term` overwrites it.
+ */
+export function narrowWikiCompletionToDefinitions(
+  view: EditorView,
+  markerFrom: number,
+) {
+  view.dispatch({ effects: setDefinitionScope.of(markerFrom) });
+}
+
+export function definitionScopeMarker(state: EditorState) {
+  return state.field(definitionScopeField, false) ?? null;
 }

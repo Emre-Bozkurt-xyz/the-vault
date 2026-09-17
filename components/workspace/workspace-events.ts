@@ -93,3 +93,53 @@ export function subscribeToWorkspaceDocumentRemovals(
     window.removeEventListener(workspaceDocumentRemovedEvent, handler);
   };
 }
+
+export const workspaceTabOpenedEvent = "vault:workspace-tab-opened";
+
+export type WorkspaceTabOpenedDetail = {
+  href: string;
+  title: string;
+};
+
+/**
+ * Asks the tab strip to open a tab **without navigating to it**.
+ *
+ * `/def` is the reason this exists: it creates a definition document while the
+ * author is mid-sentence, and moving the viewport to a blank document to name a
+ * term costs more than it saves. The stub waits in the strip instead.
+ */
+export function dispatchWorkspaceOpenTab(detail: WorkspaceTabOpenedDetail) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(workspaceTabOpenedEvent, { detail }));
+}
+
+export function subscribeToWorkspaceTabOpened(
+  listener: (detail: WorkspaceTabOpenedDetail) => void,
+) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const handler = (event: Event) => {
+    if (!(event instanceof CustomEvent)) {
+      return;
+    }
+
+    const detail = event.detail as WorkspaceTabOpenedDetail | undefined;
+
+    if (!detail?.href) {
+      return;
+    }
+
+    listener(detail);
+  };
+
+  window.addEventListener(workspaceTabOpenedEvent, handler);
+
+  return () => {
+    window.removeEventListener(workspaceTabOpenedEvent, handler);
+  };
+}

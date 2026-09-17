@@ -29,6 +29,13 @@ import { type MarkdownFormat } from "./MarkdownToolbar";
  */
 export type SlashCommandActions = {
   applyFormat: (format: MarkdownFormat) => void;
+  /**
+   * Named capabilities the editor provides, for contributions that do something
+   * other than insert Markdown (`vault.dictionary.newDefinition` creates a
+   * document). An item naming a command absent from this map never reaches the
+   * menu — see `buildItems`.
+   */
+  hostCommands?: Record<string, (view: EditorView) => void>;
   insertBlock: (
     view: EditorView,
     text: string,
@@ -58,7 +65,9 @@ export type ExtensionSlashCommand = {
   keywords?: string;
   /** The `:::name` this item opens, when it opens one. See `SlashItem`. */
   directive?: string;
-  insert: {
+  /** A host capability to run instead of inserting Markdown. */
+  run?: { command: string };
+  insert?: {
     markdown: string | (() => string);
     cursorOffset?: number;
     /** Defaults to `"block"`; see `SlashCommandContribution`. */
@@ -266,6 +275,7 @@ export type InsertionMenuOptions = {
   applyFormat: SlashCommandActions["applyFormat"];
   insertBlock: SlashCommandActions["insertBlock"];
   insertInline: SlashCommandActions["insertInline"];
+  hostCommands?: SlashCommandActions["hostCommands"];
   /** Slash items from the user's enabled extensions (empty when none). */
   extensionCommands?: ExtensionSlashCommand[];
 };
@@ -275,6 +285,7 @@ function toActions(options: InsertionMenuOptions): SlashCommandActions {
     applyFormat: options.applyFormat,
     insertBlock: options.insertBlock,
     insertInline: options.insertInline,
+    hostCommands: options.hostCommands,
   };
 }
 
@@ -286,7 +297,16 @@ function buildItems(options: InsertionMenuOptions): SlashItem[] {
       ...item,
       iconType: CORE_ICON_TYPES[item.id] ?? "vault-block",
     })),
-    ...(options.extensionCommands ?? []).map(toExtensionItem),
+    // A `run` item is dropped when the host has no such capability, so an
+    // extension can advertise `/def` without the editor having to pretend it
+    // works everywhere a document is rendered.
+    ...(options.extensionCommands ?? [])
+      .filter((command) =>
+        command.run
+          ? Boolean(options.hostCommands?.[command.run.command])
+          : Boolean(command.insert),
+      )
+      .map(toExtensionItem),
   ];
 }
 
@@ -394,6 +414,17 @@ function toExtensionItem(command: ExtensionSlashCommand): SlashItem {
     directive: command.directive,
     iconType: "vault-extension",
     run: (view, actions) => {
+      const hostCommand = command.run;
+
+      if (hostCommand) {
+        actions.hostCommands?.[hostCommand.command]?.(view);
+        return;
+      }
+
+      if (!command.insert) {
+        return;
+      }
+
       const markdown =
         typeof command.insert.markdown === "function"
           ? command.insert.markdown()
