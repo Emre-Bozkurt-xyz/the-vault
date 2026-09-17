@@ -36,7 +36,14 @@ export type TagCategory =
   | "person"
   | "place"
   | "project"
-  | "technical";
+  | "technical"
+  /**
+   * Reserved tags the app itself gives meaning to, not free-form user
+   * vocabulary — currently only `definition` (see `lib/definitions.ts`).
+   * The column is plain `text` with no database enum, so adding a member
+   * here needs no migration.
+   */
+  | "system";
 export type ContentTargetKind = "document" | "asset";
 export type DocumentExtensionStateVisibility =
   | "private"

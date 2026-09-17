@@ -48,17 +48,10 @@ import {
 } from "@/lib/content-search-query";
 import { coerceDates } from "@/lib/db-rows";
 import { normalizeTagSlug } from "@/lib/content-metadata";
+import { definitionTagSlug } from "@/lib/definitions";
 import { slugify } from "@/lib/slug";
 import { pruneAssistantVersions } from "@/lib/document-versions";
-import {
-  extractMarkdownAnchorOptions,
-  extractMarkdownHeadingOptions,
-  type WikiLinkResolution,
-  type WikiLinkResolutionMap,
-  wikiDocKey,
-  wikiPublicKey,
-  wikiTitleKey,
-} from "@/lib/wiki-links";
+import { buildWikiLinkResolutionMap } from "@/lib/wiki-links";
 import { requireActiveUser } from "@/server/authz";
 import { reconcileDocumentAssetLinks } from "@/server/assets";
 import { syncDocumentMetadata } from "@/server/content-metadata";
@@ -1554,6 +1547,7 @@ export async function listWikiLinkResolutionsForUser(
   userId: string,
   options: { includeEmbeds?: boolean } = {},
 ) {
+  const definitionDocumentIds = await listDefinitionDocumentIds();
   const rows = await db
     .select({
       id: documents.id,
@@ -1592,6 +1586,7 @@ export async function listWikiLinkResolutionsForUser(
     {
       includeEmbeds: options.includeEmbeds ?? true,
       includePublicKeys: true,
+      definitionDocumentIds,
       sourceForDocument: (document) =>
         document.ownerId === userId || document.sharedUserId === userId
           ? "document"
@@ -1611,6 +1606,7 @@ export async function listPublicWikiLinkResolutions(
     workspaceHrefs?: boolean;
   } = {},
 ) {
+  const definitionDocumentIds = await listDefinitionDocumentIds();
   const rows = await db
     .select({
       id: documents.id,
@@ -1642,6 +1638,7 @@ export async function listPublicWikiLinkResolutions(
       includeDocKeys: options.includeDocKeys ?? true,
       includeTitleKeys: options.includeTitleKeys ?? true,
       includePublicKeys: options.includePublicKeys ?? true,
+      definitionDocumentIds,
       sourceForDocument: () => "public",
     },
   );
@@ -2033,113 +2030,21 @@ export async function getDocumentForUserWithOptionalShareLink(
     : document;
 }
 
-function buildWikiLinkResolutionMap<
-  TDocument extends {
-    id: string;
-    title: string;
-    markdown?: string;
-    visibility: string;
-    publicSlug: string | null;
-    ownerUsername?: string | null;
-  },
->(
-  documentsToLink: TDocument[],
-  hrefForDocument: (document: TDocument) => string | null,
-  options:
-    | boolean
-    | {
-        includeEmbeds?: boolean;
-        includeDocKeys?: boolean;
-        includeTitleKeys?: boolean;
-        includePublicKeys?: boolean;
-        sourceForDocument?: (
-          document: TDocument,
-        ) => WikiLinkResolution["source"];
-      } = true,
-) {
-  const normalizedOptions =
-    typeof options === "boolean" ? { includeEmbeds: options } : options;
-  const includeEmbeds = normalizedOptions.includeEmbeds ?? true;
-  const includeDocKeys = normalizedOptions.includeDocKeys ?? true;
-  const includeTitleKeys = normalizedOptions.includeTitleKeys ?? true;
-  const includePublicKeys = normalizedOptions.includePublicKeys ?? true;
-  const resolutions: WikiLinkResolutionMap = {};
-  const byTitle = new Map<string, TDocument[]>();
+/**
+ * Ids of every document carrying the reserved `definition` tag.
+ *
+ * Deliberately unscoped: it is only ever used as a membership test against rows
+ * a caller has already resolved as readable, so it leaks nothing, and one narrow
+ * indexed join beats passing thousands of readable ids into an `in (...)` list.
+ */
+async function listDefinitionDocumentIds() {
+  const rows = await db
+    .select({ documentId: documentTags.documentId })
+    .from(documentTags)
+    .innerJoin(tags, eq(documentTags.tagId, tags.id))
+    .where(eq(tags.slug, definitionTagSlug));
 
-  for (const document of documentsToLink) {
-    const href = hrefForDocument(document);
-    const source = normalizedOptions.sourceForDocument?.(document) ?? "document";
-    const resolution: WikiLinkResolution = href
-      ? {
-        status: "resolved",
-        source,
-        documentId: document.id,
-        label: document.title,
-        href,
-        embedMarkdown: includeEmbeds ? document.markdown : undefined,
-        ownerUsername: document.ownerUsername,
-        headings: extractMarkdownHeadingOptions(document.markdown ?? ""),
-        anchors: extractMarkdownAnchorOptions(document.markdown ?? ""),
-      }
-      : {
-          status: "private",
-          source,
-          label: document.title,
-          ownerUsername: document.ownerUsername,
-        };
-
-    if (includeDocKeys) {
-      resolutions[wikiDocKey(document.id)] = resolution;
-    }
-
-    if (includePublicKeys && document.publicSlug) {
-      resolutions[wikiPublicKey(document.publicSlug)] = {
-        ...resolution,
-        source: "public",
-      };
-    }
-
-    const titleKey = wikiTitleKey(document.title);
-    byTitle.set(titleKey, [...(byTitle.get(titleKey) ?? []), document]);
-  }
-
-  if (!includeTitleKeys) {
-    return resolutions;
-  }
-
-  for (const [titleKey, matches] of byTitle) {
-    if (matches.length !== 1) {
-      resolutions[titleKey] = {
-        status: "ambiguous",
-        label: matches[0]?.title,
-      };
-      continue;
-    }
-
-    const match = matches[0];
-    const href = hrefForDocument(match);
-    const source = normalizedOptions.sourceForDocument?.(match) ?? "document";
-    resolutions[titleKey] = href
-      ? {
-          status: "resolved",
-          source,
-          documentId: match.id,
-          label: match.title,
-          href,
-          embedMarkdown: includeEmbeds ? match.markdown : undefined,
-          ownerUsername: match.ownerUsername,
-          headings: extractMarkdownHeadingOptions(match.markdown ?? ""),
-          anchors: extractMarkdownAnchorOptions(match.markdown ?? ""),
-        }
-      : {
-          status: "private",
-          source,
-          label: match.title,
-          ownerUsername: match.ownerUsername,
-        };
-  }
-
-  return resolutions;
+  return new Set(rows.map((row) => row.documentId));
 }
 
 function shareLinkModeToValues(

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -18,12 +18,16 @@ import {
   parseDocumentMetadata,
   tagDisplayName,
 } from "@/lib/content-metadata";
+import { reservedTagCategory } from "@/lib/definitions";
 import {
   mergeDocumentTags,
   resolveInheritedTagsForDocument,
 } from "@/lib/folder-tags";
 
-type MetadataExecutor = Pick<typeof db, "delete" | "insert" | "select">;
+type MetadataExecutor = Pick<
+  typeof db,
+  "delete" | "insert" | "select" | "update"
+>;
 
 export type TagSuggestionScope = "mine" | "public";
 
@@ -288,9 +292,23 @@ async function ensureTags(tx: MetadataExecutor, tagSlugs: string[]) {
       uniqueSlugs.map((slug) => ({
         slug,
         displayName: tagDisplayName(slug),
+        category: reservedTagCategory(slug) ?? "general",
       })),
     )
     .onConflictDoNothing();
+
+  // A reserved tag that already existed as ordinary user vocabulary — someone
+  // tagged a document `definition` before the dictionary shipped — is corrected
+  // rather than left mislabelled. Guarded on the category, so in the steady
+  // state this matches nothing.
+  const reservedSlugs = uniqueSlugs.filter((slug) => reservedTagCategory(slug));
+
+  if (reservedSlugs.length > 0) {
+    await tx
+      .update(tags)
+      .set({ category: "system", updatedAt: sql`now()` })
+      .where(and(inArray(tags.slug, reservedSlugs), ne(tags.category, "system")));
+  }
 
   const rows = await tx
     .select({

@@ -553,6 +553,32 @@ verification).
 
 ---
 
+## Phase 21 - Dictionary Extension
+
+Reference plan: `docs/20_DICTIONARY_EXTENSION_PLAN.md`
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Slice 1 — Data and resolution | Done 2026-09-17. `lib/definitions.ts` (`definitionTagSlug`, `reservedTagCategory`, `definitionPreview` — summary else first body block, skipping fences, `:::` directives, headings, breaks, callouts, region markers and standalone transclusions; Markdown out, bounded at 600 chars). `WikiLinkResolution` gained `isDefinition` + `preview`. `buildWikiLinkResolutionMap` **moved to `lib/wiki-links.ts`** so it is testable at all, which surfaced a latent bug: it built the resolution object twice (doc keys, then the title loop), so a new field could reach one set of keys and miss the other — now one memoized object per document, plus claim dedupe by id. Aliases register `wikiTitleKey` entries (title beats alias; alias collisions `ambiguous`; no stemming). New private `listDefinitionDocumentIds` in `server/documents.ts` (one narrow indexed join, unscoped by design) wired into both resolution callers; official docs untouched (no tags on guides). `TagCategory` gained `"system"` with no migration, stamped and self-healed by `ensureTags`, and added to `server/tags-admin.ts`'s list so `updateTagAction` cannot silently declassify it. +31 tests (415 total), lint at baseline, build clean, verified against real Postgres including a definition tagged **only** by folder inheritance |
+| [ ] | Slice 2 — Hover card on read surfaces | `components/markdown/DefinitionPreviewCard.tsx` on `@base-ui/react/preview-card` + `scroll-area`; reached from `MarkdownDocument`'s existing `a` override via a reverse `href -> resolution` lookup, so no raw HTML and no sanitizer change. Weight-only link style (`.vault-md-definition-link`), registered in `docs/CSS_CONTRACT.md`. Preview depth capped at zero |
+| [ ] | Slice 3 — Live-mode parity | Per-target `data-vault-definition` attributes on the wiki-link mark decoration (replacing the shared static mark), one delegated `pointerover` on `.cm-content` driving the same card. No fetch needed — the editor already holds every readable document's markdown. Fallback: CM `hoverTooltip` + `createRoot` if anchoring fights DOM recycling |
+| [ ] | Slice 4 — Authoring | Register `vault.dictionary` in `lib/extensions/catalog.ts`. Framework change: make `SlashCommandContribution.insert` optional beside `run?: { command: string }` naming a host capability (unknown name → item filtered out), keeping the catalog free of `db`/server actions. `/def` creates the stub in the background, inserts `[[Term]]`, opens a background tab — it does **not** navigate away. `/term` is the wiki-link completion filtered to `isDefinition`. New-definition folder preference |
+| [ ] | Slice 5 — Agent actions | `listDefinitions` (workspace, read), `listUndefinedTerms` (document, read — the glossary gap list), `defineTerm` (workspace, mutates). Handlers stay pure `(input, ctx)` with no `db` import |
+
+Exit criteria:
+
+```txt
+A document tagged `definition` (by frontmatter or by a folder's default tags)
+is reachable as `[[Term]]` or by any of its aliases; hovering that link shows a
+rendered miniature of the definition, identically in Live mode, Read mode, and
+on a public page with no account; the link reads as slightly bolder prose and
+nothing else; `/def` creates a definition without moving the viewport off the
+sentence being written; and the three agent actions answer "what is defined"
+and "what is referenced but undefined" over a real vault.
+```
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |

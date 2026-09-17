@@ -1,3 +1,6 @@
+import { parseDocumentMetadata } from "@/lib/content-metadata";
+import { definitionPreview } from "@/lib/definitions";
+
 export type WikiLinkResolutionStatus =
   | "resolved"
   | "unresolved"
@@ -11,6 +14,21 @@ export type WikiLinkResolution = {
   label?: string;
   href?: string;
   embedMarkdown?: string;
+  /**
+   * The target is a definition document — it carries the `definition` tag, from
+   * its own frontmatter or inherited from a folder (see `lib/definitions.ts`).
+   *
+   * Resolved server-side and carried here on purpose: folder-inherited tags live
+   * only in `document_tags`, never in the Markdown, so a renderer that parsed
+   * frontmatter to answer this would miss every definition filed by folder.
+   */
+  isDefinition?: boolean;
+  /**
+   * Bounded Markdown for a definition's hover card (summary, else first body
+   * block). Only ever set alongside `isDefinition`, so a vault with few
+   * definitions pays almost nothing for it.
+   */
+  preview?: string;
   ownerUsername?: string | null;
   headings?: Array<{
     level: number;
@@ -479,6 +497,181 @@ export function parseWikiLinkParts(bang: string, body: string): WikiLinkParts {
     label,
     fragment,
   };
+}
+
+/**
+ * Turns a set of readable documents into the `[[target]] -> resolution` map every
+ * rendering surface consumes. One resolution object is built per document and
+ * reused for its `doc:`, `public:`, title and alias keys, so a field added here
+ * cannot reach some keys and miss others.
+ */
+export function buildWikiLinkResolutionMap<
+  TDocument extends {
+    id: string;
+    title: string;
+    markdown?: string;
+    visibility: string;
+    publicSlug: string | null;
+    ownerUsername?: string | null;
+  },
+>(
+  documentsToLink: TDocument[],
+  hrefForDocument: (document: TDocument) => string | null,
+  options:
+    | boolean
+    | {
+        includeEmbeds?: boolean;
+        includeDocKeys?: boolean;
+        includeTitleKeys?: boolean;
+        includePublicKeys?: boolean;
+        sourceForDocument?: (
+          document: TDocument,
+        ) => WikiLinkResolution["source"];
+        /**
+         * Ids of documents carrying the `definition` tag, from
+         * `listDefinitionDocumentIds`. Membership must come from the database
+         * because the tag may be folder-inherited and therefore absent from the
+         * document's own Markdown (`lib/folder-tags.ts`).
+         */
+        definitionDocumentIds?: Set<string>;
+      } = true,
+) {
+  const normalizedOptions =
+    typeof options === "boolean" ? { includeEmbeds: options } : options;
+  const includeEmbeds = normalizedOptions.includeEmbeds ?? true;
+  const includeDocKeys = normalizedOptions.includeDocKeys ?? true;
+  const includeTitleKeys = normalizedOptions.includeTitleKeys ?? true;
+  const includePublicKeys = normalizedOptions.includePublicKeys ?? true;
+  const definitionDocumentIds = normalizedOptions.definitionDocumentIds;
+  const resolutions: WikiLinkResolutionMap = {};
+  const byTitle = new Map<string, TDocument[]>();
+  const byAlias = new Map<string, TDocument[]>();
+  // Built once per document and reused for every key that document claims.
+  // Rebuilding it per key would re-scan the same Markdown for headings, anchors
+  // and frontmatter three times over on a vault with aliases.
+  const byDocumentId = new Map<string, WikiLinkResolution>();
+
+  const resolutionFor = (document: TDocument): WikiLinkResolution => {
+    const cached = byDocumentId.get(document.id);
+
+    if (cached) {
+      return cached;
+    }
+
+    const href = hrefForDocument(document);
+    const source = normalizedOptions.sourceForDocument?.(document) ?? "document";
+
+    if (!href) {
+      const privateResolution: WikiLinkResolution = {
+        status: "private",
+        source,
+        label: document.title,
+        ownerUsername: document.ownerUsername,
+      };
+
+      byDocumentId.set(document.id, privateResolution);
+      return privateResolution;
+    }
+
+    const isDefinition = definitionDocumentIds?.has(document.id) ?? false;
+    const resolution: WikiLinkResolution = {
+      status: "resolved",
+      source,
+      documentId: document.id,
+      label: document.title,
+      href,
+      embedMarkdown: includeEmbeds ? document.markdown : undefined,
+      // Computed for definitions only: this is what keeps a public page's
+      // payload from carrying a preview for every document in the vault.
+      ...(isDefinition
+        ? { isDefinition, preview: definitionPreview(document.markdown ?? "") }
+        : {}),
+      ownerUsername: document.ownerUsername,
+      headings: extractMarkdownHeadingOptions(document.markdown ?? ""),
+      anchors: extractMarkdownAnchorOptions(document.markdown ?? ""),
+    };
+
+    byDocumentId.set(document.id, resolution);
+    return resolution;
+  };
+
+  for (const document of documentsToLink) {
+    const resolution = resolutionFor(document);
+
+    if (includeDocKeys) {
+      resolutions[wikiDocKey(document.id)] = resolution;
+    }
+
+    if (includePublicKeys && document.publicSlug) {
+      resolutions[wikiPublicKey(document.publicSlug)] = {
+        ...resolution,
+        source: "public",
+      };
+    }
+
+    if (!includeTitleKeys) {
+      continue;
+    }
+
+    recordClaim(byTitle, wikiTitleKey(document.title), document);
+
+    // Aliases come from the document's own frontmatter, so no join is needed —
+    // the row already carries the Markdown.
+    for (const alias of parseDocumentMetadata(document.markdown ?? "").aliases) {
+      recordClaim(byAlias, wikiTitleKey(alias), document);
+    }
+  }
+
+  if (!includeTitleKeys) {
+    return resolutions;
+  }
+
+  for (const [titleKey, matches] of byTitle) {
+    resolutions[titleKey] = claimKey(matches);
+  }
+
+  // Aliases are resolved after titles and never overwrite one: a real title
+  // always beats someone else's "also known as". Two documents claiming the same
+  // alias, with no title claim between them, is ambiguous like any other clash.
+  for (const [aliasKey, matches] of byAlias) {
+    if (resolutions[aliasKey]) {
+      continue;
+    }
+
+    resolutions[aliasKey] = claimKey(matches);
+  }
+
+  return resolutions;
+
+  /**
+   * Records a document's claim on a title/alias key, ignoring a repeat of the
+   * same document. A join that yields one document twice must not make its own
+   * title ambiguous with itself.
+   */
+  function recordClaim(
+    claims: Map<string, TDocument[]>,
+    key: string,
+    document: TDocument,
+  ) {
+    const existing = claims.get(key) ?? [];
+
+    if (existing.some((claimed) => claimed.id === document.id)) {
+      return;
+    }
+
+    claims.set(key, [...existing, document]);
+  }
+
+  function claimKey(matches: TDocument[]): WikiLinkResolution {
+    if (matches.length !== 1) {
+      return {
+        status: "ambiguous",
+        label: matches[0]?.title,
+      };
+    }
+
+    return resolutionFor(matches[0]);
+  }
 }
 
 function parseStandaloneWikiDocumentEmbed(

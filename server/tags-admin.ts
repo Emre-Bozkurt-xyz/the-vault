@@ -22,6 +22,11 @@ const tagCategories = [
   "place",
   "project",
   "technical",
+  // Reserved, app-owned tags (`lib/definitions.ts`). Listed here because
+  // `updateTagAction` always writes the submitted category: leaving it out of the
+  // admin's options would silently declassify a `system` tag the moment an admin
+  // saved an unrelated edit to its row.
+  "system",
 ] as const satisfies readonly TagCategory[];
 
 const tagIdSchema = z.string().uuid();
