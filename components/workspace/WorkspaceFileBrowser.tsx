@@ -22,6 +22,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  SlidersHorizontal,
   Trash2,
   Users,
 } from "lucide-react";
@@ -42,7 +43,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderShareDialog } from "@/components/folder-share-dialog";
+import { FolderSettingsDialog } from "@/components/folder-settings-dialog";
 import {
   createDocumentInFolderAction,
   restoreArchivedDocumentAction,
@@ -101,9 +102,13 @@ export function WorkspaceFileBrowser({
   const [pendingDelete, setPendingDelete] = useState<WorkspaceFolderItem | null>(
     null,
   );
-  const [sharingFolder, setSharingFolder] = useState<WorkspaceFolderItem | null>(
-    null,
-  );
+  // The folder whose settings dialog is open, plus which tab it opened on —
+  // "Share folder…" and "Folder settings…" are the same dialog, entered at
+  // different sections.
+  const [folderSettings, setFolderSettings] = useState<{
+    folder: WorkspaceFolderItem;
+    section: "tags" | "sharing";
+  } | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -381,7 +386,9 @@ export function WorkspaceFileBrowser({
                   setRenamingId(null);
                 }}
                 onRequestDelete={setPendingDelete}
-                onRequestShare={setSharingFolder}
+                onRequestSettings={(folder, section) =>
+                  setFolderSettings({ folder, section })
+                }
                 onNewDoc={newDocInFolder}
                 onExpand={expandFolder}
                 onDropOn={handleDropOn}
@@ -467,9 +474,10 @@ export function WorkspaceFileBrowser({
         </DialogContent>
       </Dialog>
 
-      <FolderShareDialog
-        folder={sharingFolder}
-        onClose={() => setSharingFolder(null)}
+      <FolderSettingsDialog
+        folder={folderSettings?.folder ?? null}
+        initialSection={folderSettings?.section ?? "tags"}
+        onClose={() => setFolderSettings(null)}
       />
     </div>
   );
@@ -494,7 +502,7 @@ function FolderNode({
   onCreateFolder,
   onRenameFolder,
   onRequestDelete,
-  onRequestShare,
+  onRequestSettings,
   onNewDoc,
   onExpand,
   onDropOn,
@@ -517,7 +525,10 @@ function FolderNode({
   onCreateFolder: (name: string, parentId: string | null) => void;
   onRenameFolder: (id: string, name: string) => void;
   onRequestDelete: (folder: WorkspaceFolderItem) => void;
-  onRequestShare: (folder: WorkspaceFolderItem) => void;
+  onRequestSettings: (
+    folder: WorkspaceFolderItem,
+    section: "tags" | "sharing",
+  ) => void;
   onNewDoc: (folderId: string | null) => void;
   onExpand: (id: string) => void;
   onDropOn: (target: string | null, payload: DragPayload) => void;
@@ -625,9 +636,17 @@ function FolderNode({
               <Pencil className="size-4" />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onRequestShare(folder)}>
+            <DropdownMenuItem
+              onClick={() => onRequestSettings(folder, "sharing")}
+            >
               <Users className="size-4" />
               Share folder…
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onRequestSettings(folder, "tags")}
+            >
+              <SlidersHorizontal className="size-4" />
+              Folder settings…
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -676,7 +695,7 @@ function FolderNode({
               onCreateFolder={onCreateFolder}
               onRenameFolder={onRenameFolder}
               onRequestDelete={onRequestDelete}
-              onRequestShare={onRequestShare}
+              onRequestSettings={onRequestSettings}
               onNewDoc={onNewDoc}
               onExpand={onExpand}
               onDropOn={onDropOn}

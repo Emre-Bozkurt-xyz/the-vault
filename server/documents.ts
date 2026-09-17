@@ -1790,6 +1790,7 @@ export async function getDocumentByShareLink(
       markdown: documents.markdown,
       visibility: documents.visibility,
       publicSlug: documents.publicSlug,
+      folderId: documents.folderId,
       updatedAt: documents.updatedAt,
     })
     .from(documentShareLinks)
@@ -1843,6 +1844,7 @@ export async function getDocumentByShareLink(
       markdown: row.markdown,
       visibility: row.visibility,
       publicSlug: row.publicSlug,
+      folderId: row.folderId,
       updatedAt: row.updatedAt,
       access,
     },
@@ -1922,6 +1924,7 @@ export async function getDocumentForUser(userId: string, documentId: string) {
       markdown: documents.markdown,
       visibility: documents.visibility,
       publicSlug: documents.publicSlug,
+      folderId: documents.folderId,
       updatedAt: documents.updatedAt,
     })
     .from(documents)

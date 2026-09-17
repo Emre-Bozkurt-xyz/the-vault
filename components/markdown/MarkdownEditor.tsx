@@ -88,6 +88,8 @@ import {
   createSlashCommandCompletionSource,
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
+import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
+import { InheritedTagList } from "@/components/inherited-tag-list";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
 import { dispatchWorkspaceDocumentChanged } from "@/components/workspace/workspace-events";
@@ -145,6 +147,18 @@ type MarkdownEditorProps = {
   documentId: string;
   title: string;
   markdown: string;
+  /**
+   * Display path of the folder holding this document ("Work/Specs"), or null at
+   * the vault root. Shown above the title because the tab strip only has room
+   * for a name, and two documents can legitimately share one.
+   */
+  folderPath?: string | null;
+  /**
+   * Tags this document picks up from its folders (see `lib/folder-tags.ts`).
+   * Read-only here: they are not part of the Markdown, so the Properties panel
+   * shows them but the tag field never contains them.
+   */
+  inheritedTags?: string[];
   shareLinkId?: string | null;
   collaboration?: {
     url: string;
@@ -293,6 +307,8 @@ export function MarkdownEditor({
   documentId,
   title,
   markdown,
+  folderPath = null,
+  inheritedTags,
   shareLinkId = null,
   collaboration = null,
   wikiLinks,
@@ -1516,6 +1532,7 @@ export function MarkdownEditor({
             onChangeAttributes={updateSelectedAssetGroupAttributes}
           />
         ) : null}
+        <DocumentFolderPath path={folderPath} />
         {editorMode === "read" ? (
           <h1 className="vault-editor-title w-full text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl vault-display">
             {titleValue || "Untitled document"}
@@ -1542,6 +1559,7 @@ export function MarkdownEditor({
         {editorMode === "live" ? (
           <DocumentPropertiesControls
             markdown={markdownValue}
+            inheritedTags={inheritedTags}
             onChange={applyDocumentMetadata}
           />
         ) : null}
@@ -1988,12 +2006,24 @@ function AssetFormatSegment<TValue extends string>({
 
 function DocumentPropertiesControls({
   markdown,
+  inheritedTags,
   onChange,
 }: {
   markdown: string;
+  inheritedTags?: string[];
   onChange: (metadata: ParsedDocumentMetadata) => void;
 }) {
   const metadata = useMemo(() => parseDocumentMetadata(markdown), [markdown]);
+  const folderTags = useMemo(
+    // A folder tag the author also wrote in frontmatter is theirs to edit, so
+    // it stays in the editable field and is not repeated as a locked chip.
+    () => (inheritedTags ?? []).filter((tag) => !metadata.tags.includes(tag)),
+    [inheritedTags, metadata.tags],
+  );
+  const summaryTags = useMemo(
+    () => [...metadata.tags, ...folderTags],
+    [folderTags, metadata.tags],
+  );
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState(() => toMetadataDraft(metadata));
 
@@ -2029,9 +2059,9 @@ function DocumentPropertiesControls({
           Properties
         </span>
         <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          {metadata.tags.length > 0 ? (
+          {summaryTags.length > 0 ? (
             <span className="hidden min-w-0 truncate sm:inline">
-              {metadata.tags.slice(0, 4).join(" ")}
+              {summaryTags.slice(0, 4).join(" ")}
             </span>
           ) : (
             <span>Frontmatter</span>
@@ -2059,6 +2089,15 @@ function DocumentPropertiesControls({
             <span className="text-xs text-muted-foreground">
               Separate tags with spaces. Use underscores for multi-word tags.
             </span>
+            {folderTags.length > 0 ? (
+              <div className="grid gap-1.5 pt-1">
+                <span className="text-xs text-muted-foreground">
+                  From this document&apos;s folders — change them in the
+                  folder&apos;s settings.
+                </span>
+                <InheritedTagList tags={folderTags} />
+              </div>
+            ) : null}
           </label>
 
           <div className="grid gap-3 sm:grid-cols-2">

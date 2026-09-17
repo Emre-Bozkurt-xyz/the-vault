@@ -18,6 +18,10 @@ import {
   parseDocumentMetadata,
   tagDisplayName,
 } from "@/lib/content-metadata";
+import {
+  mergeDocumentTags,
+  resolveInheritedTagsForDocument,
+} from "@/lib/folder-tags";
 
 type MetadataExecutor = Pick<typeof db, "delete" | "insert" | "select">;
 
@@ -28,9 +32,18 @@ export async function syncDocumentMetadata(input: {
   markdown: string;
 }) {
   const metadata = parseDocumentMetadata(input.markdown);
+  // Resolved outside the transaction so the executor stays a plain
+  // insert/select/delete surface, and because the folder tree is read-only
+  // here — nothing in the sync can change the ancestry it just walked.
+  const inheritedTags = await resolveInheritedTagsForDocument(input.documentId);
 
   await db.transaction(async (tx) => {
-    await syncDocumentMetadataWithExecutor(tx, input.documentId, metadata);
+    await syncDocumentMetadataWithExecutor(
+      tx,
+      input.documentId,
+      metadata,
+      inheritedTags,
+    );
   });
 }
 
@@ -49,6 +62,13 @@ export async function syncDocumentMetadataWithExecutor(
   tx: MetadataExecutor,
   documentId: string,
   metadata: ReturnType<typeof parseDocumentMetadata>,
+  /**
+   * Tags inherited from the document's folders. Passed in rather than resolved
+   * here so this stays usable inside a caller's transaction; see
+   * `lib/folder-tags.ts` for why inheritance is materialized into
+   * `document_tags` instead of the document's frontmatter.
+   */
+  inheritedTags: string[] = [],
 ) {
   await tx
     .insert(documentMetadata)
@@ -70,7 +90,11 @@ export async function syncDocumentMetadataWithExecutor(
       },
     });
 
-  await syncTagsForDocumentWithExecutor(tx, documentId, metadata.tags);
+  await syncTagsForDocumentWithExecutor(
+    tx,
+    documentId,
+    mergeDocumentTags(metadata.tags, inheritedTags),
+  );
 }
 
 export async function listTagSuggestions(input: {

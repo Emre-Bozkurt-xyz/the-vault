@@ -11,6 +11,7 @@ import {
 } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
+import { buildDocumentFolderPaths } from "@/lib/folder-paths";
 import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
 import { WorkspaceFileBrowser } from "@/components/workspace/WorkspaceFileBrowser";
 import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPanel";
@@ -129,6 +130,23 @@ export function WorkspaceChrome({
   }, []);
   const isAdmin = workspace.profile.role === "admin";
   const baseCurrentHref = currentHref.split("?")[0] ?? currentHref;
+  // Folder paths for the tab-bar hover hint. Owned and shared folders share one
+  // lookup so a document reached through a shared folder still shows where it
+  // lives; a folder the viewer cannot see contributes nothing (see
+  // `buildDocumentFolderPaths`).
+  const folderPathByHref = useMemo(
+    () =>
+      buildDocumentFolderPaths(
+        [...workspaceState.folders, ...workspaceState.sharedFolders],
+        [...workspaceState.owned, ...workspaceState.shared],
+      ),
+    [
+      workspaceState.folders,
+      workspaceState.sharedFolders,
+      workspaceState.owned,
+      workspaceState.shared,
+    ],
+  );
 
   useEffect(() => {
     setWorkspaceState(workspace);
@@ -187,6 +205,7 @@ export function WorkspaceChrome({
         defaultPanelMode={defaultPanelModeForHref(currentHref)}
         initialLayout={workspace.layout}
         initialTabs={workspace.tabs}
+        folderPathByHref={folderPathByHref}
         contentClassName="max-w-none px-0 py-0 md:px-0 md:py-0"
         filePanel={
           <WorkspaceFileBrowser

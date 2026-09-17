@@ -7,8 +7,12 @@ import { z } from "zod";
 
 import { db } from "@/db";
 import { documents, folderPermissions, folders, users } from "@/db/schema";
+import { normalizeTagList } from "@/lib/content-metadata";
+import { buildFolderPaths } from "@/lib/folder-paths";
+import { resolveInheritedTagsForFolder } from "@/lib/folder-tags";
 import { canEditDocument, canEditFolderContents } from "@/lib/permissions";
 import { requireActiveUser } from "@/server/authz";
+import { syncDocumentMetadata } from "@/server/content-metadata";
 import { listFriendsForUser } from "@/server/friends";
 
 const folderIdSchema = z.string().uuid();
@@ -25,6 +29,13 @@ const folderCollaboratorSchema = z.object({
 });
 const updateFolderCollaboratorSchema = folderCollaboratorSchema.extend({
   role: z.enum(["viewer", "editor"]),
+});
+const folderDefaultTagsSchema = z.object({
+  folderId: folderIdSchema,
+  // Free text from the same space-separated tag field the Properties panel
+  // uses; `normalizeTagList` is what actually decides the stored slugs and caps
+  // how many survive.
+  tags: z.string().max(2000).optional().or(z.literal("")),
 });
 const optionalFolderIdSchema = z
   .union([folderIdSchema, z.literal(""), z.null(), z.undefined()])
@@ -103,6 +114,27 @@ export async function listSharedFoldersForUser(userId: string) {
   }));
 }
 
+/**
+ * The display path of a folder ("Work/Specs"), for the editor breadcrumb and the
+ * tab hover hint. Resolved only against folders the signed-in user can already
+ * see — owned plus shared — so a folder outside their reach yields `null` rather
+ * than leaking a name. `null` is also the honest answer for a document sitting
+ * at the vault root.
+ */
+export async function getFolderPathForUser(folderId: string | null | undefined) {
+  if (!folderId) {
+    return null;
+  }
+
+  const user = await requireActiveUser();
+  const [owned, shared] = await Promise.all([
+    listFoldersForUser(user.id),
+    listSharedFoldersForUser(user.id),
+  ]);
+
+  return buildFolderPaths([...owned, ...shared]).get(folderId) ?? null;
+}
+
 /** Ensures the folder exists, is live, and is owned by the user. */
 async function requireOwnedFolder(userId: string, folderId: string) {
   const [folder] = await db
@@ -171,6 +203,10 @@ export async function deleteFolderAction(formData: FormData) {
     return;
   }
 
+  // Collected before the unfiling, because afterwards these documents have no
+  // folder to look them up by.
+  const unfiledDocumentIds = await listDocumentIdsUnderFolders(subtree);
+
   await db.transaction(async (tx) => {
     await tx
       .update(documents)
@@ -182,6 +218,9 @@ export async function deleteFolderAction(formData: FormData) {
       .set({ deletedAt: sql`now()`, updatedAt: sql`now()` })
       .where(and(inArray(folders.id, subtree), isNull(folders.deletedAt)));
   });
+
+  // Unfiled documents keep their own frontmatter tags and lose the folder's.
+  await resyncDocumentTags(unfiledDocumentIds);
 
   revalidateWorkspace();
 }
@@ -210,6 +249,14 @@ export async function moveFolderAction(formData: FormData) {
     .set({ parentId, updatedAt: sql`now()` })
     .where(and(eq(folders.id, folderId), eq(folders.ownerId, user.id)));
 
+  // The subtree now sits under a different ancestor chain, so everything in it
+  // inherits a different tag set.
+  await resyncDocumentTags(
+    await listDocumentIdsUnderFolders(
+      await collectFolderSubtree(user.id, folderId),
+    ),
+  );
+
   revalidateWorkspace();
 }
 
@@ -232,6 +279,40 @@ export async function moveDocumentToFolderAction(formData: FormData) {
     .update(documents)
     .set({ folderId, updatedAt: sql`now()` })
     .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
+
+  await resyncDocumentTags([documentId]);
+
+  revalidateWorkspace();
+}
+
+/**
+ * Sets a folder's default tags — the tags every document inside it, subfolders
+ * included, inherits (see `lib/folder-tags.ts`). Owner-only, because folder
+ * editors can file documents into the folder but do not get to decide how the
+ * owner's whole subtree is tagged.
+ */
+export async function updateFolderDefaultTagsAction(formData: FormData) {
+  const user = await requireActiveUser();
+  const input = folderDefaultTagsSchema.parse({
+    folderId: formData.get("folderId"),
+    tags: formData.get("tags"),
+  });
+
+  await requireOwnedFolder(user.id, input.folderId);
+
+  await db
+    .update(folders)
+    .set({
+      defaultTags: normalizeTagList(input.tags ?? ""),
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(folders.id, input.folderId), eq(folders.ownerId, user.id)));
+
+  await resyncDocumentTags(
+    await listDocumentIdsUnderFolders(
+      await collectFolderSubtree(user.id, input.folderId),
+    ),
+  );
 
   revalidateWorkspace();
 }
@@ -331,10 +412,12 @@ export async function removeFolderCollaboratorAction(formData: FormData) {
 }
 
 /**
- * Loads the share state for a folder so the share dialog can populate on open.
- * Returns null when the caller does not own the folder.
+ * Loads everything the folder settings dialog shows — default tags (own and
+ * inherited) plus the share roster. Returns null when the caller does not own
+ * the folder, so a folder editor gets an empty dialog rather than a view of the
+ * owner's collaborator list.
  */
-export async function getFolderShareData(folderId: string) {
+export async function getFolderSettingsData(folderId: string) {
   const user = await requireActiveUser();
   const parsed = folderIdSchema.safeParse(folderId);
 
@@ -343,7 +426,11 @@ export async function getFolderShareData(folderId: string) {
   }
 
   const [folder] = await db
-    .select({ id: folders.id, name: folders.name })
+    .select({
+      id: folders.id,
+      name: folders.name,
+      defaultTags: folders.defaultTags,
+    })
     .from(folders)
     .where(
       and(
@@ -358,7 +445,7 @@ export async function getFolderShareData(folderId: string) {
     return null;
   }
 
-  const [collaborators, friends] = await Promise.all([
+  const [collaborators, friends, inheritedTags] = await Promise.all([
     db
       .select({
         userId: users.id,
@@ -371,14 +458,61 @@ export async function getFolderShareData(folderId: string) {
       .where(eq(folderPermissions.folderId, parsed.data))
       .orderBy(users.email),
     listFriendsForUser(user.id),
+    resolveInheritedTagsForFolder(parsed.data),
   ]);
 
   return {
     folderId: folder.id,
     folderName: folder.name,
+    defaultTags: normalizeTagList(folder.defaultTags),
+    inheritedTags,
     collaborators,
     friends,
   };
+}
+
+/** Live document ids filed directly into any of the given folders. */
+async function listDocumentIdsUnderFolders(folderIds: string[]) {
+  if (folderIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(inArray(documents.folderId, folderIds), isNull(documents.deletedAt)),
+    );
+
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Re-materializes `document_tags` for documents whose folder ancestry just
+ * changed. Inherited tags are resolved at sync time rather than stored on the
+ * document, so any mutation that moves a document between folders — or changes
+ * what a folder contributes — has to replay the sync for everything affected.
+ *
+ * Sequential on purpose: these run inside a server action after the structural
+ * write has already committed, and a folder subtree is small enough that the
+ * ordering costs nothing worth a connection storm.
+ */
+async function resyncDocumentTags(documentIds: string[]) {
+  if (documentIds.length === 0) {
+    return;
+  }
+
+  const rows = await db
+    .select({ id: documents.id, markdown: documents.markdown })
+    .from(documents)
+    .where(inArray(documents.id, documentIds));
+
+  for (const row of rows) {
+    await syncDocumentMetadata({
+      documentId: row.id,
+      markdown: row.markdown,
+    });
+  }
 }
 
 /**

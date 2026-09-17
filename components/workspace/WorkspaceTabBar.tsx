@@ -50,9 +50,17 @@ const iconByType: Record<WorkspacePageType, typeof Home> = {
 export function WorkspaceTabBar({
   activePage,
   initialTabs,
+  folderPathByHref,
 }: {
   activePage: WorkspacePageDescriptor;
   initialTabs?: WorkspaceTab[];
+  /**
+   * Query-free document href -> the display path of the folder holding it.
+   * Derived live from the sidebar tree rather than stored on the tab, because
+   * tabs are persisted in a cookie and a folder can be renamed or moved while
+   * a tab sits open.
+   */
+  folderPathByHref?: Map<string, string>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -198,6 +206,9 @@ export function WorkspaceTabBar({
                 key={tab.href}
                 tab={tab}
                 isActive={tab.href === canonicalActiveHref}
+                folderPath={folderPathByHref?.get(
+                  tab.href.split("?")[0] ?? tab.href,
+                )}
                 justDraggedRef={justDraggedRef}
                 onClose={closeTab}
               />
@@ -219,11 +230,13 @@ export function WorkspaceTabBar({
 function SortableTab({
   tab,
   isActive,
+  folderPath,
   justDraggedRef,
   onClose,
 }: {
   tab: WorkspaceTab;
   isActive: boolean;
+  folderPath?: string;
   justDraggedRef: RefObject<boolean>;
   onClose: (tab: WorkspaceTab) => void;
 }) {
@@ -272,6 +285,9 @@ function SortableTab({
       <Link
         href={tab.href}
         draggable={false}
+        // Two tabs can carry the same title from different folders, so the
+        // hover hint is the full path when there is one.
+        title={folderPath ? `${folderPath}/${tab.title}` : tab.title}
         onClick={(event) => {
           // Swallow the click synthesized right after a drag so it does not
           // navigate to the tab we just dropped.

@@ -16,12 +16,14 @@ import { DocumentArchiveForm } from "@/components/document-archive-form";
 import { DocumentPublishControl } from "@/components/document-publish-control";
 import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { DocumentRestorePoints } from "@/components/document-restore-points";
+import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPanel";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { getFxRateTable } from "@/server/fx-rates";
 import { parseCalcSettings } from "@/lib/calc/settings";
+import { resolveInheritedTagsForDocument } from "@/lib/folder-tags";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
@@ -46,6 +48,7 @@ import {
   restoreDocumentVersionAction,
   unpublishDocumentAction,
 } from "@/server/documents";
+import { getFolderPathForUser } from "@/server/folders";
 import { listFriendsForUser } from "@/server/friends";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
@@ -99,6 +102,8 @@ export default async function DocumentPage({
     calendarExtSetting,
     calcExtSetting,
     editorSetting,
+    folderPath,
+    inheritedTags,
   ] =
     await Promise.all([
       listWikiLinkResolutionsForUser(session.user.id),
@@ -142,6 +147,8 @@ export default async function DocumentPage({
       document.access.canEdit
         ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
         : Promise.resolve(null),
+      getFolderPathForUser(document.folderId),
+      resolveInheritedTagsForDocument(document.id),
     ]);
   const stickersEnabled = stickersExtSetting?.enabled ?? false;
   const calendarEnabled = calendarExtSetting?.enabled ?? false;
@@ -284,6 +291,8 @@ export default async function DocumentPage({
             documentId={document.id}
             title={document.title}
             markdown={markdown}
+            folderPath={folderPath}
+            inheritedTags={inheritedTags}
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
@@ -312,7 +321,8 @@ export default async function DocumentPage({
           />
         ) : (
           <article className="mx-auto grid min-h-full w-full max-w-[56rem] gap-8 px-4 py-10 md:px-8 md:py-14">
-            <div>
+            <div className="grid gap-2">
+              <DocumentFolderPath path={folderPath} />
               <h1 className="text-4xl font-semibold tracking-tight vault-display sm:text-5xl">
                 {document.title}
               </h1>

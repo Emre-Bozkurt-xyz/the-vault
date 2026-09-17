@@ -1,0 +1,1 @@
+ALTER TABLE "folders" ADD COLUMN "default_tags" jsonb DEFAULT '[]'::jsonb NOT NULL;

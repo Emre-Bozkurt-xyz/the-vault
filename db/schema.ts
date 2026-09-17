@@ -179,6 +179,16 @@ export const folders = pgTable(
       onDelete: "cascade",
     }),
     name: text("name").notNull(),
+    // Normalized tag slugs every document inside this folder (subfolders
+    // included) inherits. Stored here rather than as `folder_tags` rows because
+    // these are an authoring default, not a tagging of the folder itself: they
+    // only ever reach the tag graph through the documents they land on, which
+    // `syncDocumentMetadata` writes into `document_tags` alongside the
+    // document's own frontmatter tags.
+    defaultTags: jsonb("default_tags")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

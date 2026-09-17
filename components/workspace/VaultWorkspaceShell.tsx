@@ -56,6 +56,7 @@ type VaultWorkspaceShellProps = {
   defaultPanelMode?: WorkspacePanelMode;
   initialLayout?: Partial<WorkspaceLayoutState>;
   initialTabs?: WorkspaceTab[];
+  folderPathByHref?: Map<string, string>;
   contentClassName?: string;
   children: ReactNode;
   rightPanel?: ReactNode;
@@ -73,6 +74,7 @@ export function VaultWorkspaceShell({
   defaultPanelMode = "files",
   initialLayout,
   initialTabs,
+  folderPathByHref,
   contentClassName,
   children,
   rightPanel,
@@ -240,7 +242,11 @@ export function VaultWorkspaceShell({
       ) : null}
 
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <WorkspaceTabBar activePage={activePage} initialTabs={initialTabs} />
+        <WorkspaceTabBar
+          activePage={activePage}
+          initialTabs={initialTabs}
+          folderPathByHref={folderPathByHref}
+        />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
