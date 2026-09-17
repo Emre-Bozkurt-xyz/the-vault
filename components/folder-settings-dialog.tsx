@@ -174,15 +174,7 @@ export function FolderSettingsDialog({
           {section === "tags" ? (
             <section>
               <h3 className="text-sm font-semibold">Default tags</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Every document in this folder picks these up for search and the
-                gallery. They are not written into the documents themselves, so
-                authors see them in Properties but cannot edit or remove them
-                from a single document — move the document out of the folder
-                instead.
-              </p>
-
-              <div className="mt-4 grid gap-1.5">
+              <div className="mt-3 grid gap-1.5">
                 <TagAutocompleteInput
                   value={tagDraft}
                   onChange={setTagDraft}
@@ -198,9 +190,6 @@ export function FolderSettingsDialog({
 
               <div className="mt-6 border-t border-border/60 pt-5">
                 <h3 className="text-sm font-semibold">Inherited from above</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Set on a parent folder. Edit them where they are defined.
-                </p>
                 <div className="mt-3">
                   {!isLoaded ? (
                     <p className="text-sm text-muted-foreground">Loading…</p>
