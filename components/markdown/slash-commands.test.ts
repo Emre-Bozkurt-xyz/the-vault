@@ -9,6 +9,7 @@ import { localExtensionRegistry } from "@/lib/extensions/catalog";
 import {
   createDirectiveCompletionSource,
   createSlashCommandCompletionSource,
+  toExtensionSlashCommands,
   type ExtensionSlashCommand,
 } from "./slash-commands";
 
@@ -457,5 +458,64 @@ describe("directive completion source", () => {
     // Then inserts the *same* markdown `/calcblock` would, cursor on the middle
     // line, ready for the first binding.
     expect(inserted).toEqual([{ text: ":::calc\n\n:::", offset: 8 }]);
+  });
+});
+
+/**
+ * The path from the registry to the menu. `/def` was missing from the menu even
+ * with Dictionary enabled, because the editor's own copy of this mapping listed
+ * contribution fields by hand and never carried `run` — so the item reached the
+ * menu with neither `insert` nor `run` and was dropped as unfulfillable. These
+ * go through the real registry rather than hand-built contributions, which is
+ * the step the other tests skip.
+ */
+describe("registry contributions reaching the menu", () => {
+  const contributions = localExtensionRegistry.getSlashCommandContributions();
+
+  it("carries a run contribution through the mapping intact", () => {
+    const commands = toExtensionSlashCommands(contributions, ["vault.dictionary"]);
+    const define = commands.find(
+      (command) => command.id === "vault.dictionary.slash-define",
+    );
+
+    expect(define?.run).toEqual({ command: "vault.dictionary.newDefinition" });
+    expect(define?.label).toBe("def");
+  });
+
+  it("carries an insert contribution through unchanged", () => {
+    const commands = toExtensionSlashCommands(contributions, ["vault.calendar"]);
+    const calendar = commands.find(
+      (command) => command.id === "vault.calendar.slash",
+    );
+
+    expect(typeof calendar?.insert?.markdown).toBe("function");
+    expect(calendar?.directive).toBe("calendar");
+  });
+
+  it("keeps only the enabled extensions' items", () => {
+    const commands = toExtensionSlashCommands(contributions, ["vault.dictionary"]);
+
+    expect(commands.every((command) => command.id.startsWith("vault.dictionary"))).toBe(
+      true,
+    );
+    expect(toExtensionSlashCommands(contributions, [])).toEqual([]);
+  });
+
+  it("shows /def in the menu when the host provides the capability", () => {
+    const source = createSlashCommandCompletionSource({
+      applyFormat: () => {},
+      insertBlock: () => {},
+      insertInline: () => {},
+      hostCommands: {
+        "vault.dictionary.newDefinition": () => {},
+        "vault.dictionary.insertReference": () => {},
+      },
+      extensionCommands: toExtensionSlashCommands(contributions, ["vault.dictionary"]),
+    });
+
+    expect(displayLabels(runSourceAt("/def‸", source))).toContain("Define a term");
+    expect(displayLabels(runSourceAt("/term‸", source))).toContain(
+      "Reference a definition",
+    );
   });
 });

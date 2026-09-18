@@ -86,6 +86,7 @@ import {
 import {
   createDirectiveCompletionSource,
   createSlashCommandCompletionSource,
+  toExtensionSlashCommands,
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
@@ -419,23 +420,14 @@ export function MarkdownEditor({
   const dictionaryEnabled = (enabledExtensionIds ?? []).includes(
     "vault.dictionary",
   );
-  const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(() => {
-    const enabled = new Set(
-      enabledExtensionKey ? enabledExtensionKey.split("|") : [],
-    );
-    return localExtensionRegistry
-      .getSlashCommandContributions()
-      .filter((contribution) => enabled.has(contribution.sourceExtensionId))
-      .map((contribution) => ({
-        id: contribution.id,
-        label: contribution.label,
-        title: contribution.title,
-        section: contribution.section ?? contribution.sourceExtensionName,
-        keywords: contribution.keywords,
-        directive: contribution.directive,
-        insert: contribution.insert,
-      }));
-  }, [enabledExtensionKey]);
+  const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
+    () =>
+      toExtensionSlashCommands(
+        localExtensionRegistry.getSlashCommandContributions(),
+        enabledExtensionKey ? enabledExtensionKey.split("|") : [],
+      ),
+    [enabledExtensionKey],
+  );
   const { bindings: editorBindings, editorShortcutsEnabled } = useKeybindings();
   const wikiLinkMapStore = useMemo(
     () => createWikiLinkMapStore(wikiLinks ?? {}),

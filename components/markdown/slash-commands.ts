@@ -9,6 +9,7 @@ import { EditorSelection, type EditorState } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
 
 import { isInsideCalcBlock } from "@/lib/calc/scan";
+import type { SlashCommandContribution } from "@/lib/extensions/types";
 
 import { getFrontmatterEndLine, isInsideCode } from "./completion-context";
 import { type MarkdownFormat } from "./MarkdownToolbar";
@@ -266,6 +267,43 @@ const SLASH_ITEMS: SlashItem[] = [
     run: (view) => insertWikiLinkTrigger(view),
   },
 ];
+
+/**
+ * Flattens the registry's contributions into the shape the menus consume,
+ * keeping only the enabled extensions'.
+ *
+ * Lives here rather than in the editor because it is the one place every field
+ * of a contribution has to be carried across: `/def` was silently missing from
+ * the menu for exactly that reason — the editor's own copy of this mapping
+ * listed the fields by hand and never copied `run`, so the item arrived with
+ * nothing to do and was filtered out.
+ */
+export function toExtensionSlashCommands(
+  contributions: Array<
+    SlashCommandContribution & {
+      sourceExtensionId: string;
+      sourceExtensionName: string;
+    }
+  >,
+  enabledExtensionIds: Iterable<string>,
+): ExtensionSlashCommand[] {
+  const enabled = new Set(enabledExtensionIds);
+
+  return contributions
+    .filter((contribution) => enabled.has(contribution.sourceExtensionId))
+    .map((entry) => {
+      // Spread, so a field added to a contribution reaches the menu without an
+      // edit here — the omission that hid `/def`. Only the registry's own
+      // bookkeeping fields are dropped.
+      const { sourceExtensionId, sourceExtensionName, ...contribution } = entry;
+      void sourceExtensionId;
+
+      return {
+        ...contribution,
+        section: contribution.section ?? sourceExtensionName,
+      };
+    });
+}
 
 /**
  * Options shared by the two menus this module serves. Both draw from one item
