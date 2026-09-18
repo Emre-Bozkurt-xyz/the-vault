@@ -162,10 +162,9 @@ export function SettingsModal({
                   <DialogTitle className="text-xl font-semibold tracking-tight md:text-2xl">
                     {page.label}
                   </DialogTitle>
-                  <DialogDescription
-                    className="truncate"
-                    title={page.description}
-                  >
+                  {/* Wraps: an extension writes its own description, and
+                      clipping it to one line hides the end of the sentence. */}
+                  <DialogDescription className="max-w-3xl text-pretty">
                     {page.description}
                   </DialogDescription>
                 </DialogHeader>

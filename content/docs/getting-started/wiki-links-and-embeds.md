@@ -50,6 +50,16 @@ You can also type a title manually:
 
 Title links resolve only when exactly one readable document has that title. If multiple readable documents share the same title, Vault marks the link as ambiguous. Use autocomplete to insert the canonical `doc:...` form when you want the most reliable link.
 
+### Aliases resolve too
+
+A document's `aliases` property also works as a link target, so `[[idempotent]]` finds a document titled "Idempotence" that lists `idempotent` as an alias. A real title always beats an alias, and two documents claiming the same alias make that link ambiguous — the same rule as two documents sharing a title.
+
+Vault never guesses at word endings: `[[idempotency]]` will not find "Idempotence" unless it is listed as an alias.
+
+## Hovering a link
+
+A link to a document tagged `definition` shows that definition in a small card when you hover it, so you can read a term without leaving the sentence. This needs the Dictionary extension enabled for writing, but the cards appear for every reader. See [[guide:dictionary]].
+
 ## Public documents
 
 Public pages only resolve links that are safe to show publicly.

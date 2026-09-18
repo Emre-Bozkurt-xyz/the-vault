@@ -553,6 +553,18 @@ verification).
 
 ---
 
+## Phase 23 - User Guides for Recent Features
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Guides for the switchable extensions | Done 2026-09-18. New `content/docs/extensions/`: `extensions-and-settings`, `dictionary`, `calc`, `calendar` |
+| [x] | Guide for folders and default tags | Done 2026-09-18. `content/docs/getting-started/folders-and-default-tags.md` |
+| [x] | Cross-references from existing guides | Done 2026-09-18. Aliases-as-link-targets and definition hover previews in `wiki-links-and-embeds`; inherited tags in `properties-tags-and-search` |
+| [x] | No repo-doc references in user-facing text | Done 2026-09-18. Fixed the `vault.dictionary` description; `lib/repo-docs.test.ts` guards it, and §18 records the rule |
+| [ ] | Guide for stickers | Mentioned in the extensions overview only; its UX has not been verified, so it has no guide of its own yet |
+
+---
+
 ## Phase 22 - Settings Pages and Extension Settings
 
 Reference plan: none (grown out of `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md`).
@@ -566,6 +578,7 @@ Reference plan: none (grown out of `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.
 | [x] | Generic extension settings form | Done 2026-09-17. `ExtensionSettingsPage` renders declared fields and saves through `upsertUserExtensionSettingsAction`, which already validated but had no UI. Lowkey styling: no card, hairline rows, muted id/version footer with Reset |
 | [x] | Host-rendered `folder` field type | Done 2026-09-17. Options are the user's own folders; a deleted chosen folder shows as "Unavailable folder" |
 | [x] | Revalidate the layout on extension changes | Done 2026-09-17. Enable/disable, save and reset revalidate `"/"` so the layout-mounted modal gains and loses pages without a reload |
+| [x] | Page descriptions wrap | Done 2026-09-18. They were clipped to one line, so a long description — an extension writes its own — lost its ending |
 | [ ] | Browser pass over the new settings modal | Needs a signed-in browser session; the routes compile and build clean, but no page has been clicked through |
 
 ---

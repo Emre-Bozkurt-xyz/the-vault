@@ -341,7 +341,7 @@ export const localBuiltInExtensions: VaultExtension[] = [
     kind: "built-in",
     category: "editor",
     description:
-      "Define terms as documents and reference them with ordinary [[wiki links]], with a hover preview of the definition. See docs/20_DICTIONARY_EXTENSION_PLAN.md.",
+      "Define terms as documents and reference them with ordinary [[wiki links]]. Hovering a term shows its definition without leaving the page.",
     defaultEnabled: false,
     permissions: ["document:read", "document:write"],
     settings: {

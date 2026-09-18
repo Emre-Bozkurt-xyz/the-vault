@@ -55,6 +55,8 @@ fields, but they are not indexed yet.
 
 Tags are shared by documents and assets.
 
+A document can also inherit tags from the folder it is in. Those are shown in the Properties panel as separate chips with a padlock and cannot be edited there — they belong to the folder. See [[guide:folders-and-default-tags]].
+
 Use spaces between tags:
 
 ```yaml
