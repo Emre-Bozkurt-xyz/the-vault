@@ -566,7 +566,7 @@ Reference plan: none (grown out of `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.
 | [x] | Generic extension settings form | Done 2026-09-17. `ExtensionSettingsPage` renders declared fields and saves through `upsertUserExtensionSettingsAction`, which already validated but had no UI. Lowkey styling: no card, hairline rows, muted id/version footer with Reset |
 | [x] | Host-rendered `folder` field type | Done 2026-09-17. Options are the user's own folders; a deleted chosen folder shows as "Unavailable folder" |
 | [x] | Revalidate the layout on extension changes | Done 2026-09-17. Enable/disable, save and reset revalidate `"/"` so the layout-mounted modal gains and loses pages without a reload |
-| [ ] | Browser pass over the new settings modal | Not done: Docker/Postgres was stopped before it could run |
+| [ ] | Browser pass over the new settings modal | Needs a signed-in browser session; the routes compile and build clean, but no page has been clicked through |
 
 ---
 
@@ -585,7 +585,7 @@ Reference plan: `docs/20_DICTIONARY_EXTENSION_PLAN.md`
 | [x] | Ergonomics B — a way out of the card | Done 2026-09-17. The **Open** footer link the plan called for and slice 2 omitted |
 | [x] | Ergonomics C — define from an unresolved link | Done 2026-09-17. Hovering an unresolved `[[Term]]` in Live mode offers **Define**, prefilled, inserting no second link. Only title keys qualify (`isUndefinedTermKey`), and it follows the extension switch |
 | [x] | Ergonomics D — emphasize first mention only | Done 2026-09-17. A viewer *reading* preference, not a document property. `definitionMentions` threaded like `headingIds` so it spans every Markdown segment; `--quiet` modifier returns weight to inherit |
-| [ ] | Browser pass over slices 2–5 and A–D | Still not done: Docker/Postgres was stopped before it could run |
+| [~] | Verification pass over slices 2–5 and A–D | 2026-09-18: server side done against real Postgres — 6 live cases over `createDefinitionForUser` (summary YAML escaping, tagging, folder resolution, reuse without overwrite, fallback from a foreign folder), `listDefinitionsForUser` and the real `listWikiLinkResolutionsForUser`; plus the public read surface end-to-end. **Interactive surfaces still unverified** (settings pages, `/def` dialog, Define-from-unresolved card, card footer, first-mention emphasis): they need a signed-in browser session |
 
 Exit criteria:
 
