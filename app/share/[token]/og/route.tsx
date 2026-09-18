@@ -2,7 +2,9 @@ import { ImageResponse } from "next/og";
 import { notFound } from "next/navigation";
 
 import { createMarkdownExcerpt } from "@/lib/markdown";
-import { getDocumentByShareLink } from "@/server/documents";
+import {
+  getDocumentByShareLink,
+} from "@/server/documents-data";
 
 export const runtime = "nodejs";
 

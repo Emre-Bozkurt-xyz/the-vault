@@ -7,8 +7,11 @@ import { createMarkdownExcerpt } from "@/lib/markdown";
 import {
   listDocumentsForUser,
   listSharedDocumentsForUser,
-} from "@/server/documents";
-import { listFoldersForUser, listSharedFoldersForUser } from "@/server/folders";
+} from "@/server/documents-data";
+import {
+  listFoldersForUser,
+  listSharedFoldersForUser,
+} from "@/server/folders-data";
 
 /**
  * Backing query for `GET /api/embed/documents` — the clone picker's source list

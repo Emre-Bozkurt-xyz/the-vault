@@ -3,13 +3,15 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { extractMarkdownHeadingOptions } from "@/lib/wiki-links";
 import {
+  listTagsForDocumentIds,
+} from "@/server/documents";
+import {
   getDocumentForUser,
   getDocumentVersionForUser,
   listDocumentVersionsForUser,
   listDocumentsForUser,
   listSharedDocumentsForUser,
-  listTagsForDocumentIds,
-} from "@/server/documents";
+} from "@/server/documents-data";
 import { listAssetsForUser } from "@/server/assets";
 import { normalizeTagList } from "@/lib/content-metadata";
 import { resolveMcpUserId } from "@/lib/mcp/user";

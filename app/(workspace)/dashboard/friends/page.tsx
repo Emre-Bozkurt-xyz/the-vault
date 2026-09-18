@@ -9,11 +9,13 @@ import { UserSearchField } from "@/components/user-search-field";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import {
   acceptFriendRequestAction,
-  listFriendPageData,
   rejectFriendRequestAction,
   removeFriendAction,
   sendFriendRequestAction,
 } from "@/server/friends";
+import {
+  listFriendPageData,
+} from "@/server/friends-data";
 import { requireCompletedProfile } from "@/server/profile";
 
 export default async function FriendsPage() {

@@ -7,10 +7,12 @@ import {
 import { parseDocumentMetadata } from "@/lib/content-metadata";
 import { listAssetsForUser } from "@/server/assets";
 import {
-  listDocumentsForUser,
   listPublicDocuments,
-  listSharedDocumentsForUser,
 } from "@/server/documents";
+import {
+  listDocumentsForUser,
+  listSharedDocumentsForUser,
+} from "@/server/documents-data";
 import { listPublishedOfficialDocs } from "@/server/official-docs";
 import { requireActiveUser } from "@/server/authz";
 

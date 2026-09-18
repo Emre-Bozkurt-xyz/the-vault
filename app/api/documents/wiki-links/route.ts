@@ -4,8 +4,10 @@ import { auth } from "@/auth";
 import { verifyEmbedSessionToken } from "@/lib/embed-session-token";
 import {
   listPublicWikiLinkResolutions,
-  listWikiLinkResolutionsForUser,
 } from "@/server/documents";
+import {
+  listWikiLinkResolutionsForUser,
+} from "@/server/documents-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 
 export async function GET(request: Request) {

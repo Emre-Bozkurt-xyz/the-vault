@@ -8,7 +8,7 @@ import {
   restoreArchivedDocumentForUser,
   restoreDocumentVersionForUser,
   setDocumentTitleForUser,
-} from "@/server/documents";
+} from "@/server/documents-data";
 import { getAssetForUser, linkAssetToDocument } from "@/server/assets";
 import {
   normalizeTagList,

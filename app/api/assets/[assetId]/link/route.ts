@@ -5,7 +5,9 @@ import {
   linkExistingAssetToDocument,
   requireAssetUserFromRequest,
 } from "@/server/assets";
-import { canEditDocumentWithOptionalShareLink } from "@/server/documents";
+import {
+  canEditDocumentWithOptionalShareLink,
+} from "@/server/documents-data";
 
 export const runtime = "nodejs";
 

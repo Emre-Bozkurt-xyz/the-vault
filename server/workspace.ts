@@ -5,17 +5,19 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import {
+  listPublicDocuments,
+} from "@/server/documents";
+import {
   listArchivedDocumentsForUser,
   listDocumentsForUser,
   listDocumentsInOwnedFoldersFromOthers,
-  listPublicDocuments,
   listSharedDocumentsForUser,
   purgeExpiredArchivedDocumentsForUser,
-} from "@/server/documents";
+} from "@/server/documents-data";
 import {
   listFoldersForUser,
   listSharedFoldersForUser,
-} from "@/server/folders";
+} from "@/server/folders-data";
 import { requireCompletedProfile } from "@/server/profile";
 import { listPublishedOfficialDocs } from "@/server/official-docs";
 import { listServiceGroupsForUser } from "@/server/services";

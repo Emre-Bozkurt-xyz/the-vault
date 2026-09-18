@@ -12,8 +12,10 @@ import { listAssetResolutionsForDocument } from "@/server/assets";
 import { isUserActiveById } from "@/server/authz";
 import {
   listPublicWikiLinkResolutions,
-  listWikiLinkResolutionsForUser,
 } from "@/server/documents";
+import {
+  listWikiLinkResolutionsForUser,
+} from "@/server/documents-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { consumeEmbedBootToken } from "@/server/embed";
 

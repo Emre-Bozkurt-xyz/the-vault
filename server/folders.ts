@@ -1,6 +1,13 @@
 "use server";
 
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -13,7 +20,13 @@ import { resolveInheritedTagsForFolder } from "@/lib/folder-tags";
 import { canEditDocument, canEditFolderContents } from "@/lib/permissions";
 import { requireActiveUser } from "@/server/authz";
 import { syncDocumentMetadata } from "@/server/content-metadata";
-import { listFriendsForUser } from "@/server/friends";
+import {
+  listFriendsForUser,
+} from "@/server/friends-data";
+import {
+  listFoldersForUser,
+  listSharedFoldersForUser,
+} from "@/server/folders-data";
 
 const folderIdSchema = z.string().uuid();
 const folderNameSchema = z.string().trim().min(1, "Name is required").max(120);
@@ -47,72 +60,12 @@ function revalidateWorkspace() {
   revalidatePath("/", "layout");
 }
 
-export async function listFoldersForUser(userId: string) {
-  return db
-    .select({
-      id: folders.id,
-      name: folders.name,
-      parentId: folders.parentId,
-      sortOrder: folders.sortOrder,
-    })
-    .from(folders)
-    .where(and(eq(folders.ownerId, userId), isNull(folders.deletedAt)))
-    .orderBy(asc(folders.sortOrder), asc(folders.name));
-}
-
 /**
  * Folders a user can reach through a folder share: every folder directly shared
  * with them plus all descendants, annotated with the folder owner. The client
  * renders these as a navigable read-only tree under "Shared with me", treating a
  * folder whose parent is not itself accessible as a top-level entry.
  */
-export async function listSharedFoldersForUser(userId: string) {
-  const rows = await db.execute<{
-    id: string;
-    name: string;
-    parentId: string | null;
-    ownerId: string;
-    ownerName: string | null;
-    ownerUsername: string | null;
-    rank: number;
-  }>(sql`
-    with recursive accessible as (
-      select
-        f.id, f.parent_id, f.name, f.owner_id,
-        case when fp.role = 'editor' then 2 else 1 end as rank
-      from ${folders} f
-      join ${folderPermissions} fp
-        on fp.folder_id = f.id and fp.user_id = ${userId}
-      where f.deleted_at is null
-      union all
-      select c.id, c.parent_id, c.name, c.owner_id, a.rank
-      from ${folders} c
-      join accessible a on c.parent_id = a.id
-      where c.deleted_at is null
-    )
-    select
-      a.id as "id",
-      a.name as "name",
-      a.parent_id as "parentId",
-      a.owner_id as "ownerId",
-      u.name as "ownerName",
-      u.username as "ownerUsername",
-      max(a.rank) as "rank"
-    from accessible a
-    join ${users} u on u.id = a.owner_id
-    group by a.id, a.name, a.parent_id, a.owner_id, u.name, u.username
-  `);
-
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    parentId: row.parentId,
-    ownerId: row.ownerId,
-    ownerName: row.ownerName,
-    ownerUsername: row.ownerUsername,
-    role: (Number(row.rank) >= 2 ? "editor" : "viewer") as "editor" | "viewer",
-  }));
-}
 
 /**
  * The display path of a folder ("Work/Specs"), for the editor breadcrumb and the

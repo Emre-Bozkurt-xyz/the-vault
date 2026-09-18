@@ -30,7 +30,9 @@ import {
   createDefinitionForUser,
   listDefinitionsForUser,
 } from "@/server/definitions-data";
-import { getDocumentForUser } from "@/server/documents";
+import {
+  getDocumentForUser,
+} from "@/server/documents-data";
 import { getFxRateTable } from "@/server/fx-rates";
 import {
   deleteDocumentExtensionStateForUser,

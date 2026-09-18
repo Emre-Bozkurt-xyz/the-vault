@@ -15,9 +15,11 @@ import { createMarkdownExcerpt } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
-  getDocumentByShareLink,
   listPublicWikiLinkResolutions,
 } from "@/server/documents";
+import {
+  getDocumentByShareLink,
+} from "@/server/documents-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import {
   getActiveSnippetCssForDocument,

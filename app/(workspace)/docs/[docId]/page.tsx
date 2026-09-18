@@ -40,19 +40,23 @@ import {
 } from "@/server/assets";
 import {
   createManualDocumentVersionAction,
+  listPublicWikiLinkResolutions,
+  publishDocumentAction,
+  restoreDocumentVersionAction,
+  unpublishDocumentAction,
+} from "@/server/documents";
+import {
   getActiveDocumentShareLinkForUser,
   getDocumentForUserWithOptionalShareLink,
   listDocumentCollaborators,
   listDocumentFolderCollaborators,
   listDocumentVersionsForUser,
-  listPublicWikiLinkResolutions,
   listWikiLinkResolutionsForUser,
-  publishDocumentAction,
-  restoreDocumentVersionAction,
-  unpublishDocumentAction,
-} from "@/server/documents";
+} from "@/server/documents-data";
 import { getFolderPathForUser } from "@/server/folders";
-import { listFriendsForUser } from "@/server/friends";
+import {
+  listFriendsForUser,
+} from "@/server/friends-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
 import { getUserExtensionSetting, getUserSetting } from "@/server/user-settings";

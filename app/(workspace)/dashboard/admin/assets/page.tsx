@@ -22,13 +22,15 @@ import { cn } from "@/lib/utils";
 import {
   deleteAssetAsAdminAction,
   getAssetStorageOverview,
-  getUserStorageForAdmin,
-  listAssetsForUserAdmin,
   listUserStorageForAdmin,
   recalcUserStorageAction,
   updateUserQuotaAction,
   type AdminAssetItem,
 } from "@/server/assets-admin";
+import {
+  getUserStorageForAdmin,
+  listAssetsForUserAdmin,
+} from "@/server/assets-admin-data";
 import { requireAdmin } from "@/server/authz";
 
 const MB = 1024 * 1024;

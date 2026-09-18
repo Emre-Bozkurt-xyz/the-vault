@@ -12,8 +12,10 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { listAssetResolutionsForDocument } from "@/server/assets";
 import {
   listPublicWikiLinkResolutions,
-  listWikiLinkResolutionsForUser,
 } from "@/server/documents";
+import {
+  listWikiLinkResolutionsForUser,
+} from "@/server/documents-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 
 // Den Phase 3 (docs/DEN_EMBED_BRIDGE.md §B.4). Contract (§4):
