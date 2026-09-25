@@ -213,6 +213,13 @@ export function WorkspaceTabBar({
   return (
     <div className="flex h-10 shrink-0 min-w-0 items-end overflow-x-auto border-b border-border/70 bg-background/95">
       <DndContext
+        // Without an explicit id, dnd-kit derives `aria-describedby` from a
+        // module-level counter (`useUniqueId`, not React's `useId`). That
+        // counter keeps climbing across renders in the server process while it
+        // restarts at 0 in the browser, so every SortableTab hydrated with a
+        // mismatched attribute and React logged it on every page load. Any
+        // stable string fixes it: `useUniqueId` returns the value it is given.
+        id="workspace-tab-bar"
         sensors={sensors}
         collisionDetection={closestCenter}
         modifiers={[restrictToHorizontalAxis]}
