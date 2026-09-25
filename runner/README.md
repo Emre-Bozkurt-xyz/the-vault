@@ -154,10 +154,23 @@ be given the Docker socket.
 
 ```bash
 # On the mini-PC, from the repo:
+./runner/proof.sh build                               # the worker runs these images
 export CODE_RUNNER_URL=http://127.0.0.1:18210        # vault-web's local port
 export CODE_RUNNER_TOKEN=...                          # same value as Vault's
 node runner/worker.mjs
 ```
+
+By default the worker advertises all six profiles (`python-3.12`, `node-22`,
+`java-21`, `ghc-9.6`, `gcc-14-c`, `gcc-14-cpp`), so all five images must exist
+or those jobs fail as infrastructure errors. To run without one — say, to skip
+the 3 GB Haskell image — narrow it:
+`CODE_RUNNER_PROFILES=python-3.12,node-22,java-21,gcc-14-c,gcc-14-cpp`. A job for
+a profile no runner advertises waits in the queue and expires after 5 minutes.
+
+A quick per-language check once it is up: a block that reads a line of stdin
+and prints it (use **Input**), a deliberate compile error, a non-zero exit,
+**Format** on badly spaced code, and an infinite loop, which must say "Timed
+out". Java needs `public class Main`.
 
 And in Vault's `.env.production`:
 

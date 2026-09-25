@@ -37,10 +37,32 @@ export type RuntimeProfile = {
 };
 
 /**
- * Slice 4 wires the two interpreted languages. The compiled profiles were
- * proven in slice 3 (plan §6.1) and are added in slice 5 — they are absent
- * here rather than present-and-disabled so that an unfinished profile cannot
- * be selected by accident.
+ * google-java-format reflects into javac internals, and these exports are its
+ * documented requirement on modern JDKs. The image carries the same list as
+ * `$GJF_CMD` for the slice 3 proof; it is spelled out here because the worker
+ * passes argv without a shell, so an environment variable would never expand.
+ */
+const GJF_ARGV = [
+  "java",
+  "--add-exports", "jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+  "--add-exports", "jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
+  "--add-exports", "jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED",
+  "--add-exports", "jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
+  "--add-exports", "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+  "-jar", "/opt/google-java-format.jar",
+] as const;
+
+/**
+ * Every language proven in slice 3 (plan §6.1), minus C#, which was dropped.
+ *
+ * Formatter settings are pinned here rather than discovered (plan §5): Ruff
+ * runs `--isolated` and clang-format gets an explicit style, so neither goes
+ * looking for a configuration file. A job's workspace only ever holds the one
+ * source file, but relying on that would make the settings an accident.
+ *
+ * Compilers run with warnings on because the output panel is the only place
+ * an author sees diagnostics, and a successful build that warned is still
+ * worth reading. Nothing is `-Werror`: a warning never blocks a run.
  */
 const PROFILES: readonly RuntimeProfile[] = [
   {
@@ -51,7 +73,7 @@ const PROFILES: readonly RuntimeProfile[] = [
     entrypoint: "main.py",
     compileArgv: null,
     runArgv: ["python3", "main.py"],
-    formatArgv: ["ruff", "format", "main.py"],
+    formatArgv: ["ruff", "format", "--isolated", "--no-cache", "main.py"],
     memoryMb: 512,
     cpus: 1,
     pids: 128,
@@ -74,6 +96,81 @@ const PROFILES: readonly RuntimeProfile[] = [
     cpus: 1,
     pids: 128,
     compileTimeoutMs: null,
+    runTimeoutMs: 5_000,
+    formatTimeoutMs: 10_000,
+  },
+  {
+    id: "java-21",
+    languageId: "java",
+    version: "Java 21 (Temurin)",
+    imageKey: "jvm",
+    // javac requires a public class to live in a file of the same name, so a
+    // block must declare `public class Main`. The error for anything else is
+    // javac's own and says exactly that; no source is rewritten to hide it.
+    entrypoint: "Main.java",
+    compileArgv: ["javac", "-Xlint:all", "-Xmaxerrs", "50", "Main.java"],
+    runArgv: ["java", "-XX:+UseSerialGC", "-Xss8m", "Main"],
+    formatArgv: [...GJF_ARGV, "--replace", "Main.java"],
+    // The JVM sizes its heap from the container limit (a quarter by default),
+    // and javac plus the JIT want far more threads than an interpreter.
+    memoryMb: 1024,
+    cpus: 1,
+    pids: 256,
+    compileTimeoutMs: 30_000,
+    // The run deadline covers sandbox start as well as the program, and JVM
+    // start is the largest fixed cost here: the first run on a cold page cache
+    // measured past 5s locally for a program that takes 0.8s warm.
+    runTimeoutMs: 10_000,
+    formatTimeoutMs: 15_000,
+  },
+  {
+    id: "ghc-9.6",
+    languageId: "haskell",
+    version: "GHC 9.6",
+    imageKey: "haskell",
+    entrypoint: "Main.hs",
+    // -v0 drops "[1 of 2] Compiling Main" chatter; errors are still reported.
+    compileArgv: ["ghc", "-v0", "-O0", "-Wall", "-o", "main", "Main.hs"],
+    runArgv: ["./main"],
+    formatArgv: ["ormolu", "--mode", "inplace", "Main.hs"],
+    memoryMb: 1024,
+    cpus: 1,
+    pids: 256,
+    compileTimeoutMs: 30_000,
+    runTimeoutMs: 5_000,
+    formatTimeoutMs: 10_000,
+  },
+  {
+    id: "gcc-14-c",
+    languageId: "c",
+    version: "GCC 14 (C17)",
+    imageKey: "gcc",
+    entrypoint: "main.c",
+    // The math library is linked after the source, where the linker needs it.
+    compileArgv: ["gcc", "-std=gnu17", "-O0", "-Wall", "-Wextra", "-o", "main", "main.c", "-lm"],
+    runArgv: ["./main"],
+    formatArgv: ["clang-format", "--style=LLVM", "-i", "main.c"],
+    memoryMb: 512,
+    cpus: 1,
+    pids: 128,
+    compileTimeoutMs: 30_000,
+    runTimeoutMs: 5_000,
+    formatTimeoutMs: 10_000,
+  },
+  {
+    id: "gcc-14-cpp",
+    languageId: "cpp",
+    version: "GCC 14 (C++20)",
+    imageKey: "gcc",
+    entrypoint: "main.cpp",
+    compileArgv: ["g++", "-std=gnu++20", "-O0", "-Wall", "-Wextra", "-o", "main", "main.cpp"],
+    runArgv: ["./main"],
+    formatArgv: ["clang-format", "--style=LLVM", "-i", "main.cpp"],
+    // cc1plus on a template-heavy file is the hungriest compile in this set.
+    memoryMb: 1024,
+    cpus: 1,
+    pids: 128,
+    compileTimeoutMs: 30_000,
     runTimeoutMs: 5_000,
     formatTimeoutMs: 10_000,
   },

@@ -1,6 +1,6 @@
 # Code Blocks: Highlighting, Formatting, and Execution
 
-Status as of 2026-09-24:
+Status as of 2026-09-25:
 
 - §4 (highlighting and block controls) and §5's browser half are **implemented
   and browser-verified**, plus a fence language picker that is not in the
@@ -13,8 +13,12 @@ Status as of 2026-09-24:
   the `/api/code/*` routes, and `runner/worker.mjs`. Python and JavaScript run end
   to end from the editor. Verified locally under plain `runc`; **not yet deployed
   to the mini-PC or run under gVisor.**
-- Still proposal only: Java/Haskell/C/C++ profiles, the native formatters in the
-  editor, a stdin field, multiple workers, and the spare-sandbox and compilation
+- **Slice 5 is implemented** (2026-09-25): Java, Haskell, C and C++ profiles,
+  the native formatters behind **Format**, and a private stdin box. Also
+  verified only locally under `runc`. One departure from §8: Java runs with a
+  10s limit, not 5s, because the deadline includes sandbox start and a cold JVM
+  exceeded 5s.
+- Still proposal only: multiple workers, and the spare-sandbox and compilation
   cache optimizations in §9.
 
 Tracked as Phase 24 (plan numbers and tracker phase numbers differ); see

@@ -1,4 +1,4 @@
-import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
+import { Facet, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -8,6 +8,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
+import { formatJobOutcome } from "@/lib/code/jobs";
 import { resolveCodeLanguage } from "@/lib/code/languages";
 import {
   codeJobStateMessage,
@@ -40,6 +41,7 @@ export type CodeRun = {
   pos: number;
   /** Exactly what was submitted, for the stale check. */
   source: string;
+  stdin: string;
   jobId: string | null;
   state: RunState;
   result: CodeJobResult | null;
@@ -49,11 +51,29 @@ export type CodeRun = {
 
 export type CodeCapabilities = {
   enabled: boolean;
-  languages: { id: string; label: string; version: string; canRun: boolean }[];
+  languages: { id: string; label: string; version: string; canRun: boolean; canFormatOnRunner: boolean }[];
+};
+
+/**
+ * Standard input for one fence (plan §4.5). Like a run, it belongs to the
+ * author's session rather than to the document: it is anchored to the fence's
+ * start and mapped through edits, and it never enters Markdown, Yjs or the
+ * collaborator's view. An entry existing is what "the input box is open" means.
+ */
+export type CodeInput = {
+  id: string;
+  pos: number;
+  text: string;
 };
 
 const runEffect = StateEffect.define<{ upsert: CodeRun } | { remove: string }>();
 const capabilitiesEffect = StateEffect.define<CodeCapabilities>();
+const inputEffect = StateEffect.define<
+  { open: CodeInput } | { text: { id: string; text: string } } | { remove: string }
+>();
+
+/** The document a run is submitted against. Set once per editor. */
+const codeDocumentId = Facet.define<string, string>({ combine: (values) => values[0] ?? "" });
 
 export function isActiveRun(run: CodeRun): boolean {
   return run.state === "submitting" || (run.state !== "rejected" && !isTerminalCodeJobState(run.state));
@@ -90,8 +110,50 @@ export const codeCapabilitiesField = StateField.define<CodeCapabilities | null>(
   },
 });
 
+export const codeInputsField = StateField.define<readonly CodeInput[]>({
+  create: () => [],
+  update(inputs, tr) {
+    let next = inputs;
+    if (tr.docChanged) next = next.map((input) => ({ ...input, pos: tr.changes.mapPos(input.pos, 1) }));
+    for (const effect of tr.effects) {
+      if (!effect.is(inputEffect)) continue;
+      const value = effect.value;
+      if ("remove" in value) {
+        next = next.filter((input) => input.id !== value.remove);
+      } else if ("open" in value) {
+        next = [...next.filter((input) => input.pos !== value.open.pos), value.open];
+      } else {
+        // By id, not position: the textarea that sent this was created against
+        // an older state, and its fence may have moved since.
+        next = next.map((input) => (input.id === value.text.id ? { ...input, text: value.text.text } : input));
+      }
+    }
+    return next;
+  },
+});
+
 export function runForFence(state: EditorState, fence: CodeFence): CodeRun | undefined {
   return state.field(codeRunsField, false)?.find((run) => run.pos === fence.from);
+}
+
+export function inputForFence(state: EditorState, fence: CodeFence): CodeInput | undefined {
+  return state.field(codeInputsField, false)?.find((input) => input.pos === fence.from);
+}
+
+/** Open the stdin box under a fence and focus it, or close it and discard its text. */
+export function toggleCodeInput(view: EditorView, fence: CodeFence): void {
+  const existing = inputForFence(view.state, fence);
+  if (existing) {
+    view.dispatch({ effects: inputEffect.of({ remove: existing.id }) });
+    view.focus();
+    return;
+  }
+  const id = crypto.randomUUID();
+  view.dispatch({ effects: inputEffect.of({ open: { id, pos: fence.from, text: "" } }) });
+  // The widget is drawn on the next frame; focus it once it exists.
+  requestAnimationFrame(() => {
+    view.dom.querySelector<HTMLTextAreaElement>(`[data-code-input="${id}"] textarea`)?.focus();
+  });
 }
 
 /** Why Run is unavailable for this fence, or null when it can run. */
@@ -107,10 +169,17 @@ export function runUnavailableReason(state: EditorState, fence: CodeFence): stri
   return null;
 }
 
-/** True when the set of active runs differs — the only change the toolbar cares about. */
-export function activeRunsChanged(before: EditorState, after: EditorState): boolean {
-  const key = (state: EditorState) =>
-    (state.field(codeRunsField, false) ?? []).filter(isActiveRun).map((run) => run.pos).join(",");
+/**
+ * True when something the toolbar draws has changed: which blocks are running,
+ * which have an input box open, or what this user can run. Deliberately blind
+ * to run progress and to input text, both of which change several times a
+ * second and would otherwise remount the toolbar under the pointer.
+ */
+export function codeToolsStateChanged(before: EditorState, after: EditorState): boolean {
+  const key = (state: EditorState) => [
+    (state.field(codeRunsField, false) ?? []).filter(isActiveRun).map((run) => run.pos).join(","),
+    (state.field(codeInputsField, false) ?? []).map((input) => input.pos).join(","),
+  ].join("|");
   return key(before) !== key(after)
     || before.field(codeCapabilitiesField, false) !== after.field(codeCapabilitiesField, false);
 }
@@ -119,11 +188,14 @@ export function activeRunsChanged(before: EditorState, after: EditorState): bool
 // Network. Called from the toolbar with the view it belongs to.
 // ---------------------------------------------------------------------------
 
-export async function startCodeRun(view: EditorView, documentId: string, fence: CodeFence): Promise<void> {
+export async function startCodeRun(view: EditorView, fence: CodeFence): Promise<void> {
+  const documentId = view.state.facet(codeDocumentId);
   const run: CodeRun = {
     id: crypto.randomUUID(),
     pos: fence.from,
     source: fence.source,
+    // An input box that is not open means no input, not the last text it held.
+    stdin: inputForFence(view.state, fence)?.text ?? "",
     jobId: null,
     state: "submitting",
     result: null,
@@ -147,7 +219,7 @@ export async function startCodeRun(view: EditorView, documentId: string, fence: 
         operation: "run",
         language: fence.info,
         source: fence.source,
-        stdin: "",
+        stdin: run.stdin,
         requestId: run.id,
       }),
     });
@@ -159,6 +231,67 @@ export async function startCodeRun(view: EditorView, documentId: string, fence: 
     update({ jobId: body.id, state: "queued" });
   } catch {
     update({ state: "rejected", error: "Could not reach Vault. Check your connection and try again." });
+  }
+}
+
+const delay = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(resolve, ms);
+  signal.addEventListener("abort", () => {
+    clearTimeout(timer);
+    reject(signal.reason);
+  }, { once: true });
+});
+
+/**
+ * Format a block with its native formatter on the runner (plan §5): Ruff,
+ * google-java-format, Ormolu or clang-format. Same job queue as Run, with
+ * `operation: "format"`; a finished job's stdout is the formatted source.
+ *
+ * Resolves with that source, or rejects with a message fit for the toolbar.
+ * The caller revalidates it against the live document before applying it,
+ * exactly as it does for the browser formatter. Aborting cancels the job, so
+ * a toolbar that goes away does not leave a formatter running for nobody.
+ */
+export async function formatCodeOnRunner(view: EditorView, fence: CodeFence, signal: AbortSignal): Promise<string> {
+  const response = await fetch("/api/code/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: view.state.facet(codeDocumentId),
+      operation: "format",
+      language: fence.info,
+      source: fence.source,
+      stdin: "",
+      requestId: crypto.randomUUID(),
+    }),
+    signal,
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error ?? "Could not start formatting.");
+  const jobId: string = body.id;
+
+  try {
+    for (;;) {
+      await delay(JOB_POLL_INTERVAL_MS, signal);
+      let status;
+      try {
+        const poll = await fetch(`/api/code/jobs/${jobId}`, { signal });
+        if (poll.status === 404) throw new Error("This format request is no longer available.");
+        if (!poll.ok) continue;
+        status = await poll.json();
+      } catch (error) {
+        // A dropped poll is retried; only an abort or a definite answer ends it.
+        if (signal.aborted || (error instanceof Error && !(error instanceof TypeError))) throw error;
+        continue;
+      }
+      if (!isTerminalCodeJobState(status.state)) continue;
+      const outcome = formatJobOutcome(status);
+      if (!outcome.ok) throw new Error(outcome.message);
+      return outcome.formatted;
+    }
+  } catch (error) {
+    if (signal.aborted) void fetch(`/api/code/jobs/${jobId}/cancel`, { method: "POST" }).catch(() => {});
+    throw error;
   }
 }
 
@@ -197,14 +330,18 @@ const runPoller = ViewPlugin.fromClass(class {
 
   update(update: ViewUpdate) {
     if (update.docChanged) {
-      const orphans = update.state.field(codeRunsField)
-        .filter((run) => codeFenceAt(update.state, run.pos + 1)?.from !== run.pos);
-      if (orphans.length) {
-        // A deleted fence takes its run with it — and stops its polling. A view
-        // cannot dispatch from inside an update, so defer by a microtask.
+      const gone = (pos: number) => codeFenceAt(update.state, pos + 1)?.from !== pos;
+      const orphans = update.state.field(codeRunsField).filter((run) => gone(run.pos));
+      const orphanInputs = update.state.field(codeInputsField).filter((input) => gone(input.pos));
+      if (orphans.length || orphanInputs.length) {
+        // A deleted fence takes its run and input with it — and stops its
+        // polling. A view cannot dispatch from inside an update, so defer.
         queueMicrotask(() => {
           if (this.destroyed) return;
-          this.view.dispatch({ effects: orphans.map((run) => runEffect.of({ remove: run.id })) });
+          this.view.dispatch({ effects: [
+            ...orphans.map((run) => runEffect.of({ remove: run.id })),
+            ...orphanInputs.map((input) => inputEffect.of({ remove: input.id })),
+          ] });
           // Removing the run removes its Stop button and its only place to
           // show output, so an in-flight job is cancelled rather than left to
           // burn its sandbox's time for a result nobody can see.
@@ -264,6 +401,91 @@ const runPoller = ViewPlugin.fromClass(class {
 // ---------------------------------------------------------------------------
 // Output panel
 // ---------------------------------------------------------------------------
+
+/**
+ * The stdin box. Equality is by id alone, deliberately: typing updates the
+ * field on every keystroke, and if that produced an unequal widget CodeMirror
+ * would rebuild the DOM and throw the textarea — and its focus and caret —
+ * away mid-word. The textarea is therefore the source of truth while it is
+ * mounted, and the field only mirrors it for Run to read.
+ */
+class InputWidget extends WidgetType {
+  constructor(private input: CodeInput) {
+    super();
+  }
+
+  eq(other: InputWidget) {
+    return other.input.id === this.input.id;
+  }
+
+  toDOM(view: EditorView) {
+    const id = this.input.id;
+    const root = document.createElement("div");
+    root.className = "vault-code-input";
+    root.dataset.codeInput = id;
+
+    const header = document.createElement("div");
+    header.className = "vault-code-input-header";
+    const label = document.createElement("label");
+    label.className = "vault-code-input-label";
+    label.htmlFor = `vault-code-input-${id}`;
+    label.textContent = "Input";
+    const hint = document.createElement("span");
+    hint.className = "vault-code-input-hint";
+    hint.textContent = "Sent to the program as standard input. Not saved in the document.";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "vault-code-run-button";
+    close.textContent = "Remove";
+    close.setAttribute("aria-label", "Remove input");
+    close.addEventListener("click", (event) => {
+      event.preventDefault();
+      view.dispatch({ effects: inputEffect.of({ remove: id }) });
+      view.focus();
+    });
+    header.append(label, hint, close);
+
+    const field = document.createElement("textarea");
+    field.id = `vault-code-input-${id}`;
+    field.className = "vault-code-input-field";
+    field.rows = 3;
+    field.spellcheck = false;
+    field.autocomplete = "off";
+    field.value = this.input.text;
+    field.addEventListener("input", () => {
+      view.dispatch({ effects: inputEffect.of({ text: { id, text: field.value } }) });
+    });
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        view.focus();
+      } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        runFromInput(view, id);
+      }
+    });
+    root.append(header, field);
+    return root;
+  }
+
+  // Keystrokes, clicks and selection inside the textarea belong to it, not to
+  // the editor: without this CodeMirror would treat typing here as document input.
+  ignoreEvent() {
+    return true;
+  }
+}
+
+/** Ctrl/Cmd+Enter in an input box runs its block, subject to the usual checks. */
+function runFromInput(view: EditorView, inputId: string): void {
+  const input = view.state.field(codeInputsField).find((item) => item.id === inputId);
+  if (!input) return;
+  const fence = codeFenceAt(view.state, input.pos + 1);
+  if (!fence || fence.from !== input.pos) return;
+  const existing = runForFence(view.state, fence);
+  if (existing && isActiveRun(existing)) return;
+  if (runUnavailableReason(view.state, fence)) return;
+  void startCodeRun(view, fence);
+}
 
 class RunOutputWidget extends WidgetType {
   constructor(private run: CodeRun, private stale: boolean) {
@@ -330,7 +552,7 @@ class RunOutputWidget extends WidgetType {
     if (this.stale && !isActiveRun(run)) {
       const note = document.createElement("div");
       note.className = "vault-code-run-note";
-      note.textContent = "The code has changed since this ran.";
+      note.textContent = "The code or its input has changed since this ran.";
       root.append(note);
     }
 
@@ -370,27 +592,40 @@ class RunOutputWidget extends WidgetType {
 
 function outputDecorations(state: EditorState): DecorationSet {
   const widgets = [];
+  const inputs = state.field(codeInputsField);
+  // Input first (side 1), output under it (side 2): the order a reader
+  // expects, and the order the program consumed them in.
+  for (const input of inputs) {
+    const fence = codeFenceAt(state, input.pos + 1);
+    if (!fence || fence.from !== input.pos) continue;
+    widgets.push(
+      Decoration.widget({ widget: new InputWidget(input), block: true, side: 1 })
+        .range(state.doc.lineAt(fence.to).to),
+    );
+  }
   for (const run of state.field(codeRunsField)) {
     const fence = codeFenceAt(state, run.pos + 1);
     if (!fence || fence.from !== run.pos) continue;
-    const at = state.doc.lineAt(fence.to).to;
+    const stdin = inputs.find((input) => input.pos === run.pos)?.text ?? "";
     widgets.push(
       Decoration.widget({
-        widget: new RunOutputWidget(run, fence.source !== run.source),
+        widget: new RunOutputWidget(run, fence.source !== run.source || stdin !== run.stdin),
         block: true,
-        side: 1,
-      }).range(at),
+        side: 2,
+      }).range(state.doc.lineAt(fence.to).to),
     );
   }
   return Decoration.set(widgets, true);
 }
 
-export function codeRunExtension(): Extension {
+export function codeRunExtension(documentId: string): Extension {
   return [
+    codeDocumentId.of(documentId),
     codeRunsField,
+    codeInputsField,
     codeCapabilitiesField,
     runPoller,
     // Block widgets must come from state, never from a view plugin.
-    EditorView.decorations.compute([codeRunsField, "doc"], outputDecorations),
+    EditorView.decorations.compute([codeRunsField, codeInputsField, "doc"], outputDecorations),
   ];
 }

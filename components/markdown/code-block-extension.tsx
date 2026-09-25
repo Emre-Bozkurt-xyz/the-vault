@@ -5,7 +5,7 @@ import { classHighlighter } from "@lezer/highlight";
 import { createRoot } from "react-dom/client";
 import { CodeFenceTools } from "./CodeFenceTools";
 import { codeFenceAt } from "./code-fences";
-import { activeRunsChanged, codeRunExtension } from "./code-run";
+import { codeRunExtension, codeToolsStateChanged } from "./code-run";
 
 function codeLineDecorations(view: EditorView) {
   const lines = new Set<number>();
@@ -34,7 +34,7 @@ export function createCodeBlockExtension(onFormatBoundary: () => void, documentI
         dom.className = "vault-code-tooltip";
         dom.setAttribute("aria-label", "Code tools (Alt+F10)");
         const root = createRoot(dom);
-        root.render(<CodeFenceTools view={view} position={selection.head} onFormatBoundary={onFormatBoundary} documentId={documentId} />);
+        root.render(<CodeFenceTools view={view} position={selection.head} onFormatBoundary={onFormatBoundary} />);
         return { dom, destroy() { window.setTimeout(() => root.unmount(), 0); } };
       },
     };
@@ -43,15 +43,15 @@ export function createCodeBlockExtension(onFormatBoundary: () => void, documentI
     create: tooltip,
     update(value, transaction) {
       if (transaction.docChanged || transaction.selection) return tooltip(transaction.state);
-      // Rebuild when Run becomes available or a run starts or ends — but not on
-      // every poll tick, which would remount the toolbar under the cursor
-      // several times a second and swallow clicks aimed at it.
-      return activeRunsChanged(transaction.startState, transaction.state) ? tooltip(transaction.state) : value;
+      // Rebuild when Run becomes available, a run starts or ends, or an input
+      // box opens or closes — but not on every poll tick or input keystroke,
+      // which would remount the toolbar under the cursor and swallow clicks.
+      return codeToolsStateChanged(transaction.startState, transaction.state) ? tooltip(transaction.state) : value;
     },
     provide: (field) => showTooltip.from(field),
   });
   return [
-    codeRunExtension(),
+    codeRunExtension(documentId),
     syntaxHighlighting(classHighlighter),
     ViewPlugin.fromClass(class {
       decorations: DecorationSet;

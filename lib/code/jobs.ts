@@ -94,6 +94,55 @@ export function inertOutput(value: string): string {
   return value.replace(ANSI_ESCAPES, "").replace(CONTROL_CHARS, "");
 }
 
+/**
+ * Whether source can make a runner format round trip intact. Every result
+ * passes through `inertOutput` on the server, so a block containing a
+ * character it strips would come back silently altered — a form feed or a
+ * literal escape inside a string would just vanish. Such a block is never sent
+ * to the runner to be formatted.
+ */
+export function survivesInertOutput(source: string): boolean {
+  return inertOutput(source) === source;
+}
+
+const MAX_FORMAT_MESSAGE = 200;
+
+/**
+ * What a finished format job means for the editor: the text to put back, or
+ * the reason nothing will be put back. Anything short of a clean, complete
+ * result leaves the source untouched (plan §5) — a truncated result applied to
+ * a document would delete the author's code past the cut.
+ */
+export function formatJobOutcome(status: {
+  state: CodeJobState;
+  result: { compilerOutput: string; stdout: string; truncated: boolean } | null;
+}): { ok: true; formatted: string } | { ok: false; message: string } {
+  const result = status.result;
+  if (status.state === "succeeded") {
+    if (!result || result.truncated) return { ok: false, message: "The formatted code was too large to apply." };
+    if (!result.stdout.trim()) return { ok: false, message: "The formatter returned no code, so nothing was changed." };
+    return { ok: true, formatted: result.stdout };
+  }
+  switch (status.state) {
+    case "runtime_error": {
+      // The formatter's first real line is the parse error; the rest is usually
+      // a caret diagram that does not survive being squeezed into a status line.
+      const line = (result?.compilerOutput ?? "").split("\n").map((text) => text.trim()).find(Boolean);
+      if (!line) return { ok: false, message: "The formatter could not read this code." };
+      const clipped = line.length > MAX_FORMAT_MESSAGE ? `${line.slice(0, MAX_FORMAT_MESSAGE - 1)}…` : line;
+      return { ok: false, message: `Could not format: ${clipped}` };
+    }
+    case "timed_out":
+      return { ok: false, message: "Formatting timed out. Nothing was changed." };
+    case "cancelled":
+      return { ok: false, message: "Formatting was cancelled." };
+    case "infrastructure_error":
+      return { ok: false, message: "The runner failed while formatting. Try again." };
+    default:
+      return { ok: false, message: "Could not format this code block." };
+  }
+}
+
 /** Bound and neutralise every output channel together, sharing one byte budget. */
 export function boundOutputs(outputs: {
   compilerOutput: string;

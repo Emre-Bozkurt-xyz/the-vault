@@ -11,7 +11,7 @@
  * Required:  CODE_RUNNER_URL      e.g. http://127.0.0.1:18210
  *            CODE_RUNNER_TOKEN    >= 32 chars, same value Vault has
  * Optional:  CODE_RUNNER_ID       default: hostname
- *            CODE_RUNNER_PROFILES default: python-3.12,node-22
+ *            CODE_RUNNER_PROFILES default: every profile below
  *            CODE_RUNNER_RUNTIME  default: runsc
  *
  * Isolation that slice 3 proved on the mini-PC is reproduced here as fixed
@@ -30,7 +30,10 @@ const exec = promisify(execFile);
 const URL_BASE = (process.env.CODE_RUNNER_URL ?? "").replace(/\/$/, "");
 const TOKEN = process.env.CODE_RUNNER_TOKEN ?? "";
 const RUNNER_ID = (process.env.CODE_RUNNER_ID ?? hostname()).replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 64);
-const PROFILES = (process.env.CODE_RUNNER_PROFILES ?? "python-3.12,node-22").split(",").map((s) => s.trim()).filter(Boolean);
+// Mirrors server/code-runtime.ts. A runner advertises only what it has images
+// for, so narrowing this is how a host without the 3 GB Haskell image opts out.
+const DEFAULT_PROFILES = "python-3.12,node-22,java-21,ghc-9.6,gcc-14-c,gcc-14-cpp";
+const PROFILES = (process.env.CODE_RUNNER_PROFILES ?? DEFAULT_PROFILES).split(",").map((s) => s.trim()).filter(Boolean);
 const RUNTIME = process.env.CODE_RUNNER_RUNTIME ?? "runsc";
 const ALLOW_UNSANDBOXED = process.env.CODE_RUNNER_ALLOW_UNSANDBOXED === "1";
 

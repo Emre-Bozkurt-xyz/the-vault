@@ -51,15 +51,11 @@ export function isInfrastructureFailure(state: CodeJobState): boolean {
 
 /**
  * Languages the runner can execute, keyed by the catalog id in
- * `lib/code/languages.ts`. Slice 4 ships the two interpreted ones; the compiled
- * profiles were proven in slice 3 and arrive in slice 5. C# is deliberately
- * absent — see plan §1.
+ * `lib/code/languages.ts`. Every language proven in slice 3 is here as of
+ * slice 5. C# is deliberately absent — see plan §1.
  */
-export const RUNNABLE_LANGUAGE_IDS: readonly string[] = ["python", "javascript"];
-
-/** Proven in slice 3 but not yet wired: java, haskell, c, cpp. */
-export const PLANNED_RUNNABLE_LANGUAGE_IDS: readonly string[] = [
-  "java", "haskell", "c", "cpp",
+export const RUNNABLE_LANGUAGE_IDS: readonly string[] = [
+  "python", "javascript", "java", "haskell", "c", "cpp",
 ];
 
 export function canRunLanguage(languageId: string | undefined): boolean {

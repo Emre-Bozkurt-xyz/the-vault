@@ -4,18 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { isolateHistory } from "@codemirror/commands";
 import { Transaction } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Copy, Play, WandSparkles } from "lucide-react";
+import { Copy, Play, TextCursorInput, WandSparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { survivesInertOutput } from "@/lib/code/jobs";
 import { codeLanguageHint, codeLanguages, MAX_CODE_FORMAT_LENGTH, resolveCodeLanguage } from "@/lib/code/languages";
 import { formatCodeInWorker } from "@/lib/code/format-client";
 import { codeFenceAt, codeLanguageChange, formattedCodeChange, formattedCodeSelection } from "./code-fences";
-import { codeCapabilitiesField, isActiveRun, runForFence, runUnavailableReason, startCodeRun } from "./code-run";
+import {
+  codeCapabilitiesField,
+  formatCodeOnRunner,
+  inputForFence,
+  isActiveRun,
+  runForFence,
+  runUnavailableReason,
+  startCodeRun,
+  toggleCodeInput,
+} from "./code-run";
 
-export function CodeFenceTools({ view, position, onFormatBoundary, documentId }: {
+export function CodeFenceTools({ view, position, onFormatBoundary }: {
   view: EditorView;
   position: number;
   onFormatBoundary: () => void;
-  documentId: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -24,19 +33,31 @@ export function CodeFenceTools({ view, position, onFormatBoundary, documentId }:
   const fence = codeFenceAt(view.state, position);
   if (!fence) return null;
   const language = resolveCodeLanguage(fence.info);
-  const unavailable = fence.formatError || (!language?.formatter ? "Formatting is not available for this language yet." : fence.source.length > MAX_CODE_FORMAT_LENGTH ? "This code block is too large to format." : "");
+  // Run appears only for a language this user can actually execute, so an
+  // account without execution never sees a button that cannot work.
+  const capabilities = view.state.field(codeCapabilitiesField, false);
+  const offered = capabilities?.enabled
+    ? capabilities.languages.find((item) => item.id === language?.id)
+    : undefined;
+  const runnable = !!offered?.canRun;
+  // Prettier languages format in the browser; the native formatters (Ruff,
+  // google-java-format, Ormolu, clang-format) only exist on the runner, so
+  // they are offered on the same terms as Run.
+  const onRunner = !language?.formatter && !!offered?.canFormatOnRunner;
+  const unavailable = fence.formatError
+    || (!language?.formatter && !onRunner ? "Formatting is not available for this language yet."
+      : fence.source.length > MAX_CODE_FORMAT_LENGTH ? "This code block is too large to format."
+      : onRunner && !fence.closed ? "Close this code fence before formatting it."
+      : onRunner && !survivesInertOutput(fence.source) ? "This code contains control characters, so it cannot be formatted safely."
+      : "");
   // An unrecognized hint stays selectable, so opening the menu on a fence this
   // build has no grammar for cannot silently rewrite the author's own word.
   const hint = codeLanguageHint(fence.info);
   const unknown = !language && hint ? hint : "";
-  // Run appears only for a language this user can actually execute, so an
-  // account without execution never sees a button that cannot work.
-  const capabilities = view.state.field(codeCapabilitiesField, false);
-  const runnable = !!capabilities?.enabled
-    && capabilities.languages.some((item) => item.id === language?.id && item.canRun);
   const existing = runForFence(view.state, fence);
   const running = existing ? isActiveRun(existing) : false;
   const runBlocked = runnable ? runUnavailableReason(view.state, fence) : null;
+  const inputOpen = !!inputForFence(view.state, fence);
   return (
     <div className="vault-code-tools" onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); view.focus(); }
@@ -65,12 +86,22 @@ export function CodeFenceTools({ view, position, onFormatBoundary, documentId }:
           ))}
         </select>
         {runnable ? (
-          <span title={runBlocked ?? (running ? "This block is already running" : "Run this code block")}>
-            <Button type="button" variant="ghost" size="xs" disabled={!!runBlocked || running} onClick={() => {
-              void startCodeRun(view, documentId, fence);
-              view.focus();
-            }}><Play data-icon="inline-start" />{running ? "Running…" : "Run"}</Button>
-          </span>
+          <>
+            <span title={runBlocked ?? (running ? "This block is already running" : "Run this code block")}>
+              <Button type="button" variant="ghost" size="xs" disabled={!!runBlocked || running} onClick={() => {
+                void startCodeRun(view, fence);
+                view.focus();
+              }}><Play data-icon="inline-start" />{running ? "Running…" : "Run"}</Button>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-pressed={inputOpen}
+              title={inputOpen ? "Remove the input box and its text" : "Give this program standard input"}
+              onClick={() => toggleCodeInput(view, fence)}
+            ><TextCursorInput data-icon="inline-start" />Input</Button>
+          </>
         ) : null}
         <Button type="button" variant="ghost" size="xs" onClick={async () => {
           try { await navigator.clipboard.writeText(fence.source); setMessage("Copied"); }
@@ -85,7 +116,9 @@ export function CodeFenceTools({ view, position, onFormatBoundary, documentId }:
             setBusy(true);
             setMessage("");
             try {
-              const formatted = await formatCodeInWorker(fence.source, fence.info, controller.signal);
+              const formatted = onRunner
+                ? await formatCodeOnRunner(view, fence, controller.signal)
+                : await formatCodeInWorker(fence.source, fence.info, controller.signal);
               if (controller.signal.aborted || !view.dom.isConnected) return;
               const changes = formattedCodeChange(snapshot, view.state, fence, formatted);
               // Yjs' UndoManager groups by time; close both sides of this explicit edit.

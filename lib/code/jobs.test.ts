@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   boundOutputs,
+  formatJobOutcome,
   inertOutput,
   isAllowedProgress,
   isValidRequestId,
   isWorkerReportableTerminal,
+  survivesInertOutput,
   truncateUtf8,
   utf8Length,
   validateCodeJobInput,
@@ -24,7 +26,8 @@ describe("validateCodeJobInput", () => {
     [{ requestId: "x".repeat(65) }, "invalid_request_id"],
     [{ operation: "compile" }, "invalid_operation"],
     [{ languageId: "csharp" }, "unsupported_language"],
-    [{ languageId: "java" }, "unsupported_language"],
+    // Highlighted, but there is no runtime for it.
+    [{ languageId: "typescript" }, "unsupported_language"],
     [{ languageId: undefined }, "unsupported_language"],
     [{ source: "   \n  " }, "empty_source"],
     [{ source: "x".repeat(MAX_SOURCE_BYTES + 1) }, "source_too_large"],
@@ -38,6 +41,12 @@ describe("validateCodeJobInput", () => {
     const wide = "€".repeat(Math.floor(MAX_SOURCE_BYTES / 3) + 1);
     expect(wide.length).toBeLessThan(MAX_SOURCE_BYTES);
     expect(validateCodeJobInput({ ...valid, source: wide })).toBe("source_too_large");
+  });
+
+  it("accepts every language slice 3 proved", () => {
+    for (const languageId of ["python", "javascript", "java", "haskell", "c", "cpp"]) {
+      expect(validateCodeJobInput({ ...valid, languageId })).toBeNull();
+    }
   });
 
   it("does not let C# back in through the catalog", () => {
@@ -145,5 +154,51 @@ describe("isWorkerReportableTerminal", () => {
     expect(isWorkerReportableTerminal("running")).toBe(false);
     expect(isWorkerReportableTerminal("queued")).toBe(false);
     expect(isWorkerReportableTerminal("exploded")).toBe(false);
+  });
+});
+
+describe("survivesInertOutput", () => {
+  it("keeps ordinary source, tabs and CRLF line endings", () => {
+    expect(survivesInertOutput("int main() {\r\n\treturn 0;\r\n}\n")).toBe(true);
+  });
+  it("refuses source the output filter would change", () => {
+    expect(survivesInertOutput("x = '\u001b[31m'")).toBe(false);
+    expect(survivesInertOutput("page\fbreak")).toBe(false);
+  });
+});
+
+describe("formatJobOutcome", () => {
+  const result = (patch: Partial<{ compilerOutput: string; stdout: string; truncated: boolean }> = {}) =>
+    ({ compilerOutput: "", stdout: "x = 1\n", truncated: false, ...patch });
+
+  it("returns the formatted source from a clean success", () => {
+    expect(formatJobOutcome({ state: "succeeded", result: result() })).toEqual({ ok: true, formatted: "x = 1\n" });
+  });
+
+  it("never applies a truncated result", () => {
+    expect(formatJobOutcome({ state: "succeeded", result: result({ truncated: true }) }).ok).toBe(false);
+  });
+
+  it("never applies an empty result", () => {
+    expect(formatJobOutcome({ state: "succeeded", result: result({ stdout: "\n" }) }).ok).toBe(false);
+    expect(formatJobOutcome({ state: "succeeded", result: null }).ok).toBe(false);
+  });
+
+  it("surfaces the formatter's first line on a parse error", () => {
+    const outcome = formatJobOutcome({
+      state: "runtime_error",
+      result: result({ stdout: "", compilerOutput: "\nerror: Failed to parse main.py:1:7: Expected ')'\n  |\n1 | print(\n" }),
+    });
+    expect(outcome).toEqual({ ok: false, message: "Could not format: error: Failed to parse main.py:1:7: Expected ')'" });
+  });
+
+  it("clips a long formatter message", () => {
+    const outcome = formatJobOutcome({ state: "runtime_error", result: result({ compilerOutput: "e".repeat(500) }) });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.message.length).toBeLessThan(230);
+  });
+
+  it.each(["timed_out", "cancelled", "infrastructure_error", "resource_limit"] as const)("fails %s without text", (state) => {
+    expect(formatJobOutcome({ state, result: result() }).ok).toBe(false);
   });
 });

@@ -201,8 +201,9 @@ prefix content may introduce; everything else is stripped by
   `.vault-code-language-select`, and `.vault-code-tooltip` — the Live-mode code
   toolbar never renders in a shared or published document, so no snippet should
   target it. The same goes for the run output panel, `.vault-code-run` and its
-  `.vault-code-run-*` children: execution results are private to the user who
-  ran them and never appear in rendered document content at all.
+  `.vault-code-run-*` children, and the stdin box, `.vault-code-input` and its
+  `.vault-code-input-*` children: execution input and results are private to
+  the user who ran them and never appear in rendered document content at all.
 - Extension widgets: `.vault-calendar*`, sticker overlay classes.
 - Design tokens and theme variables in `app/styles/tokens.css` are readable by
   snippets (`var(--muted-foreground)` etc.) but their names are not guaranteed.
