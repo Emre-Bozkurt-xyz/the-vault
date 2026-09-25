@@ -1,4 +1,54 @@
-# Vault Agent Skill
+# Vault Agent Guide
+
+> This file is the operating contract for **every** coding agent in this repo —
+> Codex, Claude Code, or anything else. Codex loads it automatically. Claude Code
+> reaches it via `CLAUDE.md`, which is only a pointer to this file. Keep
+> agent-facing rules here, not in vendor-specific files.
+
+---
+
+## 0. Start here (every session)
+
+**Read, in this order, before any non-trivial answer or edit:**
+
+1. **This file** — the operating rules below.
+2. **`docs/project-knowledge.md`** — the living map of what actually exists right
+   now: file structure, schema, auth, permission helpers, known bugs, and a dated
+   changelog. **Trust it over your memory and over the planning docs** when they
+   disagree.
+3. **The planning doc for the area you are touching** — see the map in §1.
+4. **`.agents/SKILLS.md`** — the skill index. If a row matches your task, read
+   that `SKILL.md` before you start. Agents without a built-in skill loader
+   (Codex included) must open these files manually; nothing does it for you.
+
+**Do not implement from memory or from assumptions about what this app is.** It
+is **Vault**, a self-hosted Next.js collaborative document/note platform — not
+Obsidian, not a generic "vault" app. Confirm specifics in the code and docs
+before acting.
+
+### Verification norms
+
+Run the relevant subset before claiming work is done:
+
+```bash
+npx tsc --noEmit      # types
+npm run lint          # eslint
+npm test              # vitest
+npm run build         # larger changes only
+```
+
+`components/markdown/MarkdownEditor.tsx` carries **pre-existing** react-hooks
+ESLint errors unrelated to most edits. Compare against the baseline before
+attributing a lint failure to your change.
+
+### Before you finish
+
+Per §5/§6, a meaningful change is not done until the docs are honest again:
+update `docs/project-knowledge.md` (dated changelog row + the sections you
+touched) and `docs/01_PROGRESS_TRACKER.md`. The `update-docs` skill in
+`.agents/SKILLS.md` is the cheap procedure for exactly this — use it.
+
+---
 
 ## Purpose
 
@@ -18,20 +68,9 @@ The repo contains planning documentation under:
 docs/
 ```
 
-The most important files are:
-
-```txt
-docs/00_MASTER_PLAN.md
-docs/01_PROGRESS_TRACKER.md
-docs/02_ARCHITECTURE.md
-docs/03_DATA_MODEL.md
-docs/04_AUTH_AND_PERMISSIONS.md
-docs/05_EDITOR_AND_COLLAB.md
-docs/06_DEPLOYMENT.md
-docs/07_MVP_TASKS.md
-docs/08_RESUME_NOTES.md
-docs/project-knowledge.md
-```
+`docs/project-knowledge.md` describes the codebase as it is today; the numbered
+`docs/NN_*.md` files describe where it is going. §1 maps task areas to the file
+you should open first.
 
 Your job is to use these docs as the source of truth while implementing the app.
 
@@ -43,10 +82,11 @@ Your job is to use these docs as the source of truth while implementing the app.
 
 Before making architectural, schema, auth, permission, editor, or deployment changes, inspect the relevant docs.
 
-Use this rough map:
+All paths below are relative to `docs/`. Core map:
 
 | Task Type | Read First |
 |---|---|
+| Current codebase reality | `project-knowledge.md` |
 | Overall direction | `00_MASTER_PLAN.md` |
 | What to work on next | `01_PROGRESS_TRACKER.md`, `07_MVP_TASKS.md` |
 | Infra/deployment | `02_ARCHITECTURE.md`, `06_DEPLOYMENT.md` |
@@ -54,7 +94,32 @@ Use this rough map:
 | Auth/access control | `04_AUTH_AND_PERMISSIONS.md` |
 | Editor/collaboration | `05_EDITOR_AND_COLLAB.md` |
 | README/resume/portfolio polish | `08_RESUME_NOTES.md` |
-| Current codebase reality | `project-knowledge.md` |
+
+Feature-area plans — read the one that matches what you are touching:
+
+| Area | Plan |
+|---|---|
+| Markdown backbone | `09_MARKDOWN_PIVOT_PLAN.md` |
+| Workspace UI/shell | `10_WORKSPACE_UI_REVAMP_PLAN.md` |
+| Assets and library | `11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` |
+| Extension registry | `12_EXTENSION_REGISTRY_PLAN.md` |
+| Settings modal, extension browser | `13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.md` |
+| Metadata, tags, search | `14_METADATA_TAGS_SEARCH_PLAN.md` |
+| MCP integration | `15_MCP_INTEGRATION_PLAN.md` |
+| Agent extension actions | `16_AGENT_EXTENSION_ACTIONS_PLAN.md` |
+| Polish, hardening, CSS snippets | `17_POLISH_AND_CSS_SNIPPETS_PLAN.md` |
+| Editor slash commands | `18_EDITOR_SLASH_COMMANDS_PLAN.md` |
+| Calc extension | `19_CALC_EXTENSION_PLAN.md` |
+| Dictionary extension | `20_DICTIONARY_EXTENSION_PLAN.md` |
+| Definition authoring and previews | `21_DEFINITION_AUTHORING_AND_PREVIEWS_PLAN.md` |
+| Code highlighting, formatting, and execution | `22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` |
+
+Standing contracts, read when the change touches them:
+
+| Contract | Doc |
+|---|---|
+| Styling document content | `CSS_CONTRACT.md` |
+| Den embed bridge | `DEN_EMBED_BRIDGE.md` |
 
 Do not blindly implement from memory if the relevant docs exist.
 
@@ -240,6 +305,25 @@ The deployment path is part of the project’s value. Keep it legible.
 
 ---
 
+### 11. Load the matching skill before specialist work
+
+`.agents/SKILLS.md` indexes the repo's skills — self-contained markdown
+procedures for recurring kinds of work (doc upkeep, shadcn/ui, frontend design,
+GitHub Actions).
+
+- **Claude Code** surfaces these automatically; invoke the named skill.
+- **Codex and every other agent** must open the index and read the matching
+  `SKILL.md` themselves. Nothing loads it for you.
+
+Check the index when you start a unit of work, and again before you finish — the
+`update-docs` skill is the required procedure for §5/§6 doc upkeep. Read only the
+rows that match; loading an irrelevant skill wastes context.
+
+Skill instructions outrank your default approach. They never outrank this file
+or an explicit instruction from the user.
+
+---
+
 ## Implementation Style
 
 ### Prefer boring, reliable code
@@ -329,14 +413,15 @@ Do not waste time on heavy animations before MVP.
 For non-trivial work, follow this loop:
 
 ```txt
-1. Read relevant docs.
-2. Inspect current code.
-3. Compare docs vs current implementation.
-4. Implement the smallest useful slice.
-5. Run/check what is reasonable.
-6. Update progress tracker.
-7. Update project-knowledge.md.
-8. Summarize what changed and what remains.
+1. Read relevant docs (project-knowledge.md, then the plan for the area).
+2. Check .agents/SKILLS.md and load any matching skill.
+3. Inspect current code.
+4. Compare docs vs current implementation.
+5. Implement the smallest useful slice.
+6. Verify: tsc --noEmit, lint, test (build for larger changes).
+7. Update progress tracker.
+8. Update project-knowledge.md (see the update-docs skill).
+9. Summarize what changed and what remains.
 ```
 
 If docs and code disagree, trust the code for current reality, then update the docs to reflect the new decision.
