@@ -3048,7 +3048,9 @@
     padding: 0.25rem 0 8rem 0.35rem !important;
   }
 
-  .vault-editor-canvas .vault-markdown-editor-live .cm-line:not(.vault-cm-callout):not(.vault-cm-preview-list) {
+  /* Code lines are excluded like callouts and lists: they are drawn as a box
+     and need their own inner padding, or the code sits flush on its edge. */
+  .vault-editor-canvas .vault-markdown-editor-live .cm-line:not(.vault-cm-callout):not(.vault-cm-preview-list):not(.vault-cm-code-line) {
     padding-inline: 0 !important;
   }
 
