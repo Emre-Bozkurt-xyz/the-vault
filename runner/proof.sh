@@ -70,11 +70,17 @@ cmd_probe() {
     # The platform is a runsc flag, not something the sandbox reports: gVisor's
     # own dmesg never prints it. Read the default out of the help text, and the
     # override (if any) out of the Docker runtime args.
-    row "default platform" \
-      "$(runsc --help 2>&1 | grep -oiE '(systrap|kvm|ptrace)[^)]*\(default\)' | head -1 || true)" \
-      "(blank = parse it yourself from 'runsc --help')"
+    # The platform is a runsc flag and the sandbox does not report it, so the
+    # only honest answers are "what does the binary default to" and "did the
+    # daemon override it". Recent releases default to systrap; no runtimeArgs
+    # in daemon.json means that default is what you are getting.
+    row "platform flag" \
+      "$(runsc --help 2>&1 | grep -iA2 -- '-platform' | tr '\n' ' ' | tr -s ' ' | head -c 88 || true)" ""
     if [ -r /etc/docker/daemon.json ]; then
-      row "daemon.json" "$(tr -d '\n ' < /etc/docker/daemon.json | grep -oE '"runsc":\{[^}]*\}' | head -c 100 || true)" ""
+      local args
+      args="$(tr -d '\n ' < /etc/docker/daemon.json | grep -oE '"runsc":\{[^}]*\}' | head -c 120 || true)"
+      row "daemon.json" "$args" \
+        "$(printf '%s' "$args" | grep -q runtimeArgs && echo 'overridden' || echo 'no runtimeArgs — build default applies')"
     fi
   else
     row "runsc" "NOT INSTALLED" "see runner/README.md"
@@ -104,16 +110,27 @@ require_runtime() {
 # build
 # ---------------------------------------------------------------------------
 cmd_build() {
+  local failed=""
   for image in $IMAGES; do
     say "Building $image"
-    docker build -f "$ROOT/images/$image.Dockerfile" -t "$TAG_PREFIX-$image" "$ROOT/images"
+    # One broken base image must not stop the other five from being measured.
+    if ! docker build -f "$ROOT/images/$image.Dockerfile" -t "$TAG_PREFIX-$image" "$ROOT/images"; then
+      failed="$failed $image"
+    fi
   done
   say "Image sizes"
   for image in $IMAGES; do
-    row "$image" "$(docker image inspect "$TAG_PREFIX-$image" --format '{{.Size}}' \
-      | awk '{printf "%.2f GB", $1/1024/1024/1024}')" ""
+    if have_image "$image"; then
+      row "$image" "$(docker image inspect "$TAG_PREFIX-$image" --format '{{.Size}}' \
+        | awk '{printf "%.2f GB", $1/1024/1024/1024}')" ""
+    else
+      row "$image" "MISSING" "build failed"
+    fi
   done
+  [ -z "$failed" ] || printf '\n\033[31mFailed to build:%s\033[0m\n' "$failed"
 }
+
+have_image() { docker image inspect "$TAG_PREFIX-$1" >/dev/null 2>&1; }
 
 # Run one sandboxed job. Everything policy-relevant lives here in one place so
 # the isolation tests below exercise the same shape a real job would get.
@@ -137,7 +154,15 @@ sandbox() {
     timeout --signal=KILL "$TIMEOUT" bash -lc "$script"
 }
 
-workspace() { mktemp -d "${TMPDIR:-/tmp}/vault-proof.XXXXXX"; }
+workspace() {
+  local dir
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/vault-proof.XXXXXX")"
+  # mktemp gives 0700 owned by the invoking user, but the sandbox runs as uid
+  # 10001, so without this the job cannot even read its own source file. A real
+  # runner would map uids properly; for a throwaway proof directory this is fine.
+  chmod 0777 "$dir"
+  printf '%s' "$dir"
+}
 
 # Writes a hello-world for $1 into $2 and echoes the command that builds+runs it.
 sample() {
@@ -206,6 +231,10 @@ cmd_bench() {
   for language in $LANGUAGES; do
     local image work script cold warm out status
     image="$(image_for "$language")"
+    if ! have_image "$image"; then
+      printf '%-12s %10s %10s  image %s missing — run build first\n' "$language" "-" "-" "$TAG_PREFIX-$image"
+      continue
+    fi
     work="$(workspace)"
     script="$(sample "$language" "$work")"
 
@@ -235,6 +264,11 @@ cmd_bench() {
 # ---------------------------------------------------------------------------
 check() { # $1 label  $2 expected(pass|fail)  $3.. command
   local label="$1" expect="$2"; shift 2
+  # $4 is the image name whenever the command is `sandbox <image> ...`.
+  if [ "${1:-}" = sandbox ] && ! have_image "${2:-}"; then
+    printf '  \033[33mSKIP\033[0m %s (image %s-%s missing)\n' "$label" "$TAG_PREFIX" "${2:-}"
+    return 0
+  fi
   local got="pass"
   "$@" >/dev/null 2>&1 || got="fail"
   if [ "$got" = "$expect" ]; then

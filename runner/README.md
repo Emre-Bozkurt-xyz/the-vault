@@ -44,13 +44,13 @@ removed by `./runner/proof.sh clean`.
 
 The host is already Linux with Docker. The only new software is gVisor.
 
-> **Do not `apt-get install runsc` without adding the repo below.** Ubuntu's
-> universe package is years behind upstream — 24.04 ships a build from August
-> 2023. For the one component whose entire job is to be the security boundary,
-> running a stale build defeats the point, and it predates `systrap` becoming
-> the default platform, so it also makes every benchmark pessimistic. Upstream
-> versions are named `release-YYYYMMDD.0`; anything else is the distro package.
-> If you already installed it, `sudo apt-get remove runsc` first.
+> **Install from the upstream repo below, not from whatever `apt` finds by
+> default.** This is the one component whose entire job is to be the security
+> boundary, so it should track upstream releases rather than a distro snapshot.
+> Upstream versions are named `release-YYYYMMDD.0` — `probe` flags anything
+> that is not. Note that `runsc --version` has been seen reporting a string
+> unrelated to the installed package version, so trust the package
+> (`dpkg -l runsc`) over the banner if they disagree.
 
 ```bash
 # 1. Install runsc (Debian/Ubuntu)
