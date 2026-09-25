@@ -1,7 +1,14 @@
 # Runner proof (Phase 24, slice 3)
 
 This directory exists to answer one question before any execution code is
-written: **can this mini-PC run all seven languages safely, and how fast?**
+written: **can this mini-PC run the languages safely, and how fast?**
+
+**Answered on 2026-09-24.** Isolation passes 12/12 and six languages run, four
+of them under a second warm. Full numbers and conclusions are in
+`docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` §6.1. C# was dropped — it is the
+only language that needs a project scaffold rather than a loose file, and it
+failed three runs for three unrelated scaffold reasons while the others worked.
+C# highlighting is unaffected; only running and server-side formatting are gone.
 
 It is deliberately *not* wired into `scripts/deploy.sh` or
 `docker-compose.production.yml`. Slice 3's output is a decision; automating a
@@ -35,7 +42,7 @@ removed by `./runner/proof.sh clean`.
   lands on the same host as Postgres and `.env.production`. Revisit this if the
   runner is ever exposed to untrusted users rather than one operator.
 - **Only the OCI + gVisor backend is being evaluated.** Piston and Judge0 are
-  not being benchmarked: neither addresses the five native formatters, both
+  not being benchmarked: neither addresses the native formatters, both
   would still need their cancellation, limits, and privileged deployment
   verified, and the per-language images below are the artifact slice 4 needs
   regardless.
@@ -75,11 +82,12 @@ Run the steps in order. `probe` is read-only and safe to run first.
 
 ```bash
 ./runner/proof.sh probe       # host facts, Docker, whether runsc is registered
-./runner/proof.sh build       # builds six images — several GB, takes a while
+./runner/proof.sh build       # builds five images — ~6.5 GB, takes a while
 ./runner/proof.sh bench       # cold/warm wall time per language
 ./runner/proof.sh isolation   # network, filesystem, pids, memory, timeout, cleanup
-./runner/proof.sh format      # the five native formatters
-./runner/proof.sh clean       # removes everything the above created
+./runner/proof.sh format      # ruff, google-java-format, ormolu, clang-format
+./runner/proof.sh clean       # proof images, dangling layers, leftover temp dirs
+./runner/proof.sh clean bases # the above plus the pulled base images
 ```
 
 On a shared host, stop the heavy neighbours before `build` and `bench` —
@@ -100,31 +108,42 @@ never a configuration to actually ship.
 - **gVisor platform.** `systrap` is the modern default and is much faster than
   `ptrace`. If it reports `ptrace`, every number in `bench` is pessimistic and
   worth fixing before drawing conclusions.
-- **Disk free on the Docker root.** The six images land somewhere around 6–10
-  GB, and `haskell:9.6` is the single biggest line item by a wide margin.
+- **Disk free on the Docker root.** The five images came to 6.48 GB, of which
+  `haskell:9.6` is 3.12 GB — 56% of the total for one language.
 
 **A note on this host specifically.** The mini-PC is an Intel N150 (four
 efficiency cores, no SMT) running well over a dozen containers across four
-projects, with roughly 5 GB of its 16 GB free. Two consequences: benchmark
-numbers will be noisy and on the pessimistic side, which is arguably the honest
-number since production load is exactly this; and the `haskell` and `dotnet`
-image builds are the memory-hungriest step here, so build them when the host is
-otherwise quiet rather than alongside a busy Minecraft server.
+projects. Two consequences: benchmark numbers are noisy unless the heavy
+neighbours are stopped, and the `haskell` build is the most demanding step, so
+run it when the host is otherwise quiet.
 
-**In `bench`:** warm time is what a user feels. Python and JavaScript should be
-well under a second. Java, C, and C++ will be a few seconds. Haskell and C# are
-the ones to watch on a mid-range CPU — if either is slow enough to be unpleasant,
-that is a product decision (drop it from the first execution release, or commit
-to a queued/running UI), not something to tune away.
+**In `bench`:** warm time is what a user feels. The measured baseline on this
+host is Python 254ms, JavaScript 302ms, C 344ms, C++ 829ms, Haskell 1382ms and
+Java 2747ms. A large regression against those means something changed in the
+host, not in the harness. Anything over ~5s needs a visible queued/running state
+in the editor rather than a spinner.
 
 **In `isolation`:** every line must say `OK`. A `BAD` on the network,
 read-only-root, or gVisor-kernel checks means the host is not ready and slice 4
 must not start. The memory and pid checks are expected to *fail the command*,
 which is what `OK` means there — the sandbox killed it.
 
-**In `format`:** C# is the most likely to need adjustment on first run; it is
-the only language needing a host-owned project and an offline package cache.
-Everything else compiles a loose file.
+**In `format`:** each formatter rewrites its sample in place, and the samples
+are printed afterwards — a formatter that exits 0 without changing anything is
+a failure that looks like a pass, so read the output rather than the OK.
+
+## Cleaning up
+
+`clean` removes the proof images, any dangling layers left by editing a
+Dockerfile, and leftover workspaces. It deliberately leaves the **base** images
+(`haskell:9.6` alone is ~3 GB, and they are most of the disk) and prints their
+sizes; `clean bases` removes those too. Nothing here ever runs
+`docker system prune`, because this host carries four unrelated projects and a
+blanket prune would take their layers with it.
+
+Repeated `build` runs are cheap — Docker reuses the layer cache and produces
+the same image — but editing a Dockerfile leaves the previous build untagged,
+and those accumulate silently. That is what `clean` sweeps.
 
 ## Recording the results
 
@@ -135,7 +154,10 @@ script runs clean. Put the measured table and the go/no-go into
 
 ## Status
 
-**Untested against the mini-PC.** These files were written from the plan and
-from the image documentation; nothing here has been executed on the real host.
-Expect to fix something on the first run — most likely in the C# path. Treat the
-first `build` and `bench` as part of the work, not as a formality.
+**Run against the mini-PC and passing** as of 2026-09-24: five images build,
+six languages execute, isolation is 12/12, and the native formatters work.
+Getting there took four rounds of fixes, and the two that would bite anyone
+reusing this are worth knowing: a sandbox must be entered with `bash -c` rather
+than `bash -lc` (a login shell resets `PATH` and discards the image's own), and
+`HOME` must point somewhere writable because `useradd --create-home` puts it
+under the read-only rootfs.

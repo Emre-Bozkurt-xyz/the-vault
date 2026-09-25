@@ -12,8 +12,9 @@
 #   ./runner/proof.sh build       build the language images (several GB)
 #   ./runner/proof.sh bench       cold/warm run timings per language
 #   ./runner/proof.sh isolation   network, filesystem, pids, timeout, cleanup
-#   ./runner/proof.sh format      the five native formatters
-#   ./runner/proof.sh clean       remove everything this script created
+#   ./runner/proof.sh format      the native formatters (ruff, gjf, ormolu, clang-format)
+#   ./runner/proof.sh clean       remove proof images, dangling layers, temp dirs
+#   ./runner/proof.sh clean bases also remove the pulled base images
 #   ./runner/proof.sh all         build + bench + isolation + format
 #
 # See runner/README.md for prerequisites and how to read the results.
@@ -27,7 +28,7 @@ PIDS="${PIDS:-128}"
 TIMEOUT="${TIMEOUT:-20}"
 
 # image | languages it serves
-IMAGES="python node jvm gcc haskell dotnet"
+IMAGES="python node jvm gcc haskell"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 row() { printf '%-12s %-22s %s\n' "$1" "$2" "$3"; }
@@ -110,7 +111,7 @@ cmd_build() {
   local failed=""
   for image in $IMAGES; do
     say "Building $image"
-    # One broken base image must not stop the other five from being measured.
+    # One broken base image must not stop the others from being measured.
     if ! docker build -f "$ROOT/images/$image.Dockerfile" -t "$TAG_PREFIX-$image" "$ROOT/images"; then
       failed="$failed $image"
     fi
@@ -154,7 +155,8 @@ sandbox() {
 # Two things above are load-bearing and were both found the hard way:
 #   `bash -c`, never `bash -lc`. A login shell re-sources /etc/profile, which
 #   resets PATH and throws away the image's own ENV PATH — that is how GHC went
-#   missing from the haskell image, and it would have taken /opt/dotnet-tools next.
+#   missing from the haskell image, and it will bite any future image that puts
+#   a toolchain somewhere other than /usr/bin.
 #   HOME=/tmp, because useradd --create-home puts it under the read-only rootfs.
 #   ruff, google-java-format and ormolu all want a writable home; clang-format
 #   does not, which is why it was the only formatter that passed without this.
@@ -202,19 +204,6 @@ sample() {
     cpp)
       printf '#include <iostream>\nint main(){ std::cout << "hello from cpp\\n"; }\n' > "$work/main.cpp"
       echo "g++ -O0 main.cpp -o main && ./main" ;;
-    csharp)
-      # Named job.cs, not Program.cs: the host-owned template ships its own
-      # Program.cs and the copy below would otherwise clobber the job's file.
-      printf 'System.Console.WriteLine("hello from csharp");\n' > "$work/job.cs"
-      # `chmod -R u+w` because the image ships the template as a+rX, so the
-      # copied Program.cs is read-only and obj/bin are 0555 — the overwrite and
-      # the rm below both fail without it.
-      # obj/bin are discarded because the template's restore wrote absolute
-      # paths under /opt/project. The re-restore is offline; a console app has
-      # no PackageReferences, so there is nothing to fetch.
-      # Build output is NOT sent to /dev/null: MSBuild reports errors on stdout,
-      # so redirecting it is how a failure ends up with an empty message.
-      echo "cp -r /opt/project/. . && chmod -R u+w . && cp job.cs Program.cs && rm -rf obj bin && dotnet build -c Release -v q --nologo && dotnet bin/Release/net8.0/app.dll" ;;
     *) die "unknown language $language" ;;
   esac
 }
@@ -226,11 +215,10 @@ image_for() {
     java) echo jvm ;;
     haskell) echo haskell ;;
     c|cpp) echo gcc ;;
-    csharp) echo dotnet ;;
   esac
 }
 
-LANGUAGES="python javascript java haskell c cpp csharp"
+LANGUAGES="python javascript java haskell c cpp"
 
 # ---------------------------------------------------------------------------
 # bench
@@ -350,7 +338,7 @@ while True: b.extend(bytes(10_000_000))'"
 }
 
 # ---------------------------------------------------------------------------
-# format — the five native formatters (Prettier stays in the browser)
+# format — the native formatters (Prettier stays in the browser; C# execution dropped)
 # ---------------------------------------------------------------------------
 cmd_format() {
   require_runtime
@@ -363,7 +351,6 @@ cmd_format() {
   printf 'main::IO ()\nmain   =  putStrLn    "x"\n' > "$work/Main.hs"
   printf 'int  main( void ){return   0;}\n' > "$work/main.c"
   printf 'int  main( ){return   0;}\n' > "$work/main.cpp"
-  printf 'class P{static void Main(){System.Console.WriteLine( 1 );}}\n' > "$work/Program.cs"
   # A formatter rewrites its input in place, and these files are created by the
   # host user while the job runs as uid 10001 — so without this every formatter
   # that opens the file for writing gets EACCES. clang-format was the only one
@@ -376,23 +363,65 @@ cmd_format() {
   check "ormolu (haskell)" pass sandbox haskell "$work" "ormolu --mode inplace Main.hs"
   check "clang-format (c)" pass sandbox gcc "$work" "clang-format -i main.c"
   check "clang-format (c++)" pass sandbox gcc "$work" "clang-format -i main.cpp"
-  # CSharpier renamed its tool command and added the `format` subcommand in 1.0;
-  # 0.30.x installs `dotnet-csharpier` and takes a bare path. Handle both rather
-  # than pinning to a guess — slice 4 pins whichever this run proves out.
-  check "csharpier (c#)" pass sandbox dotnet "$work" \
-    "if command -v csharpier >/dev/null; then csharpier format Program.cs; else dotnet-csharpier Program.cs; fi"
 
   say "Formatted output (each should differ from the mangled input)"
-  for file in main.py Main.java Main.hs main.c Program.cs; do
+  for file in main.py Main.java Main.hs main.c; do
     printf '\n--- %s\n' "$file"
     cat "$work/$file"
   done
 }
 
+# Base images this proof pulls. Listed explicitly rather than pruned, because
+# this host runs four unrelated projects and a blanket `docker system prune`
+# would take their layers with it.
+BASE_IMAGES="python:3.12-slim node:22-slim eclipse-temurin:21-jdk gcc:14 haskell:9.6 debian:bookworm-slim"
+
 cmd_clean() {
-  say "Removing proof containers and images"
+  local before after
+  before="$(docker system df --format '{{.Size}}' 2>/dev/null | head -1)"
+
+  say "Containers"
   docker ps -aq --filter "name=$TAG_PREFIX-" | xargs -r docker rm -f
-  for image in $IMAGES; do docker rmi -f "$TAG_PREFIX-$image" 2>/dev/null || true; done
+
+  say "Proof images"
+  for image in $IMAGES; do
+    docker rmi -f "$TAG_PREFIX-$image" >/dev/null 2>&1 && row "$image" removed "" || row "$image" "not present" ""
+  done
+
+  # Every Dockerfile edit leaves the previous build untagged. These accumulate
+  # quietly and are invisible to the loop above, which only knows current tags.
+  say "Dangling layers from these builds"
+  local dangling
+  dangling="$(docker images -f dangling=true -q | wc -l)"
+  if [ "$dangling" -gt 0 ]; then
+    docker image prune -f | tail -1
+  else
+    echo "none"
+  fi
+
+  say "Leftover workspaces"
+  rm -rf "${TMPDIR:-/tmp}"/vault-proof.* 2>/dev/null || true
+  local stale
+  stale="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'vault-proof.*' 2>/dev/null | wc -l)"
+  [ "$stale" -eq 0 ] && echo "none" || echo "$stale left (job-owned files; sudo rm -rf ${TMPDIR:-/tmp}/vault-proof.*)"
+
+  if [ "${1:-}" = bases ]; then
+    say "Base images"
+    for image in $BASE_IMAGES; do
+      docker rmi "$image" >/dev/null 2>&1 && row "$image" removed "" || row "$image" "in use or absent" ""
+    done
+  else
+    say "Base images kept"
+    for image in $BASE_IMAGES; do
+      row "$image" "$(docker image inspect "$image" --format '{{.Size}}' 2>/dev/null \
+        | awk '{printf "%.2f GB", $1/1024/1024/1024}' || echo absent)" ""
+    done
+    echo
+    echo "These are most of the disk. Remove them with: ./runner/proof.sh clean bases"
+  fi
+
+  after="$(docker system df --format '{{.Size}}' 2>/dev/null | head -1)"
+  say "Docker image usage: $before -> $after"
   echo "Vault's own containers and images were not touched."
 }
 

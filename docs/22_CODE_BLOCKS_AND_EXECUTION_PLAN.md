@@ -6,10 +6,11 @@ Status as of 2026-09-24:
   and browser-verified**, plus a fence language picker that is not in the
   original slice list.
 - §6's host and backend questions are **decided** (gVisor on the host, OCI only
-  — see the §6 note), and a proof harness exists in `runner/`, but it **has not
-  been run on the mini-PC yet**. No numbers, no go/no-go.
+  — see the §6 note), and the `runner/` proof has been run on the mini-PC.
+  Isolation passes 12/12; six languages run; measured timings are in §6.1.
+- **C# execution and CSharpier are dropped** (see §1). Six languages, not seven.
 - Everything else from §6 onward — the job queue, the job API, execution tables,
-  and the five native formatters in production — is still proposal only.
+  and the native formatters in production — is still proposal only.
 
 Tracked as Phase 24 (plan numbers and tracker phase numbers differ); see
 `docs/01_PROGRESS_TRACKER.md` for which slice is where, and
@@ -31,9 +32,25 @@ click **Run**. An HTML fence displays HTML source, not a rendered web page.
 
 User-confirmed scope: syntax highlighting **and an explicit Format button**,
 then robust server-side execution for Python, JavaScript, Java, Haskell, C,
-C++, and C#. Expect one user initially, but support more workers without
-changing the editor or job API. Browser-only JavaScript is not the execution
-architecture for this scope.
+and C++.
+
+**C# execution and CSharpier formatting were dropped on 2026-09-24**, after the
+slice 3 proof. C# is the only language in the set that cannot compile a loose
+file: the SDK needs a project, so it needs a host-owned template copied into
+each job, made writable, its stale `obj/`/`bin/` discarded, and an offline
+restore performed. It failed three proof runs for three unrelated reasons in
+that scaffold — read-only copied sources, a NuGet folder that a package-less
+template never creates, and a formatter whose command name changed across
+versions — while the other six languages worked once two shared bugs were
+fixed. The cost was concentrated entirely in the scaffold rather than in the
+language, which is what made it the right thing to cut. **C# remains fully
+supported for highlighting**; only running and server-side formatting are gone.
+Revisit by pinning an SDK image that ships a prebuilt writable project, not by
+retrying the copy-and-patch approach.
+
+Expect one user initially, but support more workers without changing the editor
+or job API. Browser-only JavaScript is not the execution architecture for this
+scope.
 
 Highlighting and formatting are core code-block features. Execution is an
 optional trusted built-in capability, disabled unless the deployment enables
@@ -74,7 +91,7 @@ separate server registry. A fence string never becomes a command or image name.
 | Haskell | `haskell`, `hs` | Ormolu | GHC: compile `Main.hs`, run binary |
 | C | `c` | clang-format | GCC or Clang: compile `main.c`, run binary |
 | C++ | `cpp`, `c++`, `cxx` | clang-format | GCC or Clang: compile `main.cpp`, run binary |
-| C# | `csharp`, `cs`, `c#` | CSharpier | .NET SDK with host-owned console project and `Program.cs` |
+| C# | `csharp`, `cs`, `c#` | *(dropped 2026-09-24)* | *(dropped 2026-09-24 — see below)* |
 
 Also highlight common documentation languages: TS/TSX/JSX, JSON, HTML, CSS,
 SQL, YAML, Bash, and Markdown. Execution is enabled only for profiles actually
@@ -90,8 +107,8 @@ Formatter references: [Prettier](https://prettier.io/docs/browser),
 [Ruff](https://docs.astral.sh/ruff/formatter/),
 [google-java-format](https://github.com/google/google-java-format),
 [Ormolu](https://github.com/tweag/ormolu),
-[clang-format](https://clang.llvm.org/docs/ClangFormat.html), and
-[CSharpier](https://csharpier.com/docs/About).
+and [clang-format](https://clang.llvm.org/docs/ClangFormat.html).
+[CSharpier](https://csharpier.com/docs/About) is no longer in scope.
 
 ## 4. Highlighting and block controls
 
@@ -205,6 +222,44 @@ tests. Do not rely on a public execution API for private document source.
 Sources: [gVisor architecture](https://gvisor.dev/docs/),
 [Piston](https://github.com/engineer-man/piston),
 [Judge0 API](https://ce.judge0.com/).
+
+## 6.1 Measured on the mini-PC (2026-09-24)
+
+Host: Intel N150, 4 efficiency cores, 16 GB, Ubuntu 24.04, Docker 29.2,
+gVisor `release-20260921.0`. Measured with the Minecraft server stopped, which
+is the realistic condition — Vault and the modpack are rarely used together.
+Load average ~1.1, 13 GB free. Timings are wall time for the whole sandboxed
+job: container start, compile where applicable, run, and teardown.
+
+| Language | Cold | Warm | Notes |
+|---|---:|---:|---|
+| Python | 267ms | **254ms** | interpreted |
+| JavaScript | 632ms | **302ms** | interpreted |
+| C | 548ms | **344ms** | gcc 14 |
+| C++ | 1029ms | **829ms** | gcc 14 |
+| Haskell | 2556ms | **1382ms** | GHC 9.6 |
+| Java | 2826ms | **2747ms** | Temurin 21 |
+
+Images total **6.48 GB** against 312 GB free, so disk is not a constraint.
+Haskell is 3.12 GB of that — 56% of the total for one language.
+
+**Isolation: 12/12.** Outbound network denied, DNS unavailable, root filesystem
+read-only, workspace writable, job unprivileged, no-new-privileges set, fork
+bomb capped by the pid limit, memory hog killed, runaway loop killed by the
+timeout, `uname` reports gVisor rather than the host kernel, a running job can
+be killed mid-execution, and no container survives the job.
+
+**Conclusions.**
+
+- The host is viable. Sandbox overhead is modest and four of six languages are
+  under a second warm, so Run can use a plain spinner for those rather than a
+  queued/running UI. Java at 2.7s is the one users will feel.
+- Haskell was expected to be the casualty and was not: at 1382ms it is faster
+  than Java. Its only real cost is image size.
+- gVisor's isolation properties hold on this kernel, which is the precondition
+  slice 4 depends on.
+- Contention with the Minecraft server is untested. The measured numbers assume
+  it is stopped. If both must run at once, re-measure before promising latency.
 
 ## 7. Job API, persistence, and permissions
 
