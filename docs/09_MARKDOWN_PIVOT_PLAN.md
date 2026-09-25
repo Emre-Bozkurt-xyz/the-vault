@@ -357,7 +357,7 @@ Tasks:
 - Add Markdown rendering library. Done locally with `react-markdown` and `remark-gfm`.
 - Add `components/markdown/MarkdownDocument.tsx`. Done locally.
 - Support headings, lists, task lists, tables, links, code fences, blockquotes, horizontal rules. Done locally.
-- Add syntax highlighting for code blocks if lightweight. Deferred.
+- Add syntax highlighting for code blocks if lightweight. Deferred; now planned with explicit formatting and subsequent execution in `22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` (tracker Phase 24).
 - Sanitize or disallow raw HTML rendering. Done locally with `rehype-raw` plus an explicit `rehype-sanitize` allowlist, including a provider allowlist for safe media iframes.
 - Replace public route renderer for Markdown-backed docs. Done locally.
 

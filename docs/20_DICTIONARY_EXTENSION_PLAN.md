@@ -2,6 +2,12 @@
 
 ## 1. Goal
 
+Follow-up proposal (2026-09-18):
+`21_DEFINITION_AUTHORING_AND_PREVIEWS_PLAN.md` plans body-based definitions,
+a Live editor creation dialog, distinct term styling, and compact previews.
+It is not implemented yet; the summary-first choices below describe the
+original design.
+
 Hover a term in prose and read its definition without leaving the sentence.
 
 ```md
