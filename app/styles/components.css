@@ -737,6 +737,12 @@
     --vault-code-radius: 0.375rem;
     --vault-code-lift: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 18px -14px rgb(0 0 0 / 0.5);
   }
+  /* In the editor the surface must stay see-through: CodeMirror draws the
+     selection in a layer behind the lines, and an opaque line background hid
+     it — a drag-selection looked like it covered only the fence lines. */
+  .vault-markdown-editor {
+    --vault-code-surface: color-mix(in oklab, var(--muted) 50%, transparent);
+  }
 
   .vault-md-code-block {
     margin-block: 1.25rem;
@@ -832,35 +838,34 @@
     display: none;
   }
 
+  /* A bare icon — no disc, no border — with room around it so it reads as
+     part of the block's corner rather than a floating control. */
   .vault-cm-code-run {
     position: absolute;
-    right: 0.5rem;
+    right: 0.6rem;
     bottom: 50%;
     transform: translateY(50%);
     display: grid;
     place-items: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border: 1px solid var(--vault-code-edge);
-    border-radius: 999px;
-    background: var(--background);
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.375rem;
+    background: transparent;
     color: var(--muted-foreground);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
     cursor: pointer;
-    opacity: 0.8;
-    transition: opacity 120ms ease, color 120ms ease, transform 120ms ease;
+    transition: color 120ms ease, transform 120ms ease;
   }
-  .vault-cm-code-run svg { width: 0.7rem; height: 0.7rem; }
+  .vault-cm-code-run svg { width: 0.95rem; height: 0.95rem; }
   .vault-cm-code-run:hover,
   .vault-cm-code-run:focus-visible {
-    opacity: 1;
     color: var(--foreground);
-    transform: translateY(50%) scale(1.06);
+    transform: translateY(50%) scale(1.1);
   }
-  .vault-cm-code-run:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .vault-cm-code-run:focus-visible { outline: 2px solid var(--ring); outline-offset: 0; }
   .vault-cm-code-run[data-mode="stop"] {
     color: var(--destructive);
-    opacity: 1;
     animation: vault-code-run-pulse 1.4s ease-in-out infinite;
   }
 
@@ -1019,6 +1024,37 @@
   .vault-code-run-output + .vault-code-run-output { border-top: 1px dashed var(--vault-code-edge); }
   .vault-code-run-stderr,
   .vault-code-run-compiler { color: var(--destructive); }
+
+  /* Warnings from a build that succeeded: one amber line, open on demand. */
+  .vault-code-run-diagnostics {
+    border: 1px solid var(--vault-code-edge);
+    border-top: 0;
+    background: var(--background);
+    font-size: 0.72rem;
+  }
+  .vault-code-run-diagnostics > summary {
+    padding: 0.3rem 0.75rem;
+    color: var(--muted-foreground);
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+  }
+  .vault-code-run-diagnostics[data-kind="warning"] > summary { color: var(--code-number); }
+  .vault-code-run-diagnostics > summary:hover { color: var(--foreground); }
+  .vault-code-run-diagnostics > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .vault-code-run-diagnostics-body {
+    margin: 0;
+    max-height: 16rem;
+    overflow: auto;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px dashed var(--vault-code-edge);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   .vault-code-run-note {
     padding: 0.3rem 0.75rem;
     border: 1px solid var(--vault-code-edge);
@@ -1028,6 +1064,7 @@
     font-size: 0.72rem;
   }
   .vault-code-run-output:last-child,
+  .vault-code-run-diagnostics:last-child,
   .vault-code-run-note:last-child {
     border-radius: 0 0 var(--vault-code-radius) var(--vault-code-radius);
     box-shadow: var(--vault-code-lift);

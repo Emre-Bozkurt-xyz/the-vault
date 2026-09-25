@@ -9,7 +9,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
-import { formatDuration, formatJobOutcome } from "@/lib/code/jobs";
+import { countCompilerWarnings, formatDuration, formatJobOutcome } from "@/lib/code/jobs";
 import { codeLanguageHint, resolveCodeLanguage } from "@/lib/code/languages";
 import {
   codeJobStateMessage,
@@ -571,7 +571,25 @@ class RunOutputWidget extends WidgetType {
       root.append(pre);
     };
     if (run.error) block(run.error, "stderr");
-    block(run.result?.compilerOutput ?? "", "compiler");
+    // A failed build's diagnostics are the whole story, so they stay open and
+    // red. After a successful build they are only advice: collapse them behind
+    // an amber "2 warnings" line instead of dressing them up as errors.
+    const compiler = run.result?.compilerOutput ?? "";
+    if (compiler && run.state === "compile_error") {
+      block(compiler, "compiler");
+    } else if (compiler) {
+      const warnings = countCompilerWarnings(compiler);
+      const details = document.createElement("details");
+      details.className = "vault-code-run-diagnostics";
+      details.dataset.kind = warnings ? "warning" : "info";
+      const summary = document.createElement("summary");
+      summary.textContent = warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : "Compiler output";
+      const pre = document.createElement("pre");
+      pre.className = "vault-code-run-diagnostics-body";
+      pre.textContent = compiler;
+      details.append(summary, pre);
+      root.append(details);
+    }
     block(run.result?.stdout ?? "", "stdout");
     block(run.result?.stderr ?? "", "stderr");
 

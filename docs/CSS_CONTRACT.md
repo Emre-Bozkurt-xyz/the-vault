@@ -200,7 +200,7 @@ prefix content may introduce; everything else is stripped by
   `.vault-code-tools-actions`, `.vault-code-tools-message`,
   `.vault-code-language-select`, `.vault-code-tools-divider`, `.vault-code-tooltip`,
   the Live-mode block edge classes `.vault-cm-code-first` / `.vault-cm-code-last`,
-  and the idle-block corner chrome `.vault-cm-code-label` / `.vault-cm-code-run` — the Live-mode code
+  the idle-block corner chrome `.vault-cm-code-label` / `.vault-cm-code-run`, and the collapsed build warnings `.vault-code-run-diagnostics` / `-body` — the Live-mode code
   toolbar never renders in a shared or published document, so no snippet should
   target it. The same goes for the run output panel, `.vault-code-run` and its
   `.vault-code-run-*` children, and the stdin box, `.vault-code-input` and its

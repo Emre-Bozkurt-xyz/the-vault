@@ -132,7 +132,7 @@ export function CodeFenceTools({ view, position, onFormatBoundary }: {
               aria-pressed={inputOpen}
               aria-label={inputOpen ? "Remove input" : "Add input"}
               title={inputOpen ? "Remove the input box and its text" : "Standard input for this program"}
-              className={inputOpen ? "bg-muted text-foreground" : "text-muted-foreground"}
+              className={inputOpen ? "bg-muted" : undefined}
               onClick={() => toggleCodeInput(view, fence)}
             >Input</Button>
           </>

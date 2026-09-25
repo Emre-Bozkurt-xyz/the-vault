@@ -72,6 +72,7 @@ import { fencedCodeLanguage } from "@/components/markdown/code-languages";
 import { codeFenceAt, codeFenceLineNumbers } from "@/components/markdown/code-fences";
 import type { FxRateTable } from "@/lib/calc/fx";
 import { createCalcCompletionSource } from "@/components/markdown/calc-completions";
+import { codeLanguageCompletionSource } from "@/components/markdown/code-language-completions";
 import {
   createCalcLiveExtension,
   getCalcBlockLineNumbers,
@@ -1098,6 +1099,9 @@ export function MarkdownEditor({
             // document's own names, and an author who never opens a menu still
             // needs them spelled correctly.
             ...(calcEnabled ? [createCalcCompletionSource({ fxTable })] : []),
+            // Language names on a fence's opening line, with starter code for
+            // a new block. Scoped to that one position, so it is always on.
+            codeLanguageCompletionSource,
             htmlCompletionSource,
             createWikiLinkCompletionSource(
               wikiLinkMapStore,
@@ -5789,7 +5793,10 @@ function toggleCodeFence(view: EditorView) {
     return;
   }
 
-  insertBlock(view, `\`\`\`txt\n${selectedText || ""}\n\`\`\``, selectedText ? null : 7);
+  // Leave the cursor on the language word and open the language menu: picking
+  // one names the block and, for an empty block, fills in starter code.
+  insertBlock(view, `\`\`\`\n${selectedText || ""}\n\`\`\``, 3);
+  startCompletion(view);
 }
 
 /**

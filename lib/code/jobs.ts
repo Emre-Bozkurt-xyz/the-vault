@@ -105,6 +105,16 @@ export function survivesInertOutput(source: string): boolean {
   return inertOutput(source) === source;
 }
 
+/**
+ * How many diagnostics in successful compiler output are warnings. GHC, gcc,
+ * g++ and javac all tag each one `warning:` (GHC and javac follow it with a
+ * bracketed flag). javac's closing "2 warnings" summary has no colon and is
+ * not double-counted.
+ */
+export function countCompilerWarnings(output: string): number {
+  return output.match(/\bwarning:/gi)?.length ?? 0;
+}
+
 /** 254 → "254 ms", 1382 → "1.38 s", 12040 → "12.0 s". */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)} ms`;

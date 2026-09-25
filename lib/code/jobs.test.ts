@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boundOutputs,
+  countCompilerWarnings,
   formatDuration,
   formatJobOutcome,
   inertOutput,
@@ -207,5 +208,17 @@ describe("formatJobOutcome", () => {
 describe("formatDuration", () => {
   it.each([[0, "0 ms"], [254, "254 ms"], [999, "999 ms"], [1000, "1.00 s"], [1382, "1.38 s"], [12040, "12.0 s"]])("%i ms reads as %s", (ms, text) => {
     expect(formatDuration(ms)).toBe(text);
+  });
+});
+
+describe("countCompilerWarnings", () => {
+  it("counts GHC, gcc and javac warnings, not javac's summary line", () => {
+    const ghc = "Main.hs:1:1: warning: [GHC-38417] [-Wmissing-signatures]\n  x\nMain.hs:3:59: warning: [GHC-18042] [-Wtype-defaults]\n";
+    const gcc = "main.c: In function 'main':\nmain.c:1:22: warning: unused variable 'unused' [-Wunused-variable]\n";
+    const javac = "Main.java:3: warning: [rawtypes] found raw type: List\nMain.java:4: warning: [unchecked] unchecked call\n2 warnings\n";
+    expect(countCompilerWarnings(ghc)).toBe(2);
+    expect(countCompilerWarnings(gcc)).toBe(1);
+    expect(countCompilerWarnings(javac)).toBe(2);
+    expect(countCompilerWarnings("")).toBe(0);
   });
 });
