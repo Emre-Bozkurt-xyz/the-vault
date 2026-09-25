@@ -159,6 +159,8 @@ Fenced code. See `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md`.
 |---|---|
 | `.vault-md-code-block` | wrapper around the header and `<pre>` |
 | `.vault-md-code-header` | header strip holding the label and Copy |
+| `.vault-md-code-copy` | the block's copy button (hidden until hover; hydrated pages only) |
+| `.vault-md-inline-code` / `.vault-md-inline-copy` | wrapper and copy button around inline code, **hydrated pages only** — static embeds render a bare `.vault-md-code` |
 | `.vault-code-language` | the language label |
 
 `.vault-md-pre` and `.vault-md-code` keep their existing meaning and still sit
@@ -200,7 +202,7 @@ prefix content may introduce; everything else is stripped by
   `.vault-code-tools-actions`, `.vault-code-tools-message`,
   `.vault-code-language-select`, `.vault-code-tools-divider`, `.vault-code-tooltip`,
   the Live-mode block edge classes `.vault-cm-code-first` / `.vault-cm-code-last`,
-  the idle-block corner chrome `.vault-cm-code-label` / `.vault-cm-code-run`, and the collapsed build warnings `.vault-code-run-diagnostics` / `-body` — the Live-mode code
+  the idle-block corner chrome `.vault-cm-code-label` / `.vault-cm-code-run`, the collapsed build warnings `.vault-code-run-diagnostics` / `-body`, the diagnostic colours `.vault-code-diag-*`, and the copy buttons `.vault-cm-code-header` / `.vault-cm-code-copy` / `.vault-cm-inline-copy*` — the Live-mode code
   toolbar never renders in a shared or published document, so no snippet should
   target it. The same goes for the run output panel, `.vault-code-run` and its
   `.vault-code-run-*` children, and the stdin box, `.vault-code-input` and its

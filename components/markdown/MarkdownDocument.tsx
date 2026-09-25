@@ -18,6 +18,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  type CSSProperties,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -34,7 +35,7 @@ import { CalcBlock } from "@/components/extensions/CalcBlock";
 import { CalcValue } from "@/components/extensions/CalcValue";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
-import { CodeBlock } from "@/components/markdown/CodeBlock";
+import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
 import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
 import { splitCalendarSegments } from "@/lib/calendar";
@@ -522,10 +523,16 @@ function createMarkdownComponents(
   pre({ children, className, style, node }) {
     const code = node?.children.find((child) => child.type === "element" && child.tagName === "code");
     if (!code || code.type !== "element") return <pre {...styledProps("vault-md-pre", className, style)}>{children}</pre>;
-    return <CodeBlock source={codeNodeText(code)} info={codeInfoFromClassName(code.properties.className)} {...styledProps("vault-md-pre", className, style)}>{children}</CodeBlock>;
+    // Mark the block's own <code> so the `code` renderer below can tell it from
+    // inline code. Context would be the usual tool, but this tree also renders
+    // as a server component and through `renderToStaticMarkup`, where there is
+    // no provider to read.
+    const marked = Children.map(children, (child) => (isValidElement(child) ? cloneElement(child as ReactElement<{ inBlock?: boolean }>, { inBlock: true }) : child));
+    return <CodeBlock source={codeNodeText(code)} info={codeInfoFromClassName(code.properties.className)} {...styledProps("vault-md-pre", className, style)}>{marked}</CodeBlock>;
   },
-  code({ children, className, style }) {
-    return <code {...styledProps("vault-md-code", className, style)}>{children}</code>;
+  code({ children, className, style, inBlock }: { children?: ReactNode; className?: string; style?: CSSProperties; inBlock?: boolean }) {
+    if (inBlock) return <code {...styledProps("vault-md-code", className, style)}>{children}</code>;
+    return <InlineCode {...styledProps("vault-md-code", className, style)}>{children}</InlineCode>;
   },
   strong({ children, className, style }) {
     return <strong {...styledProps("vault-md-strong", className, style)}>{children}</strong>;

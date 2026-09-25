@@ -760,20 +760,94 @@
     gap: 0.75rem;
   }
 
-  /* A caption rather than a title bar: no rule under it, and Copy stays quiet
-     until the block is hovered or focused. It is never hidden outright, so
-     touch screens — which have no hover — can still reach it. */
+  /* A caption rather than a title bar: the language sits top-right, and a copy
+     button appears beside it while the block is hovered. Touch screens have
+     no hover, so there it is simply always shown. */
   .vault-md-code-header {
-    justify-content: space-between;
-    padding: 0.3rem 0.4rem 0 1rem;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    min-height: 1.9rem;
+    padding: 0.3rem 0.5rem 0 1rem;
   }
-  .vault-md-code-header > button {
-    opacity: 0.55;
-    transition: opacity 120ms ease;
+
+  /* Copy buttons, Read and Live mode alike. */
+  .vault-md-code-copy,
+  .vault-cm-code-copy,
+  .vault-md-inline-copy,
+  .vault-cm-inline-copy-button {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--vault-code-edge, var(--border));
+    border-radius: 0.375rem;
+    background: var(--background);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: opacity 120ms ease, color 120ms ease;
   }
-  .vault-md-code-block:hover .vault-md-code-header > button,
-  .vault-md-code-header > button:focus-visible {
+  .vault-md-code-copy,
+  .vault-cm-code-copy { width: 1.6rem; height: 1.6rem; }
+  .vault-md-code-copy svg,
+  .vault-cm-code-copy svg { width: 0.85rem; height: 0.85rem; }
+  .vault-md-code-copy:hover,
+  .vault-cm-code-copy:hover,
+  .vault-md-inline-copy:hover,
+  .vault-cm-inline-copy-button:hover { color: var(--foreground); }
+  .vault-md-code-copy[data-copied],
+  .vault-cm-code-copy[data-copied],
+  .vault-md-inline-copy[data-copied],
+  .vault-cm-inline-copy-button[data-copied] { color: var(--code-string); }
+  .vault-md-code-copy:focus-visible,
+  .vault-cm-code-copy:focus-visible,
+  .vault-md-inline-copy:focus-visible,
+  .vault-cm-inline-copy-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+
+  .vault-md-code-copy { opacity: 0; }
+  .vault-md-code-block:hover .vault-md-code-copy,
+  .vault-md-code-copy:focus-visible,
+  .vault-md-code-copy[data-copied] { opacity: 1; }
+  @media (hover: none) {
+    .vault-md-code-copy { opacity: 1; }
+  }
+
+  /* Inline code: a small button over the span's top-right corner. It overlaps
+     the code slightly so the pointer never crosses a gap that would end the
+     hover on its way to the button. */
+  .vault-md-inline-code { position: relative; }
+  .vault-md-inline-copy,
+  .vault-cm-inline-copy-button {
+    position: absolute;
+    z-index: 2;
+    width: 1.35rem;
+    height: 1.35rem;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  }
+  .vault-md-inline-copy svg,
+  .vault-cm-inline-copy-button svg { width: 0.7rem; height: 0.7rem; }
+  .vault-md-inline-copy {
+    top: -1rem;
+    right: -0.55rem;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .vault-md-inline-code:hover .vault-md-inline-copy,
+  .vault-md-inline-copy:focus-visible,
+  .vault-md-inline-copy[data-copied] {
     opacity: 1;
+    pointer-events: auto;
+  }
+  /* Live mode draws the button only while hovered, from a zero-width anchor
+     placed straight after the span, so it never moves the text around it. */
+  .vault-cm-inline-copy {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    height: 0;
+    vertical-align: top;
+  }
+  .vault-cm-inline-copy-button {
+    top: -0.95rem;
+    left: -0.75rem;
   }
 
   .vault-code-language {
@@ -820,11 +894,16 @@
 
   /* The language label and the corner Run button live on the fence's delimiter
      lines, which Live mode leaves empty while the block is idle. */
-  .vault-markdown-editor .cm-line .vault-cm-code-label {
+  .vault-markdown-editor .cm-line .vault-cm-code-header {
     position: absolute;
     top: 50%;
     right: 0.75rem;
     transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .vault-markdown-editor .cm-line .vault-cm-code-label {
     color: var(--muted-foreground);
     font-family: var(--font-sans);
     font-size: 0.7rem;
@@ -1022,8 +1101,18 @@
   }
   /* Separate streams read as separate, without a heavy rule between them. */
   .vault-code-run-output + .vault-code-run-output { border-top: 1px dashed var(--vault-code-edge); }
-  .vault-code-run-stderr,
-  .vault-code-run-compiler { color: var(--destructive); }
+  .vault-code-run-stderr { color: var(--destructive); }
+  /* Compiler output is coloured piece by piece (lib/code/diagnostics.ts), the
+     way GCC and GHC colour it in a terminal; the base is plain text. */
+  .vault-code-run-compiler { color: color-mix(in oklab, var(--foreground) 82%, transparent); }
+  .vault-code-diag-location { color: var(--foreground); font-weight: 600; }
+  .vault-code-diag-error { color: var(--destructive); font-weight: 600; }
+  .vault-code-diag-warning { color: var(--code-number); font-weight: 600; }
+  .vault-code-diag-note { color: var(--code-type); font-weight: 600; }
+  .vault-code-diag-flag,
+  .vault-code-diag-gutter { color: var(--muted-foreground); }
+  .vault-code-diag-code { color: var(--foreground); }
+  .vault-code-diag-caret { color: var(--code-string); }
 
   /* Warnings from a build that succeeded: one amber line, open on demand. */
   .vault-code-run-diagnostics {
@@ -1048,7 +1137,7 @@
     overflow: auto;
     padding: 0.5rem 0.75rem;
     border-top: 1px dashed var(--vault-code-edge);
-    color: var(--muted-foreground);
+    color: color-mix(in oklab, var(--foreground) 82%, transparent);
     font-family: var(--font-mono);
     font-size: 0.78rem;
     line-height: 1.5;

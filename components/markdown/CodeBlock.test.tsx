@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server.node";
 import { describe, expect, it } from "vitest";
-import { CodeBlock } from "./CodeBlock";
+import { CodeBlock, InlineCode } from "./CodeBlock";
 
 /**
  * `GET /api/embed/documents/:id/rendered` builds its HTML with
@@ -34,5 +34,12 @@ describe("code block in a static (non-hydrating) render", () => {
   it("falls back to a readable label for an unknown or absent language", () => {
     expect(renderStatic("", "x")).toContain("Plain text");
     expect(renderStatic("not-a-language", "x")).toContain("not-a-language");
+  });
+});
+
+describe("inline code in a static render", () => {
+  it("is exactly the <code> it always was: no wrapper, no button", () => {
+    const html = renderToStaticMarkup(<p>run <InlineCode className="vault-md-code">npm test</InlineCode> now</p>);
+    expect(html).toBe('<p>run <code class="vault-md-code">npm test</code> now</p>');
   });
 });

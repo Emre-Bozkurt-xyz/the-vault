@@ -1,4 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
 import { Facet, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
@@ -9,6 +10,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
+import { highlightDiagnostics } from "@/lib/code/diagnostics";
 import { countCompilerWarnings, formatDuration, formatJobOutcome } from "@/lib/code/jobs";
 import { codeLanguageHint, resolveCodeLanguage } from "@/lib/code/languages";
 import {
@@ -489,6 +491,29 @@ function runFromInput(view: EditorView, inputId: string): void {
   void startCodeRun(view, fence);
 }
 
+/**
+ * Compiler output as coloured spans, the way a terminal would show it. Every
+ * piece goes in through `textContent`; `highlightDiagnostics` only chooses a
+ * class, so output still cannot become markup.
+ */
+function renderDiagnostics(text: string): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  highlightDiagnostics(text).forEach((line, index) => {
+    if (index > 0) fragment.append("\n");
+    for (const span of line) {
+      if (span.kind === "text") {
+        fragment.append(span.text);
+        continue;
+      }
+      const element = document.createElement("span");
+      element.className = `vault-code-diag-${span.kind}`;
+      element.textContent = span.text;
+      fragment.append(element);
+    }
+  });
+  return fragment;
+}
+
 class RunOutputWidget extends WidgetType {
   constructor(private run: CodeRun, private stale: boolean) {
     super();
@@ -576,7 +601,10 @@ class RunOutputWidget extends WidgetType {
     // an amber "2 warnings" line instead of dressing them up as errors.
     const compiler = run.result?.compilerOutput ?? "";
     if (compiler && run.state === "compile_error") {
-      block(compiler, "compiler");
+      const pre = document.createElement("pre");
+      pre.className = "vault-code-run-output vault-code-run-compiler";
+      pre.append(renderDiagnostics(compiler));
+      root.append(pre);
     } else if (compiler) {
       const warnings = countCompilerWarnings(compiler);
       const details = document.createElement("details");
@@ -586,7 +614,7 @@ class RunOutputWidget extends WidgetType {
       summary.textContent = warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : "Compiler output";
       const pre = document.createElement("pre");
       pre.className = "vault-code-run-diagnostics-body";
-      pre.textContent = compiler;
+      pre.append(renderDiagnostics(compiler));
       details.append(summary, pre);
       root.append(details);
     }
@@ -665,22 +693,186 @@ function filledIcon(path: string, offset = "") {
   return svg;
 }
 
-class LanguageLabelWidget extends WidgetType {
-  constructor(private label: string) {
+const COPY_PATHS = [
+  "M8 10a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2z",
+  "M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2",
+];
+const CHECK_PATHS = ["M20 6 9 17l-5-5"];
+
+function strokeIcon(paths: readonly string[]) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of paths) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/**
+ * A copy button that reads its text when clicked, not when drawn, so it
+ * always copies what the block holds now. Feedback (a check mark) is local to
+ * the button: it is not state anything else needs to know about.
+ */
+function copyButton(className: string, label: string, read: () => string | null) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.title = "Copy";
+  button.setAttribute("aria-label", label);
+  button.append(strokeIcon(COPY_PATHS));
+  // Keep the cursor where it is; a click here is not a click into the text.
+  button.addEventListener("mousedown", (event) => event.preventDefault());
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const text = read();
+    if (text === null) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.replaceChildren(strokeIcon(CHECK_PATHS));
+      button.title = "Copied";
+      button.dataset.copied = "true";
+      window.setTimeout(() => {
+        button.replaceChildren(strokeIcon(COPY_PATHS));
+        button.title = "Copy";
+        delete button.dataset.copied;
+      }, 1400);
+    } catch {
+      button.title = "Could not copy";
+    }
+  });
+  return button;
+}
+
+/** Top-right of an idle block: the language, and a copy button while hovered. */
+class FenceHeaderWidget extends WidgetType {
+  constructor(private label: string, private copy: boolean) {
     super();
   }
 
-  eq(other: LanguageLabelWidget) {
-    return other.label === this.label;
+  eq(other: FenceHeaderWidget) {
+    return other.label === this.label && other.copy === this.copy;
   }
 
-  toDOM() {
-    const span = document.createElement("span");
-    span.className = "vault-cm-code-label";
-    span.textContent = this.label;
-    return span;
+  toDOM(view: EditorView) {
+    const header = document.createElement("span");
+    header.className = "vault-cm-code-header";
+    if (this.copy) {
+      header.append(copyButton("vault-cm-code-copy", "Copy code", () => {
+        return codeFenceAt(view.state, view.posAtDOM(header))?.source ?? null;
+      }));
+    }
+    if (this.label) {
+      const span = document.createElement("span");
+      span.className = "vault-cm-code-label";
+      span.textContent = this.label;
+      header.append(span);
+    }
+    return header;
+  }
+
+  ignoreEvent() {
+    return true;
   }
 }
+
+/** The text between an inline code span's backticks. */
+function inlineCodeText(state: EditorState, from: number, to: number): string | null {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(from + 1, 1);
+  while (node && node.name !== "InlineCode") node = node.parent;
+  if (!node || node.from !== from || node.to !== to) return null;
+  const marks = node.getChildren("CodeMark");
+  if (marks.length < 2) return null;
+  // CommonMark trims one space from each side when both are present.
+  const inner = state.sliceDoc(marks[0].to, marks[marks.length - 1].from);
+  return /^ .* $/s.test(inner) && inner.trim() ? inner.slice(1, -1) : inner;
+}
+
+/** A zero-width anchor after inline code, holding a copy button above its end. */
+class InlineCopyWidget extends WidgetType {
+  constructor(private from: number, private to: number) {
+    super();
+  }
+
+  eq(other: InlineCopyWidget) {
+    return other.from === this.from && other.to === this.to;
+  }
+
+  toDOM(view: EditorView) {
+    const anchor = document.createElement("span");
+    anchor.className = "vault-cm-inline-copy";
+    anchor.append(copyButton("vault-cm-inline-copy-button", "Copy inline code", () => {
+      const hover = view.state.field(codeHoverField);
+      return hover?.kind === "inline" ? inlineCodeText(view.state, hover.from, hover.to) : null;
+    }));
+    return anchor;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hover: which code block or inline code span the pointer is over. Tracked in
+// state so the copy buttons can be decorations like everything else here;
+// updated only when the target changes, never on every mouse move.
+// ---------------------------------------------------------------------------
+
+type HoverTarget = { kind: "fence" | "inline"; from: number; to: number };
+const hoverEffect = StateEffect.define<HoverTarget | null>();
+
+const codeHoverField = StateField.define<HoverTarget | null>({
+  create: () => null,
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(hoverEffect)) return effect.value;
+    if (value && tr.docChanged) {
+      return { ...value, from: tr.changes.mapPos(value.from, 1), to: tr.changes.mapPos(value.to, -1) };
+    }
+    return value;
+  },
+});
+
+function hoverTargetAt(state: EditorState, pos: number): HoverTarget | null {
+  const tree = syntaxTree(state);
+  for (const side of [-1, 1] as const) {
+    for (let node: SyntaxNode | null = tree.resolveInner(pos, side); node; node = node.parent) {
+      if (node.name === "InlineCode") return { kind: "inline", from: node.from, to: node.to };
+      if (node.name === "FencedCode") return { kind: "fence", from: node.from, to: node.to };
+    }
+  }
+  return null;
+}
+
+const sameTarget = (a: HoverTarget | null, b: HoverTarget | null) =>
+  a === b || (!!a && !!b && a.kind === b.kind && a.from === b.from && a.to === b.to);
+
+const hoverTracker = EditorView.domEventHandlers({
+  mousemove(event, view) {
+    // Never while a button is held: that is a drag-selection in progress.
+    if (event.buttons) return false;
+    // Approximate on purpose: the empty space right of a short code line is
+    // still that block, and should still offer its copy button.
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
+    const target = hoverTargetAt(view.state, pos);
+    if (!sameTarget(target, view.state.field(codeHoverField))) {
+      view.dispatch({ effects: hoverEffect.of(target) });
+    }
+    return false;
+  },
+  mouseleave(_event, view) {
+    if (view.state.field(codeHoverField)) view.dispatch({ effects: hoverEffect.of(null) });
+    return false;
+  },
+});
 
 class CornerRunWidget extends WidgetType {
   constructor(private mode: "run" | "stop", private label: string) {
@@ -727,6 +919,7 @@ function chromeDecorations(state: EditorState): DecorationSet {
   const widgets: Range<Decoration>[] = [];
   const head = state.selection.main.head;
   const capabilities = state.field(codeCapabilitiesField);
+  const hover = state.field(codeHoverField);
   const seen = new Set<number>();
   syntaxTree(state).iterate({
     enter(node) {
@@ -740,7 +933,10 @@ function chromeDecorations(state: EditorState): DecorationSet {
       const language = resolveCodeLanguage(fence.info);
       const opening = state.doc.lineAt(fence.from);
       const label = language?.label ?? codeLanguageHint(fence.info).slice(0, 24);
-      if (label) widgets.push(Decoration.widget({ widget: new LanguageLabelWidget(label), side: 1 }).range(opening.to));
+      const copy = hover?.kind === "fence" && hover.from === fence.from && !!fence.source;
+      if (label || copy) {
+        widgets.push(Decoration.widget({ widget: new FenceHeaderWidget(label, copy), side: 1 }).range(opening.to));
+      }
 
       const runnable = capabilities?.enabled
         && capabilities.languages.some((item) => item.id === language?.id && item.canRun);
@@ -757,6 +953,9 @@ function chromeDecorations(state: EditorState): DecorationSet {
       return false;
     },
   });
+  if (hover?.kind === "inline" && hover.to <= state.doc.length && inlineCodeText(state, hover.from, hover.to)) {
+    widgets.push(Decoration.widget({ widget: new InlineCopyWidget(hover.from, hover.to), side: 1 }).range(hover.to));
+  }
   return Decoration.set(widgets, true);
 }
 
@@ -769,6 +968,8 @@ export function codeRunExtension(documentId: string): Extension {
     runPoller,
     // Block widgets must come from state, never from a view plugin.
     EditorView.decorations.compute([codeRunsField, codeInputsField, "doc"], outputDecorations),
-    EditorView.decorations.compute([codeRunsField, codeCapabilitiesField, "doc", "selection"], chromeDecorations),
+    codeHoverField,
+    hoverTracker,
+    EditorView.decorations.compute([codeRunsField, codeCapabilitiesField, codeHoverField, "doc", "selection"], chromeDecorations),
   ];
 }
