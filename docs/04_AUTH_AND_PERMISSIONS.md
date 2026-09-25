@@ -490,6 +490,48 @@ Keeping the slug reserved avoids old links being immediately reused by another d
 
 ---
 
+## 14.5 Code Execution
+
+Running code is the one capability where **editing a document is not enough**.
+See `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` §7 and `code_jobs` in
+`03_DATA_MODEL.md`.
+
+Two populations call the `/api/code/*` routes, and neither can stand in for the
+other:
+
+```txt
+Users   -> session cookie      /api/code/capabilities, /jobs, /jobs/[id], /jobs/[id]/cancel
+Runners -> bearer token only   /api/code/worker/claim, /worker/jobs/[id]/{heartbeat,complete}
+```
+
+To submit a job a user must pass, in order:
+
+```txt
+CODE_EXECUTION_ENABLED=true          deployment switch; off means the route 404s
+same-origin request                  Sec-Fetch-Site, else Origin; neither -> refused
+signed in and not banned             ban re-read from the database on every request
+rate limit                           20 submissions per minute
+valid input                          catalog language, size bounds, well-formed request id
+id in CODE_EXECUTION_USER_IDS        an unset allowlist denies everyone
+getDocumentAccess(...).canEdit       inaccessible -> 404, never 403
+```
+
+Reading or cancelling a job requires being its submitter **and** still having
+`canEdit` on its document **and** not being banned. Every failure is a 404, so a
+response never confirms that someone else's job id exists. A ban or a revoked
+share takes effect on the next poll, not when the session expires.
+
+The runner authenticates with `CODE_RUNNER_TOKEN`, compared in constant time; a
+token under 32 characters is refused outright so a placeholder cannot ship.
+**Worker routes never read a cookie**, so a signed-in user's browser cannot
+claim a job or post a forged result whatever it sends. A runner can only
+heartbeat or complete a job whose current `attempt_id` it holds.
+
+Execution results are private to the submitting user and expire after 24 hours.
+They never enter Markdown, collaboration, public pages, or MCP.
+
+---
+
 ## 15. MVP Auth/Permission Tests
 
 Manual tests:

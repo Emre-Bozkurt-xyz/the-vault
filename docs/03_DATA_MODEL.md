@@ -784,6 +784,77 @@ Properties that make this table unlike every other one here:
 `fetched_at` is what the cache-age check reads, so a re-fetch of a day the
 provider has revised must upsert (not skip) to correct the stored rate.
 
+## 10.6 Code Execution Jobs (`code_jobs`)
+
+The durable queue behind Run for code fences
+(`docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` §7). Added in migration
+`0023_lively_cable.sql`.
+
+```txt
+code_jobs
+  id                  uuid primary key
+  user_id             uuid not null -> users.id (cascade)
+  document_id         uuid not null -> documents.id (cascade)
+  operation           text not null           -- run | format
+  language_id         text not null           -- catalog id, never a command
+  profile_id          text not null           -- server-side runtime profile
+  image_digest        text                    -- what the attempt actually ran
+  runtime_version     text                    -- shown in the UI, e.g. "CPython 3.12"
+  source              text not null           -- PRIVATE: editor snapshot
+  stdin               text not null default ''-- PRIVATE
+  source_hash         text not null           -- sha256, for the stale check
+  state               text not null default 'queued'
+  request_id          text not null           -- client id; deduplicates retries
+  worker_id           text
+  attempt_id          uuid                    -- lease token; rejects late results
+  lease_expires_at    timestamptz
+  heartbeat_at        timestamptz
+  cancel_requested_at timestamptz
+  compiler_output     text                    -- PRIVATE, inert text
+  stdout              text                    -- PRIVATE, inert text
+  stderr              text                    -- PRIVATE, inert text
+  exit_code           integer
+  signal              text
+  output_truncated    boolean not null default false
+  queue_ms / prepare_ms / compile_ms / run_ms   integer
+  queued_at           timestamptz not null default now()
+  started_at / finished_at                      timestamptz
+  expires_at          timestamptz not null    -- retention deadline
+
+unique(user_id, request_id)
+index(state, queued_at)        -- the claim query
+index(user_id, queued_at)      -- per-user admission and history
+index(lease_expires_at)        -- lease reclamation
+index(expires_at)              -- retention purge
+```
+
+Properties that matter more than the columns:
+
+- **Source, stdin and every output column are private user data.** They belong
+  to the submitting user alone and never enter Markdown, collaboration, public
+  pages or MCP. Output is stored as inert text — terminal escapes stripped, and
+  rendered with `textContent`, never as HTML or Markdown.
+- **`document_id` authorizes the feature; it does not vouch for the source.**
+  The source is the editor's snapshot at the moment of Run, which may be newer
+  than the debounced save — treat it as arbitrary input.
+- **Rows are deleted, not archived.** `expires_at` is 24 hours after finishing,
+  and the sweep deletes past it, taking source and output with it.
+- **Delivery is at-least-once.** `attempt_id` is regenerated on every claim, and
+  both heartbeat and completion must present the current one — so a late result
+  from a reclaimed attempt matches no row and is dropped rather than overwriting
+  the recorded outcome.
+- **A lapsed lease is never requeued.** It becomes `infrastructure_error`; the
+  user reruns explicitly. Silently replaying user code after an uncertain
+  failure is exactly what this table is designed to prevent.
+- **Admission and claiming take a Postgres advisory lock**, because each counts
+  rows and then acts on the count. Verified with separate processes racing:
+  six workers claiming one job produce exactly one claim, and eight concurrent
+  submissions against a limit of three admit exactly three.
+
+Access: only the submitting user may read or cancel a job, and only while they
+still have `canEdit` on its document and are not banned. Everything else —
+someone else's job, a revoked document, a nonexistent id — is a 404.
+
 ## 11. Audit Logs
 
 Not MVP, but good later.

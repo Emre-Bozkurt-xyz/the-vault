@@ -783,6 +783,82 @@
     outline-offset: 1px;
   }
 
+  /*
+   * Run output, a CodeMirror block widget under the fence. Spacing is padding
+   * on purpose: CodeMirror measures a block widget with getBoundingClientRect,
+   * which ignores margin, so a margin here would shift every line below it out
+   * of step with its own click coordinates (project-knowledge §18).
+   */
+  .vault-code-run {
+    padding: 0.5rem 0 0.75rem;
+    font-family: var(--font-sans);
+  }
+  .vault-code-run-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 0.5rem 0.5rem 0 0;
+    background: color-mix(in oklab, var(--muted) 40%, transparent);
+    font-size: 0.75rem;
+  }
+  .vault-code-run-status { font-weight: 600; color: var(--foreground); }
+  .vault-code-run[data-state="submitting"] .vault-code-run-status,
+  .vault-code-run[data-state="queued"] .vault-code-run-status,
+  .vault-code-run[data-state="preparing"] .vault-code-run-status,
+  .vault-code-run[data-state="compiling"] .vault-code-run-status,
+  .vault-code-run[data-state="running"] .vault-code-run-status {
+    animation: vault-code-run-pulse 1.4s ease-in-out infinite;
+  }
+  .vault-code-run[data-state="succeeded"] .vault-code-run-status { color: var(--code-string); }
+  .vault-code-run[data-state$="_error"] .vault-code-run-status,
+  .vault-code-run[data-state="timed_out"] .vault-code-run-status,
+  .vault-code-run[data-state="resource_limit"] .vault-code-run-status,
+  .vault-code-run[data-state="output_limit"] .vault-code-run-status,
+  .vault-code-run[data-state="rejected"] .vault-code-run-status { color: var(--destructive); }
+  .vault-code-run-meta { color: var(--muted-foreground); font-family: var(--font-mono); }
+  .vault-code-run-actions { margin-left: auto; display: flex; gap: 0.25rem; }
+  .vault-code-run-button {
+    padding: 0.1rem 0.5rem;
+    border-radius: 0.375rem;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+  .vault-code-run-button:hover { background: var(--muted); color: var(--foreground); }
+  .vault-code-run-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .vault-code-run-output {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    max-height: 20rem;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-top: 0;
+    background: color-mix(in oklab, var(--muted) 25%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .vault-code-run-output:last-child,
+  .vault-code-run-note:last-child { border-radius: 0 0 0.5rem 0.5rem; }
+  .vault-code-run-stderr,
+  .vault-code-run-compiler { color: var(--destructive); }
+  .vault-code-run-note {
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--border);
+    border-top: 0;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+  }
+  .vault-code-run-header:last-child { border-bottom: 1px solid var(--border); border-radius: 0.5rem; }
+  @keyframes vault-code-run-pulse { 50% { opacity: 0.45; } }
+  @media (prefers-reduced-motion: reduce) {
+    .vault-code-run-status { animation: none !important; }
+  }
+
   .vault-code-tools { padding: 0.35rem 0.5rem; max-width: min(28rem, 90vw); }
   .vault-code-tools-actions { gap: 0.35rem; }
   .vault-code-tools-actions > .vault-code-language { margin-right: 0.5rem; }

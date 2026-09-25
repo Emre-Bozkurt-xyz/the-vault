@@ -20,6 +20,10 @@ import {
 
 import { ASSET_LIMITS } from "../lib/config/asset-limits";
 import type { SnippetStatus } from "../lib/config/snippet-limits";
+import type {
+  CodeJobOperation,
+  CodeJobState,
+} from "../lib/config/code-execution";
 
 export type DocumentRole = "owner" | "editor" | "viewer";
 export type FolderRole = "editor" | "viewer";
@@ -1378,3 +1382,91 @@ export const fxRates = pgTable(
     index("fx_rates_base_date_idx").on(table.base, table.rateDate),
   ],
 );
+
+/**
+ * Code execution jobs (`docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` §7).
+ *
+ * `source`, `stdin` and every output column are **private user data**: they
+ * belong to the submitting user, never enter Markdown, collaboration, public
+ * pages or MCP, and are deleted by retention rather than kept. Output is stored
+ * as inert text and must be rendered as text — never as HTML, Markdown, or with
+ * terminal escapes interpreted.
+ */
+export const codeJobs = pgTable(
+  "code_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Authorizes the feature. It is NOT a claim that `source` was ever saved. */
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    operation: text("operation").$type<CodeJobOperation>().notNull(),
+    /** Catalog id from `lib/code/languages.ts`, never a command or image name. */
+    languageId: text("language_id").notNull(),
+    /** Server-side runtime profile id, resolved at submission. */
+    profileId: text("profile_id").notNull(),
+    /** Pinned image the attempt actually used; recorded with every result. */
+    imageDigest: text("image_digest"),
+    runtimeVersion: text("runtime_version"),
+
+    /** Editor snapshot, which may be newer than the debounced document save. */
+    source: text("source").notNull(),
+    stdin: text("stdin").notNull().default(""),
+    /** Lets the editor mark a result stale once the block's text moves on. */
+    sourceHash: text("source_hash").notNull(),
+
+    state: text("state").$type<CodeJobState>().notNull().default("queued"),
+    /** Client-supplied; deduplicates browser retries. Unique per user. */
+    requestId: text("request_id").notNull(),
+
+    // Lease bookkeeping. Delivery is at-least-once, so `attemptId` is what
+    // makes a late result from a superseded attempt rejectable.
+    workerId: text("worker_id"),
+    attemptId: uuid("attempt_id"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+
+    compilerOutput: text("compiler_output"),
+    stdout: text("stdout"),
+    stderr: text("stderr"),
+    exitCode: integer("exit_code"),
+    signal: text("signal"),
+    outputTruncated: boolean("output_truncated").notNull().default(false),
+
+    queueMs: integer("queue_ms"),
+    prepareMs: integer("prepare_ms"),
+    compileMs: integer("compile_ms"),
+    runMs: integer("run_ms"),
+
+    queuedAt: timestamp("queued_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** Retention deadline; a sweeper deletes rows past it. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    // A browser retry of the same click must not become a second execution.
+    uniqueIndex("code_jobs_user_request_unique").on(table.userId, table.requestId),
+    // The claim query: oldest queued job, filtered by profile.
+    index("code_jobs_claimable_idx").on(table.state, table.queuedAt),
+    // "My recent jobs", and the per-user admission count.
+    index("code_jobs_user_queued_idx").on(table.userId, table.queuedAt),
+    // Lease reclamation sweeps by expiry across non-terminal rows.
+    index("code_jobs_lease_idx").on(table.leaseExpiresAt),
+    index("code_jobs_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const codeJobsRelations = relations(codeJobs, ({ one }) => ({
+  user: one(users, { fields: [codeJobs.userId], references: [users.id] }),
+  document: one(documents, {
+    fields: [codeJobs.documentId],
+    references: [documents.id],
+  }),
+}));

@@ -5,6 +5,7 @@ import { classHighlighter } from "@lezer/highlight";
 import { createRoot } from "react-dom/client";
 import { CodeFenceTools } from "./CodeFenceTools";
 import { codeFenceAt } from "./code-fences";
+import { activeRunsChanged, codeRunExtension } from "./code-run";
 
 function codeLineDecorations(view: EditorView) {
   const lines = new Set<number>();
@@ -20,7 +21,7 @@ function codeLineDecorations(view: EditorView) {
   return Decoration.set([...lines].sort((a, b) => a - b).map((from) => Decoration.line({ class: "vault-cm-code-line" }).range(from)));
 }
 
-export function createCodeBlockExtension(onFormatBoundary: () => void) {
+export function createCodeBlockExtension(onFormatBoundary: () => void, documentId: string) {
   function tooltip(state: EditorState): Tooltip | null {
     if (state.readOnly) return null;
     const block = codeFenceAt(state);
@@ -33,7 +34,7 @@ export function createCodeBlockExtension(onFormatBoundary: () => void) {
         dom.className = "vault-code-tooltip";
         dom.setAttribute("aria-label", "Code tools (Alt+F10)");
         const root = createRoot(dom);
-        root.render(<CodeFenceTools view={view} position={selection.head} onFormatBoundary={onFormatBoundary} />);
+        root.render(<CodeFenceTools view={view} position={selection.head} onFormatBoundary={onFormatBoundary} documentId={documentId} />);
         return { dom, destroy() { window.setTimeout(() => root.unmount(), 0); } };
       },
     };
@@ -41,11 +42,16 @@ export function createCodeBlockExtension(onFormatBoundary: () => void) {
   const tools = StateField.define<Tooltip | null>({
     create: tooltip,
     update(value, transaction) {
-      return transaction.docChanged || transaction.selection ? tooltip(transaction.state) : value;
+      if (transaction.docChanged || transaction.selection) return tooltip(transaction.state);
+      // Rebuild when Run becomes available or a run starts or ends — but not on
+      // every poll tick, which would remount the toolbar under the cursor
+      // several times a second and swallow clicks aimed at it.
+      return activeRunsChanged(transaction.startState, transaction.state) ? tooltip(transaction.state) : value;
     },
     provide: (field) => showTooltip.from(field),
   });
   return [
+    codeRunExtension(),
     syntaxHighlighting(classHighlighter),
     ViewPlugin.fromClass(class {
       decorations: DecorationSet;

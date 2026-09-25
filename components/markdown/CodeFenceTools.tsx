@@ -4,13 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { isolateHistory } from "@codemirror/commands";
 import { Transaction } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Copy, WandSparkles } from "lucide-react";
+import { Copy, Play, WandSparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { codeLanguageHint, codeLanguages, MAX_CODE_FORMAT_LENGTH, resolveCodeLanguage } from "@/lib/code/languages";
 import { formatCodeInWorker } from "@/lib/code/format-client";
 import { codeFenceAt, codeLanguageChange, formattedCodeChange, formattedCodeSelection } from "./code-fences";
+import { codeCapabilitiesField, isActiveRun, runForFence, runUnavailableReason, startCodeRun } from "./code-run";
 
-export function CodeFenceTools({ view, position, onFormatBoundary }: { view: EditorView; position: number; onFormatBoundary: () => void }) {
+export function CodeFenceTools({ view, position, onFormatBoundary, documentId }: {
+  view: EditorView;
+  position: number;
+  onFormatBoundary: () => void;
+  documentId: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const pending = useRef<AbortController | null>(null);
@@ -23,6 +29,14 @@ export function CodeFenceTools({ view, position, onFormatBoundary }: { view: Edi
   // build has no grammar for cannot silently rewrite the author's own word.
   const hint = codeLanguageHint(fence.info);
   const unknown = !language && hint ? hint : "";
+  // Run appears only for a language this user can actually execute, so an
+  // account without execution never sees a button that cannot work.
+  const capabilities = view.state.field(codeCapabilitiesField, false);
+  const runnable = !!capabilities?.enabled
+    && capabilities.languages.some((item) => item.id === language?.id && item.canRun);
+  const existing = runForFence(view.state, fence);
+  const running = existing ? isActiveRun(existing) : false;
+  const runBlocked = runnable ? runUnavailableReason(view.state, fence) : null;
   return (
     <div className="vault-code-tools" onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); view.focus(); }
@@ -50,6 +64,14 @@ export function CodeFenceTools({ view, position, onFormatBoundary }: { view: Edi
             <option key={item.id} value={item.id}>{item.label}</option>
           ))}
         </select>
+        {runnable ? (
+          <span title={runBlocked ?? (running ? "This block is already running" : "Run this code block")}>
+            <Button type="button" variant="ghost" size="xs" disabled={!!runBlocked || running} onClick={() => {
+              void startCodeRun(view, documentId, fence);
+              view.focus();
+            }}><Play data-icon="inline-start" />{running ? "Running…" : "Run"}</Button>
+          </span>
+        ) : null}
         <Button type="button" variant="ghost" size="xs" onClick={async () => {
           try { await navigator.clipboard.writeText(fence.source); setMessage("Copied"); }
           catch { setMessage("Could not copy code."); }

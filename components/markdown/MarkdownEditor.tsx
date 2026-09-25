@@ -773,7 +773,7 @@ export function MarkdownEditor({
         }),
       }),
       EditorView.lineWrapping,
-      createCodeBlockExtension(() => collabSession?.undoManager.stopCapturing()),
+      createCodeBlockExtension(() => collabSession?.undoManager.stopCapturing(), documentId),
       Prec.highest(
         keymap.of(
           createMarkdownShortcutKeymap(editorBindings, {

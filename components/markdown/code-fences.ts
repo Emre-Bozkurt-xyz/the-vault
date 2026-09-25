@@ -13,6 +13,8 @@ export type CodeFence = {
   source: string;
   prefix: string;
   delimiter: string;
+  /** False while the author is still typing a fence that has no closing delimiter. */
+  closed: boolean;
   formatError?: string;
 };
 
@@ -46,6 +48,7 @@ export function codeFenceAt(state: EditorState, position = state.selection.main.
   return {
     from: node.from, to: node.to, bodyFrom, bodyTo, info, prefix, delimiter,
     infoFrom: infoNode ? infoNode.from : open.to, infoTo: infoNode ? infoNode.to : open.to,
+    closed: Boolean(close),
     source: lines.map((line) => line.startsWith(prefix) ? line.slice(prefix.length) : line).join("\n"),
     formatError: !close ? "Close this code fence before formatting." : !consistent ? "This block has mixed Markdown indentation. Use consistent fence and body indentation to format it." : undefined,
   };

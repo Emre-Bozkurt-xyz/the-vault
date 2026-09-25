@@ -9,8 +9,13 @@ Status as of 2026-09-24:
   — see the §6 note), and the `runner/` proof has been run on the mini-PC.
   Isolation passes 12/12; six languages run; measured timings are in §6.1.
 - **C# execution and CSharpier are dropped** (see §1). Six languages, not seven.
-- Everything else from §6 onward — the job queue, the job API, execution tables,
-  and the native formatters in production — is still proposal only.
+- **§7's job API and storage are implemented** (slice 4, 2026-09-25): `code_jobs`,
+  the `/api/code/*` routes, and `runner/worker.mjs`. Python and JavaScript run end
+  to end from the editor. Verified locally under plain `runc`; **not yet deployed
+  to the mini-PC or run under gVisor.**
+- Still proposal only: Java/Haskell/C/C++ profiles, the native formatters in the
+  editor, a stdin field, multiple workers, and the spare-sandbox and compilation
+  cache optimizations in §9.
 
 Tracked as Phase 24 (plan numbers and tracker phase numbers differ); see
 `docs/01_PROGRESS_TRACKER.md` for which slice is where, and

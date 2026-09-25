@@ -145,6 +145,55 @@ Repeated `build` runs are cheap — Docker reuses the layer cache and produces
 the same image — but editing a Dockerfile leaves the previous build untagged,
 and those accumulate silently. That is what `clean` sweeps.
 
+## The worker (slice 4)
+
+`proof.sh` measures; `worker.mjs` is the real runner. It claims jobs from
+Vault's worker API, runs each in a fresh sandbox, and reports the result. It
+runs **on the host**, beside Docker — never inside `vault-web`, which must not
+be given the Docker socket.
+
+```bash
+# On the mini-PC, from the repo:
+export CODE_RUNNER_URL=http://127.0.0.1:18210        # vault-web's local port
+export CODE_RUNNER_TOKEN=...                          # same value as Vault's
+node runner/worker.mjs
+```
+
+And in Vault's `.env.production`:
+
+```bash
+CODE_EXECUTION_ENABLED=true
+CODE_EXECUTION_USER_IDS=<your user id>
+CODE_RUNNER_TOKEN=<32+ random chars>
+```
+
+What it guarantees, and why:
+
+- **No shell.** Each profile's argv array goes straight to `docker run`. Nothing
+  a document contains is ever parsed as a command line, which also makes the
+  `bash -lc` PATH bug from slice 3 structurally impossible rather than avoided.
+- **Refuses to start without gVisor.** If `runsc` is not a registered runtime
+  it exits rather than run code under plain `runc`. `CODE_RUNNER_ALLOW_UNSANDBOXED=1`
+  overrides this for local development on machines with no gVisor (Docker
+  Desktop on Windows) and logs a warning on every start. **Never set it on a
+  real host.**
+- **The token never reaches a sandbox.** Containers get `HOME=/tmp` and nothing
+  else from the environment, and have no network to send anything anywhere.
+- **Two deadlines.** The worker's own timer kills a job at its limit, and an
+  in-container `timeout --signal=KILL` backstop fires a few seconds later. The
+  backstop exists for when the worker itself dies: without it, an infinite loop
+  would outlive its supervisor indefinitely. Tested by hard-killing the worker
+  mid-job — the orphaned sandbox stopped itself 6s later.
+- **Output is capped while it streams**, never buffered past 256 KiB.
+- **Stop takes about a second.** The worker heartbeats every second while a
+  sandbox is live and kills it as soon as a heartbeat reports a cancel.
+- **Crash-safe.** On startup it reaps any `vault-job-*` containers and
+  workspaces an earlier run left behind. A job whose worker died becomes an
+  `infrastructure_error` once its lease lapses, and is **never** re-run — the
+  user reruns it explicitly.
+
+Running it as a service (systemd, restart policy, log rotation) is slice 6.
+
 ## Recording the results
 
 Slice 3 is finished when the numbers exist and are written down, not when the
