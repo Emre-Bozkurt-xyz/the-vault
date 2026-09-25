@@ -90,6 +90,13 @@ export type CodeJobResult = {
   exitCode: number | null;
   signal: string | null;
   truncated: boolean;
+  /**
+   * Wall time of each sandboxed phase as the runner measured it, sandbox start
+   * included. Null for a phase that did not run (no compile step, or a build
+   * that failed before the program started).
+   */
+  compileMs: number | null;
+  runMs: number | null;
 };
 
 /** What a user-facing status response exposes. Never includes worker identity. */

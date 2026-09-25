@@ -9,6 +9,7 @@ import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrom
 import { cn } from "@/lib/utils";
 import { listUsersForAdmin } from "@/server/admin";
 import { requireAdmin } from "@/server/authz";
+import { executionEnabled } from "@/server/code-runtime";
 
 const SORT_OPTIONS = [
   { label: "Newest", value: "joined_desc" },
@@ -147,7 +148,7 @@ export default async function AdminUsersPage({
         </div>
       ) : (
         <>
-          <UsersTable users={result.items} />
+          <UsersTable users={result.items} executionEnabled={executionEnabled()} />
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>
               {rangeStart}–{rangeEnd} of {result.total}

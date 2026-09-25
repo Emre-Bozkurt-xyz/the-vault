@@ -1,24 +1,39 @@
 import { syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
-import { Decoration, EditorView, keymap, showTooltip, ViewPlugin, type DecorationSet, type Tooltip, type ViewUpdate } from "@codemirror/view";
+import { Decoration, EditorView, keymap, showTooltip, tooltips, ViewPlugin, type DecorationSet, type Tooltip, type ViewUpdate } from "@codemirror/view";
 import { classHighlighter } from "@lezer/highlight";
 import { createRoot } from "react-dom/client";
 import { CodeFenceTools } from "./CodeFenceTools";
 import { codeFenceAt } from "./code-fences";
 import { codeRunExtension, codeToolsStateChanged } from "./code-run";
 
+/**
+ * Every line of a fence gets `vault-cm-code-line`; the fence's own first and
+ * last lines also get `-first`/`-last`, so the block can be drawn as one
+ * rounded surface even though CodeMirror renders it as separate line elements.
+ * The edge classes come from the node's true bounds, not the visible range, so
+ * a block scrolled half out of view does not grow a false rounded edge.
+ */
 function codeLineDecorations(view: EditorView) {
-  const lines = new Set<number>();
+  const lines = new Map<number, string>();
+  const { doc } = view.state;
   for (const range of view.visibleRanges) {
     syntaxTree(view.state).iterate({ from: range.from, to: range.to, enter(node) {
       if (node.name !== "FencedCode") return;
-      const first = view.state.doc.lineAt(Math.max(range.from, node.from)).number;
-      const last = view.state.doc.lineAt(Math.min(range.to, node.to)).number;
-      for (let number = first; number <= last; number++) lines.add(view.state.doc.line(number).from);
+      const firstOfBlock = doc.lineAt(node.from).number;
+      const lastOfBlock = doc.lineAt(node.to).number;
+      const first = doc.lineAt(Math.max(range.from, node.from)).number;
+      const last = doc.lineAt(Math.min(range.to, node.to)).number;
+      for (let number = first; number <= last; number++) {
+        let className = "vault-cm-code-line";
+        if (number === firstOfBlock) className += " vault-cm-code-first";
+        if (number === lastOfBlock) className += " vault-cm-code-last";
+        lines.set(doc.line(number).from, className);
+      }
       return false;
     } });
   }
-  return Decoration.set([...lines].sort((a, b) => a - b).map((from) => Decoration.line({ class: "vault-cm-code-line" }).range(from)));
+  return Decoration.set([...lines].sort(([a], [b]) => a - b).map(([from, className]) => Decoration.line({ class: className }).range(from)));
 }
 
 export function createCodeBlockExtension(onFormatBoundary: () => void, documentId: string) {
@@ -51,6 +66,18 @@ export function createCodeBlockExtension(onFormatBoundary: () => void, documentI
     provide: (field) => showTooltip.from(field),
   });
   return [
+    // The editor column's formatting row is sticky and translucent, so a
+    // tooltip placed "above" a block near the top of the viewport ended up
+    // underneath it — greyed out and half unclickable. Treat the row's bottom
+    // edge as the top of the usable space; CodeMirror then flips the tooltip
+    // below the cursor when there is not room above.
+    tooltips({
+      tooltipSpace(view) {
+        const bar = view.dom.closest(".vault-editor-column")?.querySelector(".vault-editor-toolbar-row");
+        const top = bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+        return { top, left: 0, bottom: innerHeight, right: innerWidth };
+      },
+    }),
     codeRunExtension(documentId),
     syntaxHighlighting(classHighlighter),
     ViewPlugin.fromClass(class {

@@ -213,14 +213,3 @@ export function executionEnabled(): boolean {
   return process.env.CODE_EXECUTION_ENABLED === "true";
 }
 
-/**
- * Editing a document does not grant access to compute (plan §7). Membership in
- * this allowlist is a second, deployment-controlled gate on top of `canEdit`.
- * An unset allowlist denies everyone rather than allowing everyone — an empty
- * config must never be the permissive case.
- */
-export function userMayExecute(userId: string): boolean {
-  const raw = process.env.CODE_EXECUTION_USER_IDS ?? "";
-  const allowed = raw.split(",").map((value) => value.trim()).filter(Boolean);
-  return allowed.includes(userId);
-}

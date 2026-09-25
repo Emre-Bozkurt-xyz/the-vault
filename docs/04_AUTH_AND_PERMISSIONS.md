@@ -493,6 +493,10 @@ Keeping the slug reserved avoids old links being immediately reused by another d
 ## 14.5 Code Execution
 
 Running code is the one capability where **editing a document is not enough**.
+An admin grants it per user from Admin → Users (`setCodeExecutionAction` in
+`server/admin.ts`); the grant is re-read on every code request, so revoking it
+takes effect immediately. Users without it never see Run, Input, or runner-backed
+Format — capabilities report nothing runnable for them.
 See `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` §7 and `code_jobs` in
 `03_DATA_MODEL.md`.
 
@@ -512,7 +516,7 @@ same-origin request                  Sec-Fetch-Site, else Origin; neither -> ref
 signed in and not banned             ban re-read from the database on every request
 rate limit                           20 submissions per minute
 valid input                          catalog language, size bounds, well-formed request id
-id in CODE_EXECUTION_USER_IDS        an unset allowlist denies everyone
+users.code_execution_allowed        per-user grant set by an admin; default off
 getDocumentAccess(...).canEdit       inaccessible -> 404, never 403
 ```
 

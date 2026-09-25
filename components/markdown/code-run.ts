@@ -1,4 +1,5 @@
-import { Facet, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+import { Facet, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -8,8 +9,8 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
-import { formatJobOutcome } from "@/lib/code/jobs";
-import { resolveCodeLanguage } from "@/lib/code/languages";
+import { formatDuration, formatJobOutcome } from "@/lib/code/jobs";
+import { codeLanguageHint, resolveCodeLanguage } from "@/lib/code/languages";
 import {
   codeJobStateMessage,
   isTerminalCodeJobState,
@@ -432,7 +433,7 @@ class InputWidget extends WidgetType {
     label.textContent = "Input";
     const hint = document.createElement("span");
     hint.className = "vault-code-input-hint";
-    hint.textContent = "Sent to the program as standard input. Not saved in the document.";
+    hint.textContent = "stdin · not saved to the document";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "vault-code-run-button";
@@ -451,6 +452,7 @@ class InputWidget extends WidgetType {
     field.rows = 3;
     field.spellcheck = false;
     field.autocomplete = "off";
+    field.placeholder = "Text your program reads from standard input";
     field.value = this.input.text;
     field.addEventListener("input", () => {
       view.dispatch({ effects: inputEffect.of({ text: { id, text: field.value } }) });
@@ -518,17 +520,21 @@ class RunOutputWidget extends WidgetType {
       : codeJobStateMessage(run.state);
     header.append(status);
 
-    if (run.runtimeVersion) {
-      const version = document.createElement("span");
-      version.className = "vault-code-run-meta";
-      version.textContent = run.runtimeVersion;
-      header.append(version);
-    }
-    if (run.result?.exitCode !== null && run.result?.exitCode !== undefined && isTerminalCodeJobState(run.state as CodeJobState)) {
-      const code = document.createElement("span");
-      code.className = "vault-code-run-meta";
-      code.textContent = `exit ${run.result.exitCode}`;
-      header.append(code);
+    const meta = (text: string, title?: string) => {
+      const span = document.createElement("span");
+      span.className = "vault-code-run-meta";
+      span.textContent = text;
+      if (title) span.title = title;
+      header.append(span);
+    };
+    if (run.runtimeVersion) meta(run.runtimeVersion);
+    const result = run.result;
+    if (result && isTerminalCodeJobState(run.state as CodeJobState)) {
+      // Wall time per phase as the runner measured it, sandbox start included,
+      // so it is what the author waited for rather than CPU time.
+      if (result.compileMs !== null) meta(`compiled in ${formatDuration(result.compileMs)}`, "Compile time, including sandbox start");
+      if (result.runMs !== null) meta(`ran in ${formatDuration(result.runMs)}`, "Run time, including sandbox start");
+      if (result.exitCode !== null && result.exitCode !== 0) meta(`exit ${result.exitCode}`);
     }
 
     const actions = document.createElement("span");
@@ -618,6 +624,124 @@ function outputDecorations(state: EditorState): DecorationSet {
   return Decoration.set(widgets, true);
 }
 
+// ---------------------------------------------------------------------------
+// Idle-block chrome: a language label in the top-right corner and a Run
+// button in the bottom-right. Both sit on the fence's own delimiter lines,
+// which Live mode hides while the cursor is elsewhere, so they take no extra
+// vertical space. Neither is drawn while the cursor is inside the block — the
+// toolbar has the same controls then, and the raw delimiters are showing.
+// ---------------------------------------------------------------------------
+
+const PLAY_PATH = "M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5Z";
+const STOP_PATH = "M4 3.5A.5.5 0 0 1 4.5 3h7a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7Z";
+
+function filledIcon(path: string, offset = "") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  shape.setAttribute("d", path);
+  shape.setAttribute("fill", "currentColor");
+  if (offset) shape.setAttribute("transform", offset);
+  svg.append(shape);
+  return svg;
+}
+
+class LanguageLabelWidget extends WidgetType {
+  constructor(private label: string) {
+    super();
+  }
+
+  eq(other: LanguageLabelWidget) {
+    return other.label === this.label;
+  }
+
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "vault-cm-code-label";
+    span.textContent = this.label;
+    return span;
+  }
+}
+
+class CornerRunWidget extends WidgetType {
+  constructor(private mode: "run" | "stop", private label: string) {
+    super();
+  }
+
+  eq(other: CornerRunWidget) {
+    return other.mode === this.mode && other.label === this.label;
+  }
+
+  toDOM(view: EditorView) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "vault-cm-code-run";
+    button.dataset.mode = this.mode;
+    const name = this.mode === "run" ? `Run ${this.label} block` : `Stop ${this.label} block`;
+    button.setAttribute("aria-label", name);
+    button.title = this.mode === "run" ? "Run" : "Stop";
+    // The play triangle's visual centre sits left of its box; nudge it.
+    button.append(this.mode === "run" ? filledIcon(PLAY_PATH, "translate(0.5 0)") : filledIcon(STOP_PATH, "translate(0 1)"));
+    // Keep the cursor where it is: without this the mousedown would move the
+    // selection into the block, which removes this very button mid-click.
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const fence = codeFenceAt(view.state, view.posAtDOM(button));
+      if (!fence) return;
+      const run = runForFence(view.state, fence);
+      if (run && isActiveRun(run)) {
+        void stopCodeRun(view, run);
+      } else if (!runUnavailableReason(view.state, fence)) {
+        void startCodeRun(view, fence);
+      }
+    });
+    return button;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+function chromeDecorations(state: EditorState): DecorationSet {
+  const widgets: Range<Decoration>[] = [];
+  const head = state.selection.main.head;
+  const capabilities = state.field(codeCapabilitiesField);
+  const seen = new Set<number>();
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name !== "FencedCode") return;
+      if (seen.has(node.from)) return false;
+      seen.add(node.from);
+      const fence = codeFenceAt(state, node.from + 1);
+      if (!fence || fence.from !== node.from) return false;
+      // The block the cursor is in shows raw delimiters and the toolbar instead.
+      if (head >= fence.from && head <= fence.to) return false;
+      const language = resolveCodeLanguage(fence.info);
+      const opening = state.doc.lineAt(fence.from);
+      const label = language?.label ?? codeLanguageHint(fence.info).slice(0, 24);
+      if (label) widgets.push(Decoration.widget({ widget: new LanguageLabelWidget(label), side: 1 }).range(opening.to));
+
+      const runnable = capabilities?.enabled
+        && capabilities.languages.some((item) => item.id === language?.id && item.canRun);
+      // Only a closed, non-empty block gets a button: its closing line is where
+      // the button lives, and an empty one has nothing to run.
+      if (runnable && fence.closed && fence.source.trim()) {
+        const closing = state.doc.lineAt(fence.to);
+        if (closing.number !== opening.number) {
+          const run = runForFence(state, fence);
+          const mode = run && isActiveRun(run) ? "stop" : "run";
+          widgets.push(Decoration.widget({ widget: new CornerRunWidget(mode, language!.label), side: 1 }).range(closing.to));
+        }
+      }
+      return false;
+    },
+  });
+  return Decoration.set(widgets, true);
+}
+
 export function codeRunExtension(documentId: string): Extension {
   return [
     codeDocumentId.of(documentId),
@@ -627,5 +751,6 @@ export function codeRunExtension(documentId: string): Extension {
     runPoller,
     // Block widgets must come from state, never from a view plugin.
     EditorView.decorations.compute([codeRunsField, codeInputsField, "doc"], outputDecorations),
+    EditorView.decorations.compute([codeRunsField, codeCapabilitiesField, "doc", "selection"], chromeDecorations),
   ];
 }

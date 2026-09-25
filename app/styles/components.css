@@ -724,87 +724,241 @@
     content: "" !important;
   }
 
+  /*
+   * Code blocks. One look in Read mode (a real box) and Live mode (a run of
+   * CodeMirror line elements drawn to look like one box): a small radius, a
+   * hairline edge and a soft shadow underneath — lifted off the page a little,
+   * not a floating card. The variables are internal, not snippet contract.
+   */
+  .vault-md-code-block,
+  .vault-markdown-editor {
+    --vault-code-surface: color-mix(in oklab, var(--muted) 45%, var(--background));
+    --vault-code-edge: color-mix(in oklab, var(--border) 80%, transparent);
+    --vault-code-radius: 0.375rem;
+    --vault-code-lift: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 18px -14px rgb(0 0 0 / 0.5);
+  }
+
   .vault-md-code-block {
     margin-block: 1.25rem;
     overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 0.65rem;
-    background: color-mix(in oklab, var(--muted) 55%, transparent);
+    border: 1px solid var(--vault-code-edge);
+    border-radius: var(--vault-code-radius);
+    background: var(--vault-code-surface);
+    box-shadow: var(--vault-code-lift);
   }
 
   .vault-md-code-header,
   .vault-code-tools-actions {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.75rem;
   }
 
+  /* A caption rather than a title bar: no rule under it, and Copy stays quiet
+     until the block is hovered or focused. It is never hidden outright, so
+     touch screens — which have no hover — can still reach it. */
   .vault-md-code-header {
-    padding: 0.35rem 0.65rem 0.35rem 1rem;
-    border-bottom: 1px solid var(--border);
+    justify-content: space-between;
+    padding: 0.3rem 0.4rem 0 1rem;
+  }
+  .vault-md-code-header > button {
+    opacity: 0.55;
+    transition: opacity 120ms ease;
+  }
+  .vault-md-code-block:hover .vault-md-code-header > button,
+  .vault-md-code-header > button:focus-visible {
+    opacity: 1;
   }
 
   .vault-code-language {
     color: var(--muted-foreground);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
     line-height: 1.4;
   }
 
   .vault-md-code-block > .vault-md-pre {
     margin: 0;
+    padding-top: 0.35rem;
     border: 0;
     border-radius: 0;
     background: transparent;
   }
 
-  .cm-tooltip.vault-code-tooltip {
-    border: 1px solid var(--border);
+  /* Live mode: the same box, assembled from line elements. Side edges on every
+     line, top/bottom edges and corners on the fence's own first and last lines. */
+  .vault-markdown-editor .cm-line.vault-cm-code-line {
+    position: relative;
+    padding-inline: 1rem;
+    border-inline: 1px solid var(--vault-code-edge);
+    background: var(--vault-code-surface);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+  .vault-markdown-editor .cm-line.vault-cm-code-first {
+    padding-top: 0.2rem;
+    border-top: 1px solid var(--vault-code-edge);
+    border-radius: var(--vault-code-radius) var(--vault-code-radius) 0 0;
+  }
+  .vault-markdown-editor .cm-line.vault-cm-code-last {
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--vault-code-edge);
+    border-radius: 0 0 var(--vault-code-radius) var(--vault-code-radius);
+    box-shadow: var(--vault-code-lift);
+  }
+  .vault-markdown-editor .cm-line.vault-cm-code-first.vault-cm-code-last {
+    border-radius: var(--vault-code-radius);
+  }
+
+  /* The language label and the corner Run button live on the fence's delimiter
+     lines, which Live mode leaves empty while the block is idle. */
+  .vault-markdown-editor .cm-line .vault-cm-code-label {
+    position: absolute;
+    top: 50%;
+    right: 0.75rem;
+    transform: translateY(-50%);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+    user-select: none;
+  }
+  /* Source mode shows the raw info string already; a second label would echo it. */
+  .vault-markdown-editor:not(.vault-markdown-editor-live) .vault-cm-code-label {
+    display: none;
+  }
+
+  .vault-cm-code-run {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 50%;
+    transform: translateY(50%);
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 1px solid var(--vault-code-edge);
+    border-radius: 999px;
+    background: var(--background);
+    color: var(--muted-foreground);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 120ms ease, color 120ms ease, transform 120ms ease;
+  }
+  .vault-cm-code-run svg { width: 0.7rem; height: 0.7rem; }
+  .vault-cm-code-run:hover,
+  .vault-cm-code-run:focus-visible {
+    opacity: 1;
+    color: var(--foreground);
+    transform: translateY(50%) scale(1.06);
+  }
+  .vault-cm-code-run:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .vault-cm-code-run[data-mode="stop"] {
+    color: var(--destructive);
+    opacity: 1;
+    animation: vault-code-run-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* The Live-mode toolbar: one compact row, icon buttons, no permanent text. */
+  .vault-markdown-editor .cm-tooltip.vault-code-tooltip {
+    overflow: visible;
+    border: 1px solid var(--vault-code-edge);
     border-radius: 0.5rem;
     background: var(--popover);
     color: var(--popover-foreground);
-    box-shadow: 0 4px 16px color-mix(in oklab, var(--foreground) 10%, transparent);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 10px 24px -12px rgb(0 0 0 / 0.45);
   }
+  .vault-code-tools { padding: 0.2rem; max-width: min(28rem, 90vw); }
+  .vault-code-tools-actions { gap: 0.1rem; }
+  .vault-code-tools-divider {
+    align-self: stretch;
+    width: 1px;
+    margin: 0.2rem 0.2rem;
+    background: var(--vault-code-edge);
+  }
+  .vault-code-tools-message {
+    padding: 0.25rem 0.45rem 0.2rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .vault-code-tools-message[data-tone="error"] { color: var(--destructive); }
 
+  /* A native select, restyled: same font as the rest of the toolbar (the
+     options used to fall back to the platform serif), no box, a drawn caret. */
   .vault-code-language-select {
-    height: 1.75rem;
+    height: 1.5rem;
     max-width: 9rem;
-    padding: 0 0.35rem;
-    border: 1px solid var(--border);
+    padding: 0 1.3rem 0 0.5rem;
+    appearance: none;
+    border: 0;
     border-radius: 0.375rem;
-    background: var(--background);
+    background-color: transparent;
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 0.7rem) 55%, calc(100% - 0.45rem) 55%;
+    background-size: 0.25rem 0.25rem;
+    background-repeat: no-repeat;
     color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
     cursor: pointer;
   }
-
+  .vault-code-language-select:hover { background-color: var(--muted); }
   .vault-code-language-select:focus-visible {
     outline: 2px solid var(--ring);
-    outline-offset: 1px;
+    outline-offset: 0;
   }
+  .vault-code-language-select option {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+  }
+  .dark .vault-code-language-select { color-scheme: dark; }
 
   /*
-   * Run output, a CodeMirror block widget under the fence. Spacing is padding
-   * on purpose: CodeMirror measures a block widget with getBoundingClientRect,
-   * which ignores margin, so a margin here would shift every line below it out
-   * of step with its own click coordinates (project-knowledge §18).
+   * Run output and stdin, CodeMirror block widgets under the fence. Spacing is
+   * padding on purpose: CodeMirror measures a block widget with
+   * getBoundingClientRect, which ignores margin, so a margin here would shift
+   * every line below it out of step with its own click coordinates
+   * (project-knowledge §18).
    */
-  .vault-code-run {
-    padding: 0.5rem 0 0.75rem;
+  .vault-code-run,
+  .vault-code-input {
     font-family: var(--font-sans);
   }
-  .vault-code-run-header {
+  .vault-code-run { padding: 0.4rem 0 0.75rem; }
+  .vault-code-input { padding: 0.4rem 0 0; }
+  .vault-code-input + .vault-code-run { padding-top: 0.3rem; }
+
+  .vault-code-run-header,
+  .vault-code-input-header {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.35rem 0.65rem;
-    border: 1px solid var(--border);
+    gap: 0.5rem;
+    min-height: 1.9rem;
+    padding: 0.2rem 0.3rem 0.2rem 0.75rem;
+    border: 1px solid var(--vault-code-edge);
     border-bottom: 0;
-    border-radius: 0.5rem 0.5rem 0 0;
-    background: color-mix(in oklab, var(--muted) 40%, transparent);
-    font-size: 0.75rem;
+    border-radius: var(--vault-code-radius) var(--vault-code-radius) 0 0;
+    background: var(--vault-code-surface);
+    font-size: 0.72rem;
   }
-  .vault-code-run-status { font-weight: 600; color: var(--foreground); }
+  .vault-code-run-header:last-child {
+    border-bottom: 1px solid var(--vault-code-edge);
+    border-radius: var(--vault-code-radius);
+  }
+  .vault-code-run-status,
+  .vault-code-input-label { font-weight: 600; color: var(--foreground); }
   .vault-code-run[data-state="submitting"] .vault-code-run-status,
   .vault-code-run[data-state="queued"] .vault-code-run-status,
   .vault-code-run[data-state="preparing"] .vault-code-run-status,
@@ -818,98 +972,84 @@
   .vault-code-run[data-state="resource_limit"] .vault-code-run-status,
   .vault-code-run[data-state="output_limit"] .vault-code-run-status,
   .vault-code-run[data-state="rejected"] .vault-code-run-status { color: var(--destructive); }
-  .vault-code-run-meta { color: var(--muted-foreground); font-family: var(--font-mono); }
-  .vault-code-run-actions { margin-left: auto; display: flex; gap: 0.25rem; }
-  .vault-code-run-button {
-    padding: 0.1rem 0.5rem;
-    border-radius: 0.375rem;
+  .vault-code-run-meta,
+  .vault-code-input-hint {
     color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .vault-code-run-meta + .vault-code-run-meta::before {
+    content: "·";
+    margin-right: 0.5rem;
+    color: var(--muted-foreground);
+    opacity: 0.6;
+  }
+  .vault-code-run-actions { margin-left: auto; display: flex; gap: 0.1rem; }
+  .vault-code-input-header > .vault-code-run-button { margin-left: auto; }
+  .vault-code-run-button {
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.3rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
     cursor: pointer;
   }
   .vault-code-run-button:hover { background: var(--muted); color: var(--foreground); }
   .vault-code-run-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-  .vault-code-run-output {
-    margin: 0;
-    padding: 0.5rem 0.75rem;
-    max-height: 20rem;
-    overflow: auto;
-    border: 1px solid var(--border);
-    border-top: 0;
-    background: color-mix(in oklab, var(--muted) 25%, transparent);
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .vault-code-run-output:last-child,
-  .vault-code-run-note:last-child { border-radius: 0 0 0.5rem 0.5rem; }
-  .vault-code-run-stderr,
-  .vault-code-run-compiler { color: var(--destructive); }
-  .vault-code-run-note {
-    padding: 0.3rem 0.75rem;
-    border: 1px solid var(--border);
-    border-top: 0;
-    color: var(--muted-foreground);
-    font-size: 0.72rem;
-  }
-  .vault-code-run-header:last-child { border-bottom: 1px solid var(--border); border-radius: 0.5rem; }
-  /* Stdin box. Block widget like the run panel, so padding only — never margin. */
-  .vault-code-input {
-    padding: 0.5rem 0 0;
-    font-family: var(--font-sans);
-  }
-  .vault-code-input-header {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.35rem 0.65rem;
-    border: 1px solid var(--border);
-    border-bottom: 0;
-    border-radius: 0.5rem 0.5rem 0 0;
-    background: color-mix(in oklab, var(--muted) 40%, transparent);
-    font-size: 0.75rem;
-  }
-  .vault-code-input-label { font-weight: 600; color: var(--foreground); }
-  .vault-code-input-hint { color: var(--muted-foreground); }
-  .vault-code-input-header > .vault-code-run-button { margin-left: auto; }
+
+  .vault-code-run-output,
   .vault-code-input-field {
     display: block;
     width: 100%;
-    min-height: 3.5rem;
-    max-height: 16rem;
+    margin: 0;
     padding: 0.5rem 0.75rem;
-    resize: vertical;
-    border: 1px solid var(--border);
-    border-radius: 0 0 0.5rem 0.5rem;
+    border: 1px solid var(--vault-code-edge);
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-mono);
     font-size: 0.8rem;
     line-height: 1.5;
-    white-space: pre;
   }
-  .vault-code-input-field:focus-visible { outline: 2px solid var(--ring); outline-offset: -1px; }
-  @keyframes vault-code-run-pulse { 50% { opacity: 0.45; } }
-  @media (prefers-reduced-motion: reduce) {
-    .vault-code-run-status { animation: none !important; }
-  }
-
-  .vault-code-tools { padding: 0.35rem 0.5rem; max-width: min(28rem, 90vw); }
-  .vault-code-tools-actions { gap: 0.35rem; }
-  .vault-code-tools-actions > .vault-code-language { margin-right: 0.5rem; }
-  .vault-code-tools-message {
-    padding: 0.3rem 0.15rem;
-    color: var(--muted-foreground);
-    font-size: 0.75rem;
+  .vault-code-run-output {
+    max-height: 20rem;
+    overflow: auto;
+    border-top: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* Separate streams read as separate, without a heavy rule between them. */
+  .vault-code-run-output + .vault-code-run-output { border-top: 1px dashed var(--vault-code-edge); }
+  .vault-code-run-stderr,
+  .vault-code-run-compiler { color: var(--destructive); }
+  .vault-code-run-note {
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--vault-code-edge);
+    border-top: 0;
+    background: var(--background);
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+  }
+  .vault-code-run-output:last-child,
+  .vault-code-run-note:last-child {
+    border-radius: 0 0 var(--vault-code-radius) var(--vault-code-radius);
+    box-shadow: var(--vault-code-lift);
+  }
+  .vault-code-input-field {
+    min-height: 3.25rem;
+    max-height: 16rem;
+    resize: vertical;
+    border-radius: 0 0 var(--vault-code-radius) var(--vault-code-radius);
+    white-space: pre;
+  }
+  .vault-code-input-field::placeholder { color: var(--muted-foreground); opacity: 0.7; }
+  .vault-code-input-field:focus-visible {
+    outline: 1px solid color-mix(in oklab, var(--ring) 55%, transparent);
+    outline-offset: -1px;
+  }
 
-  .vault-markdown-editor .cm-line.vault-cm-code-line {
-    font-family: var(--font-mono);
-    font-size: 0.9em;
-    background: color-mix(in oklab, var(--muted) 55%, transparent);
+  @keyframes vault-code-run-pulse { 50% { opacity: 0.45; } }
+  @media (prefers-reduced-motion: reduce) {
+    .vault-code-run-status,
+    .vault-cm-code-run[data-mode="stop"] { animation: none !important; }
+    .vault-cm-code-run:hover { transform: translateY(50%); }
   }
 
   /* Explicit scope beats the editor's prose token reset without changing it. */

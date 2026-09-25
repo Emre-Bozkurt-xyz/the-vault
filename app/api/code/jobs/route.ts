@@ -13,8 +13,8 @@ import {
   jsonError,
   readJson,
 } from "@/server/code-api";
-import { enqueueCodeJob } from "@/server/code-jobs";
-import { executionEnabled, userMayExecute } from "@/server/code-runtime";
+import { enqueueCodeJob, maybeSweepCodeJobs } from "@/server/code-jobs";
+import { executionEnabled } from "@/server/code-runtime";
 
 export const runtime = "nodejs";
 
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   if (invalid) return jsonError(codeJobInputErrorMessage(invalid), 400, invalid.toUpperCase());
 
   // Editing a document does not by itself grant compute (plan §7).
-  if (!userMayExecute(user.id)) {
+  if (!user.mayExecute) {
     return jsonError("Running code is not enabled for your account.", 403, "NOT_ALLOWED");
   }
 
@@ -77,6 +77,12 @@ export async function POST(request: Request) {
   // response does not confirm that a given document id exists.
   const access = await getDocumentAccess(user.id, body.documentId);
   if (!access.canEdit) return jsonError("Not found.", 404, "NOT_FOUND");
+
+  // Expire stale queued jobs before counting this user's pending ones. The
+  // other sweep triggers are a runner claiming and a browser polling, and when
+  // neither happens — no runner up, and the tab that queued the jobs closed —
+  // abandoned jobs would otherwise hold the per-user limit shut indefinitely.
+  await maybeSweepCodeJobs();
 
   try {
     const job = await enqueueCodeJob({

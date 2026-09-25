@@ -86,6 +86,11 @@ export const users = pgTable(
     bannedAt: timestamp("banned_at", { withTimezone: true }),
     bannedUntil: timestamp("banned_until", { withTimezone: true }),
     banReason: text("ban_reason"),
+    /**
+     * Deployment-level switch for running code (Phase 24). Granted by an admin;
+     * editing a document never implies it. Off for everyone by default.
+     */
+    codeExecutionAllowed: boolean("code_execution_allowed").notNull().default(false),
     profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
     storageUsedBytes: bigint("storage_used_bytes", { mode: "number" })
       .notNull()

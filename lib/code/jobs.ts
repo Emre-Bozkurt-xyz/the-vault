@@ -105,6 +105,12 @@ export function survivesInertOutput(source: string): boolean {
   return inertOutput(source) === source;
 }
 
+/** 254 → "254 ms", 1382 → "1.38 s", 12040 → "12.0 s". */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return ms < 10_000 ? `${(ms / 1000).toFixed(2)} s` : `${(ms / 1000).toFixed(1)} s`;
+}
+
 const MAX_FORMAT_MESSAGE = 200;
 
 /**

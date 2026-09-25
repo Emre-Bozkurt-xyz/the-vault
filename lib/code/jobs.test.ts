@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boundOutputs,
+  formatDuration,
   formatJobOutcome,
   inertOutput,
   isAllowedProgress,
@@ -200,5 +201,11 @@ describe("formatJobOutcome", () => {
 
   it.each(["timed_out", "cancelled", "infrastructure_error", "resource_limit"] as const)("fails %s without text", (state) => {
     expect(formatJobOutcome({ state, result: result() }).ok).toBe(false);
+  });
+});
+
+describe("formatDuration", () => {
+  it.each([[0, "0 ms"], [254, "254 ms"], [999, "999 ms"], [1000, "1.00 s"], [1382, "1.38 s"], [12040, "12.0 s"]])("%i ms reads as %s", (ms, text) => {
+    expect(formatDuration(ms)).toBe(text);
   });
 });

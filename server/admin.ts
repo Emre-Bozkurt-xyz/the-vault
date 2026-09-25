@@ -27,6 +27,11 @@ const roleMutationSchema = z.object({
   role: roleSchema,
 });
 
+const codeExecutionMutationSchema = z.object({
+  userId: userIdSchema,
+  allowed: z.enum(["true", "false"]),
+});
+
 export type AdminUserListItem = {
   id: string;
   nickname: string | null;
@@ -37,6 +42,7 @@ export type AdminUserListItem = {
   bannedAt: Date | null;
   bannedUntil: Date | null;
   banReason: string | null;
+  codeExecutionAllowed: boolean;
   createdAt: Date;
   updatedAt: Date;
   isBanActive: boolean;
@@ -135,6 +141,7 @@ export async function listUsersForAdmin(options: {
         bannedAt: users.bannedAt,
         bannedUntil: users.bannedUntil,
         banReason: users.banReason,
+        codeExecutionAllowed: users.codeExecutionAllowed,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
         storageUsedBytes: users.storageUsedBytes,
@@ -252,6 +259,29 @@ export async function setUserRoleAction(formData: FormData) {
     .update(users)
     .set({
       role: input.role,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(users.id, input.userId));
+
+  revalidatePath(USERS_PATH);
+}
+
+/**
+ * Grant or revoke running code (Phase 24). Takes effect on the user's next
+ * request: the code API re-reads this column every time, and the editor hides
+ * Run once its capabilities are refetched on the next page load.
+ */
+export async function setCodeExecutionAction(formData: FormData) {
+  await requireAdmin();
+  const input = codeExecutionMutationSchema.parse({
+    userId: formData.get("userId"),
+    allowed: formData.get("allowed"),
+  });
+
+  await db
+    .update(users)
+    .set({
+      codeExecutionAllowed: input.allowed === "true",
       updatedAt: sql`now()`,
     })
     .where(eq(users.id, input.userId));

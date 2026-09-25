@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   Ban,
+  CodeXml,
   HardDrive,
   RefreshCw,
   ShieldCheck,
@@ -24,6 +25,7 @@ import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   banUserAction,
+  setCodeExecutionAction,
   setUserRoleAction,
   unbanUserAction,
   type AdminUserListItem,
@@ -35,7 +37,10 @@ import {
 
 const MIB = 1024 * 1024;
 
-export function UsersTable({ users }: { users: AdminUserListItem[] }) {
+export function UsersTable({ users, executionEnabled }: {
+  users: AdminUserListItem[];
+  executionEnabled: boolean;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = users.find((user) => user.id === selectedId) ?? null;
 
@@ -73,11 +78,16 @@ export function UsersTable({ users }: { users: AdminUserListItem[] }) {
                   </Badge>
                 </td>
                 <td className="px-3 py-2.5">
-                  {user.isBanActive ? (
-                    <Badge variant="destructive">banned</Badge>
-                  ) : (
-                    <Badge variant="secondary">active</Badge>
-                  )}
+                  <span className="flex flex-wrap gap-1">
+                    {user.isBanActive ? (
+                      <Badge variant="destructive">banned</Badge>
+                    ) : (
+                      <Badge variant="secondary">active</Badge>
+                    )}
+                    {user.codeExecutionAllowed ? (
+                      <Badge variant="outline" title="May run code blocks">runs code</Badge>
+                    ) : null}
+                  </span>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {formatBytes(user.storageUsedBytes)} /{" "}
@@ -101,7 +111,7 @@ export function UsersTable({ users }: { users: AdminUserListItem[] }) {
       >
         <SheetContent>
           {selected ? (
-            <UserDetail user={selected} />
+            <UserDetail user={selected} executionEnabled={executionEnabled} />
           ) : null}
         </SheetContent>
       </Sheet>
@@ -109,7 +119,10 @@ export function UsersTable({ users }: { users: AdminUserListItem[] }) {
   );
 }
 
-function UserDetail({ user }: { user: AdminUserListItem }) {
+function UserDetail({ user, executionEnabled }: {
+  user: AdminUserListItem;
+  executionEnabled: boolean;
+}) {
   return (
     <>
       <SheetHeader>
@@ -153,6 +166,27 @@ function UserDetail({ user }: { user: AdminUserListItem }) {
           <Button type="submit" variant="outline" size="sm">
             <ShieldCheck className="size-4" />
             Set
+          </Button>
+        </form>
+      </section>
+
+      {/* Code execution */}
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Code execution
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {user.codeExecutionAllowed
+            ? "Can run code blocks in documents they can edit."
+            : "Cannot run code. Run and Input are hidden from them."}
+          {executionEnabled ? "" : " Running code is switched off for this deployment, so this has no effect until CODE_EXECUTION_ENABLED=true."}
+        </p>
+        <form action={setCodeExecutionAction}>
+          <input type="hidden" name="userId" value={user.id} />
+          <input type="hidden" name="allowed" value={user.codeExecutionAllowed ? "false" : "true"} />
+          <Button type="submit" variant="outline" size="sm">
+            <CodeXml className="size-4" />
+            {user.codeExecutionAllowed ? "Revoke code execution" : "Allow code execution"}
           </Button>
         </form>
       </section>

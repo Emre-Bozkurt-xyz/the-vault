@@ -67,7 +67,7 @@ export type EnqueueInput = {
  * Idempotent on `(userId, requestId)`: a browser retry of the same click
  * returns the job it already created instead of running the code twice.
  * Callers must have already checked authentication, `canEdit` and the
- * execution allowlist.
+ * user's code-execution grant.
  */
 export async function enqueueCodeJob(input: EnqueueInput): Promise<{ id: string; created: boolean }> {
   const profile = runtimeProfileForLanguage(input.languageId);
@@ -172,6 +172,8 @@ export async function getCodeJobForUser(
           exitCode: job.exitCode,
           signal: job.signal,
           truncated: job.outputTruncated,
+          compileMs: job.compileMs,
+          runMs: job.runMs,
         }
       : null,
     queuedAt: job.queuedAt.toISOString(),

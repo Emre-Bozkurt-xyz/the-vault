@@ -301,10 +301,11 @@ terminal `compile_error`, `runtime_error`, `timed_out`, `resource_limit`,
 `formatting` instead of compile/run. Omit irrelevant stages for interpreted code.
 
 Authenticate an active user and check `getDocumentAccess(...).canEdit` on
-submission, then recheck before dispatch. Initially also require membership in
-a deployment-controlled execution-user allowlist. Editing a document alone
-does not grant access to compute. Owners/editors can use the feature once
-allowlisted; viewers and anonymous readers cannot submit jobs.
+submission, then recheck before dispatch. Also require a per-user execution
+grant (`users.code_execution_allowed`, set by an admin in Admin → Users;
+until 2026-09-25 this was the `CODE_EXECUTION_USER_IDS` env list). Editing a
+document alone does not grant access to compute. Owners/editors can use the
+feature once granted; viewers and anonymous readers cannot submit jobs.
 
 Result reads/cancellation require the submitting user plus current document
 access; inaccessible resources return 404. Recheck bans/revocation. Worker

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "code_execution_allowed" boolean DEFAULT false NOT NULL;

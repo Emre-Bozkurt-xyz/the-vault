@@ -10,10 +10,8 @@ only language that needs a project scaffold rather than a loose file, and it
 failed three runs for three unrelated scaffold reasons while the others worked.
 C# highlighting is unaffected; only running and server-side formatting are gone.
 
-It is deliberately *not* wired into `scripts/deploy.sh` or
-`docker-compose.production.yml`. Slice 3's output is a decision; automating a
-runner into the deploy before that decision exists would bake in the wrong
-answer. Deployment comes in slice 6.
+`proof.sh` itself stays out of the deploy — it is a measuring tool. The runner
+it justified is deployed automatically since 2026-09-25; see "The worker" below.
 
 Nothing here touches Vault's containers, database, or `.env.production`. All
 images and containers it creates are prefixed `vault-runner-proof-` and are
@@ -145,19 +143,50 @@ Repeated `build` runs are cheap — Docker reuses the layer cache and produces
 the same image — but editing a Dockerfile leaves the previous build untagged,
 and those accumulate silently. That is what `clean` sweeps.
 
-## The worker (slice 4)
+## The worker
 
 `proof.sh` measures; `worker.mjs` is the real runner. It claims jobs from
 Vault's worker API, runs each in a fresh sandbox, and reports the result. It
-runs **on the host**, beside Docker — never inside `vault-web`, which must not
-be given the Docker socket.
+is never part of `vault-web`, which must not be given the Docker socket.
+
+**In production it is a service the deploy manages.** Set this in
+`.env.production` and push:
 
 ```bash
-# On the mini-PC, from the repo:
-./runner/proof.sh build                               # the worker runs these images
-export CODE_RUNNER_URL=http://127.0.0.1:18210        # vault-web's local port
-export CODE_RUNNER_TOKEN=...                          # same value as Vault's
-node runner/worker.mjs
+CODE_EXECUTION_ENABLED=true
+CODE_RUNNER_TOKEN=<32+ random chars>    # openssl rand -hex 32
+```
+
+Every deploy then (see `scripts/deploy.sh`):
+
+1. checks gVisor is registered, and fails the deploy with a clear message if not;
+2. runs `runner/build-images.sh`, which builds the five sandbox images and
+   skips any whose Dockerfile has not changed (each image carries its
+   Dockerfile's hash as a label), so a routine deploy costs seconds;
+3. recreates the `vault-runner` container (`runner/worker.Dockerfile`) so it
+   always runs this commit's `worker.mjs`, and checks it stayed up.
+
+With the flag unset, the deploy removes any runner and builds nothing.
+
+`vault-runner` holds the host Docker socket — that is its job, and it makes it
+host-root-equivalent, like the host process it replaced. It gets the runner
+token from `.env.production` and **nothing else**: no `env_file`, so no
+database, OAuth or storage credentials. The sandboxes it starts are siblings
+on the host daemon and still run under gVisor. Job workspaces live in
+`/var/lib/vault-runner`, mounted at the same path inside and out, because the
+host daemon is what bind-mounts them into sandboxes.
+
+**Who may run code** is not in the env file. An admin grants it per user in
+Admin → Users → (user) → Code execution. Nobody has it by default, and users
+without it never see Run or Input.
+
+Logs: `docker logs -f vault-runner`. Each finished job is one line — its id,
+profile, operation, outcome and phase timings, never its source or output.
+
+For local development without the deploy, run it by hand beside Docker:
+
+```bash
+CODE_RUNNER_URL=http://localhost:3000 CODE_RUNNER_TOKEN=... node runner/worker.mjs
 ```
 
 By default the worker advertises all six profiles (`python-3.12`, `node-22`,
@@ -171,14 +200,6 @@ A quick per-language check once it is up: a block that reads a line of stdin
 and prints it (use **Input**), a deliberate compile error, a non-zero exit,
 **Format** on badly spaced code, and an infinite loop, which must say "Timed
 out". Java needs `public class Main`.
-
-And in Vault's `.env.production`:
-
-```bash
-CODE_EXECUTION_ENABLED=true
-CODE_EXECUTION_USER_IDS=<your user id>
-CODE_RUNNER_TOKEN=<32+ random chars>
-```
 
 What it guarantees, and why:
 
@@ -205,7 +226,6 @@ What it guarantees, and why:
   `infrastructure_error` once its lease lapses, and is **never** re-run — the
   user reruns it explicitly.
 
-Running it as a service (systemd, restart policy, log rotation) is slice 6.
 
 ## Recording the results
 

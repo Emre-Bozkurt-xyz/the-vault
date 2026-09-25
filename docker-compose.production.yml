@@ -64,6 +64,37 @@ services:
     networks:
       - vault_internal
 
+  # Code execution runner (Phase 24). Started by scripts/deploy.sh only when
+  # CODE_EXECUTION_ENABLED=true, hence the profile. See runner/README.md.
+  runner:
+    build:
+      context: ./runner
+      dockerfile: worker.Dockerfile
+    container_name: vault-runner
+    restart: unless-stopped
+    init: true
+    # No env_file: this service must never see the database, OAuth or storage
+    # credentials. The runner token is the one value it gets from .env.production.
+    environment:
+      CODE_RUNNER_URL: http://web:3000
+      CODE_RUNNER_TOKEN: ${CODE_RUNNER_TOKEN:-}
+      CODE_RUNNER_ID: vault-runner
+      # Job workspaces are bind-mounted into sandboxes by the HOST daemon, so
+      # they must live at a path that means the same thing on both sides.
+      TMPDIR: /var/lib/vault-runner
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/vault-runner:/var/lib/vault-runner
+    depends_on:
+      web:
+        condition: service_started
+    # SIGTERM lets the current job finish (compile 30s + run 10s at most).
+    stop_grace_period: 60s
+    networks:
+      - vault_internal
+    profiles:
+      - runner
+
   postgres:
     image: postgres:16-alpine
     container_name: vault-postgres

@@ -56,17 +56,32 @@ export function isSameOriginRequest(request: Request): boolean {
  * The ban is re-read from the database on every call, so a ban or revocation
  * takes effect on the next request rather than when the session expires.
  */
-export async function currentCodeUser(): Promise<{ id: string } | null> {
+/**
+ * The signed-in, unbanned user, re-read from the database on every request so
+ * a ban or a revoked grant takes effect on the next call rather than when the
+ * session expires.
+ *
+ * `mayExecute` is the per-user grant an admin sets (`users.code_execution_allowed`).
+ * Editing a document does not imply it (plan §7): it is a second gate on top
+ * of `canEdit`, and it defaults to off, so a new account can never run code
+ * until someone decides it should.
+ */
+export async function currentCodeUser(): Promise<{ id: string; mayExecute: boolean } | null> {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) return null;
   const [user] = await db
-    .select({ id: users.id, bannedAt: users.bannedAt, bannedUntil: users.bannedUntil })
+    .select({
+      id: users.id,
+      bannedAt: users.bannedAt,
+      bannedUntil: users.bannedUntil,
+      codeExecutionAllowed: users.codeExecutionAllowed,
+    })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
   if (!user || isUserBanActive(user)) return null;
-  return { id: user.id };
+  return { id: user.id, mayExecute: user.codeExecutionAllowed };
 }
 
 /**

@@ -100,6 +100,33 @@ else
   exit 1
 fi
 
+# Code execution (Phase 24). Off unless .env.production says otherwise, so a
+# deployment that never opted in never builds the ~6.5 GB of sandbox images.
+if grep -qx 'CODE_EXECUTION_ENABLED=true' "$ENV_FILE"; then
+  echo "[deploy] Code execution is enabled; preparing the runner..."
+  if ! docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'; then
+    # The worker refuses to start without gVisor anyway; failing here says why
+    # in the deploy log instead of in a restart loop.
+    echo "[deploy] ERROR: gVisor (runsc) is not a registered Docker runtime. See runner/README.md."
+    exit 1
+  fi
+  bash "$APP_DIR/runner/build-images.sh"
+  # Recreated every deploy so it always runs this commit's worker.mjs. A job in
+  # flight gets stop_grace_period to finish; one that cannot is reported as an
+  # infrastructure error and is never re-run.
+  dc --profile runner up -d --build --force-recreate runner
+  sleep 3
+  if [[ "$(docker inspect -f '{{.State.Running}}' vault-runner 2>/dev/null)" != "true" ]]; then
+    echo "[deploy] ERROR: the runner did not stay up."
+    dc --profile runner logs --tail=50 runner || true
+    exit 1
+  fi
+  dc --profile runner logs --tail=5 runner || true
+else
+  echo "[deploy] Code execution is disabled; making sure no runner is left running..."
+  dc --profile runner rm -sf runner >/dev/null 2>&1 || true
+fi
+
 echo "[deploy] Deployment complete."
 dc ps
 

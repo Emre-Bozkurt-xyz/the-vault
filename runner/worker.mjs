@@ -315,7 +315,7 @@ async function runJob({ job, profile }) {
         attemptId: attempt, state, ...result,
         imageDigest: result.imageDigest ?? null, ...timings,
       });
-      if (res.status === 200) { log(`job ${job.id}: ${state} (${timings.runMs ?? "-"}ms)`); return; }
+      if (res.status === 200) { log(`job ${job.id} ${profile.id} ${job.operation}: ${state} (${describeTimings(timings)})`); return; }
       if (res.status === 409) { log(`job ${job.id}: result rejected, lease lost`); return; }
       log(`job ${job.id}: complete returned ${res.status}`);
     } catch (error) {
@@ -326,6 +326,14 @@ async function runJob({ job, profile }) {
 }
 
 class Stop extends Error {}
+
+/** "compile 820ms, run 254ms" — never the source, stdin or output (plan §9). */
+function describeTimings({ compileMs, runMs }) {
+  const parts = [];
+  if (compileMs !== null) parts.push(`compile ${compileMs}ms`);
+  if (runMs !== null) parts.push(`run ${runMs}ms`);
+  return parts.join(", ") || "did not start";
+}
 
 // ---------------------------------------------------------------------------
 // Startup and main loop
