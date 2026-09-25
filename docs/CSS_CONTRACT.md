@@ -48,6 +48,9 @@ match inside one document's rendered body.
 | `.vault-md-blockquote` | blockquotes (non-callout) |
 | `.vault-md-hr` | horizontal rules |
 | `.vault-md-pre` / `.vault-md-code` | code block / inline & fenced code |
+| `.vault-md-code-block` | wrapper around a fenced block's header + `<pre>` |
+| `.vault-md-code-header` | the header strip carrying the language label and Copy |
+| `.vault-code-language` | the language label (also used by the Live-mode toolbar) |
 
 ## Inline text
 
@@ -148,6 +151,38 @@ Every one of these is applied by `CalcValue`/`CalcBlock` after the rehype
 pipeline, so none appear in `lib/html-class.ts` and authored raw HTML cannot
 mint them.
 
+## Code blocks
+
+Fenced code. See `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md`.
+
+| Class | Element |
+|---|---|
+| `.vault-md-code-block` | wrapper around the header and `<pre>` |
+| `.vault-md-code-header` | header strip holding the label and Copy |
+| `.vault-code-language` | the language label |
+
+`.vault-md-pre` and `.vault-md-code` keep their existing meaning and still sit
+inside the wrapper, so snippets written against them before 2026-09-24 continue
+to work.
+
+Syntax tokens are highlight.js classes (`.hljs-keyword`, `.hljs-string`,
+`.hljs-comment`, …) on `<span>`s inside `.vault-md-code`. **They are stable
+enough to style but are not Vault's to rename** — they come from the grammar
+packages, and which class a given token gets is a highlight.js decision that can
+change with an upgrade. Scope any rule to `.vault-md-pre` so it cannot leak.
+These spans are generated *after* both sanitizer passes, so they never appear in
+`lib/html-class.ts` and authored raw HTML cannot mint them; a document writing
+`class="hljs-keyword"` by hand still has it stripped.
+
+Vault's own token colors are the `--code-keyword`, `--code-string`,
+`--code-number`, `--code-function`, and `--code-type` theme variables, defined
+per theme in `app/styles/tokens.css`. Like all tokens they are readable but not
+name-guaranteed.
+
+The Live-mode code toolbar (`.vault-code-tools*`, `.vault-code-tooltip`) and the
+editor's fence line decoration (`.vault-cm-code-line`) are editor internals, not
+contract — see below.
+
 ## Author hook classes
 
 Raw HTML in a document may use `class="snip-*"` for author-defined styling
@@ -161,7 +196,11 @@ prefix content may introduce; everything else is stripped by
   the document outline (`.vault-outline*`, `.vault-reading-frame`,
   `.vault-reading-content`), any Tailwind utility class.
 - Editor internals: `.vault-cm-*`, `.vault-markdown-editor*`, anything under
-  `.cm-*`.
+  `.cm-*`. This includes `.vault-cm-code-line`, `.vault-code-tools`,
+  `.vault-code-tools-actions`, `.vault-code-tools-message`,
+  `.vault-code-language-select`, and `.vault-code-tooltip` — the Live-mode code
+  toolbar never renders in a shared or published document, so no snippet should
+  target it.
 - Extension widgets: `.vault-calendar*`, sticker overlay classes.
 - Design tokens and theme variables in `app/styles/tokens.css` are readable by
   snippets (`var(--muted-foreground)` etc.) but their names are not guaranteed.

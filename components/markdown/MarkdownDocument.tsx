@@ -34,6 +34,8 @@ import { CalcBlock } from "@/components/extensions/CalcBlock";
 import { CalcValue } from "@/components/extensions/CalcValue";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
+import { CodeBlock } from "@/components/markdown/CodeBlock";
+import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
 import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
 import { splitCalendarSegments } from "@/lib/calendar";
 import {
@@ -517,8 +519,10 @@ function createMarkdownComponents(
   td({ children }) {
     return <td className="vault-md-td">{children}</td>;
   },
-  pre({ children, className, style }) {
-    return <pre {...styledProps("vault-md-pre", className, style)}>{children}</pre>;
+  pre({ children, className, style, node }) {
+    const code = node?.children.find((child) => child.type === "element" && child.tagName === "code");
+    if (!code || code.type !== "element") return <pre {...styledProps("vault-md-pre", className, style)}>{children}</pre>;
+    return <CodeBlock source={codeNodeText(code)} info={codeInfoFromClassName(code.properties.className)} {...styledProps("vault-md-pre", className, style)}>{children}</CodeBlock>;
   },
   code({ children, className, style }) {
     return <code {...styledProps("vault-md-code", className, style)}>{children}</code>;
@@ -1261,6 +1265,7 @@ function MarkdownSegment({
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],
         rehypeSanitizeContent,
+        rehypeCodeHighlight,
         rehypeKatex,
       ]}
       components={createMarkdownComponents(

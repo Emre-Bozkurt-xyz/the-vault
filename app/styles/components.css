@@ -724,6 +724,101 @@
     content: "" !important;
   }
 
+  .vault-md-code-block {
+    margin-block: 1.25rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  .vault-md-code-header,
+  .vault-code-tools-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .vault-md-code-header {
+    padding: 0.35rem 0.65rem 0.35rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .vault-code-language {
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.4;
+  }
+
+  .vault-md-code-block > .vault-md-pre {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .cm-tooltip.vault-code-tooltip {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: 0 4px 16px color-mix(in oklab, var(--foreground) 10%, transparent);
+  }
+
+  .vault-code-language-select {
+    height: 1.75rem;
+    max-width: 9rem;
+    padding: 0 0.35rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    background: var(--background);
+    color: var(--foreground);
+    cursor: pointer;
+  }
+
+  .vault-code-language-select:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  .vault-code-tools { padding: 0.35rem 0.5rem; max-width: min(28rem, 90vw); }
+  .vault-code-tools-actions { gap: 0.35rem; }
+  .vault-code-tools-actions > .vault-code-language { margin-right: 0.5rem; }
+  .vault-code-tools-message {
+    padding: 0.3rem 0.15rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .vault-markdown-editor .cm-line.vault-cm-code-line {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  /* Explicit scope beats the editor's prose token reset without changing it. */
+  .vault-md-pre .hljs-keyword, .vault-md-pre .hljs-selector-tag,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-keyword { color: var(--code-keyword) !important; }
+  .vault-md-pre .hljs-string, .vault-md-pre .hljs-regexp,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-string,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-string2 { color: var(--code-string) !important; }
+  .vault-md-pre .hljs-number, .vault-md-pre .hljs-literal,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-number,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-bool { color: var(--code-number) !important; }
+  .vault-md-pre .hljs-title, .vault-md-pre .hljs-built_in,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-definition { color: var(--code-function) !important; }
+  .vault-md-pre .hljs-type, .vault-md-pre .hljs-attr, .vault-md-pre .hljs-name,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-typeName,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-tagName,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-propertyName { color: var(--code-type) !important; }
+  .vault-md-pre .hljs-comment, .vault-md-pre .hljs-meta,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-comment,
+  .vault-markdown-editor .cm-line.vault-cm-code-line .tok-meta { color: var(--muted-foreground) !important; }
+
   .vault-md-pre {
     overflow-x: auto;
     overflow-wrap: normal;

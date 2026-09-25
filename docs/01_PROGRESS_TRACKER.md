@@ -587,6 +587,17 @@ Reference plan: none (grown out of `docs/13_SETTINGS_AND_EXTENSION_BROWSER_PLAN.
 
 Reference plan: `docs/20_DICTIONARY_EXTENSION_PLAN.md`
 
+Follow-up proposal: `docs/21_DEFINITION_AUTHORING_AND_PREVIEWS_PLAN.md`.
+Planning only; the original completed slices below retain their historical status.
+
+| Status | Follow-up task | Notes |
+|---|---|---|
+| [x] | Draft definition UX and body-storage proposal | 2026-09-18. Current-code review and proposed workflow documented; layout/design choices remain open to feedback |
+| [ ] | Distinct term styling and compact shared preview | Live/Read parity, empty definitions, first-mention behavior, header Open action |
+| [ ] | Body-first definitions and legacy compatibility | Bounded valid excerpts, server/agent contracts, preserve existing summaries |
+| [ ] | Shared Live editor in definition composer | Local drafts, explicit reuse, canonical links, Create and open |
+| [ ] | Verify revised definition workflow | Browser behavior, permissions, legacy definitions, source-editor regression checks |
+
 | Status | Task | Notes |
 |---|---|---|
 | [x] | Slice 1 — Data and resolution | Done 2026-09-17. `lib/definitions.ts` (`definitionTagSlug`, `reservedTagCategory`, `definitionPreview` — summary else first body block, skipping fences, `:::` directives, headings, breaks, callouts, region markers and standalone transclusions; Markdown out, bounded at 600 chars). `WikiLinkResolution` gained `isDefinition` + `preview`. `buildWikiLinkResolutionMap` **moved to `lib/wiki-links.ts`** so it is testable at all, which surfaced a latent bug: it built the resolution object twice (doc keys, then the title loop), so a new field could reach one set of keys and miss the other — now one memoized object per document, plus claim dedupe by id. Aliases register `wikiTitleKey` entries (title beats alias; alias collisions `ambiguous`; no stemming). New private `listDefinitionDocumentIds` in `server/documents.ts` (one narrow indexed join, unscoped by design) wired into both resolution callers; official docs untouched (no tags on guides). `TagCategory` gained `"system"` with no migration, stamped and self-healed by `ensureTags`, and added to `server/tags-admin.ts`'s list so `updateTagAction` cannot silently declassify it. +31 tests (415 total), lint at baseline, build clean, verified against real Postgres including a definition tagged **only** by folder inheritance |
@@ -614,11 +625,30 @@ and "what is referenced but undefined" over a real vault.
 
 ---
 
+## Phase 24 - Code Blocks and Multi-Language Execution
+
+Plan: `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` (2026-09-24).
+Slices 1 and 2 are implemented and browser-verified. Nothing executes yet.
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Record staged architecture and acceptance criteria | Highlighting and explicit Format first; queued server-side execution for Python, JavaScript, Java, Haskell, C, C++, and C#; fresh sandboxes, one worker initially, multiple hosts later |
+| [x] | Slice 1 - Language catalog, fence ranges, highlighting, Copy | Done 2026-09-24. `lib/code/languages.ts` is the one catalog (17 languages, aliases, grammar name, optional Prettier parser); `components/markdown/code-fences.ts` derives fence/body ranges from `FencedCode` nodes, replacing the old `^```` line scan (`getCodeFenceLines`/`codeFenceBlockRange`/`isCodeFenceLine` all deleted) so tilde fences, longer fences, and list/blockquote nesting work. `rehypeCodeHighlight` runs `lowlight` after BOTH sanitizers, so no allowlist changed; Live mode mounts real `@codemirror/lang-*` grammars. Read/public/embed get a language label + Copy via `CodeBlock.tsx`, with Copy hidden from non-hydrating static markup. Idle Live fences hide their delimiters again, now from `CodeMark` nodes. Unknown/`txt` stays plain; bodies over 32 KiB fall back to plain text |
+| [x] | Slice 2 - Explicit browser formatting | Done 2026-09-24. Prettier standalone in a terminable module worker (10s timeout, pinned host-owned options, no plugin/config/network loading) for JS/TS/JSX/TSX, JSON, HTML, CSS, YAML. `formattedCodeChange` rejects a changed document, an unclosed or ambiguously indented fence, oversized output, and any result that would close its own fence; the edit is one `isolateHistory` transaction bracketed by `stopCapturing()` so it is exactly one undo step through Yjs. Native formatters (Ruff, google-java-format, Ormolu, clang-format, CSharpier) deliberately deferred to the job service in slice 4 |
+| [x] | Follow-up - Fence language picker | Done 2026-09-24. Not in the original slice list; added because changing a fence's language otherwise meant hand-editing the info string. Toolbar `<select>` over the catalog, rewrites only the language word, preserves fence metadata, keeps an unknown hint selectable, one undo step |
+| [~] | Slice 3 - Seven-language runner proof and backend selection | Harness written 2026-09-24 (`runner/`), **not yet run on the mini-PC**. Two decisions taken up front: gVisor runs directly on the host rather than in a dedicated VM (16 GB is already shared with web/collab/Postgres/CI, and isolation comes from the per-job sandbox either way — accepted tradeoff is that an escape reaches the same host as Postgres), and only the OCI+gVisor backend is evaluated (Piston/Judge0 solve neither the formatters nor the per-language images slice 4 needs). Remaining: install `runsc`, run `probe`/`build`/`bench`/`isolation`/`format`, record the numbers, decide go/no-go |
+| [ ] | Slice 4 - Durable jobs and first execution integration | Permission-checked APIs, one worker, native format adapters, Python/JS Run/Stop; private expiring results |
+| [ ] | Slice 5 - Complete compiled-language support | Java, Haskell, C, C++, C# compile/run plus all native formatters |
+| [ ] | Slice 6 - Deployment, scaling verification, and guides | Two-worker scheduling test, bounded queue, failure recovery, image updates and operating notes |
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |
 |---|---|---:|---|
 | [x] | Command palette arrow keys didn't scroll the results container | Med | Fixed 2026-07-10: keyboard-driven selection now `scrollIntoView({ block: "nearest" })`s the selected row; mouse-hover selection intentionally never scrolls |
+| [x] | React hydration mismatch on every workspace page load | Low | Fixed 2026-09-24: dnd-kit derived `aria-describedby` from a module-level counter that restarts in the browser but not in the server process, so every `SortableTab` hydrated mismatched. An explicit `id` on `DndContext` makes it deterministic. Verified across three routes |
 | [ ] |  |  |  |
 
 ---

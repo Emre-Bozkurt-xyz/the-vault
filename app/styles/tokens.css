@@ -48,6 +48,11 @@
 }
 
 :root {
+  --code-keyword: oklch(0.47 0.16 305);
+  --code-string: oklch(0.43 0.1 150);
+  --code-number: oklch(0.46 0.13 50);
+  --code-function: oklch(0.45 0.13 255);
+  --code-type: oklch(0.43 0.09 205);
   --background: oklch(0.99 0 0);
   --foreground: oklch(0.18 0 0);
   --card: oklch(0.995 0 0);
@@ -88,6 +93,11 @@
 }
 
 .dark {
+  --code-keyword: oklch(0.78 0.13 305);
+  --code-string: oklch(0.8 0.11 150);
+  --code-number: oklch(0.82 0.12 65);
+  --code-function: oklch(0.79 0.1 250);
+  --code-type: oklch(0.8 0.09 205);
   --background: oklch(0.13 0 0);
   --foreground: oklch(0.95 0 0);
   --card: oklch(0.18 0 0);

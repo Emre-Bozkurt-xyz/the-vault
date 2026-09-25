@@ -67,6 +67,9 @@ import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { EditorOutline } from "@/components/markdown/EditorOutline";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import { createCodeBlockExtension } from "@/components/markdown/code-block-extension";
+import { fencedCodeLanguage } from "@/components/markdown/code-languages";
+import { codeFenceAt, codeFenceLineNumbers } from "@/components/markdown/code-fences";
 import type { FxRateTable } from "@/lib/calc/fx";
 import { createCalcCompletionSource } from "@/components/markdown/calc-completions";
 import {
@@ -763,12 +766,14 @@ export function MarkdownEditor({
       // for every mode, since the slash menu is not Live-only.
       definitionScopeField,
       markdownLanguage({
+        codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({
           matchClosingTags: false,
           selfClosingTags: true,
         }),
       }),
       EditorView.lineWrapping,
+      createCodeBlockExtension(() => collabSession?.undoManager.stopCapturing()),
       Prec.highest(
         keymap.of(
           createMarkdownShortcutKeymap(editorBindings, {
@@ -3362,7 +3367,7 @@ function buildBlockAnchorMarkerDecorations(view: EditorView) {
     while (position <= visibleRange.to) {
       const line = view.state.doc.lineAt(position);
 
-      if (!codeFenceLines.has(line.number)) {
+      if (!codeFenceLines.all.has(line.number)) {
         const marker = trailingBlockAnchorMatch(line.text);
 
         if (marker) {
@@ -3417,7 +3422,7 @@ function buildLivePreviewDecorations(
     while (position <= visibleRange.to) {
       const line = doc.lineAt(position);
       if (!activeLines.has(line.number)) {
-        const htmlBlock = codeFenceLines.has(line.number)
+        const htmlBlock = codeFenceLines.all.has(line.number)
           ? null
           : htmlBlockRangeFromStart(doc, line.number);
 
@@ -3439,7 +3444,7 @@ function buildLivePreviewDecorations(
 
         const isLiveBlockLine = liveBlockLines.has(line.number);
 
-        const assetEmbed = isLiveBlockLine
+        const assetEmbed = isLiveBlockLine || codeFenceLines.all.has(line.number)
           ? null
           : getAssetEmbedPreview(line.text, assetLinks);
 
@@ -3468,7 +3473,8 @@ function buildLivePreviewDecorations(
             line.number,
             line.from,
             line.text,
-            codeFenceLines.has(line.number),
+            codeFenceLines.all.has(line.number),
+            codeFenceLines.marks.has(line.number),
             activePositions,
             frontmatterEndLine,
           );
@@ -3647,12 +3653,11 @@ function getActiveMarkdownBlockRange(
   const startLine = doc.line(fromLineNumber);
   const codeFenceLines = getCodeFenceLines(view);
 
-  if (codeFenceLines.has(fromLineNumber)) {
-    return codeFenceBlockRange(doc, fromLineNumber);
-  }
-
-  if (isCodeFenceLine(startLine.text)) {
-    return codeFenceBlockRange(doc, fromLineNumber);
+  if (codeFenceLines.all.has(fromLineNumber)) {
+    const fence = codeFenceAt(view.state, startLine.to);
+    return fence
+      ? { from: doc.lineAt(fence.from).number, to: doc.lineAt(fence.to).number }
+      : { from: fromLineNumber, to: toLineNumber };
   }
 
   if (/^(#{1,6}\s+)/.test(startLine.text)) {
@@ -3699,29 +3704,6 @@ function getActiveMarkdownBlockRange(
   }
 
   return null;
-}
-
-function codeFenceBlockRange(doc: EditorView["state"]["doc"], lineNumber: number) {
-  let from = lineNumber;
-  let to = lineNumber;
-
-  while (from > 1 && !isCodeFenceLine(doc.line(from - 1).text)) {
-    from -= 1;
-  }
-
-  if (from > 1) {
-    from -= 1;
-  }
-
-  while (to < doc.lines && !isCodeFenceLine(doc.line(to + 1).text)) {
-    to += 1;
-  }
-
-  if (to < doc.lines) {
-    to += 1;
-  }
-
-  return { from, to };
 }
 
 function htmlBlockRangeContainingLine(
@@ -3823,24 +3805,7 @@ function htmlBlockRangeFromStart(
 }
 
 function getCodeFenceLines(view: EditorView) {
-  const lines = new Set<number>();
-  let insideFence = false;
-
-  for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
-    const line = view.state.doc.line(lineNumber);
-
-    if (isCodeFenceLine(line.text)) {
-      lines.add(lineNumber);
-      insideFence = !insideFence;
-      continue;
-    }
-
-    if (insideFence) {
-      lines.add(lineNumber);
-    }
-  }
-
-  return lines;
+  return codeFenceLineNumbers(view.state);
 }
 
 function decorateInactiveMarkdownLine(
@@ -3849,6 +3814,7 @@ function decorateInactiveMarkdownLine(
   lineFrom: number,
   text: string,
   inCodeFence: boolean,
+  isFenceDelimiter: boolean,
   activePositions: number[],
   frontmatterEndLine = 0,
 ) {
@@ -3857,7 +3823,9 @@ function decorateInactiveMarkdownLine(
   if (inCodeFence) {
     ranges.push(previewCodeBlock.range(lineFrom));
 
-    if (isCodeFenceLine(text)) {
+    // Idle fences hide their own delimiters; the whole block becomes active
+    // (and the delimiters reappear, editable) as soon as the cursor is inside.
+    if (isFenceDelimiter && text.length > 0) {
       ranges.push(hiddenMarkdown.range(lineFrom, lineFrom + text.length));
     }
 
@@ -5389,10 +5357,6 @@ function sanitizeHtmlPreviewDom(root: HTMLElement) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function isCodeFenceLine(text: string) {
-  return /^```/.test(text.trim());
 }
 
 function trailingBlockAnchorMatch(text: string) {
