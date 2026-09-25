@@ -206,10 +206,15 @@ sample() {
       # Named job.cs, not Program.cs: the host-owned template ships its own
       # Program.cs and the copy below would otherwise clobber the job's file.
       printf 'System.Console.WriteLine("hello from csharp");\n' > "$work/job.cs"
+      # `chmod -R u+w` because the image ships the template as a+rX, so the
+      # copied Program.cs is read-only and obj/bin are 0555 — the overwrite and
+      # the rm below both fail without it.
       # obj/bin are discarded because the template's restore wrote absolute
-      # paths under /opt/project. The re-restore is offline, out of the image's
-      # NUGET_PACKAGES cache.
-      echo "cp -r /opt/project/. . && cp job.cs Program.cs && rm -rf obj bin && dotnet build -c Release -v q --nologo >/dev/null && dotnet bin/Release/net8.0/app.dll" ;;
+      # paths under /opt/project. The re-restore is offline; a console app has
+      # no PackageReferences, so there is nothing to fetch.
+      # Build output is NOT sent to /dev/null: MSBuild reports errors on stdout,
+      # so redirecting it is how a failure ends up with an empty message.
+      echo "cp -r /opt/project/. . && chmod -R u+w . && cp job.cs Program.cs && rm -rf obj bin && dotnet build -c Release -v q --nologo && dotnet bin/Release/net8.0/app.dll" ;;
     *) die "unknown language $language" ;;
   esac
 }
@@ -354,25 +359,34 @@ cmd_format() {
   trap 'discard_workspace "$work"' RETURN
 
   printf 'x   =  1\ndef  f( a ):\n  return  a\n' > "$work/main.py"
-  check "ruff (python)" pass sandbox python "$work" "ruff format main.py"
-
   printf 'public class Main{public static void main(String[] a){System.out.println( 1 );}}\n' > "$work/Main.java"
-  check "google-java-format (java)" pass sandbox jvm "$work" "\$GJF_CMD --replace Main.java"
-
   printf 'main::IO ()\nmain   =  putStrLn    "x"\n' > "$work/Main.hs"
-  check "ormolu (haskell)" pass sandbox haskell "$work" "ormolu --mode inplace Main.hs"
-
   printf 'int  main( void ){return   0;}\n' > "$work/main.c"
-  check "clang-format (c)" pass sandbox gcc "$work" "clang-format -i main.c"
-
   printf 'int  main( ){return   0;}\n' > "$work/main.cpp"
-  check "clang-format (c++)" pass sandbox gcc "$work" "clang-format -i main.cpp"
-
   printf 'class P{static void Main(){System.Console.WriteLine( 1 );}}\n' > "$work/Program.cs"
-  check "csharpier (c#)" pass sandbox dotnet "$work" "csharpier format Program.cs"
+  # A formatter rewrites its input in place, and these files are created by the
+  # host user while the job runs as uid 10001 — so without this every formatter
+  # that opens the file for writing gets EACCES. clang-format was the only one
+  # that passed before, because it writes a temp file and renames, which needs
+  # permission on the directory (0777) rather than on the file.
+  chmod 0666 "$work"/*
 
-  say "Formatted output"
-  cat "$work/main.py"
+  check "ruff (python)" pass sandbox python "$work" "ruff format main.py"
+  check "google-java-format (java)" pass sandbox jvm "$work" "\$GJF_CMD --replace Main.java"
+  check "ormolu (haskell)" pass sandbox haskell "$work" "ormolu --mode inplace Main.hs"
+  check "clang-format (c)" pass sandbox gcc "$work" "clang-format -i main.c"
+  check "clang-format (c++)" pass sandbox gcc "$work" "clang-format -i main.cpp"
+  # CSharpier renamed its tool command and added the `format` subcommand in 1.0;
+  # 0.30.x installs `dotnet-csharpier` and takes a bare path. Handle both rather
+  # than pinning to a guess — slice 4 pins whichever this run proves out.
+  check "csharpier (c#)" pass sandbox dotnet "$work" \
+    "if command -v csharpier >/dev/null; then csharpier format Program.cs; else dotnet-csharpier Program.cs; fi"
+
+  say "Formatted output (each should differ from the mangled input)"
+  for file in main.py Main.java Main.hs main.c Program.cs; do
+    printf '\n--- %s\n' "$file"
+    cat "$work/$file"
+  done
 }
 
 cmd_clean() {
