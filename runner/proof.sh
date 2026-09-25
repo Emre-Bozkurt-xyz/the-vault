@@ -67,9 +67,6 @@ cmd_probe() {
       release-*) ;;
       *) row "" "DISTRO PACKAGE" "use the upstream repo — see runner/README.md" ;;
     esac
-    # The platform is a runsc flag, not something the sandbox reports: gVisor's
-    # own dmesg never prints it. Read the default out of the help text, and the
-    # override (if any) out of the Docker runtime args.
     # The platform is a runsc flag and the sandbox does not report it, so the
     # only honest answers are "what does the binary default to" and "did the
     # daemon override it". Recent releases default to systrap; no runtimeArgs
@@ -149,9 +146,28 @@ sandbox() {
     --tmpfs /tmp:rw,size=64m,mode=1777 \
     -v "$work:/w:rw" \
     -w /w \
+    -e HOME=/tmp \
     "$@" \
     "$TAG_PREFIX-$image" \
-    timeout --signal=KILL "$TIMEOUT" bash -lc "$script"
+    timeout --signal=KILL "$TIMEOUT" bash -c "$script"
+}
+# Two things above are load-bearing and were both found the hard way:
+#   `bash -c`, never `bash -lc`. A login shell re-sources /etc/profile, which
+#   resets PATH and throws away the image's own ENV PATH — that is how GHC went
+#   missing from the haskell image, and it would have taken /opt/dotnet-tools next.
+#   HOME=/tmp, because useradd --create-home puts it under the read-only rootfs.
+#   ruff, google-java-format and ormolu all want a writable home; clang-format
+#   does not, which is why it was the only formatter that passed without this.
+
+# Files a job leaves behind belong to uid 10001, and a directory it created
+# (ruff's .ruff_cache) cannot be emptied by the host user. Fall back to a
+# throwaway root container rather than leaving temp directories around.
+discard_workspace() {
+  [ -n "${1:-}" ] || return 0
+  rm -rf "$1" 2>/dev/null && return 0
+  docker run --rm -v "$1:/w" --entrypoint sh alpine:3 \
+    -c 'rm -rf /w/* /w/.[!.]* 2>/dev/null; true' >/dev/null 2>&1 || true
+  rm -rf "$1" 2>/dev/null || true
 }
 
 workspace() {
@@ -243,7 +259,7 @@ cmd_bench() {
     if out="$(sandbox "$image" "$work" "$script" 2>&1)"; then status="ok"; else status="FAILED"; fi
     cold=$(( ($(date +%s%N) - start) / 1000000 ))
 
-    rm -rf "$work"; work="$(workspace)"; script="$(sample "$language" "$work")"
+    discard_workspace "$work"; work="$(workspace)"; script="$(sample "$language" "$work")"
     start=$(date +%s%N)
     sandbox "$image" "$work" "$script" >/dev/null 2>&1 || true
     warm=$(( ($(date +%s%N) - start) / 1000000 ))
@@ -252,7 +268,7 @@ cmd_bench() {
     detail="$(printf '%s' "$out" | tail -1)"
     [ "$status" = ok ] || detail="FAILED: $detail"
     printf '%-12s %9dms %9dms  %s\n' "$language" "$cold" "$warm" "$detail"
-    rm -rf "$work"
+    discard_workspace "$work"
   done
   echo
   echo "Warm time is what a user feels. Anything over ~5s needs a visible"
@@ -269,19 +285,21 @@ check() { # $1 label  $2 expected(pass|fail)  $3.. command
     printf '  \033[33mSKIP\033[0m %s (image %s-%s missing)\n' "$label" "$TAG_PREFIX" "${2:-}"
     return 0
   fi
-  local got="pass"
-  "$@" >/dev/null 2>&1 || got="fail"
+  local got="pass" out
+  out="$("$@" 2>&1)" || got="fail"
   if [ "$got" = "$expect" ]; then
     printf '  \033[32mOK\033[0m   %s\n' "$label"
   else
     printf '  \033[31mBAD\033[0m  %s (expected to %s, did %s)\n' "$label" "$expect" "$got"
+    # Without this a failure is undiagnosable and costs a whole round trip.
+    printf '%s\n' "$out" | tail -4 | sed 's/^/         | /'
   fi
 }
 
 cmd_isolation() {
   require_runtime
   local work; work="$(workspace)"
-  trap 'rm -rf "$work"' RETURN
+  trap 'discard_workspace "$work"' RETURN
 
   say "Isolation"
   check "outbound network is denied" fail \
@@ -333,7 +351,7 @@ cmd_format() {
   require_runtime
   say "Native formatters"
   local work; work="$(workspace)"
-  trap 'rm -rf "$work"' RETURN
+  trap 'discard_workspace "$work"' RETURN
 
   printf 'x   =  1\ndef  f( a ):\n  return  a\n' > "$work/main.py"
   check "ruff (python)" pass sandbox python "$work" "ruff format main.py"

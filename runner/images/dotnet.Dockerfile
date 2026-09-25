@@ -20,7 +20,11 @@ RUN dotnet tool install csharpier --version 0.30.6 --tool-path /opt/dotnet-tools
 
 # Scaffold and build once so the package cache and the SDK's first-run state are
 # warm. A job copies this project into its workspace and swaps in its own file.
-RUN mkdir -p /opt/project \
+# /opt/nuget is created explicitly: a bare console template has no
+# PackageReferences, so restore downloads nothing and would never create the
+# folder — which made the chmod below fail the build outright. That also means
+# the offline restore a job performs is trivial, since there is nothing to fetch.
+RUN mkdir -p /opt/project /opt/nuget \
   && cd /opt/project \
   && dotnet new console --name app --output . \
   && dotnet build -c Release \
