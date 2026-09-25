@@ -31,6 +31,14 @@ removed by `./runner/proof.sh clean`.
 
 The host is already Linux with Docker. The only new software is gVisor.
 
+> **Do not `apt-get install runsc` without adding the repo below.** Ubuntu's
+> universe package is years behind upstream — 24.04 ships a build from August
+> 2023. For the one component whose entire job is to be the security boundary,
+> running a stale build defeats the point, and it predates `systrap` becoming
+> the default platform, so it also makes every benchmark pessimistic. Upstream
+> versions are named `release-YYYYMMDD.0`; anything else is the distro package.
+> If you already installed it, `sudo apt-get remove runsc` first.
+
 ```bash
 # 1. Install runsc (Debian/Ubuntu)
 curl -fsSL https://gvisor.dev/archive.key \
@@ -74,6 +82,14 @@ never a configuration to actually ship.
   worth fixing before drawing conclusions.
 - **Disk free on the Docker root.** The six images land somewhere around 6–10
   GB, and `haskell:9.6` is the single biggest line item by a wide margin.
+
+**A note on this host specifically.** The mini-PC is an Intel N150 (four
+efficiency cores, no SMT) running well over a dozen containers across four
+projects, with roughly 5 GB of its 16 GB free. Two consequences: benchmark
+numbers will be noisy and on the pessimistic side, which is arguably the honest
+number since production load is exactly this; and the `haskell` and `dotnet`
+image builds are the memory-hungriest step here, so build them when the host is
+otherwise quiet rather than alongside a busy Minecraft server.
 
 **In `bench`:** warm time is what a user feels. Python and JavaScript should be
 well under a second. Java, C, and C++ will be a few seconds. Haskell and C# are

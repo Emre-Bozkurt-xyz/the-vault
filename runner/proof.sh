@@ -57,18 +57,36 @@ cmd_probe() {
 
   say "gVisor"
   if command -v runsc >/dev/null; then
-    row "runsc" "$(runsc --version | head -1 | sed 's/^runsc version //')" ""
+    local version
+    version="$(runsc --version 2>/dev/null | head -1 | sed 's/^runsc version //')"
+    row "runsc" "$version" ""
+    # Ubuntu's universe package lags the upstream release repo by years, and a
+    # stale sandbox is the one dependency where "it still works" is not the
+    # question. Upstream versions look like `release-20250915.0`.
+    case "$version" in
+      release-*) ;;
+      *) row "" "DISTRO PACKAGE" "use the upstream repo — see runner/README.md" ;;
+    esac
+    # The platform is a runsc flag, not something the sandbox reports: gVisor's
+    # own dmesg never prints it. Read the default out of the help text, and the
+    # override (if any) out of the Docker runtime args.
+    row "default platform" \
+      "$(runsc --help 2>&1 | grep -oiE '(systrap|kvm|ptrace)[^)]*\(default\)' | head -1 || true)" \
+      "(blank = parse it yourself from 'runsc --help')"
+    if [ -r /etc/docker/daemon.json ]; then
+      row "daemon.json" "$(tr -d '\n ' < /etc/docker/daemon.json | grep -oE '"runsc":\{[^}]*\}' | head -c 100 || true)" ""
+    fi
   else
     row "runsc" "NOT INSTALLED" "see runner/README.md"
   fi
   if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q runsc; then
     row "runtime" "registered with docker" ""
-    # systrap is the modern default and is substantially faster than ptrace.
-    # A mid-range CPU running ptrace will look far worse than it should.
-    local platform
-    platform="$(docker run --rm --runtime=runsc alpine:3 dmesg 2>/dev/null \
-      | grep -oiE 'platform (systrap|kvm|ptrace)' | head -1 || true)"
-    row "platform" "${platform:-could not detect}" ""
+    # Cheapest end-to-end proof that the runtime actually starts a sandbox.
+    if docker run --rm --runtime=runsc alpine:3 uname -a 2>/dev/null | grep -qi gvisor; then
+      row "smoke test" "a sandbox starts and reports a gVisor kernel" ""
+    else
+      row "smoke test" "FAILED to start a sandbox" "try: docker run --rm --runtime=runsc alpine:3 uname -a"
+    fi
   else
     row "runtime" "NOT registered with docker" "run: sudo runsc install && sudo systemctl reload docker"
   fi
