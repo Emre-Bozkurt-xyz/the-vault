@@ -191,6 +191,16 @@ LANGUAGES="python javascript java haskell c cpp csharp"
 # ---------------------------------------------------------------------------
 cmd_bench() {
   require_runtime
+  # Timings on a shared host are only meaningful next to what else was running.
+  # Record it so a results table read weeks later is still interpretable.
+  say "Host conditions at the time of this run"
+  row "load average" "$(cut -d' ' -f1-3 /proc/loadavg)" "(1/5/15 min, $(nproc) cores)"
+  row "memory free" "$(free -h | awk '/^Mem:/ {print $7 " available of " $2}')" ""
+  row "containers" "$(docker ps -q | wc -l) running" ""
+  local heavy
+  heavy="$(docker ps --format '{{.Names}}' | grep -iE 'mc-server|minecraft' | tr '\n' ' ' || true)"
+  row "minecraft" "${heavy:-not running}" "$([ -n "$heavy" ] && echo 'expect contention' || echo 'this is the quiet case')"
+
   say "Cold and warm wall time under --runtime=$RUNTIME (memory=$MEMORY cpus=$CPUS)"
   printf '%-12s %10s %10s  %s\n' LANGUAGE COLD WARM RESULT
   for language in $LANGUAGES; do

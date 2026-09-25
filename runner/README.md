@@ -14,6 +14,19 @@ removed by `./runner/proof.sh clean`.
 
 ## Decisions already made
 
+- **Measure on the mini-PC first, decide on hardware after** (2026-09-24). The
+  host turned out to run four projects plus a large Minecraft modpack, so the
+  realistic question is whether it copes under normal use — and normal use here
+  means Vault *or* the modpack, rarely both. Run the proof with the modpack
+  stopped; that is the honest condition. If the numbers are poor even then, the
+  fallback is a small runner-only VPS, which the architecture already allows:
+  plan §6 has the runner claiming jobs over an authenticated private API and
+  never holding database, OAuth, or R2 credentials, so it can live anywhere.
+- **The blast-radius decision below is not live yet.** Slice 3 executes only the
+  hello-world samples this harness writes, so nothing untrusted runs on the host
+  during measurement. The tradeoff only takes effect when Run ships, which is
+  slice 4 at the earliest — and if the runner moves to its own VPS by then, it
+  disappears entirely.
 - **gVisor runs directly on the host**, not inside a dedicated VM. The plan
   (§6) suggests a VM; we chose the host because isolation comes from the
   per-job `runsc` sandbox either way, and a VM would cost 2–4 GB of the 16 GB
@@ -68,6 +81,13 @@ Run the steps in order. `probe` is read-only and safe to run first.
 ./runner/proof.sh format      # the five native formatters
 ./runner/proof.sh clean       # removes everything the above created
 ```
+
+On a shared host, stop the heavy neighbours before `build` and `bench` —
+`docker stop mc-server-atm-10-aero` is the big one — and start them again
+afterwards. `bench` prints the load average, free memory and whether the
+modpack was running, so a results table stays interpretable later. Running
+`bench` twice, once quiet and once with the modpack up, is the cheapest way to
+answer "can this host do both at once" directly rather than by argument.
 
 Tunable via environment: `RUNTIME`, `MEMORY`, `CPUS`, `PIDS`, `TIMEOUT`. Running
 `bench` with `RUNTIME=runc` gives the gVisor overhead as a ratio — useful, but
