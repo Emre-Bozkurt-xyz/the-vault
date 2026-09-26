@@ -7,11 +7,11 @@ import { useDocumentExtensionState } from "@/components/extensions/use-document-
 import { DocumentOverlayItem } from "@/components/extensions/DocumentOverlayHost";
 import {
   stickersStateSchema,
+  type PublicStickerItem,
   type StickerItem,
   type StickersState,
-} from "@/lib/extensions/catalog";
+} from "@/extensions/stickers/state";
 import type { PickerAsset } from "@/server/asset-picker-actions";
-import type { PublicStickerItem } from "@/server/sticker-state";
 import { cn } from "@/lib/utils";
 
 const MARGIN = 200;

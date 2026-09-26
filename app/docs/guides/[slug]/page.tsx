@@ -5,8 +5,8 @@ import { BookOpen, Home } from "lucide-react";
 import { auth } from "@/auth";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { getFxRateTable } from "@/server/fx-rates";
-import type { FxRateTable } from "@/lib/calc/fx";
+import { resolveDocumentExtensions } from "@/server/extension-runtime";
+import type { DocumentExtensions } from "@/lib/extension-api";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
 import { Badge } from "@/components/ui/badge";
@@ -52,14 +52,18 @@ export default async function OfficialDocPage({
     ...guideWikiLinks,
   };
 
-  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
-  // anything is cached, and returns null rather than throwing when it is not —
-  // conversions then report `missing-rate` and the document still renders.
-  const fxTable = await getFxRateTable();
-
   if (!doc) {
     notFound();
   }
+
+  // Guides carry no extension state; this resolves what their Markdown uses
+  // (the FX table for `:calc`) as an anonymous reader.
+  const documentExtensions = await resolveDocumentExtensions({
+    surface: "guide",
+    document: { id: null, markdown: doc.markdown },
+    canEdit: false,
+    userId: null,
+  });
 
   const groupedDocs = groupDocsByCategory(docs);
 
@@ -120,7 +124,7 @@ export default async function OfficialDocPage({
           />
         }
       >
-        <GuideContent doc={doc} wikiLinks={wikiLinks} fxTable={fxTable} />
+        <GuideContent doc={doc} wikiLinks={wikiLinks} extensions={documentExtensions} />
       </VaultWorkspaceShell>
       <WorkspaceSettingsModalMount profile={workspace.profile} />
       </>
@@ -135,7 +139,7 @@ export default async function OfficialDocPage({
         <section className="min-w-0 border-border/60 lg:border-l">
           <DocsTopbar />
 
-          <GuideContent doc={doc} wikiLinks={wikiLinks} fxTable={fxTable} />
+          <GuideContent doc={doc} wikiLinks={wikiLinks} extensions={documentExtensions} />
         </section>
       </div>
     </main>
@@ -145,11 +149,11 @@ export default async function OfficialDocPage({
 function GuideContent({
   doc,
   wikiLinks,
-  fxTable,
+  extensions,
 }: {
   doc: NonNullable<Awaited<ReturnType<typeof getPublishedOfficialDocBySlug>>>;
   wikiLinks: WikiLinkResolutionMap;
-  fxTable: FxRateTable | null;
+  extensions: DocumentExtensions;
 }) {
   return (
     <article className="mx-auto w-full max-w-4xl px-0 py-8 sm:px-4 lg:px-8">
@@ -171,7 +175,7 @@ function GuideContent({
             markdown={doc.markdown}
             className="max-w-4xl"
             wikiLinks={wikiLinks}
-            fxTable={fxTable}
+            extensions={extensions}
           />
         </DocumentReadingFrame>
       </div>

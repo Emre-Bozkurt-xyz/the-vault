@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import type { PublicStickerItem } from "@/server/sticker-state";
+import type { PublicStickerItem } from "@/extensions/stickers/state";
 
 type Props = {
   children: ReactNode;

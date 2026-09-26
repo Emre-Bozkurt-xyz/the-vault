@@ -244,6 +244,12 @@ export type VaultExtensionAgentAction<TInput = unknown> = {
   /** Whether the action mutates state. Document-scoped mutating actions require edit access. */
   mutates?: boolean;
   /**
+   * Whether MCP agents may discover and run this action. Defaults to true.
+   * `false` keeps an action for the extension's own UI only
+   * (`docs/23_EXTENSION_SDK_PLAN.md` §16 decision 3).
+   */
+  agent?: boolean;
+  /**
    * Capabilities the handler needs. Must be a subset of the extension's own
    * `permissions`; the registry asserts this. Gates which `ctx` surfaces exist.
    */

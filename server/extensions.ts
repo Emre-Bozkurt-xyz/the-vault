@@ -2,11 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import {
-  getLocalExtensionIds,
-  localBuiltInExtensions,
-  localExtensionRegistry,
-} from "@/lib/extensions/catalog";
+import { extensionRegistry } from "@/lib/extension-host/server";
 import type { AgentActionEntry } from "@/lib/extensions/registry";
 import type {
   ExtensionAgentActionContext,
@@ -41,7 +37,7 @@ import {
   listOwnedDocumentExtensionStates,
   upsertDocumentExtensionStateForUser,
 } from "@/server/document-extensions";
-import { listUserExtensionSettings } from "@/server/user-settings";
+import { resolveViewerExtensions } from "@/server/extension-runtime";
 
 /**
  * Permissions for which {@link buildDocumentContext} can currently supply a
@@ -64,18 +60,9 @@ const supportedActionPermissions = new Set<ExtensionPermission>([
 export async function resolveEnabledExtensionsForUser(
   userId: string,
 ): Promise<VaultExtension[]> {
-  const allowedExtensionIds = getLocalExtensionIds();
-  const rows = await listUserExtensionSettings({ userId, allowedExtensionIds });
-  const explicit = new Map(rows.map((row) => [row.extensionId, row.enabled]));
+  const { enabledIds } = await resolveViewerExtensions(userId);
 
-  const enabledIds = localBuiltInExtensions
-    .filter((extension) => {
-      const setting = explicit.get(extension.id);
-      return setting ?? extension.defaultEnabled ?? false;
-    })
-    .map((extension) => extension.id);
-
-  return localExtensionRegistry.getEnabledExtensions(enabledIds);
+  return extensionRegistry.getEnabledExtensions(enabledIds);
 }
 
 export type AgentActionDescriptor = {
@@ -141,9 +128,12 @@ export async function listAgentActionsForUser(
   const enabled = await resolveEnabledExtensionsForUser(userId);
   const enabledIds = new Set(enabled.map((extension) => extension.id));
 
-  const entries = localExtensionRegistry
+  const entries = extensionRegistry
     .getAgentActions()
-    .filter((entry) => enabledIds.has(entry.extension.id));
+    .filter(
+      (entry) =>
+        enabledIds.has(entry.extension.id) && entry.action.agent !== false,
+    );
 
   if (!documentId) {
     const actions = entries.map(describeAction);
@@ -192,6 +182,12 @@ export type RunAgentActionInput = {
   actionId: string;
   documentId?: string;
   input: unknown;
+  /**
+   * Who is calling. `agent` (MCP, the default) may not run actions marked
+   * `agent: false`; `extension` is an extension's own UI, through
+   * `runExtensionActionAction`. Every other check is identical.
+   */
+  caller?: "agent" | "extension";
 };
 
 /**
@@ -381,10 +377,12 @@ export async function runAgentActionForUser({
   actionId,
   documentId,
   input,
+  caller = "agent",
 }: RunAgentActionInput): Promise<ExtensionAgentActionResult> {
-  const entry = localExtensionRegistry.getAgentAction(actionId);
+  const entry = extensionRegistry.getAgentAction(actionId);
 
-  if (!entry) {
+  // A UI-only action is reported to agents exactly like one that does not exist.
+  if (!entry || (caller === "agent" && entry.action.agent === false)) {
     throw new Error(`Unknown agent action: ${actionId}`);
   }
 
