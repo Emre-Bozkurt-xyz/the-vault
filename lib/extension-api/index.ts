@@ -1,0 +1,354 @@
+/**
+ * The Vault extension SDK — the only app module that code under `extensions/`
+ * may import (`docs/23_EXTENSION_SDK_PLAN.md` §3, §11; enforced by ESLint).
+ *
+ * Four entry points per extension (plan §4): `defineManifest` (data),
+ * `defineRender` (what readers see), `defineEditor` (what authors use) and,
+ * from `@/lib/extension-api/server`, `defineServer`. Client hooks live in
+ * `@/lib/extension-api/react`.
+ *
+ * Isomorphic: imported by the server, by client components, and by manifests.
+ */
+import type { ComponentType } from "react";
+import type { ZodType } from "zod";
+
+import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
+import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
+
+import type {
+  CommandContribution,
+  DocumentOverlayContribution,
+  ExtensionPermission,
+  ExtensionSettingsSection,
+  ExtensionStateValue,
+  ExtensionStateVisibility,
+  SlashCommandContribution,
+  VaultExtensionCategory,
+} from "@/lib/extensions/types";
+
+export type {
+  CommandContribution,
+  DocumentOverlayContribution,
+  ExtensionPermission,
+  ExtensionSettingsField,
+  ExtensionSettingsSection,
+  ExtensionStateValue,
+  ExtensionStateVisibility,
+  SlashCommandContribution,
+  VaultExtensionCategory,
+} from "@/lib/extensions/types";
+
+// Wiki links are core syntax; these pure helpers are part of the SDK so an
+// extension never reaches into `lib/` for them.
+export {
+  countWikiLinkTargets,
+  wikiDocKey,
+  wikiKeyForTarget,
+  wikiTitleKey,
+} from "@/lib/wiki-links";
+
+/** Directive and fence names an extension owns (plan §3 principle 4, §5). */
+export type ExtensionSyntax = {
+  /** Single-line `:::name{…}` block directives, rendered by the host (plan §6). */
+  blocks?: readonly string[];
+  /**
+   * `:::name` … `:::` container directives with a body. Claimed for render-set
+   * detection; host rendering of containers arrives with calc (plan §14 slice
+   * 6), so until then the owning extension's code in core renders them.
+   */
+  containers?: readonly string[];
+  /** `:name[…]{…}` inline directives. */
+  inline?: readonly string[];
+  /** Fence languages, e.g. ```` ```mermaid ````. */
+  fences?: readonly string[];
+};
+
+export type ExtensionManifest = {
+  /** Namespaced: `vault.<folder>` for first-party extensions. */
+  id: string;
+  name: string;
+  version: number;
+  description: string;
+  category: VaultExtensionCategory;
+  defaultEnabled?: boolean;
+  permissions: readonly ExtensionPermission[];
+  settings?: {
+    schema: ZodType<Record<string, unknown>>;
+    /** Must equal `schema.parse({})`; the contract test checks it. */
+    defaults?: Record<string, unknown>;
+    sections?: readonly ExtensionSettingsSection[];
+  };
+  syntax?: ExtensionSyntax;
+  /** Render even when no syntax or state is present (e.g. link decorators). */
+  renderAlways?: boolean;
+  /** Prefetch this extension's state rows with the page. Defaults to true. */
+  prefetchState?: boolean;
+  /** Today's command metadata; plan §5's `commands` shape lands in slice 3. */
+  commands?: readonly CommandContribution[];
+  /** Today's slash contributions (`insert` / `run`); slice 3 makes them command references. */
+  slashCommands?: readonly SlashCommandContribution[];
+  /** Overlay ids; implementations arrive with slice 4. */
+  overlays?: readonly DocumentOverlayContribution[];
+};
+
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  // `undefined` members are allowed because JSON serialisation drops them, and
+  // zod-inferred types with optional fields carry them.
+  | { [key: string]: JsonValue | undefined };
+
+/**
+ * Where a document is being rendered. `workspace` is the authenticated app
+ * (Read or Live); the rest are the anonymous or token-scoped read surfaces.
+ */
+export type ExtensionSurface = "workspace" | "public" | "share" | "guide" | "embed";
+
+/** One prefetched state row, already filtered to what this viewer may read. */
+export type ExtensionStateRow = {
+  state: ExtensionStateValue;
+  visibility: ExtensionStateVisibility;
+  version: number;
+};
+
+/**
+ * Everything the host resolved about extensions for one rendered document
+ * (plan §9). Built on the server by `resolveDocumentExtensions` and passed down
+ * as one serialisable prop, replacing per-extension props.
+ */
+export type DocumentExtensions = {
+  surface: ExtensionSurface;
+  documentId: string | null;
+  canEdit: boolean;
+  /** Extensions whose render code this document needs. */
+  renderIds: string[];
+  /** Extensions the viewer switched on. Empty for anonymous viewers. */
+  enabledIds: string[];
+  /** Viewer settings per installed extension: stored values while enabled, schema defaults otherwise. */
+  settings: Record<string, Record<string, unknown>>;
+  /** Prefetched state per extension, keyed by state key. */
+  state: Record<string, Record<string, ExtensionStateRow>>;
+  /** Each render-set extension's `loadRenderData` result. */
+  data: Record<string, JsonValue>;
+};
+
+/** The serialisable context an extension component receives (plan §6). */
+export type ExtensionRenderContext<TSettings = Record<string, unknown>> = {
+  extensionId: string;
+  documentId: string | null;
+  surface: ExtensionSurface;
+  canEdit: boolean;
+  enabled: boolean;
+  settings: TSettings;
+  state: Record<string, ExtensionStateRow>;
+  data: JsonValue | null;
+};
+
+/**
+ * Narrows the page-level {@link DocumentExtensions} to one extension. Without
+ * one (nested renders such as embeds and previews) the context is anonymous and
+ * read-only: no document, no state, schema-free empty settings.
+ */
+export function createRenderContext<TSettings = Record<string, unknown>>(
+  extensions: DocumentExtensions | null | undefined,
+  extensionId: string,
+): ExtensionRenderContext<TSettings> {
+  if (!extensions) {
+    return {
+      extensionId,
+      documentId: null,
+      surface: "embed",
+      canEdit: false,
+      enabled: false,
+      settings: {} as TSettings,
+      state: {},
+      data: null,
+    };
+  }
+
+  return {
+    extensionId,
+    documentId: extensions.documentId,
+    surface: extensions.surface,
+    canEdit: extensions.canEdit,
+    enabled: extensions.enabledIds.includes(extensionId),
+    settings: (extensions.settings[extensionId] ?? {}) as TSettings,
+    state: extensions.state[extensionId] ?? {},
+    data: extensions.data[extensionId] ?? null,
+  };
+}
+
+/** The document's resolved links, for rendering Markdown inside a component. */
+export type ExtensionLinks = {
+  wikiLinks?: WikiLinkResolutionMap;
+  assetLinks?: AssetEmbedResolutionMap;
+};
+
+/** What a block component receives (plan §6). All of it is serialisable. */
+export type BlockProps<TSettings = Record<string, unknown>> = {
+  ctx: ExtensionRenderContext<TSettings>;
+  /** The directive name, e.g. `calendar`. */
+  name: string;
+  /** Parsed `{key=value}` attributes of the directive line. */
+  attributes: Record<string, string>;
+  /** The directive's source text. */
+  source: string;
+  links: ExtensionLinks;
+};
+
+/**
+ * One `:::name{…}` block an extension renders. Only the single-line (`leaf`)
+ * form with a Live-mode widget exists so far; container blocks and
+ * source-mode rendering arrive with calc (plan §14 slice 6).
+ */
+export type BlockContribution = {
+  form: "leaf";
+  live: "widget";
+  /**
+   * The component, loaded lazily. Never import a component statically into a
+   * render module: server pages bundle every client component they reference
+   * into their entry chunk, used or not (plan §14 slice 0). The contract test
+   * rejects a static import of a `"use client"` file here.
+   */
+  load: () => Promise<{ default: ComponentType<BlockProps> }>;
+};
+
+type SyntaxNames<M extends ExtensionManifest, K extends keyof ExtensionSyntax> =
+  NonNullable<NonNullable<M["syntax"]>[K]>[number];
+
+export type RenderModule = {
+  manifestId: string;
+  blocks: Readonly<Record<string, BlockContribution>>;
+};
+
+/**
+ * What readers see (plan §6). Loaded statically on the server and in the
+ * browser, so it must stay light: definitions and lazy loaders only.
+ */
+export function defineRender<const M extends ExtensionManifest>(
+  manifest: M,
+  render: {
+    blocks?: { [K in SyntaxNames<M, "blocks">]?: BlockContribution };
+  },
+): RenderModule {
+  const claimed = new Set(manifest.syntax?.blocks ?? []);
+  const blocks = (render.blocks ?? {}) as Record<string, BlockContribution>;
+
+  for (const name of Object.keys(blocks)) {
+    if (!claimed.has(name)) {
+      throw new Error(
+        `"${manifest.id}" renders block "${name}" without claiming it in manifest.syntax.blocks.`,
+      );
+    }
+  }
+
+  return { manifestId: manifest.id, blocks };
+}
+
+/**
+ * The editor surface a command may act on (plan §7). The host implements it
+ * over the live CodeMirror view; tests implement it over a bare EditorState.
+ */
+export type EditorHandle = {
+  /** Inserts text as its own block at the cursor, breaking the paragraph if needed. */
+  insertBlock: (markdown: string, options?: { cursorOffset?: number }) => void;
+  /** Inserts text at the cursor without touching the paragraph. */
+  insertInline: (markdown: string, options?: { cursorOffset?: number }) => void;
+  /** The current selection. */
+  selection: () => { from: number; to: number; text: string };
+};
+
+export type EditorCommandContext = {
+  extensionId: string;
+  documentId: string | null;
+  settings: Record<string, unknown>;
+};
+
+export type CommandHandler = (
+  editor: EditorHandle,
+  context: EditorCommandContext,
+) => void | Promise<void>;
+
+type CommandIds<M extends ExtensionManifest> = NonNullable<
+  M["commands"]
+>[number]["id"];
+
+export type ToolbarContributionItem = {
+  command: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+};
+
+export type EditorModule = {
+  manifestId: string;
+  commands: Readonly<Record<string, CommandHandler>>;
+  toolbar: readonly ToolbarContributionItem[];
+};
+
+/**
+ * What authors use (plan §7). Client-only, loaded lazily and only for users
+ * who enabled the extension. Every manifest command needs a handler: missing
+ * one is a compile error.
+ */
+export function defineEditor<const M extends ExtensionManifest>(
+  manifest: M,
+  editor: {
+    commands: { [K in CommandIds<M>]: CommandHandler };
+    toolbar?: ReadonlyArray<
+      Omit<ToolbarContributionItem, "command"> & { command: CommandIds<M> }
+    >;
+  },
+): EditorModule {
+  return {
+    manifestId: manifest.id,
+    commands: editor.commands as Record<string, CommandHandler>,
+    toolbar: editor.toolbar ?? [],
+  };
+}
+
+/**
+ * Declares an extension. `const` keeps literal types, so the id and permissions
+ * flow into {@link defineServer} and are checked there at compile time.
+ *
+ * Also validated at module load, like the registry's agent-action invariants: a
+ * malformed manifest fails fast rather than when something first uses it.
+ */
+export function defineManifest<const M extends ExtensionManifest>(
+  manifest: M,
+): M {
+  assertManifest(manifest);
+  return manifest;
+}
+
+/** Throws on a manifest that breaks the invariants in plan §5. */
+export function assertManifest(manifest: ExtensionManifest): void {
+  if (!/^[a-z0-9-]+\.[a-z0-9-]+$/.test(manifest.id)) {
+    throw new Error(
+      `Extension id "${manifest.id}" must be "<publisher>.<name>" (lowercase).`,
+    );
+  }
+
+  const namespaced = (kind: string, id: string) => {
+    if (!id.startsWith(`${manifest.id}.`)) {
+      throw new Error(
+        `${kind} "${id}" must be namespaced under extension "${manifest.id}".`,
+      );
+    }
+  };
+
+  for (const command of manifest.commands ?? [])
+    namespaced("Command", command.id);
+  for (const slash of manifest.slashCommands ?? []) {
+    namespaced("Slash command", slash.id);
+    if (Boolean(slash.insert) === Boolean(slash.run)) {
+      throw new Error(
+        `Slash command "${slash.id}" must declare exactly one of insert or run.`,
+      );
+    }
+  }
+  for (const overlay of manifest.overlays ?? [])
+    namespaced("Overlay", overlay.id);
+}

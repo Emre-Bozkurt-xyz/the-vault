@@ -48,7 +48,6 @@ import {
   CheckCircle2,
   Eye,
   Calculator,
-  CalendarPlus,
   FileCode2,
   Grid3x3,
   Loader2,
@@ -70,7 +69,6 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { createCodeBlockExtension } from "@/components/markdown/code-block-extension";
 import { fencedCodeLanguage } from "@/components/markdown/code-languages";
 import { codeFenceAt, codeFenceLineNumbers } from "@/components/markdown/code-fences";
-import type { FxRateTable } from "@/lib/calc/fx";
 import { createCalcCompletionSource } from "@/components/markdown/calc-completions";
 import { codeLanguageCompletionSource } from "@/components/markdown/code-language-completions";
 import {
@@ -130,14 +128,19 @@ import {
   type AssetGroupWidth,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
-import { formatCalendarFence, generateCalendarId } from "@/lib/calendar";
 import { subscribeToDocumentCommand } from "@/lib/document-command-events";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
-import type { CalendarWeekStart } from "@/lib/calendar";
-import { localExtensionRegistry } from "@/lib/extensions/catalog";
-import type { ExtensionStateVisibility } from "@/lib/extensions/types";
+import { useExtensionHost } from "@/components/extensions/ExtensionHostProvider";
+import type { DocumentExtensions, EditorModule } from "@/lib/extension-api";
+import {
+  insertBlock,
+  insertInline,
+  runExtensionCommand,
+} from "@/lib/extension-host/editor-handle";
+import { legacyExtensionProps } from "@/lib/extension-host/legacy";
+import { manifestRegistry } from "@/lib/extension-host/manifests";
 import {
   formatTagInput,
   parseDocumentMetadata,
@@ -160,11 +163,13 @@ import type { PickerAsset } from "@/server/asset-picker-actions";
 
 type MarkdownEditorProps = {
   /**
-   * Daily FX rates for `:calc` conversions in the read-mode preview, passed
-   * down from the server page. Without it an author would see `missing-rate`
-   * while readers of the same document see converted values.
+   * What the page resolved about extensions (`resolveDocumentExtensions`): which
+   * the user enabled, their settings, and render data such as the FX table
+   * (without it an author would see `missing-rate` in the preview while readers
+   * see converted values). Omitted in the Den embed editor, where every
+   * extension's authoring is off.
    */
-  fxTable?: FxRateTable | null;
+  extensions?: DocumentExtensions | null;
   documentId: string;
   title: string;
   markdown: string;
@@ -176,8 +181,6 @@ type MarkdownEditorProps = {
   folderPath?: string | null;
   /** The document's folder, so `/def` can file a new definition beside it. */
   folderId?: string | null;
-  /** The viewer's Dictionary reading preference, for the Read-mode preview. */
-  definitionEmphasis?: "every" | "first";
   /**
    * Tags this document picks up from its folders (see `lib/folder-tags.ts`).
    * Read-only here: they are not part of the Markdown, so the Properties panel
@@ -205,15 +208,8 @@ type MarkdownEditorProps = {
    * behavior is unchanged.
    */
   embedSessionToken?: string | null;
-  stickersEnabled?: boolean;
-  calendarEnabled?: boolean;
-  calcEnabled?: boolean;
-  /** Ids of the user's enabled extensions, used to gate extension slash items. */
-  enabledExtensionIds?: string[];
   /** Whether the in-editor `/` slash command menu is active (user preference). */
   slashMenuEnabled?: boolean;
-  calendarWeekStartsOn?: CalendarWeekStart;
-  calendarVisibility?: ExtensionStateVisibility;
   /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
   snippetCss?: string;
   snippetNonce?: string;
@@ -334,24 +330,47 @@ export function MarkdownEditor({
   markdown,
   folderPath = null,
   folderId = null,
-  definitionEmphasis = "every",
   inheritedTags,
   shareLinkId = null,
   collaboration = null,
   wikiLinks,
   assetLinks,
   embedSessionToken = null,
-  stickersEnabled = false,
-  calendarEnabled = false,
-  calcEnabled = false,
-  enabledExtensionIds,
   slashMenuEnabled = true,
-  calendarWeekStartsOn = 0,
-  calendarVisibility = "private",
   snippetCss = "",
   snippetNonce,
-  fxTable,
+  // Aliased: `extensions` is this component's CodeMirror extension list.
+  extensions: documentExtensions = null,
 }: MarkdownEditorProps) {
+  const { fxTable, stickersEnabled, calcEnabled } =
+    legacyExtensionProps(documentExtensions);
+  // Ids of the user's enabled extensions, used to gate extension slash items.
+  const enabledExtensionIds = documentExtensions?.enabledIds;
+  // Editor modules of those extensions, as the workspace host loads them
+  // (docs/23_EXTENSION_SDK_PLAN.md §7, §9). None in the Den embed editor, which
+  // has no host. Authoring only: this component mounts only for editors.
+  const extensionHost = useExtensionHost();
+  const hostModules = extensionHost?.modules;
+  const editorModules = useMemo(
+    () =>
+      (enabledExtensionIds ?? [])
+        .map((id) => hostModules?.[id]?.editor as EditorModule | undefined)
+        .filter((editorModule): editorModule is EditorModule => Boolean(editorModule)),
+    [enabledExtensionIds, hostModules],
+  );
+  const runEditorCommand = useCallback(
+    (view: EditorView, commandId: string) => {
+      const owner = editorModules.find((candidate) => candidate.commands[commandId]);
+      if (!owner) return;
+
+      runExtensionCommand(owner.commands[commandId], view, {
+        extensionId: owner.manifestId,
+        documentId,
+        settings: documentExtensions?.settings[owner.manifestId] ?? {},
+      });
+    },
+    [documentExtensions, documentId, editorModules],
+  );
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
   const [titleValue, setTitleValue] = useState(title);
@@ -402,7 +421,7 @@ export function MarkdownEditor({
     () => createWikiCompletionDismissalStore(),
     [],
   );
-  // `/def` (`lib/extensions/catalog.ts`). Only the term is held here; the view is
+  // `/def` (`extensions/dictionary/manifest.ts`). Only the term is held here; the view is
   // read from `viewRef` at submit time, so the link lands in the live editor
   // rather than in whatever view instance existed when the dialog opened.
   // `key` remounts the dialog per invocation — the same term can be defined
@@ -427,7 +446,7 @@ export function MarkdownEditor({
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
     () =>
       toExtensionSlashCommands(
-        localExtensionRegistry.getSlashCommandContributions(),
+        manifestRegistry.getSlashCommandContributions(),
         enabledExtensionKey ? enabledExtensionKey.split("|") : [],
       ),
     [enabledExtensionKey],
@@ -757,11 +776,19 @@ export function MarkdownEditor({
       // these dispatch to the editor view, and a memoized value whose functions
       // mutate an argument is something the React Compiler will not compile
       // around. The handlers themselves are module-level, like `insertBlock`.
-      const hostCommands = {
+      const hostCommands: Record<string, (view: EditorView) => void> = {
         "vault.dictionary.newDefinition": (view: EditorView) =>
           openNewDefinitionDialog(view, setNewDefinition, setNewDefinitionError),
         "vault.dictionary.insertReference": insertDefinitionReference,
       };
+      // Loaded editor modules' commands, which slash `run` items name. An item
+      // whose module has not loaded yet stays hidden until it has.
+      for (const editorModule of editorModules) {
+        for (const commandId of Object.keys(editorModule.commands)) {
+          hostCommands[commandId] = (view: EditorView) =>
+            runEditorCommand(view, commandId);
+        }
+      }
       const baseExtensions = [
       // `/term`'s definitions-only narrowing (`live-definitions.ts`). Registered
       // for every mode, since the slash menu is not Live-only.
@@ -1049,10 +1076,7 @@ export function MarkdownEditor({
             assetLinks: assetLinkMap,
             wikiLinks: wikiLinkMap,
             onConfigureAssetGroup: configureAssetGroup,
-            documentId,
-            canEdit: true,
-            calendarWeekStartsOn,
-            calendarVisibility,
+            extensions: documentExtensions,
           }),
           createCalcLiveExtension({ fxTable }),
           createInlineMathTooltipExtension(),
@@ -1160,8 +1184,9 @@ export function MarkdownEditor({
       documentId,
       shareLinkId,
       embedSessionToken,
-      calendarWeekStartsOn,
-      calendarVisibility,
+      documentExtensions,
+      editorModules,
+      runEditorCommand,
       extensionSlashCommands,
       slashMenuEnabled,
       calcEnabled,
@@ -1307,11 +1332,6 @@ export function MarkdownEditor({
       return;
     }
 
-    if (format === "calendar") {
-      insertBlock(view, formatCalendarFence(generateCalendarId()), null);
-      return;
-    }
-
     if (format === "calcBlock") {
       insertCalcBlock(view);
       return;
@@ -1335,7 +1355,6 @@ export function MarkdownEditor({
       table: null,
       region: null,
       horizontalRule: null,
-      calendar: null,
       calcBlock: null,
     };
     const prefix = linePrefix[format];
@@ -1351,18 +1370,20 @@ export function MarkdownEditor({
   }, []);
   applyFormatRef.current = applyFormat;
 
-  // The `/insert-calendar` and `/insert-sticker` command palette actions reach
-  // the active editor through the document command bus. Each is a no-op unless
-  // its extension is enabled (the palette also hides them when disabled).
+  // Command palette actions reach the active editor through the document
+  // command bus: an extension's commands as `extension:<command id>` (a no-op
+  // unless its editor module is loaded), and `/insert-sticker` until stickers
+  // moves behind the SDK.
   useEffect(() => {
     return subscribeToDocumentCommand((type) => {
-      if (type === "insert-calendar" && calendarEnabled) {
-        applyFormat("calendar");
+      if (type.startsWith("extension:")) {
+        const view = viewRef.current;
+        if (view) runEditorCommand(view, type.slice("extension:".length));
       } else if (type === "insert-sticker" && stickersEnabled) {
         setStickerPickerOpen(true);
       }
     });
-  }, [applyFormat, calendarEnabled, stickersEnabled]);
+  }, [runEditorCommand, stickersEnabled]);
 
   const updateSelectedAssetAttributes = useCallback(
     (nextAttributes: Partial<AssetEmbedAttributes>) => {
@@ -1541,13 +1562,22 @@ export function MarkdownEditor({
               <MarkdownToolbar
                 onFormat={applyFormat}
                 extensionItems={
-                  stickersEnabled || calendarEnabled || calcEnabled ? (
+                  stickersEnabled ||
+                  calcEnabled ||
+                  editorModules.some((editorModule) => editorModule.toolbar.length > 0) ? (
                     <>
-                      {calendarEnabled ? (
-                        <CalendarToolbarGroup
-                          onInsert={() => applyFormat("calendar")}
-                        />
-                      ) : null}
+                      {editorModules.map((editorModule) =>
+                        editorModule.toolbar.length > 0 ? (
+                          <ExtensionToolbarGroup
+                            key={editorModule.manifestId}
+                            items={editorModule.toolbar}
+                            onRun={(commandId) => {
+                              const view = viewRef.current;
+                              if (view) runEditorCommand(view, commandId);
+                            }}
+                          />
+                        ) : null,
+                      )}
                       {calcEnabled ? (
                         <CalcToolbarGroup
                           onInsert={() => applyFormat("calcBlock")}
@@ -1716,8 +1746,7 @@ export function MarkdownEditor({
                     wikiLinks={wikiLinkMap}
                     assetLinks={assetLinkMap}
                     contained={false}
-                    fxTable={fxTable}
-                    definitionEmphasis={definitionEmphasis}
+                    extensions={documentExtensions}
                   />
                 </DocumentCanvas>
               </div>
@@ -1867,21 +1896,31 @@ export function MarkdownEditor({
   );
 }
 
-function CalendarToolbarGroup({ onInsert }: { onInsert: () => void }) {
+/** One extension's toolbar buttons, from its editor module (plan §7). */
+function ExtensionToolbarGroup({
+  items,
+  onRun,
+}: {
+  items: EditorModule["toolbar"];
+  onRun: (commandId: string) => void;
+}) {
   return (
     <div
       data-slot="button-group"
       className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
     >
-      <button
-        type="button"
-        title="Insert calendar"
-        aria-label="Insert calendar"
-        onClick={onInsert}
-        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
-      >
-        <CalendarPlus className="size-4" />
-      </button>
+      {items.map(({ command, label, icon: Icon }) => (
+        <button
+          key={command}
+          type="button"
+          title={label}
+          aria-label={label}
+          onClick={() => onRun(command)}
+          className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
     </div>
   );
 }
@@ -5835,46 +5874,6 @@ function insertDefinitionReference(view: EditorView) {
   narrowWikiCompletionToDefinitions(view, from);
   view.focus();
   startCompletion(view);
-}
-
-function insertBlock(view: EditorView, text: string, cursorOffset: number | null) {
-  const selection = view.state.selection.main;
-  const line = view.state.doc.lineAt(selection.from);
-  const needsLeadingBreak = selection.from > line.from;
-  const insert = `${needsLeadingBreak ? "\n\n" : ""}${text}\n`;
-  const cursorPosition =
-    cursorOffset === null
-      ? selection.from + insert.length
-      : selection.from + (needsLeadingBreak ? 2 : 0) + cursorOffset;
-
-  view.dispatch({
-    changes: { from: selection.from, to: selection.to, insert },
-    selection: EditorSelection.cursor(cursorPosition),
-    scrollIntoView: true,
-  });
-  view.focus();
-}
-
-/**
- * Drops text at the cursor without disturbing the paragraph, replacing any
- * selection. The mid-sentence counterpart to `insertBlock`: an inline
- * `:calc[…]` typed after "The total is " must not become its own block.
- */
-function insertInline(
-  view: EditorView,
-  text: string,
-  cursorOffset: number | null,
-) {
-  const selection = view.state.selection.main;
-  const cursorPosition =
-    selection.from + (cursorOffset === null ? text.length : cursorOffset);
-
-  view.dispatch({
-    changes: { from: selection.from, to: selection.to, insert: text },
-    selection: EditorSelection.cursor(cursorPosition),
-    scrollIntoView: true,
-  });
-  view.focus();
 }
 
 /**

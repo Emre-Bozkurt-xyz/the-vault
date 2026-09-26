@@ -7,8 +7,8 @@ import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDispl
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { getFxRateTable } from "@/server/fx-rates";
-import { parseCalcSettings } from "@/lib/calc/settings";
+import { legacyExtensionProps } from "@/lib/extension-host/legacy";
+import { resolveDocumentExtensions } from "@/server/extension-runtime";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
@@ -21,8 +21,6 @@ import {
 import { recordContentView } from "@/server/content-interactions";
 import { getCurrentContentViewerIdentity } from "@/server/content-viewer";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
-import { getPublicStickerItems } from "@/server/sticker-state";
-import { getPublicCalendarStates } from "@/server/calendar-state";
 import {
   getActiveSnippetCssForDocument,
   getViewerStylingPreference,
@@ -52,14 +50,22 @@ export default async function WorkspacePublicDocumentPage({
   });
   const stats = viewedStats ?? document.stats;
 
-  const [publicWikiLinks, guideWikiLinks, assetLinks, stickerItems, calendarStates] =
+  const [publicWikiLinks, guideWikiLinks, assetLinks, documentExtensions] =
     await Promise.all([
       listPublicWikiLinkResolutions({ workspaceHrefs: true }),
       listOfficialDocWikiLinkResolutions(),
       listAssetResolutionsForDocument(document.id, null, document.markdown),
-      getPublicStickerItems(document.id),
-      getPublicCalendarStates(document.id),
+      // As an anonymous reader, whoever is signed in: a published page reads the
+      // same for everyone, so no viewer preference applies and only
+      // public-visibility extension state is loaded.
+      resolveDocumentExtensions({
+        surface: "public",
+        document: { id: document.id, markdown: document.markdown },
+        canEdit: false,
+        userId: null,
+      }),
     ]);
+  const { stickerItems } = legacyExtensionProps(documentExtensions);
   const wikiLinks = {
     ...publicWikiLinks,
     ...guideWikiLinks,
@@ -74,15 +80,6 @@ export default async function WorkspacePublicDocumentPage({
     getViewerStylingPreference(viewer.userId ?? null),
     getCspNonce(),
   ]);
-
-  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
-  // anything is cached, and returns null rather than throwing when it is not —
-  // conversions then report `missing-rate` and the document still renders.
-  // `calc_rate_date` pins the report to a day, so its totals stay the same
-  // on every reading instead of drifting with the market.
-  const fxTable = await getFxRateTable({
-    date: parseCalcSettings(document.markdown).rateDate ?? undefined,
-  });
 
   const snippetCss = applyStyling
     ? await getActiveSnippetCssForDocument(document.id)
@@ -153,9 +150,7 @@ export default async function WorkspacePublicDocumentPage({
                 wikiLinks={wikiLinks}
                 assetLinks={assetLinks}
                 contained={false}
-                documentId={document.id}
-                calendarStates={calendarStates}
-                fxTable={fxTable}
+                extensions={documentExtensions}
               />
               </DocumentStyling>
             </PublicStickerDisplay>

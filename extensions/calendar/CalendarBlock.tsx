@@ -14,21 +14,23 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useDocumentExtensionState } from "@/components/extensions/use-document-extension-state";
-import {
-  calendarStateSchema,
-  type CalendarEntry,
-  type CalendarState,
-} from "@/lib/extensions/catalog";
+import type {
+  BlockProps,
+  ExtensionLinks,
+  ExtensionStateVisibility,
+} from "@/lib/extension-api";
+import { ExtensionMarkdown, useExtensionState } from "@/lib/extension-api/react";
+import { cn } from "@/lib/utils";
+
 import {
   addMonths,
+  calendarIdFromAttributes,
   calendarStateKey,
   currentMonth,
   formatMonthLabel,
@@ -38,40 +40,19 @@ import {
   weekdayLabels,
   type CalendarMonth,
   type CalendarWeekStart,
-} from "@/lib/calendar";
-import type {
-  ExtensionStateValue,
-  ExtensionStateVisibility,
-} from "@/lib/extensions/types";
-import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
-import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
-import { cn } from "@/lib/utils";
+} from "./lib/calendar";
+import {
+  calendarStateSchema,
+  type CalendarEntry,
+  type CalendarState,
+} from "./state";
 
 type EntryWithId = CalendarEntry & { id: string };
 
-type CalendarBlockProps = {
-  documentId: string;
-  calendarId: string | null;
-  canEdit: boolean;
-  weekStartsOn?: CalendarWeekStart;
-  visibility?: ExtensionStateVisibility;
-  /**
-   * Server-prefetched state for public/SSR surfaces where the auth-gated state
-   * action can't be called. When provided, the widget renders from it and does
-   * not fetch.
-   */
-  prefetchedState?: CalendarState | null;
-  wikiLinks?: WikiLinkResolutionMap;
-  assetLinks?: AssetEmbedResolutionMap;
-};
-
 const emptyCalendarState: CalendarState = { entries: {}, expanded: false };
 
-function readCalendarState(
-  state: Record<string, ExtensionStateValue> | null,
-): CalendarState {
-  const parsed = calendarStateSchema.safeParse(state ?? {});
-  return parsed.success ? parsed.data : emptyCalendarState;
+function readVisibility(value: unknown): ExtensionStateVisibility {
+  return value === "public" || value === "editor-only" ? value : "private";
 }
 
 function compareEntries(a: EntryWithId, b: EntryWithId): number {
@@ -83,43 +64,58 @@ function compareEntries(a: EntryWithId, b: EntryWithId): number {
   return a.order - b.order || a.text.localeCompare(b.text);
 }
 
-export function CalendarBlock({
-  documentId,
+/**
+ * `:::calendar{id=…}`, rendered by the host in Read mode, on public pages and
+ * as the Live-mode widget. Entries live in extension state under
+ * `calendar:<id>`; the Markdown only anchors where the calendar sits.
+ */
+export default function CalendarBlock({ ctx, attributes, links }: BlockProps) {
+  // A block rendered outside its document (an embed of another document, a
+  // preview) has no document to read from; say what it is instead.
+  if (!ctx.documentId) {
+    return (
+      <div className="vault-calendar-notice" contentEditable={false}>
+        Calendar
+      </div>
+    );
+  }
+
+  return (
+    <CalendarView
+      calendarId={calendarIdFromAttributes(attributes)}
+      canEdit={ctx.canEdit}
+      weekStartsOn={ctx.settings.weekStartsOn === "1" ? 1 : 0}
+      visibility={readVisibility(ctx.settings.defaultVisibility)}
+      ctx={ctx}
+      links={links}
+    />
+  );
+}
+
+function CalendarView({
   calendarId,
   canEdit,
-  weekStartsOn = 0,
-  visibility = "private",
-  prefetchedState,
-  wikiLinks,
-  assetLinks,
-}: CalendarBlockProps) {
-  const hasId = Boolean(calendarId);
-  const usePrefetched = prefetchedState !== undefined;
-  const stateKey = hasId ? calendarStateKey(calendarId as string) : undefined;
-  const { state, setState } = useDocumentExtensionState({
-    documentId,
-    extensionId: "vault.calendar",
-    stateKey,
-    version: 1,
-    visibility,
-    // Public/SSR: seed from the prefetched state and never fetch or save.
-    // Otherwise load read access for everyone with `hasId`; saves are gated on
-    // canEdit in the UI, so read-only viewers fetch but can't mutate.
-    initialState:
-      usePrefetched && stateKey
-        ? {
-            extensionId: "vault.calendar",
-            stateKey,
-            state: (prefetchedState ?? {}) as Record<string, ExtensionStateValue>,
-            version: 1,
-            visibility,
-            updatedAt: new Date().toISOString(),
-          }
-        : undefined,
-    disabled: usePrefetched || !hasId,
-  });
+  weekStartsOn,
+  visibility,
+  ctx,
+  links,
+}: {
+  calendarId: string | null;
+  canEdit: boolean;
+  weekStartsOn: CalendarWeekStart;
+  visibility: ExtensionStateVisibility;
+  ctx: BlockProps["ctx"];
+  links: ExtensionLinks;
+}) {
+  const { value, set: setState } = useExtensionState(
+    ctx,
+    calendarId ? calendarStateKey(calendarId) : null,
+    { schema: calendarStateSchema, visibility, version: 1 },
+  );
 
-  const calendarState = useMemo(() => readCalendarState(state), [state]);
+  const calendarState = value ?? emptyCalendarState;
+  const hasId = Boolean(calendarId);
+  const { wikiLinks, assetLinks } = links;
   const [viewMonth, setViewMonth] = useState<CalendarMonth>(() => currentMonth());
   const [editingDay, setEditingDay] = useState<string | null>(null);
   const todayKey = useMemo(() => todayDayKey(), []);
@@ -150,8 +146,7 @@ export function CalendarBlock({
   const update = useCallback(
     (mutate: (draft: CalendarState) => CalendarState) => {
       if (!canEdit) return;
-      const next = mutate(calendarState);
-      setState(next as unknown as Record<string, ExtensionStateValue>);
+      setState(mutate(calendarState));
     },
     [calendarState, setState, canEdit],
   );
@@ -373,8 +368,8 @@ function CalendarCellEntry({
 }: {
   entry: EntryWithId;
   canEdit: boolean;
-  wikiLinks?: WikiLinkResolutionMap;
-  assetLinks?: AssetEmbedResolutionMap;
+  wikiLinks?: ExtensionLinks["wikiLinks"];
+  assetLinks?: ExtensionLinks["assetLinks"];
   onToggle: () => void;
   onOpen: () => void;
 }) {
@@ -414,11 +409,9 @@ function CalendarCellEntry({
         disabled={!canEdit}
       >
         {text ? (
-          <MarkdownDocument
+          <ExtensionMarkdown
             markdown={text}
-            wikiLinks={wikiLinks}
-            assetLinks={assetLinks}
-            contained={false}
+            links={{ wikiLinks, assetLinks }}
             className="vault-calendar-entry-md"
           />
         ) : (
@@ -439,8 +432,8 @@ function CalendarDayDialog({
 }: {
   dayKey: string | null;
   entries: EntryWithId[];
-  wikiLinks?: WikiLinkResolutionMap;
-  assetLinks?: AssetEmbedResolutionMap;
+  wikiLinks?: ExtensionLinks["wikiLinks"];
+  assetLinks?: ExtensionLinks["assetLinks"];
   onClose: () => void;
   onChange: (mutate: (draft: CalendarState) => CalendarState) => void;
 }) {
@@ -537,8 +530,8 @@ function CalendarEntryEditor({
   onRemove,
 }: {
   entry: EntryWithId;
-  wikiLinks?: WikiLinkResolutionMap;
-  assetLinks?: AssetEmbedResolutionMap;
+  wikiLinks?: ExtensionLinks["wikiLinks"];
+  assetLinks?: ExtensionLinks["assetLinks"];
   onPatch: (patch: Partial<CalendarEntry>) => void;
   onRemove: () => void;
 }) {
@@ -595,11 +588,9 @@ function CalendarEntryEditor({
       />
       {entry.text.trim() ? (
         <div className="vault-calendar-entry-preview mt-1.5">
-          <MarkdownDocument
+          <ExtensionMarkdown
             markdown={entry.text}
-            wikiLinks={wikiLinks}
-            assetLinks={assetLinks}
-            contained={false}
+            links={{ wikiLinks, assetLinks }}
             className="vault-calendar-entry-md"
           />
         </div>

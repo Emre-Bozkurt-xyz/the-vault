@@ -642,6 +642,23 @@ Slices 1-5 are implemented. All six languages run end to end locally under `runc
 | [x] | Follow-up - Runner deploy automation, admin run grant, code-block UI | Done 2026-09-25 after slices 4-5 ran under gVisor on the mini-PC (Python, Haskell). `vault-runner` compose service recreated by every deploy when `CODE_EXECUTION_ENABLED=true`; `runner/build-images.sh` skips unchanged images; per-user grant `users.code_execution_allowed` (migration `0024`) toggled from Admin → Users, replacing `CODE_EXECUTION_USER_IDS`; phase timings in the output panel; toolbar, idle-block corner ▶ and label, and block styling redesigned. The runner container itself is untested until the first deploy |
 | [ ] | Slice 6 - Deployment, scaling verification, and guides | Two-worker scheduling test, bounded queue, failure recovery, image updates and operating notes |
 
+## Phase 25 - Extension SDK and Host
+
+Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). API and authoring experience settled (§16, §18). Slices 0-3 are implemented.
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Settle the extension API | Done 2026-09-26: four entry points per extension (manifest, render, editor, server), content-driven rendering vs enablement-driven authoring, directive/fence-only syntax, host services instead of `db`, lint-enforced import boundary. §16 decisions and §18 authoring experience (incl. playground) agreed |
+| [x] | Slice 0 - Baseline bundle measurement | Done 2026-09-26. Doc page 833 KB gz, public page 455 KB gz, extension code ~22 KB gz. Unrendered client references **do** ship (Turbopack bundles them into the page entry), so render components need `next/dynamic`; numbers in plan §14 |
+| [x] | Slice 1 - SDK skeleton and import boundary | Done 2026-09-26. `catalog.ts` split into `extensions/*/{manifest,server,state}.ts`; `lib/extension-api` (typed `defineManifest`/`defineServer`), `lib/extension-host`; generated registries + staleness check; contract test; two ESLint boundary rules with migration allowlists (7 core files, 4 extension entries). Verified: tsc, 622 tests, lint unchanged from baseline, production build |
+| [x] | Slice 2 - Host runtime | Done 2026-09-26. `server/extension-runtime.ts` (`resolveViewerExtensions`, `resolveDocumentExtensions` → one `DocumentExtensions` prop), syntax-claim render set, visibility-filtered state prefetch, `loadRenderData` for calc/calendar/stickers (old `calendar-state`/`sticker-state` loaders deleted), `runExtensionActionAction` + `agent: false`, SDK hooks, `ExtensionHostProvider` in the workspace layout. Doc, public (x2), share and guide pages rewired. Verified: tsc, 643 tests, lint at baseline, build, production smoke test of public/guide pages. Embeds unchanged |
+| [x] | Slice 3 - Calendar end to end | Done 2026-09-26. `extensions/calendar/` owns all calendar code (render/editor/server/state/lib/CalendarBlock); `ExtensionBlockHost` (lazy + Suspense + error boundary) renders blocks in Read and Live; generic `extensionBlock` live spec; editor modules drive toolbar/slash/palette; `ext:new`, `runCommand`/`createTestContext`, stronger contract test. Public page JS 443 → 208 KB gz. Verified: tsc, 657 tests, lint at baseline, clean build, Playwright hydration/lazy-load check |
+| [ ] | Authoring tooling after slice 3 | Playground `/dev/extensions/[id]` with fixtures, `extensions/README.md`, `create-extension` skill (plan §18.3, §18.8) |
+| [ ] | Slice 4 - Stickers | Render/editor overlays, `pickAsset`, session events |
+| [ ] | Slice 5 - Dictionary | Link decorators, dialogs, generic `documents` service replaces `definitions` |
+| [ ] | Slice 6 - Calc | `analyze`, inline directives, source-mode container blocks, FX primitives to core |
+| [ ] | Slice 7 - Close-out | Empty lint allowlist, delete `catalog.ts` and `components/extensions/`, docs |
+
 ---
 
 ## Bugs / Issues

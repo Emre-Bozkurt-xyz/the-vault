@@ -33,19 +33,20 @@ import {
 } from "@/lib/asset-embeds";
 import { CalcBlock } from "@/components/extensions/CalcBlock";
 import { CalcValue } from "@/components/extensions/CalcValue";
-import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { ExtensionBlockHost } from "@/components/extensions/ExtensionBlockHost";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
 import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
-import { splitCalendarSegments } from "@/lib/calendar";
+import { splitExtensionBlocks, type ParsedExtensionBlock } from "@/lib/extension-host/blocks";
 import {
   calcRemarkPlugins,
   remarkCalc,
   splitCalcBlockSegments,
   type CalcBlockLine,
 } from "@/lib/markdown/calc-directive";
-import type { FxRateTable } from "@/lib/calc/fx";
+import { createRenderContext, type DocumentExtensions } from "@/lib/extension-api";
+import { legacyExtensionProps } from "@/lib/extension-host/legacy";
 import { parseCalcSettings } from "@/lib/calc/settings";
 import {
   buildCalcDocument,
@@ -54,7 +55,6 @@ import {
   type CalcPiece,
   type ResolvedCalc,
 } from "@/lib/markdown/calc-document";
-import type { CalendarState } from "@/lib/extensions/catalog";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
 import { inlineStyleToReactStyle } from "@/lib/html-style";
 import {
@@ -86,28 +86,18 @@ type MarkdownDocumentProps = {
   embedDepth?: number;
   embedTrail?: string[];
   /**
-   * When set, `:::calendar{id=…}` anchors render as read-only calendars for this
-   * document. Pass `calendarStates` on public/SSR surfaces to seed entries
-   * without a client fetch; omit it for authenticated viewers (the widget then
-   * fetches its own readable state).
+   * What the page resolved about extensions (`resolveDocumentExtensions`):
+   * the context extension blocks render with (their document, settings and
+   * prefetched state), the FX table for `:calc`, and the viewer's
+   * definition-emphasis preference. Passed in rather than fetched so
+   * `MarkdownDocument` stays synchronous and usable from client components.
+   *
+   * Only the top-level render of a document passes it. Nested renders (document
+   * embeds, previews, text inside a block) omit it, so a block there gets an
+   * anonymous, document-less context and can never read or write the outer
+   * document's state.
    */
-  documentId?: string;
-  calendarStates?: Record<string, CalendarState>;
-  /**
-   * Daily FX rates for `:calc` conversions. Server surfaces fetch this with
-   * `getFxRateTable()` and pass it down; omitted, conversions report
-   * `missing-rate` and every other value still renders. Passed as a prop rather
-   * than fetched here so `MarkdownDocument` stays synchronous and usable from
-   * client components.
-   */
-  fxTable?: FxRateTable | null;
-  /**
-   * How links to definitions are emphasized: every mention (the default), or
-   * only the first mention of each definition in this document. A *reading*
-   * preference of the viewer's, not part of the document — so an anonymous
-   * reader of a public page always gets the default.
-   */
-  definitionEmphasis?: "every" | "first";
+  extensions?: DocumentExtensions | null;
 };
 
 const maxWikiEmbedDepth = 2;
@@ -935,11 +925,9 @@ export function MarkdownDocument({
   assetLinks,
   embedDepth = 0,
   embedTrail = [],
-  documentId,
-  calendarStates,
-  fxTable,
-  definitionEmphasis = "every",
+  extensions,
 }: MarkdownDocumentProps) {
+  const { fxTable, definitionEmphasis } = legacyExtensionProps(extensions);
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
     : "_No content yet._";
@@ -964,7 +952,7 @@ export function MarkdownDocument({
   const calcPieces: CalcPiece[] = [];
   const blockParts = blocks.map((block) =>
     block.type === "markdown"
-      ? planMarkdownParts(block.markdown, Boolean(documentId), calcPieces)
+      ? planMarkdownParts(block.markdown, calcPieces)
       : null,
   );
   // `calc_currency` is read here rather than passed in, so every surface that
@@ -999,8 +987,7 @@ export function MarkdownDocument({
             assetLinks={assetLinks}
             headingIds={headingIds}
             definitionMentions={definitionMentions}
-            documentId={documentId}
-            calendarStates={calendarStates}
+            extensions={extensions ?? null}
             calcResults={calcDocument.results}
           />
         ) : block.type === "region" ? (
@@ -1086,8 +1073,8 @@ function VaultRegion({
 }
 
 /**
- * One renderable piece of a markdown block, after calendar and `:::calc`
- * splitting. Markdown and calc-block parts carry the index of their entry in the
+ * One renderable piece of a markdown block, after extension-block and
+ * `:::calc` splitting. Markdown and calc-block parts carry the index of their entry in the
  * document's calc piece list, which is how a rendered value finds its
  * pre-computed result.
  */
@@ -1099,7 +1086,7 @@ type MarkdownPart =
       collapsed: boolean;
       pieceIndex: number;
     }
-  | { kind: "calendar"; id: string | null };
+  | ({ kind: "extension-block" } & ParsedExtensionBlock);
 
 /**
  * Splits one markdown block into ordered parts, appending every calc-bearing
@@ -1110,21 +1097,15 @@ type MarkdownPart =
  */
 function planMarkdownParts(
   markdown: string,
-  withCalendars: boolean,
   pieces: CalcPiece[],
 ): MarkdownPart[] {
-  // Calendars only render where a documentId is in scope (the doc viewer /
-  // public page). Without it (e.g. nested entry-text renders) the fence is left
-  // as-is, exactly as before.
-  const segments = withCalendars
-    ? splitCalendarSegments(markdown)
-    : [{ type: "markdown" as const, markdown }];
-
   const parts: MarkdownPart[] = [];
 
-  for (const segment of segments) {
-    if (segment.type === "calendar") {
-      parts.push({ kind: "calendar", id: segment.id });
+  for (const segment of splitExtensionBlocks(markdown)) {
+    if (segment.type === "block") {
+      const { type, ...block } = segment;
+      void type;
+      parts.push({ kind: "extension-block", ...block });
       continue;
     }
 
@@ -1162,8 +1143,7 @@ function MarkdownBlock({
   assetLinks,
   headingIds,
   definitionMentions,
-  documentId,
-  calendarStates,
+  extensions,
   calcResults,
 }: {
   parts: MarkdownPart[];
@@ -1172,29 +1152,26 @@ function MarkdownBlock({
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
   definitionMentions: Set<string> | null;
-  documentId?: string;
-  calendarStates?: Record<string, CalendarState>;
+  extensions: DocumentExtensions | null;
   calcResults: Map<string, ResolvedCalc>;
 }) {
   return (
     <>
       {parts.map((part, index) => {
-        if (part.kind === "calendar") {
+        if (part.kind === "extension-block") {
           return (
-            <CalendarBlock
-              key={`calendar-${index}-${part.id ?? "none"}`}
-              documentId={documentId as string}
-              calendarId={part.id}
-              canEdit={false}
-              prefetchedState={
-                calendarStates
-                  ? part.id
-                    ? calendarStates[part.id] ?? null
-                    : null
-                  : undefined
-              }
-              wikiLinks={wikiLinks}
-              assetLinks={assetLinks}
+            <ExtensionBlockHost
+              key={`block-${index}-${part.source}`}
+              // Read mode is read-only for every block; editing happens in
+              // Live mode, whose widget passes the page's own `canEdit`.
+              ctx={{
+                ...createRenderContext(extensions, part.extensionId),
+                canEdit: false,
+              }}
+              name={part.name}
+              attributes={part.attributes}
+              source={part.source}
+              links={{ wikiLinks, assetLinks }}
             />
           );
         }

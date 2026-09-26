@@ -17,7 +17,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { ExtensionBlockHost } from "@/components/extensions/ExtensionBlockHost";
 import {
   getAssetEmbedClassName,
   getAssetEmbedStyle,
@@ -32,8 +32,11 @@ import {
   getWikiDocumentEmbed,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
-import { parseCalendarFence, type CalendarWeekStart } from "@/lib/calendar";
-import type { ExtensionStateVisibility } from "@/lib/extensions/types";
+import {
+  createRenderContext,
+  type DocumentExtensions,
+} from "@/lib/extension-api";
+import { parseExtensionBlockLine } from "@/lib/extension-host/blocks";
 import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type {
   LiveBlockScanContext,
@@ -100,14 +103,17 @@ export type LiveMathBlock = {
   source: string;
 };
 
-export type LiveCalendarBlock = {
-  kind: "calendar";
+/** A `:::name{…}` block claimed by an installed extension. */
+export type LiveExtensionBlock = {
+  kind: "extensionBlock";
   from: number;
   to: number;
   startLine: number;
   endLine: number;
   source: string;
-  id: string | null;
+  extensionId: string;
+  name: string;
+  attributes: Record<string, string>;
 };
 
 export type LiveBlock =
@@ -116,7 +122,7 @@ export type LiveBlock =
   | LiveDocumentEmbedBlock
   | LiveTableBlock
   | LiveMathBlock
-  | LiveCalendarBlock;
+  | LiveExtensionBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -127,11 +133,12 @@ export type LiveBlockOptions = {
   assetLinks: AssetEmbedResolutionMap;
   wikiLinks?: WikiLinkResolutionMap;
   onConfigureAssetGroup?: (selection: LiveAssetGroupSelection) => void;
-  /** Present in the editor so stateful block widgets (e.g. calendar) can save. */
-  documentId?: string;
-  canEdit?: boolean;
-  calendarWeekStartsOn?: CalendarWeekStart;
-  calendarVisibility?: ExtensionStateVisibility;
+  /**
+   * The page's resolved extensions, from which extension-block widgets get
+   * their context (document, `canEdit`, settings). Absent (the Den embed
+   * editor), blocks render document-less and read-only.
+   */
+  extensions?: DocumentExtensions | null;
 };
 type LiveBlockWidgetOptions = LiveBlockOptions & LiveBlockWidgetContext;
 
@@ -204,12 +211,14 @@ const coreMarkdownLiveBlockSpecs = [
       ),
   },
   {
-    id: "calendar",
+    // Every installed extension's `:::name{…}` blocks, through one spec: the
+    // engine never names an extension (docs/23_EXTENSION_SDK_PLAN.md §6).
+    id: "extensionBlock",
     priority: 15,
     scan: (state, context) =>
-      getLiveCalendarBlocks(state, context.occupiedRanges),
+      getLiveExtensionBlocks(state, context.occupiedRanges),
     widget: (block, context) =>
-      new CalendarBlockWidget(block as LiveCalendarBlock, context),
+      new ExtensionBlockWidget(block as LiveExtensionBlock, context),
   },
 ] satisfies LiveBlockSpecForEditor[];
 
@@ -790,23 +799,21 @@ class MathBlockWidget extends WidgetType {
   }
 }
 
-class CalendarBlockWidget extends WidgetType {
+class ExtensionBlockWidget extends WidgetType {
   private root: Root | null = null;
 
   constructor(
-    private readonly block: LiveCalendarBlock,
+    private readonly block: LiveExtensionBlock,
     private readonly options: LiveBlockOptions,
   ) {
     super();
   }
 
-  eq(widget: CalendarBlockWidget) {
+  eq(widget: ExtensionBlockWidget) {
     return (
-      widget.block.id === this.block.id &&
-      widget.options.documentId === this.options.documentId &&
-      widget.options.canEdit === this.options.canEdit &&
-      widget.options.calendarWeekStartsOn === this.options.calendarWeekStartsOn &&
-      widget.options.calendarVisibility === this.options.calendarVisibility &&
+      widget.block.source === this.block.source &&
+      widget.block.extensionId === this.block.extensionId &&
+      widget.options.extensions === this.options.extensions &&
       widget.options.assetLinks === this.options.assetLinks &&
       widget.options.wikiLinks === this.options.wikiLinks
     );
@@ -814,31 +821,23 @@ class CalendarBlockWidget extends WidgetType {
 
   toDOM() {
     const container = document.createElement("div");
-    container.className = "vault-cm-calendar-rendered";
+    container.className = `vault-cm-extension-block vault-cm-${this.block.name}-rendered`;
     container.contentEditable = "false";
     applyStableBlockWidgetSpacing(container);
 
-    const documentId = this.options.documentId;
-
-    if (!documentId) {
-      // Read-only render surfaces (non-editor) mount the calendar elsewhere.
-      const frame = document.createElement("div");
-      frame.className = "vault-calendar-notice";
-      frame.textContent = "Calendar";
-      container.append(frame);
-      return container;
-    }
-
     this.root = createRoot(container);
     this.root.render(
-      createElement(CalendarBlock, {
-        documentId,
-        calendarId: this.block.id,
-        canEdit: this.options.canEdit ?? false,
-        weekStartsOn: this.options.calendarWeekStartsOn,
-        visibility: this.options.calendarVisibility,
-        wikiLinks: this.options.wikiLinks,
-        assetLinks: this.options.assetLinks,
+      createElement(ExtensionBlockHost, {
+        // Live mode is where blocks are edited, so the widget carries the
+        // page's own `canEdit` (Read mode always renders them read-only).
+        ctx: createRenderContext(this.options.extensions, this.block.extensionId),
+        name: this.block.name,
+        attributes: this.block.attributes,
+        source: this.block.source,
+        links: {
+          wikiLinks: this.options.wikiLinks,
+          assetLinks: this.options.assetLinks,
+        },
       }),
     );
 
@@ -855,7 +854,7 @@ class CalendarBlockWidget extends WidgetType {
   }
 
   // Let the embedded React UI handle all interaction so clicks/typing inside
-  // the calendar never fall through to CodeMirror selection handling.
+  // the block never fall through to CodeMirror selection handling.
   ignoreEvent() {
     return true;
   }
@@ -1218,11 +1217,11 @@ function getLiveDocumentEmbedBlocks(
   return blocks;
 }
 
-function getLiveCalendarBlocks(
+function getLiveExtensionBlocks(
   state: EditorState,
   excludedRanges: SyntaxRange[],
-): LiveCalendarBlock[] {
-  const blocks: LiveCalendarBlock[] = [];
+): LiveExtensionBlock[] {
+  const blocks: LiveExtensionBlock[] = [];
   const doc = state.doc;
 
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
@@ -1232,20 +1231,19 @@ function getLiveCalendarBlocks(
       continue;
     }
 
-    const fence = parseCalendarFence(line.text);
+    const parsed = parseExtensionBlockLine(line.text);
 
-    if (!fence) {
+    if (!parsed) {
       continue;
     }
 
     blocks.push({
-      kind: "calendar",
+      kind: "extensionBlock",
       from: line.from,
       to: line.to,
       startLine: lineNumber,
       endLine: lineNumber,
-      source: line.text.trim(),
-      id: fence.id,
+      ...parsed,
     });
   }
 

@@ -2410,6 +2410,33 @@
     font-size: 0.75rem;
   }
 
+  /* Extension blocks the host renders (components/extensions/ExtensionBlockHost.tsx):
+     a block whose extension is missing or failed shows its source, readable,
+     never an error page; a block loading its chunk holds a little space. */
+  .vault-extension-block-fallback {
+    margin-block: 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px dashed color-mix(in oklab, var(--border) 85%, transparent);
+    background: color-mix(in oklab, var(--muted) 35%, transparent);
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+  }
+
+  .vault-extension-block-fallback code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .vault-extension-block-error {
+    margin-top: 0.3rem;
+    color: var(--destructive);
+  }
+
+  .vault-extension-block-loading {
+    min-height: 2.5rem;
+  }
+
   .vault-calendar-weekdays {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));

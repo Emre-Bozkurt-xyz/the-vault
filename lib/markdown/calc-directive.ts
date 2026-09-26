@@ -210,7 +210,7 @@ const CODE_FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 /**
  * Splits markdown into runs of plain markdown interleaved with `:::calc` blocks,
  * so the block renders as a real component outside the Markdown pipeline (the
- * same approach `splitCalendarSegments` takes for `:::calendar`).
+ * same approach the host's `splitExtensionBlocks` takes for extension blocks).
  *
  * Unlike that splitter this one is **fenced-code aware**: a `:::calc` inside a
  * ``` block stays code, which is required for the docs to be able to show the

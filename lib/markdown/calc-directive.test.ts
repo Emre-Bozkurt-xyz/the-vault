@@ -250,7 +250,7 @@ describe("splitCalcBlockSegments", () => {
   });
 
   it("leaves a block inside a fenced code block as code", () => {
-    // splitCalendarSegments does not do this; the docs need to show the syntax.
+    // As `splitExtensionBlocks` does for extension blocks: the docs need to show the syntax.
     const markdown = ["```md", ":::calc", "rent = 1 CAD", ":::", "```"].join(
       "\n",
     );

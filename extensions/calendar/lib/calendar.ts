@@ -15,64 +15,23 @@ export type CalendarMonthCell = {
   isToday: boolean;
 };
 
-const calendarFencePattern = /^:::calendar(?:\{([^}\n]*)\})?\s*$/i;
-const idTokenPattern = /\bid\s*=\s*("([^"]*)"|'([^']*)'|[^\s}]+)/i;
 const idValuePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
-/** Returns the parsed `{ id }` when `line` is a calendar anchor, else null. */
-export function parseCalendarFence(line: string): { id: string | null } | null {
-  const match = line.trim().match(calendarFencePattern);
-
-  if (!match) {
-    return null;
-  }
-
-  const rawAttributes = match[1] ?? "";
-  const idMatch = rawAttributes.match(idTokenPattern);
-  const rawId = (idMatch?.[2] ?? idMatch?.[3] ?? idMatch?.[1] ?? "").trim();
-  const id = idValuePattern.test(rawId) ? rawId : null;
-
-  return { id };
+/**
+ * The calendar id from a `:::calendar{id=…}` anchor's attributes (parsed by the
+ * host), or null when it is missing or malformed. The key is matched without
+ * regard to case, as the original anchor grammar allowed.
+ */
+export function calendarIdFromAttributes(
+  attributes: Record<string, string>,
+): string | null {
+  const key = Object.keys(attributes).find((name) => name.toLowerCase() === "id");
+  const raw = key ? attributes[key].trim() : "";
+  return idValuePattern.test(raw) ? raw : null;
 }
 
 export function formatCalendarFence(id: string): string {
   return `:::calendar{id=${id}}`;
-}
-
-export type CalendarSegment =
-  | { type: "markdown"; markdown: string }
-  | { type: "calendar"; id: string | null };
-
-/**
- * Splits markdown into runs of plain markdown interleaved with calendar anchors,
- * so read-only render surfaces (MarkdownDocument) can mount a calendar where the
- * `:::calendar{id=…}` fence sits in the document flow.
- */
-export function splitCalendarSegments(markdown: string): CalendarSegment[] {
-  const segments: CalendarSegment[] = [];
-  const lines = markdown.split(/\r?\n/);
-  let buffer: string[] = [];
-
-  const flush = () => {
-    if (buffer.length > 0) {
-      segments.push({ type: "markdown", markdown: buffer.join("\n") });
-      buffer = [];
-    }
-  };
-
-  for (const line of lines) {
-    const fence = parseCalendarFence(line);
-
-    if (fence) {
-      flush();
-      segments.push({ type: "calendar", id: fence.id });
-    } else {
-      buffer.push(line);
-    }
-  }
-
-  flush();
-  return segments;
 }
 
 export function generateCalendarId(): string {
