@@ -1,9 +1,7 @@
 "use server";
 
-import {
-  dictionarySettingsSchema,
-  getLocalExtensionIds,
-} from "@/lib/extensions/catalog";
+import { dictionarySettingsSchema } from "@/extensions/dictionary/manifest";
+import { getInstalledExtensionIds } from "@/lib/extension-host/manifests";
 import { requireActiveUser } from "@/server/authz";
 import {
   createDefinitionForUser,
@@ -37,7 +35,7 @@ export async function createDefinitionDocumentAction(input: {
   const stored = await getUserExtensionSetting({
     userId: user.id,
     extensionId: "vault.dictionary",
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
   const settings = dictionarySettingsSchema.safeParse(stored?.settings ?? {});
 

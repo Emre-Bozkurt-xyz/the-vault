@@ -31,7 +31,7 @@ type ExtensionSettingsPageProps = {
 
 /**
  * One extension's settings, rendered generically from what the extension
- * declares in `lib/extensions/catalog.ts`.
+ * declares in its `extensions/<name>/manifest.ts`.
  *
  * Deliberately quieter than the app's own settings pages — no card, no icons,
  * rows divided by hairlines — so an extension's options read as secondary to the

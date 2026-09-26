@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { localExtensionRegistry, getLocalExtensionIds } from "@/lib/extensions/catalog";
+import {
+  getInstalledExtensionIds,
+  manifestRegistry,
+} from "@/lib/extension-host/manifests";
 import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
 import { isShortcutId } from "@/lib/shortcuts/registry";
 import { requireActiveUser } from "@/server/authz";
@@ -41,7 +44,7 @@ export async function setUserExtensionEnabledAction(formData: FormData) {
     userId: user.id,
     extensionId,
     enabled,
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
 
   // The whole layout, not just the settings route: the settings modal is mounted
@@ -231,7 +234,7 @@ export async function saveAdvancedSettingsAction(input: unknown) {
 export async function resetUserExtensionSettingsAction(formData: FormData) {
   const user = await requireActiveUser();
   const extensionId = extensionIdSchema.parse(formData.get("extensionId"));
-  const extension = localExtensionRegistry.getExtension(extensionId);
+  const extension = manifestRegistry.getExtension(extensionId);
 
   if (!extension) {
     throw new Error("Unknown extension id.");
@@ -240,7 +243,7 @@ export async function resetUserExtensionSettingsAction(formData: FormData) {
   const existing = await getUserExtensionSetting({
     userId: user.id,
     extensionId,
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
 
   await resetUserExtensionSettings({
@@ -249,7 +252,7 @@ export async function resetUserExtensionSettingsAction(formData: FormData) {
     enabled: existing?.enabled ?? extension.defaultEnabled ?? false,
     settings: extension.settings?.defaults ?? {},
     version: extension.version,
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
 
   revalidatePath("/", "layout");
@@ -263,7 +266,7 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
       settings: z.record(z.string(), z.unknown()),
     })
     .parse(input);
-  const extension = localExtensionRegistry.getExtension(parsed.extensionId);
+  const extension = manifestRegistry.getExtension(parsed.extensionId);
 
   if (!extension) {
     throw new Error("Unknown extension id.");
@@ -272,7 +275,7 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
   const existing = await getUserExtensionSetting({
     userId: user.id,
     extensionId: parsed.extensionId,
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
   const settings = validateExtensionSettings(
     parsed.extensionId,
@@ -285,7 +288,7 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
     enabled: existing?.enabled ?? extension.defaultEnabled ?? false,
     settings,
     version: extension.version,
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
 
   // Extension settings are read where documents render (a calendar's week start,
@@ -301,7 +304,7 @@ export async function listCurrentUserExtensionSettings() {
 
   return listUserExtensionSettings({
     userId: user.id,
-    allowedExtensionIds: getLocalExtensionIds(),
+    allowedExtensionIds: getInstalledExtensionIds(),
   });
 }
 
@@ -310,7 +313,7 @@ function validateExtensionSettings(
   settings: Record<string, unknown>,
 ) {
   const extensionSettings =
-    localExtensionRegistry.getExtensionSettingsSchema(extensionId);
+    manifestRegistry.getExtensionSettingsSchema(extensionId);
 
   if (!extensionSettings?.schema) {
     return settings;

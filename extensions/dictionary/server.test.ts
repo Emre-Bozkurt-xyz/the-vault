@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  dictionarySettingsSchema,
-  localBuiltInExtensions,
-} from "@/lib/extensions/catalog";
+import { toVaultExtension } from "@/lib/extension-host/compat";
 import type {
   ExtensionAgentActionContext,
   ExtensionAgentDefinitionEntry,
   VaultExtensionAgentAction,
 } from "@/lib/extensions/types";
+
+import manifest, { dictionarySettingsSchema } from "./manifest";
+import server from "./server";
+
+const localBuiltInExtensions = [toVaultExtension(manifest, server)];
 
 const DEFINITIONS: ExtensionAgentDefinitionEntry[] = [
   {

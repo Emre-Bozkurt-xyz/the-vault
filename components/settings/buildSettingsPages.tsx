@@ -18,10 +18,8 @@ import {
   type SettingsPage,
 } from "@/components/settings/settings-pages";
 import { SnippetsSettingsSection } from "@/components/settings/SnippetsSettingsSection";
-import {
-  getLocalExtensionIds,
-  localBuiltInExtensions,
-} from "@/lib/extensions/catalog";
+import { getInstalledExtensionIds } from "@/lib/extension-host/manifests";
+import { installedExtensions } from "@/lib/extension-host/server";
 import { buildPreferences } from "@/lib/settings/preferences";
 import { listOwnedFolderOptionsForUser } from "@/server/definitions-data";
 import { listConnectedAuthProviders } from "@/server/profile";
@@ -66,7 +64,7 @@ export async function buildSettingsPages(input: {
     listConnectedAuthProviders(),
     listUserExtensionSettings({
       userId: profile.id,
-      allowedExtensionIds: getLocalExtensionIds(),
+      allowedExtensionIds: getInstalledExtensionIds(),
     }),
     listUserSettings({ userId: profile.id }),
     listSnippetsForUser(profile.id),
@@ -76,7 +74,7 @@ export async function buildSettingsPages(input: {
   const storedByExtension = new Map(
     userExtensionSettings.map((setting) => [setting.extensionId, setting]),
   );
-  const configurableExtensions = localBuiltInExtensions.filter(
+  const configurableExtensions = installedExtensions.filter(
     (extension) =>
       (storedByExtension.get(extension.id)?.enabled ??
         extension.defaultEnabled ??
@@ -199,7 +197,7 @@ export async function buildSettingsPages(input: {
       group: "extensions",
       content: (
         <ExtensionBrowserSection
-          extensions={localBuiltInExtensions}
+          extensions={installedExtensions}
           userSettings={userExtensionSettings}
         />
       ),
