@@ -47,8 +47,9 @@ const removeStickerInputSchema = z.object({
 });
 
 export default defineServer(manifest, {
-  // Public pages show a read-only sticker layer. Only stickers whose image is
-  // itself public: publishing a document never publishes its assets.
+  // Public pages show a read-only sticker layer, limited to stickers whose
+  // image is itself public: publishing a document never publishes its
+  // assets. (Workspace readers read the layout from state directly.)
   loadRenderData: async (context) => {
     if (context.surface !== "public") return null;
 

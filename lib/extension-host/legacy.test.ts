@@ -21,22 +21,20 @@ describe("legacyExtensionProps", () => {
   it("falls back to today's defaults when nothing is resolved (embeds)", () => {
     expect(legacyExtensionProps(null)).toEqual({
       fxTable: null,
-      stickerItems: [],
       definitionEmphasis: "every",
-      stickersEnabled: false,
       calcEnabled: false,
       dictionaryEnabled: false,
     });
   });
 
   it("gates authoring on both enablement and edit access", () => {
-    const enabledIds = ["vault.stickers", "vault.calc", "vault.dictionary"];
+    const enabledIds = ["vault.calc", "vault.dictionary"];
 
     const editor = legacyExtensionProps(extensions({ enabledIds }));
-    expect([editor.stickersEnabled, editor.calcEnabled]).toEqual([true, true]);
+    expect(editor.calcEnabled).toBe(true);
 
     const reader = legacyExtensionProps(extensions({ enabledIds, canEdit: false }));
-    expect([reader.stickersEnabled, reader.calcEnabled]).toEqual([false, false]);
+    expect(reader.calcEnabled).toBe(false);
     // The dictionary also carries a reading preference, so readers keep it.
     expect(reader.dictionaryEnabled).toBe(true);
   });
@@ -50,13 +48,11 @@ describe("legacyExtensionProps", () => {
         },
         data: {
           "vault.calc": { fxTable },
-          "vault.stickers": { items: [] },
         },
       }),
     );
 
     expect(props.fxTable).toEqual(fxTable);
     expect(props.definitionEmphasis).toBe("first");
-    expect(props.stickerItems).toEqual([]);
   });
 });

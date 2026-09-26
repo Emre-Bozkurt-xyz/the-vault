@@ -1,14 +1,13 @@
 "use client";
 
 import {
-  Component,
   lazy,
   Suspense,
   type ComponentType,
-  type ErrorInfo,
   type LazyExoticComponent,
-  type ReactNode,
 } from "react";
+
+import { ExtensionErrorBoundary } from "@/components/extensions/ExtensionErrorBoundary";
 
 import type { BlockProps, ExtensionLinks, ExtensionRenderContext } from "@/lib/extension-api";
 import { renderModules } from "@/extensions/registry.render";
@@ -57,7 +56,11 @@ export function ExtensionBlockHost({
   }
 
   return (
-    <ExtensionErrorBoundary extensionId={definition.extensionId} source={source}>
+    <ExtensionErrorBoundary
+      extensionId={definition.extensionId}
+      label={source}
+      fallback={(error) => <ExtensionBlockFallback source={source} error={error} />}
+    >
       <Suspense fallback={<div className="vault-extension-block-loading" aria-busy="true" />}>
         {/* eslint-disable-next-line react-hooks/static-components -- `Block` is
             looked up, not created: every entry in `lazyBlocks` is made once at
@@ -103,42 +106,4 @@ function ExtensionBlockFallback({
       {error ? <p className="vault-extension-block-error">{error}</p> : null}
     </div>
   );
-}
-
-class ExtensionErrorBoundary extends Component<
-  { extensionId: string; source: string; children: ReactNode },
-  { error: Error | null }
-> {
-  state: { error: Error | null } = { error: null };
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error(
-      `Extension "${this.props.extensionId}" failed to render ${this.props.source}`,
-      error,
-      info.componentStack,
-    );
-  }
-
-  render() {
-    if (this.state.error) {
-      // Loud in development, quiet in production: authors debugging an
-      // extension see why; readers just see the block's source.
-      return (
-        <ExtensionBlockFallback
-          source={this.props.source}
-          error={
-            process.env.NODE_ENV === "production"
-              ? undefined
-              : `${this.props.extensionId}: ${this.state.error.message}`
-          }
-        />
-      );
-    }
-
-    return this.props.children;
-  }
 }

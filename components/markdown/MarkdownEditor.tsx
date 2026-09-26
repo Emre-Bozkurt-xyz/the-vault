@@ -53,7 +53,6 @@ import {
   Loader2,
   SlidersHorizontal,
   Save,
-  Sticker,
   Tags,
   X,
 } from "lucide-react";
@@ -61,7 +60,7 @@ import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 
 import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
-import { StickerLayer } from "@/components/extensions/StickerLayer";
+import { ExtensionOverlayLayer } from "@/components/extensions/ExtensionOverlays";
 import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { EditorOutline } from "@/components/markdown/EditorOutline";
@@ -133,7 +132,11 @@ import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
 import { useExtensionHost } from "@/components/extensions/ExtensionHostProvider";
-import type { DocumentExtensions, EditorModule } from "@/lib/extension-api";
+import type {
+  DocumentExtensions,
+  EditorModule,
+  PickedAsset,
+} from "@/lib/extension-api";
 import {
   insertBlock,
   insertInline,
@@ -342,8 +345,7 @@ export function MarkdownEditor({
   // Aliased: `extensions` is this component's CodeMirror extension list.
   extensions: documentExtensions = null,
 }: MarkdownEditorProps) {
-  const { fxTable, stickersEnabled, calcEnabled } =
-    legacyExtensionProps(documentExtensions);
+  const { fxTable, calcEnabled } = legacyExtensionProps(documentExtensions);
   // Ids of the user's enabled extensions, used to gate extension slash items.
   const enabledExtensionIds = documentExtensions?.enabledIds;
   // Editor modules of those extensions, as the workspace host loads them
@@ -358,21 +360,56 @@ export function MarkdownEditor({
         .filter((editorModule): editorModule is EditorModule => Boolean(editorModule)),
     [enabledExtensionIds, hostModules],
   );
+  // The host's asset picker, which extension commands open through
+  // `editor.pickAsset()`. One request at a time: a new one dismisses the last.
+  const [assetPickRequest, setAssetPickRequest] = useState<{
+    kinds: ReadonlyArray<"image" | "pdf">;
+    title?: string;
+    resolve: (asset: PickedAsset | null) => void;
+  } | null>(null);
+  const pickAsset = useCallback(
+    (options: { kinds: ReadonlyArray<"image" | "pdf">; title?: string }) =>
+      new Promise<PickedAsset | null>((resolve) => {
+        setAssetPickRequest((previous) => {
+          previous?.resolve(null);
+          return { ...options, resolve };
+        });
+      }),
+    [],
+  );
+  const settleAssetPick = useCallback((asset: PickerAsset | null) => {
+    setAssetPickRequest((request) => {
+      request?.resolve(
+        asset
+          ? {
+              id: asset.id,
+              kind: asset.kind,
+              displayName: asset.displayName,
+              mimeType: asset.mimeType,
+            }
+          : null,
+      );
+      return null;
+    });
+  }, []);
   const runEditorCommand = useCallback(
     (view: EditorView, commandId: string) => {
       const owner = editorModules.find((candidate) => candidate.commands[commandId]);
       if (!owner) return;
 
-      runExtensionCommand(owner.commands[commandId], view, {
-        extensionId: owner.manifestId,
-        documentId,
-        settings: documentExtensions?.settings[owner.manifestId] ?? {},
-      });
+      runExtensionCommand(
+        owner.commands[commandId],
+        view,
+        {
+          extensionId: owner.manifestId,
+          documentId,
+          settings: documentExtensions?.settings[owner.manifestId] ?? {},
+        },
+        { pickAsset },
+      );
     },
-    [documentExtensions, documentId, editorModules],
+    [documentExtensions, documentId, editorModules, pickAsset],
   );
-  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
-  const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
   const [dirty, setDirty] = useState(false);
@@ -1371,19 +1408,16 @@ export function MarkdownEditor({
   applyFormatRef.current = applyFormat;
 
   // Command palette actions reach the active editor through the document
-  // command bus: an extension's commands as `extension:<command id>` (a no-op
-  // unless its editor module is loaded), and `/insert-sticker` until stickers
-  // moves behind the SDK.
+  // command bus: an extension's commands as `extension:<command id>`, a no-op
+  // unless its editor module is loaded.
   useEffect(() => {
     return subscribeToDocumentCommand((type) => {
       if (type.startsWith("extension:")) {
         const view = viewRef.current;
         if (view) runEditorCommand(view, type.slice("extension:".length));
-      } else if (type === "insert-sticker" && stickersEnabled) {
-        setStickerPickerOpen(true);
       }
     });
-  }, [runEditorCommand, stickersEnabled]);
+  }, [runEditorCommand]);
 
   const updateSelectedAssetAttributes = useCallback(
     (nextAttributes: Partial<AssetEmbedAttributes>) => {
@@ -1562,7 +1596,6 @@ export function MarkdownEditor({
               <MarkdownToolbar
                 onFormat={applyFormat}
                 extensionItems={
-                  stickersEnabled ||
                   calcEnabled ||
                   editorModules.some((editorModule) => editorModule.toolbar.length > 0) ? (
                     <>
@@ -1581,11 +1614,6 @@ export function MarkdownEditor({
                       {calcEnabled ? (
                         <CalcToolbarGroup
                           onInsert={() => applyFormat("calcBlock")}
-                        />
-                      ) : null}
-                      {stickersEnabled ? (
-                        <StickerToolbarGroup
-                          onAddSticker={() => setStickerPickerOpen(true)}
                         />
                       ) : null}
                     </>
@@ -1665,18 +1693,17 @@ export function MarkdownEditor({
             onChange={applyDocumentMetadata}
           />
         ) : null}
-        {/* Overlay host wraps only the content region so sticker coordinates
+        {/* Overlay host wraps only the content region so overlay coordinates
             track the document body, not the toolbar/title/properties chrome
             above it. */}
         <DocumentOverlayHost
           documentId={documentId}
           overlays={
-            stickersEnabled ? (
-              <StickerLayer
-                documentId={documentId}
-                canEdit
-                pendingAsset={pendingStickerAsset}
-                onPendingAssetPlaced={() => setPendingStickerAsset(null)}
+            documentExtensions ? (
+              <ExtensionOverlayLayer
+                extensions={documentExtensions}
+                links={{ wikiLinks: wikiLinkMap, assetLinks: assetLinkMap }}
+                editorModules={editorModules}
               />
             ) : undefined
           }
@@ -1880,18 +1907,17 @@ export function MarkdownEditor({
           </div>
         ) : null}
       </div>
-      {stickersEnabled && (
+      {assetPickRequest ? (
         <ContentPickerDialog
-          open={stickerPickerOpen}
-          onOpenChange={setStickerPickerOpen}
-          filter={{ kinds: ["image"] }}
-          title="Pick a sticker"
-          onSelect={(asset) => {
-            setPendingStickerAsset(asset);
-            setStickerPickerOpen(false);
+          open
+          onOpenChange={(open) => {
+            if (!open) settleAssetPick(null);
           }}
+          filter={{ kinds: [...assetPickRequest.kinds] }}
+          title={assetPickRequest.title ?? "Pick an asset"}
+          onSelect={(asset) => settleAssetPick(asset)}
         />
-      )}
+      ) : null}
     </form>
   );
 }
@@ -1939,25 +1965,6 @@ function CalcToolbarGroup({ onInsert }: { onInsert: () => void }) {
         className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
       >
         <Calculator className="size-4" />
-      </button>
-    </div>
-  );
-}
-
-function StickerToolbarGroup({ onAddSticker }: { onAddSticker: () => void }) {
-  return (
-    <div
-      data-slot="button-group"
-      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
-    >
-      <button
-        type="button"
-        title="Add sticker"
-        aria-label="Add sticker"
-        onClick={onAddSticker}
-        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
-      >
-        <Sticker className="size-4" />
       </button>
     </div>
   );

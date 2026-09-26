@@ -219,9 +219,26 @@ export type BlockContribution = {
 type SyntaxNames<M extends ExtensionManifest, K extends keyof ExtensionSyntax> =
   NonNullable<NonNullable<M["syntax"]>[K]>[number];
 
+type OverlayIds<M extends ExtensionManifest> = NonNullable<M["overlays"]>[number]["id"];
+
+/**
+ * What an overlay component receives (plan §6, §7): one layer drawn over the
+ * whole document surface, like stickers. All of it is serialisable.
+ */
+export type OverlayProps<TSettings = Record<string, unknown>> = {
+  ctx: ExtensionRenderContext<TSettings>;
+  links: ExtensionLinks;
+};
+
+/** A read-only overlay readers see, loaded lazily like a block component. */
+export type OverlayContribution = {
+  load: () => Promise<{ default: ComponentType<OverlayProps> }>;
+};
+
 export type RenderModule = {
   manifestId: string;
   blocks: Readonly<Record<string, BlockContribution>>;
+  overlays: Readonly<Record<string, OverlayContribution>>;
 };
 
 /**
@@ -232,6 +249,11 @@ export function defineRender<const M extends ExtensionManifest>(
   manifest: M,
   render: {
     blocks?: { [K in SyntaxNames<M, "blocks">]?: BlockContribution };
+    /**
+     * Read-only overlays, keyed by manifest overlay id. They render for every
+     * reader of a document that has this extension's state, enabled or not.
+     */
+    overlays?: { [K in OverlayIds<M>]?: OverlayContribution };
   },
 ): RenderModule {
   const claimed = new Set(manifest.syntax?.blocks ?? []);
@@ -245,7 +267,15 @@ export function defineRender<const M extends ExtensionManifest>(
     }
   }
 
-  return { manifestId: manifest.id, blocks };
+  const overlays = (render.overlays ?? {}) as Record<string, OverlayContribution>;
+  const declared = new Set((manifest.overlays ?? []).map((overlay) => overlay.id));
+  for (const id of Object.keys(overlays)) {
+    if (!declared.has(id)) {
+      throw new Error(`"${manifest.id}" renders overlay "${id}" its manifest does not declare.`);
+    }
+  }
+
+  return { manifestId: manifest.id, blocks, overlays };
 }
 
 /**
@@ -259,12 +289,33 @@ export type EditorHandle = {
   insertInline: (markdown: string, options?: { cursorOffset?: number }) => void;
   /** The current selection. */
   selection: () => { from: number; to: number; text: string };
+  /**
+   * Opens the host's asset picker (the user's library). Resolves to the chosen
+   * asset, or null if the picker was dismissed or is unavailable here.
+   */
+  pickAsset: (options: {
+    kinds: ReadonlyArray<"image" | "pdf">;
+    title?: string;
+  }) => Promise<PickedAsset | null>;
+};
+
+export type PickedAsset = {
+  id: string;
+  kind: "image" | "pdf";
+  displayName: string;
+  mimeType: string;
 };
 
 export type EditorCommandContext = {
   extensionId: string;
   documentId: string | null;
   settings: Record<string, unknown>;
+  /**
+   * Sends a session event to this extension's components on this document,
+   * received with `useSessionEvent` (e.g. a command handing a picked asset to
+   * an overlay). Scoped to the extension: nothing else hears it.
+   */
+  emit: (name: string, payload?: JsonValue) => void;
 };
 
 export type CommandHandler = (
@@ -286,6 +337,7 @@ export type EditorModule = {
   manifestId: string;
   commands: Readonly<Record<string, CommandHandler>>;
   toolbar: readonly ToolbarContributionItem[];
+  overlays: Readonly<Record<string, ComponentType<OverlayProps>>>;
 };
 
 /**
@@ -300,12 +352,19 @@ export function defineEditor<const M extends ExtensionManifest>(
     toolbar?: ReadonlyArray<
       Omit<ToolbarContributionItem, "command"> & { command: CommandIds<M> }
     >;
+    /**
+     * Interactive overlays for authors, keyed by manifest overlay id. Where the
+     * user can edit, one replaces the render module's read-only overlay of the
+     * same id.
+     */
+    overlays?: { [K in OverlayIds<M>]?: ComponentType<OverlayProps> };
   },
 ): EditorModule {
   return {
     manifestId: manifest.id,
     commands: editor.commands as Record<string, CommandHandler>,
     toolbar: editor.toolbar ?? [],
+    overlays: (editor.overlays ?? {}) as Record<string, ComponentType<OverlayProps>>,
   };
 }
 

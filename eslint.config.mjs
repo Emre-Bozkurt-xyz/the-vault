@@ -53,9 +53,6 @@ const MIGRATION_ALLOWLIST_EXTENSIONS = [
 
 // Core files still importing an extension's folder.
 const MIGRATION_ALLOWLIST_CORE = [
-  "lib/extension-host/legacy.ts", // shrinks each slice; deleted after slice 6
-  "components/extensions/StickerLayer.tsx", // moves in slice 4
-  "components/extensions/PublicStickerDisplay.tsx", // moves in slice 4
   "server/definitions.ts", // dictionary settings: slice 5
 ];
 

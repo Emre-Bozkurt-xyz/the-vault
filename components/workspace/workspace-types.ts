@@ -39,8 +39,6 @@ export type ActiveDocumentCommandContext = {
    * edit access). The palette lists their editor commands.
    */
   authoringExtensionIds: string[];
-  /** Whether the stickers extension is enabled for this viewer (until slice 4). */
-  stickersEnabled: boolean;
 };
 
 export type WorkspaceLayoutState = {

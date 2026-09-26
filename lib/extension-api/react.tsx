@@ -12,11 +12,16 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
 } from "react";
 import type { ZodType } from "zod";
 
+import { DocumentOverlayItem } from "@/components/extensions/DocumentOverlayHost";
 import { useDocumentExtensionState } from "@/components/extensions/use-document-extension-state";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import type {
@@ -25,7 +30,9 @@ import type {
   ExtensionStateRow,
   ExtensionStateValue,
   ExtensionStateVisibility,
+  JsonValue,
 } from "@/lib/extension-api";
+import { subscribeSessionEvent } from "@/lib/extension-host/session-events";
 import {
   runExtensionActionAction,
   type ExtensionActionOutcome,
@@ -200,4 +207,56 @@ export function useExtensionState<T extends StateObject>(
   );
 
   return { value, set, status, error };
+}
+
+/**
+ * Receives a session event this extension's commands emit on this document
+ * (`context.emit(name, payload)` in an editor command). The handler may change
+ * between renders without resubscribing.
+ */
+export function useSessionEvent(
+  ctx: Pick<ExtensionRenderContext, "extensionId" | "documentId">,
+  name: string,
+  handler: (payload: JsonValue | undefined) => void,
+): void {
+  const handlerRef = useRef(handler);
+  useEffect(() => {
+    handlerRef.current = handler;
+  }, [handler]);
+
+  const { extensionId, documentId } = ctx;
+  useEffect(
+    () =>
+      subscribeSessionEvent({ extensionId, documentId }, name, (payload) =>
+        handlerRef.current(payload),
+      ),
+    [documentId, extensionId, name],
+  );
+}
+
+/**
+ * One absolutely positioned item in an overlay, in document-surface
+ * coordinates. Items take pointer events; the layer around them does not, so
+ * text beneath an overlay stays selectable. Pass `interactive={false}` for
+ * display-only items.
+ */
+export function OverlayItem({
+  children,
+  className,
+  style,
+  interactive = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+  interactive?: boolean;
+}) {
+  return (
+    <DocumentOverlayItem
+      className={className}
+      style={interactive ? style : { ...style, pointerEvents: "none" }}
+    >
+      {children}
+    </DocumentOverlayItem>
+  );
 }

@@ -1,6 +1,5 @@
 import type { FxRateTable } from "@/lib/calc/fx";
 import type { DocumentExtensions } from "@/lib/extension-api";
-import type { PublicStickerItem } from "@/extensions/stickers/state";
 
 /**
  * The one place core still reads extension-specific shapes out of
@@ -11,22 +10,18 @@ import type { PublicStickerItem } from "@/extensions/stickers/state";
  * such read here means core names extensions in one file, not across pages, and
  * each later slice deletes its part:
  *
- * - stickers (slice 4): `stickerItems`
  * - dictionary (slice 5): `definitionEmphasis`
  * - calc (slice 6): `fxTable`
  */
 export type LegacyExtensionProps = {
   fxTable: FxRateTable | null;
-  stickerItems: PublicStickerItem[];
   definitionEmphasis: "every" | "first";
-  /** Authoring switches: the viewer enabled the extension and can edit. */
-  stickersEnabled: boolean;
+  /** Authoring switch: the viewer enabled the extension and can edit. */
   calcEnabled: boolean;
   dictionaryEnabled: boolean;
 };
 
 type CalcData = { fxTable?: FxRateTable | null };
-type StickersData = { items?: PublicStickerItem[] };
 
 export function legacyExtensionProps(
   extensions: DocumentExtensions | null | undefined,
@@ -40,9 +35,7 @@ export function legacyExtensionProps(
 
   return {
     fxTable: (data("vault.calc") as CalcData | undefined)?.fxTable ?? null,
-    stickerItems: (data("vault.stickers") as StickersData | undefined)?.items ?? [],
     definitionEmphasis: emphasis === "first" ? "first" : "every",
-    stickersEnabled: authoring("vault.stickers"),
     calcEnabled: authoring("vault.calc"),
     // Unlike the others, not gated on `canEdit`: besides `/def` it carries the
     // viewer's reading preference, which applies in the read view too.

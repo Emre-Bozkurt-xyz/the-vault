@@ -49,8 +49,11 @@ describe("vault.stickers loadRenderData", () => {
     ).toEqual({ items: [] });
   });
 
-  it("loads nothing outside public pages, where the layer loads itself", async () => {
+  // Workspace readers read the layout from state; share links, guides and
+  // embeds show no stickers, as before.
+  it("loads nothing outside public pages", async () => {
     expect(await server.loadRenderData!(context("workspace", layout, ["a-public"]))).toBeNull();
     expect(await server.loadRenderData!(context("share", layout, ["a-public"]))).toBeNull();
+    expect(await server.loadRenderData!(context("embed", layout, ["a-public"]))).toBeNull();
   });
 });

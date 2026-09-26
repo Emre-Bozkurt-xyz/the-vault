@@ -7,7 +7,6 @@
 export type DocumentCommandType =
   | "open-share"
   | "open-history"
-  | "insert-sticker"
   /** An extension editor command, by its manifest command id. */
   | `extension:${string}`;
 

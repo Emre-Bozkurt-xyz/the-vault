@@ -26,7 +26,7 @@ import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
-import { legacyExtensionProps } from "@/lib/extension-host/legacy";
+import { ExtensionOverlaySurface } from "@/components/extensions/ExtensionOverlays";
 import { resolveDocumentExtensions } from "@/server/extension-runtime";
 import {
   listAssetResolutionsForDocument,
@@ -149,9 +149,6 @@ export default async function DocumentPage({
       getFolderPathForUser(document.folderId),
       resolveInheritedTagsForDocument(document.id),
     ]);
-  // Authoring switch (enabled by the viewer *and* editable) for the command
-  // palette's add-sticker command, until stickers moves behind the SDK.
-  const { stickersEnabled } = legacyExtensionProps(documentExtensions);
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
@@ -233,7 +230,6 @@ export default async function DocumentPage({
           authoringExtensionIds: document.access.canEdit
             ? documentExtensions.enabledIds
             : [],
-          stickersEnabled,
         }}
         rightPanel={
           showRightPanel ? (
@@ -296,6 +292,12 @@ export default async function DocumentPage({
               </h1>
             </div>
             <DocumentReadingFrame markdown={markdown}>
+              {/* Extension overlays (e.g. stickers) for readers too: rendering
+                  follows content, whether or not the reader enabled them. */}
+              <ExtensionOverlaySurface
+                extensions={documentExtensions}
+                links={{ wikiLinks, assetLinks }}
+              >
               <DocumentStyling
                 documentId={document.id}
                 snippetCss={readViewSnippetCss}
@@ -308,6 +310,7 @@ export default async function DocumentPage({
                   extensions={documentExtensions}
                 />
               </DocumentStyling>
+              </ExtensionOverlaySurface>
             </DocumentReadingFrame>
           </article>
         )}

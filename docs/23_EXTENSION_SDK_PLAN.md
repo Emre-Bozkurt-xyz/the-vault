@@ -1,6 +1,6 @@
 # Extension SDK and Host Plan
 
-Status as of 2026-09-26: **API settled; slices 0-3 implemented.** Slice 3
+Status as of 2026-09-26: **API settled; slices 0-4 implemented.** Slice 3
 revised two parts of the design; see "Amendments from slice 3" at the end of §14. §16 records the
 decisions; §18 covers tooling for extension developers. This plan supersedes the registry shape in
 `docs/12_EXTENSION_REGISTRY_PLAN.md` §4 and §10 and the "Future Verified Extensions" note in
@@ -689,7 +689,40 @@ opening line as a leaf block (the contract test caught that regression). Delete 
 reference in core. Calendar goes first because it touches the most contribution
 types.
 
-**Slice 4 — Stickers.** Render and editor overlays, `pickAsset`, session events.
+**Slice 4 — Stickers.** Done 2026-09-26. Render and editor overlays,
+`pickAsset`, session events. As built:
+
+- `components/extensions/ExtensionOverlays.tsx`: `ExtensionOverlayLayer`
+  renders each overlay for extensions in the render set (lazy, per-extension
+  error boundary, a failed overlay disappears), substituting an enabled
+  extension's editor-module overlay of the same id where the document is
+  editable; `ExtensionOverlaySurface` wraps a read view's document with the
+  layer and leaves documents without overlays untouched. The public pages
+  and the workspace read view use the surface; `MarkdownEditor` passes the
+  layer to its existing `DocumentOverlayHost`.
+- SDK: `OverlayProps`, `overlays` in `defineRender`/`defineEditor`,
+  `OverlayItem` and `useSessionEvent` in `@/lib/extension-api/react`,
+  `editor.pickAsset()` and `context.emit()` for commands.
+  `lib/extension-host/session-events.ts` is the per-document,
+  per-extension event bus. `MarkdownEditor` owns one generic asset picker.
+- `extensions/stickers/` now holds everything: `StickerDisplay` (read-only,
+  from state in the workspace and from `loadRenderData`'s public-image-only
+  items on public pages), `StickerLayer` (moved from `components/extensions`,
+  interactive, placed via a `place` session event), `editor.tsx` (the add
+  command picks an image and emits `place`; toggle-layer, previously declared
+  but never implemented, hides the layer), and a fixture.
+  `PublicStickerDisplay`, the sticker toolbar group, picker state and palette
+  entry, `stickersEnabled` and `stickerItems` are gone from core.
+- Tests: SDK hooks' server actions are aliased to stubs under vitest
+  (`test/stubs/server-actions.ts`), so extension components are importable in
+  unit tests; the contract test checks declared overlays are rendered and
+  editor overlays are declared.
+
+Behaviour changes, per §16 decision 1: stickers now show read-only to every
+reader in the workspace (read view and editor), not only to users who
+enabled stickers. A sticker picked while the layout was still loading used to
+be dropped; it is now placed once loading finishes. The extension toolbar
+order is now editor-module extensions (alphabetical) then calc.
 
 **Slice 5 — Dictionary.** `links`, `live`, dialogs, `openLinkCompletion`, and the
 generic `documents` service. Remove `definitions` from the core action context.

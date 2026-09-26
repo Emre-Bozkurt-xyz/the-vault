@@ -28,5 +28,6 @@ export const clientExtensions: readonly ClientExtensionEntry[] = [
   },
   {
     manifest: stickersManifest,
+    editor: () => import("./stickers/editor"),
   },
 ];

@@ -3,11 +3,10 @@ import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 
 import { ContentInteractionControl } from "@/components/content-interaction-control";
-import { PublicStickerDisplay } from "@/components/extensions/PublicStickerDisplay";
+import { ExtensionOverlaySurface } from "@/components/extensions/ExtensionOverlays";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { legacyExtensionProps } from "@/lib/extension-host/legacy";
 import { resolveDocumentExtensions } from "@/server/extension-runtime";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -65,7 +64,6 @@ export default async function WorkspacePublicDocumentPage({
         userId: null,
       }),
     ]);
-  const { stickerItems } = legacyExtensionProps(documentExtensions);
   const wikiLinks = {
     ...publicWikiLinks,
     ...guideWikiLinks,
@@ -137,7 +135,10 @@ export default async function WorkspacePublicDocumentPage({
 
         <div className="border-t border-border/55 pt-6">
           <DocumentReadingFrame markdown={document.markdown}>
-            <PublicStickerDisplay items={stickerItems}>
+            <ExtensionOverlaySurface
+                extensions={documentExtensions}
+                links={{ wikiLinks, assetLinks }}
+              >
               <DocumentStyling
                 documentId={document.id}
                 snippetCss={snippetCss}
@@ -153,7 +154,7 @@ export default async function WorkspacePublicDocumentPage({
                 extensions={documentExtensions}
               />
               </DocumentStyling>
-            </PublicStickerDisplay>
+            </ExtensionOverlaySurface>
           </DocumentReadingFrame>
         </div>
       </article>

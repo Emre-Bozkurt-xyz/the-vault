@@ -644,7 +644,7 @@ Slices 1-5 are implemented. All six languages run end to end locally under `runc
 
 ## Phase 25 - Extension SDK and Host
 
-Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). API and authoring experience settled (§16, §18). Slices 0-3 are implemented.
+Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). API and authoring experience settled (§16, §18). Slices 0-4 are implemented.
 
 | Status | Task | Notes |
 |---|---|---|
@@ -654,7 +654,7 @@ Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). API and authoring experience
 | [x] | Slice 2 - Host runtime | Done 2026-09-26. `server/extension-runtime.ts` (`resolveViewerExtensions`, `resolveDocumentExtensions` → one `DocumentExtensions` prop), syntax-claim render set, visibility-filtered state prefetch, `loadRenderData` for calc/calendar/stickers (old `calendar-state`/`sticker-state` loaders deleted), `runExtensionActionAction` + `agent: false`, SDK hooks, `ExtensionHostProvider` in the workspace layout. Doc, public (x2), share and guide pages rewired. Verified: tsc, 643 tests, lint at baseline, build, production smoke test of public/guide pages. Embeds unchanged |
 | [x] | Slice 3 - Calendar end to end | Done 2026-09-26. `extensions/calendar/` owns all calendar code (render/editor/server/state/lib/CalendarBlock); `ExtensionBlockHost` (lazy + Suspense + error boundary) renders blocks in Read and Live; generic `extensionBlock` live spec; editor modules drive toolbar/slash/palette; `ext:new`, `runCommand`/`createTestContext`, stronger contract test. Public page JS 443 → 208 KB gz. Verified: tsc, 657 tests, lint at baseline, clean build, Playwright hydration/lazy-load check |
 | [x] | Authoring tooling after slice 3 | Done 2026-09-26. Playground `/dev/extensions/[id]` (dev only; Live/Read/Public/disabled panes from an in-memory store, generated settings panel, command buttons), fixtures + contract validation, `extensions/README.md`, `create-extension` skill. Verified with Playwright against the calendar fixture: visibility filtering, live settings, command insert, no console errors |
-| [ ] | Slice 4 - Stickers | Render/editor overlays, `pickAsset`, session events |
+| [x] | Slice 4 - Stickers | Done 2026-09-26. Host overlays (`ExtensionOverlayLayer`/`ExtensionOverlaySurface`), `pickAsset`, session events; `extensions/stickers/` owns `StickerDisplay`, `StickerLayer`, editor commands and a fixture; stickers render read-only for every workspace reader. Verified: tsc, tests, lint at baseline, build, Playwright on the stickers and calendar playgrounds |
 | [ ] | Slice 5 - Dictionary | Link decorators, dialogs, generic `documents` service replaces `definitions` |
 | [ ] | Slice 6 - Calc | `analyze`, inline directives, source-mode container blocks, FX primitives to core |
 | [ ] | Slice 7 - Close-out | Empty lint allowlist, delete `catalog.ts` and `components/extensions/`, docs |

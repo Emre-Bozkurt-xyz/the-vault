@@ -29,7 +29,6 @@ import {
   Share2,
   ShieldCheck,
   Slash,
-  Sticker,
   UserRound,
   Users,
   X,
@@ -370,17 +369,6 @@ export function WorkspaceCommandPalette() {
         }
       }
 
-      if (doc.canEdit && doc.stickersEnabled) {
-        list.push({
-          id: "doc-insert-sticker",
-          slug: "insert-sticker",
-          label: "Insert sticker",
-          group: "This document",
-          keywords: "asset image extension",
-          icon: Sticker,
-          run: () => dispatchDocumentCommand("insert-sticker"),
-        });
-      }
 
       if (doc.canDelete) {
         list.push({

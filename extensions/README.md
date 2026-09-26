@@ -6,7 +6,8 @@ the extension exists; delete it and it is gone. The design and its reasons are
 in [`docs/23_EXTENSION_SDK_PLAN.md`](../docs/23_EXTENSION_SDK_PLAN.md); this page
 is how to build one.
 
-`extensions/calendar/` is the reference extension. Read it alongside this guide.
+`extensions/calendar/` (a block) and `extensions/stickers/` (an overlay) are the
+reference extensions. Read them alongside this guide.
 
 ## The model in one page
 
@@ -15,7 +16,7 @@ is how to build one.
 | File | Answers | Loaded |
 |---|---|---|
 | `manifest.ts` | What is this extension? Id, name, permissions, settings, which syntax it owns, command metadata. Plain data. | Everywhere, always |
-| `render.tsx` | What do readers see? Block components, as lazy loaders. | Everywhere, statically; components load per block |
+| `render.tsx` | What do readers see? Block and overlay components, as lazy loaders. | Everywhere, statically; components load when used |
 | `editor.tsx` | What do authors use? Commands and toolbar buttons. | In the browser, once per session, only for users who enabled it |
 | `server.ts` | What runs on the server? State schemas, actions, data a page needs before rendering. | Server only |
 
@@ -140,7 +141,27 @@ The host handles lazy loading, Suspense, source reveal in Live mode, fenced-code
 exclusion, and errors: a block that throws shows its source, never a broken
 page.
 
-### 4. Commands and toolbar
+### 4. An overlay
+
+An overlay is a layer drawn over the whole document, like stickers. Declare its
+id in the manifest (`overlays: [{ id: "vault.stopwatch.overlay" }]`), then give
+it two components:
+
+```tsx
+// render.tsx: what every reader sees, read-only
+overlays: { "vault.stopwatch.overlay": { load: () => import("./StopwatchDisplay") } },
+
+// editor.tsx: what authors get; replaces the read-only one where they can edit
+overlays: { "vault.stopwatch.overlay": StopwatchLayer },
+```
+
+Both receive `{ ctx, links }`. Position things with `OverlayItem` from
+`@/lib/extension-api/react` (document-surface coordinates; pass
+`interactive={false}` for display-only items so text beneath stays
+selectable). The read-only overlay renders wherever the document has your
+state, for readers who never enabled the extension too.
+
+### 5. Commands and toolbar
 
 ```tsx
 // editor.tsx
@@ -156,7 +177,16 @@ Every manifest command needs a handler (a type error otherwise). Commands reach
 the author three ways with no extra code: the toolbar, slash items that `run`
 them, and the command palette.
 
-### 5. Server
+A command gets two host services beyond the editor text:
+
+- `await editor.pickAsset({ kinds: ["image"] })` opens the user's asset
+  library and resolves to the chosen asset, or null.
+- `context.emit("name", payload)` sends a **session event** to your own
+  components on this document, received with
+  `useSessionEvent(ctx, "name", handler)`. This is how stickers' "Add sticker"
+  hands the picked image to its overlay. Events never reach another extension.
+
+### 6. Server
 
 ```ts
 // server.ts
@@ -176,8 +206,10 @@ Actions are what MCP agents call, and what your own UI calls through
 
 - **Unit tests** live next to the code. `runCommand(editor, commandId, "text|")`
   from `@/lib/extension-api/testing` runs a command against a bare editor state
-  and returns the Markdown; `|` marks the cursor. `createTestContext(manifest)`
-  builds a render context.
+  and returns the Markdown and the session events it emitted; `|` marks the
+  cursor, and a `pickAsset` option answers the asset picker.
+  `createTestContext(manifest)` builds a render context. Components that use the
+  SDK hooks import fine in tests: the server actions behind them are stubbed.
 - **The contract test** checks every extension automatically: manifest
   invariants, unique syntax claims, no static client imports in render modules,
   every claimed block rendered, every command handled, fixture state valid.
@@ -204,8 +236,8 @@ The SDK grows with each extension moved behind it (plan §14):
 - **Container blocks** (`:::name` … `:::` with a body) and inline directives are
   claimed in `syntax.containers` / `syntax.inline`, but the host does not
   render them yet (calc, slice 6).
-- **Overlays** (stickers, slice 4), **link decorators** (dictionary, slice 5)
-  and **fence renderers** are designed in the plan but not built.
+- **Link decorators** (dictionary, slice 5) and **fence renderers** are
+  designed in the plan but not built.
 - **Styles** live in `app/styles/components.css`, following
   [`docs/CSS_CONTRACT.md`](../docs/CSS_CONTRACT.md); extensions do not ship
   their own stylesheet yet.

@@ -5,7 +5,7 @@ import type { EditorModule, ExtensionManifest } from "@/lib/extension-api";
 import { selectEditorModulesToLoad } from "@/lib/extension-host/loading";
 
 function entry(id: string, hasEditor: boolean): ClientExtensionEntry {
-  const editorModule: EditorModule = { manifestId: id, commands: {}, toolbar: [] };
+  const editorModule: EditorModule = { manifestId: id, commands: {}, toolbar: [], overlays: {} };
   return {
     manifest: { id } as ExtensionManifest,
     ...(hasEditor ? { editor: async () => ({ default: editorModule }) } : {}),

@@ -5,6 +5,7 @@ import type {
   EditorCommandContext,
   EditorHandle,
 } from "@/lib/extension-api";
+import { emitSessionEvent } from "@/lib/extension-host/session-events";
 
 /**
  * The parts of a CodeMirror view the editor handle needs. A real `EditorView`
@@ -65,8 +66,20 @@ export function insertInline(
   view.focus?.();
 }
 
+/**
+ * Host services a command may use that live outside the editor view. The
+ * editor supplies them; where one is missing (tests, the playground without a
+ * picker) the handle degrades gracefully instead of failing.
+ */
+export type EditorHostServices = {
+  pickAsset?: EditorHandle["pickAsset"];
+};
+
 /** The {@link EditorHandle} an extension command receives, over one view. */
-export function createEditorHandle(view: EditorViewLike): EditorHandle {
+export function createEditorHandle(
+  view: EditorViewLike,
+  services: EditorHostServices = {},
+): EditorHandle {
   return {
     insertBlock: (markdown, options) =>
       insertBlock(view, markdown, options?.cursorOffset ?? null),
@@ -76,24 +89,42 @@ export function createEditorHandle(view: EditorViewLike): EditorHandle {
       const { from, to } = view.state.selection.main;
       return { from, to, text: view.state.sliceDoc(from, to) };
     },
+    pickAsset: (options) =>
+      services.pickAsset ? services.pickAsset(options) : Promise.resolve(null),
   };
 }
 
 /**
- * Runs an extension command against a view. A command that throws is logged
- * and swallowed: a broken extension must never take the editor down
- * (`docs/23_EXTENSION_SDK_PLAN.md` §18.5).
+ * Runs an extension command against a view. A command that throws (or
+ * rejects) is logged and swallowed: a broken extension must never take the
+ * editor down (`docs/23_EXTENSION_SDK_PLAN.md` §18.5).
  */
 export function runExtensionCommand(
   handler: CommandHandler,
   view: EditorViewLike,
-  context: EditorCommandContext,
+  scope: Omit<EditorCommandContext, "emit">,
+  services: EditorHostServices & {
+    /** Where `context.emit` goes; the session-event bus by default. */
+    emit?: EditorCommandContext["emit"];
+  } = {},
 ): void {
   const report = (cause: unknown) =>
-    console.error(`Extension command from "${context.extensionId}" failed`, cause);
+    console.error(`Extension command from "${scope.extensionId}" failed`, cause);
+
+  const context: EditorCommandContext = {
+    ...scope,
+    emit:
+      services.emit ??
+      ((name, payload) =>
+        emitSessionEvent(
+          { extensionId: scope.extensionId, documentId: scope.documentId },
+          name,
+          payload,
+        )),
+  };
 
   try {
-    const result = handler(createEditorHandle(view), context);
+    const result = handler(createEditorHandle(view, services), context);
     if (result instanceof Promise) result.catch(report);
   } catch (cause) {
     report(cause);

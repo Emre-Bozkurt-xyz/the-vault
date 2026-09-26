@@ -170,6 +170,19 @@ describe("every extension", () => {
         });
       }
 
+      // Rendering follows content: a declared overlay needs a read-only
+      // renderer for readers, whatever editors get.
+      it("renders every overlay it declares", () => {
+        const rendered = new Set(
+          Object.keys(
+            renderModules.find((module) => module.manifestId === manifest.id)?.overlays ?? {},
+          ),
+        );
+        for (const overlay of manifest.overlays ?? []) {
+          expect(rendered).toContain(overlay.id);
+        }
+      });
+
       // A claimed block without a component would render as its fallback
       // forever: the host has nothing to load.
       it("renders every block it claims", () => {
@@ -221,6 +234,10 @@ describe("every extension", () => {
           );
           for (const item of editor.toolbar) {
             expect(Object.keys(editor.commands)).toContain(item.command);
+          }
+          const declaredOverlays = (manifest.overlays ?? []).map((overlay) => overlay.id);
+          for (const overlayId of Object.keys(editor.overlays)) {
+            expect(declaredOverlays).toContain(overlayId);
           }
         });
       }

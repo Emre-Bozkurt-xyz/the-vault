@@ -6,11 +6,14 @@
 import { EditorSelection, EditorState, type TransactionSpec } from "@codemirror/state";
 
 import type {
+  EditorHandle,
   EditorModule,
   ExtensionManifest,
   ExtensionRenderContext,
+  JsonValue,
+  PickedAsset,
 } from "@/lib/extension-api";
-import { runExtensionCommand } from "@/lib/extension-host/editor-handle";
+import { createEditorHandle } from "@/lib/extension-host/editor-handle";
 
 /**
  * A render context for `manifest`, defaulting to an editable workspace
@@ -37,15 +40,24 @@ export function createTestContext(
 
 /**
  * Runs one of an editor module's commands against `markdown` and returns the
- * resulting Markdown and cursor. `|` in `markdown` marks the cursor (or two for
- * a selection); without one the cursor is at the end.
+ * resulting Markdown, the cursor, and the session events it emitted. `|` in
+ * `markdown` marks the cursor (or two for a selection); without one the cursor
+ * is at the end. `pickAsset` answers the command's asset picker (null by
+ * default, as if dismissed). Errors propagate to the test.
  */
 export async function runCommand(
   editor: EditorModule,
   commandId: string,
   markdown: string,
-  options: { settings?: Record<string, unknown> } = {},
-): Promise<{ markdown: string; cursor: number }> {
+  options: {
+    settings?: Record<string, unknown>;
+    pickAsset?: (request: Parameters<EditorHandle["pickAsset"]>[0]) => PickedAsset | null;
+  } = {},
+): Promise<{
+  markdown: string;
+  cursor: number;
+  events: Array<{ name: string; payload: JsonValue | undefined }>;
+}> {
   const handler = editor.commands[commandId];
   if (!handler) {
     throw new Error(`"${editor.manifestId}" has no command "${commandId}".`);
@@ -69,23 +81,19 @@ export async function runCommand(
     },
   };
 
-  // Errors surface to the test rather than being logged away.
-  let failure: unknown = null;
-  const originalError = console.error;
-  console.error = (_message: unknown, cause: unknown) => {
-    failure = cause;
-  };
-  try {
-    runExtensionCommand(handler, view, {
+  const events: Array<{ name: string; payload: JsonValue | undefined }> = [];
+  const pickAsset = options.pickAsset;
+  await handler(
+    createEditorHandle(view, {
+      pickAsset: pickAsset ? async (request) => pickAsset(request) : undefined,
+    }),
+    {
       extensionId: editor.manifestId,
       documentId: null,
       settings: options.settings ?? {},
-    });
-    await Promise.resolve();
-  } finally {
-    console.error = originalError;
-  }
-  if (failure) throw failure;
+      emit: (name, payload) => events.push({ name, payload }),
+    },
+  );
 
-  return { markdown: state.doc.toString(), cursor: state.selection.main.head };
+  return { markdown: state.doc.toString(), cursor: state.selection.main.head, events };
 }

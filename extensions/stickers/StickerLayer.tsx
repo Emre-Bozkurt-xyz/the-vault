@@ -3,20 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RotateCw, Trash2 } from "lucide-react";
 
-import { useDocumentExtensionState } from "@/components/extensions/use-document-extension-state";
-import { DocumentOverlayItem } from "@/components/extensions/DocumentOverlayHost";
+import type { OverlayProps, PickedAsset } from "@/lib/extension-api";
 import {
-  stickersStateSchema,
-  type PublicStickerItem,
-  type StickerItem,
-  type StickersState,
-} from "@/extensions/stickers/state";
-import type { PickerAsset } from "@/server/asset-picker-actions";
+  OverlayItem,
+  useExtensionState,
+  useSessionEvent,
+} from "@/lib/extension-api/react";
 import { cn } from "@/lib/utils";
 
+import {
+  STICKER_MAX_SIZE as MAX_SIZE,
+  STICKER_MIN_SIZE as MIN_SIZE,
+  stickersStateSchema,
+  type StickerItem,
+  type StickersState,
+} from "./state";
+
 const MARGIN = 200;
-const MIN_SIZE = 40;
-const MAX_SIZE = 500;
 const ROTATION_SNAP_DEG = 90;
 const ROTATION_SNAP_THRESHOLD = 12;
 
@@ -30,37 +33,40 @@ function snapRotation(deg: number): number {
   return dist <= ROTATION_SNAP_THRESHOLD ? nearest % 360 : normalized;
 }
 
-type StickerLayerProps = {
-  documentId: string;
-  canEdit: boolean;
-  pendingAsset: PickerAsset | null;
-  onPendingAssetPlaced: () => void;
-};
-
 type LiveStickerItem = StickerItem & { id: string };
 
-export function StickerLayer({
-  documentId,
-  canEdit,
-  pendingAsset,
-  onPendingAssetPlaced,
-}: StickerLayerProps) {
-  const { state, setState, status } = useDocumentExtensionState({
-    documentId,
-    extensionId: "vault.stickers",
-    stateKey: "layout",
-    version: 1,
+/**
+ * The interactive sticker layer: the stickers editor module's overlay, shown
+ * in place of the read-only `StickerDisplay` to users who enabled stickers and
+ * can edit. Stickers are placed by the "Add sticker" command, which picks an
+ * asset and sends it here as a `place` session event.
+ */
+export default function StickerLayer({ ctx }: OverlayProps) {
+  const canEdit = ctx.canEdit;
+  // Stickers render on published pages, so a new layout is public; an existing
+  // one keeps its own visibility.
+  const { value, set: setState, status } = useExtensionState(ctx, "layout", {
+    schema: stickersStateSchema,
     visibility: "public",
-    disabled: !canEdit,
+    version: 1,
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingAsset, setPendingAsset] = useState<PickedAsset | null>(null);
+  const [hidden, setHidden] = useState(false);
 
-  const stickersState: StickersState = (() => {
-    if (!state) return { items: {} };
-    const result = stickersStateSchema.safeParse(state);
-    return result.success ? result.data : { items: {} };
-  })();
+  useSessionEvent(ctx, "place", (payload) => {
+    const asset = payload as PickedAsset | undefined;
+    if (asset?.id) {
+      setHidden(false);
+      setPendingAsset(asset);
+    }
+  });
+  useSessionEvent(ctx, "toggle-layer", () => setHidden((current) => !current));
+
+  const onPendingAssetPlaced = () => setPendingAsset(null);
+
+  const stickersState: StickersState = value ?? { items: {} };
 
   const stickers: LiveStickerItem[] = Object.entries(stickersState.items).map(
     ([id, item]) => ({ id, ...item }),
@@ -86,7 +92,7 @@ export function StickerLayer({
     setSelectedId(id);
     onPendingAssetPlaced();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingAsset]);
+  }, [pendingAsset, status]);
 
   function updateSticker(id: string, patch: Partial<StickerItem>) {
     setState({
@@ -115,7 +121,7 @@ export function StickerLayer({
       document.removeEventListener("pointerdown", handlePointerDown, true);
   }, [selectedId]);
 
-  if (!canEdit || stickers.length === 0) return null;
+  if (!canEdit || hidden || stickers.length === 0) return null;
 
   return (
     <>
@@ -132,40 +138,6 @@ export function StickerLayer({
           onRotate={(rotation) => updateSticker(sticker.id, { rotation })}
           onRemove={() => removeSticker(sticker.id)}
         />
-      ))}
-    </>
-  );
-}
-
-// ─── Read-only layer for public doc page ─────────────────────────────────────
-
-export function ReadOnlyStickerLayer({ items }: { items: PublicStickerItem[] }) {
-  if (items.length === 0) return null;
-  return (
-    <>
-      {items.map((item) => (
-        <DocumentOverlayItem
-          key={item.id}
-          style={{ left: item.left, top: item.top, width: item.width }}
-        >
-          <div
-            style={{
-              transform: `rotate(${item.rotation ?? 0}deg)`,
-              transformOrigin: "center center",
-              pointerEvents: "none",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`/api/assets/${item.assetId}/content`}
-              alt=""
-              draggable={false}
-              style={{ width: item.width, height: item.width }}
-              className="block rounded-sm object-cover"
-              loading="lazy"
-            />
-          </div>
-        </DocumentOverlayItem>
       ))}
     </>
   );
@@ -417,7 +389,7 @@ function EditableStickerItem({
   const rotation = sticker.rotation ?? 0;
 
   return (
-    <DocumentOverlayItem
+    <OverlayItem
       style={{ left: sticker.left, top: sticker.top, width: sticker.width }}
     >
       <div
@@ -501,6 +473,6 @@ function EditableStickerItem({
           </>
         )}
       </div>
-    </DocumentOverlayItem>
+    </OverlayItem>
   );
 }

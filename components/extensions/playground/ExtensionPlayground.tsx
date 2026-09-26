@@ -12,6 +12,11 @@ import {
   type ReactNode,
 } from "react";
 
+import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
+import {
+  ExtensionOverlayLayer,
+  ExtensionOverlaySurface,
+} from "@/components/extensions/ExtensionOverlays";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { createLiveBlockDecorationExtension } from "@/components/markdown/live-blocks";
 import { extensionManifests } from "@/extensions/manifests";
@@ -23,6 +28,7 @@ import type {
   ExtensionSettingsField,
   ExtensionStateRow,
   ExtensionSurface,
+  PickedAsset,
 } from "@/lib/extension-api";
 import {
   ExtensionStateStoreProvider,
@@ -252,12 +258,19 @@ function FixtureView({
         </Pane>
         <Pane title="Read" detail="Workspace read view: blocks are read-only here.">
           <ExtensionStateStoreProvider value={store}>
-            <MarkdownDocument markdown={markdown} contained={false} extensions={surfaces.read} />
+            <ExtensionOverlaySurface extensions={surfaces.read}>
+              <MarkdownDocument markdown={markdown} contained={false} extensions={surfaces.read} />
+            </ExtensionOverlaySurface>
           </ExtensionStateStoreProvider>
         </Pane>
-        <Pane title="Public" detail="Anonymous reader of a published page: public state only.">
+        <Pane
+          title="Public"
+          detail="Anonymous reader of a published page: public state only. Data a real page gets from the server (loadRenderData) is absent here."
+        >
           <ExtensionStateStoreProvider value={publicStore}>
-            <MarkdownDocument markdown={markdown} contained={false} extensions={surfaces.public} />
+            <ExtensionOverlaySurface extensions={surfaces.public}>
+              <MarkdownDocument markdown={markdown} contained={false} extensions={surfaces.public} />
+            </ExtensionOverlaySurface>
           </ExtensionStateStoreProvider>
         </Pane>
         <Pane
@@ -265,7 +278,9 @@ function FixtureView({
           detail="A reader who has not enabled it: content still renders, settings are defaults."
         >
           <ExtensionStateStoreProvider value={store}>
-            <MarkdownDocument markdown={markdown} contained={false} extensions={surfaces.disabled} />
+            <ExtensionOverlaySurface extensions={surfaces.disabled}>
+              <MarkdownDocument markdown={markdown} contained={false} extensions={surfaces.disabled} />
+            </ExtensionOverlaySurface>
           </ExtensionStateStoreProvider>
         </Pane>
       </div>
@@ -360,11 +375,16 @@ function LiveEditor({
               onClick={() => {
                 const view = viewRef.current;
                 if (!view || !editorModule) return;
-                runExtensionCommand(editorModule.commands[commandId], view, {
-                  extensionId: editorModule.manifestId,
-                  documentId: PLAYGROUND_DOCUMENT_ID,
-                  settings,
-                });
+                runExtensionCommand(
+                  editorModule.commands[commandId],
+                  view,
+                  {
+                    extensionId: editorModule.manifestId,
+                    documentId: PLAYGROUND_DOCUMENT_ID,
+                    settings,
+                  },
+                  { pickAsset: promptForAsset },
+                );
               }}
             >
               {commandId}
@@ -372,9 +392,36 @@ function LiveEditor({
           ))}
         </div>
       ) : null}
-      <div ref={hostRef} className="vault-markdown-editor vault-markdown-editor-live min-h-40" />
+      <ExtensionStateStoreProvider value={store}>
+        <DocumentOverlayHost
+          documentId={PLAYGROUND_DOCUMENT_ID}
+          overlays={
+            <ExtensionOverlayLayer
+              extensions={extensions}
+              links={{}}
+              editorModules={editorModule ? [editorModule] : []}
+            />
+          }
+        >
+          <div ref={hostRef} className="vault-markdown-editor vault-markdown-editor-live min-h-40" />
+        </DocumentOverlayHost>
+      </ExtensionStateStoreProvider>
     </div>
   );
+}
+
+/**
+ * The playground has no asset library picker; ask for an asset id instead, so
+ * commands that pick an asset still run end to end. An id from your own
+ * library also shows its image.
+ */
+async function promptForAsset(options: {
+  kinds: ReadonlyArray<"image" | "pdf">;
+  title?: string;
+}): Promise<PickedAsset | null> {
+  const id = window.prompt(`${options.title ?? "Pick an asset"}: asset id`)?.trim();
+  if (!id) return null;
+  return { id, kind: options.kinds[0] ?? "image", displayName: id, mimeType: "" };
 }
 
 function SettingsPanel({
