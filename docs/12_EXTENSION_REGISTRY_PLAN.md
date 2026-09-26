@@ -1,5 +1,10 @@
 # Vault Extension Registry Plan
 
+> **2026-09-26:** `docs/23_EXTENSION_SDK_PLAN.md` proposes replacing §4's
+> `VaultExtension` shape and §10's slices with a containerized extension SDK
+> (manifest / render / editor / server modules, lazy loading). §3's storage model
+> stands. Until that plan is settled, this document still describes the code.
+
 ## 1. Goal
 
 Vault should support rich, optional features without turning the core editor into
