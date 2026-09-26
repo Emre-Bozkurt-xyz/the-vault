@@ -1,0 +1,23 @@
+{
+  "calendar:sprint": {
+    "visibility": "public",
+    "state": {
+      "expanded": false,
+      "entries": {
+        "e1": { "type": "task", "day": "@today", "text": "Write the **release notes**", "done": false, "order": 0 },
+        "e2": { "type": "task", "day": "@today", "text": "Review [[Roadmap]]", "done": true, "order": 1 },
+        "e3": { "type": "event", "day": "@today+2", "time": "10:30", "text": "Sprint demo", "order": 0 },
+        "e4": { "type": "event", "day": "@today-3", "text": "Retro", "note": "Bring the metrics.", "order": 0 }
+      }
+    }
+  },
+  "calendar:personal": {
+    "visibility": "private",
+    "state": {
+      "expanded": false,
+      "entries": {
+        "p1": { "type": "task", "day": "@today+1", "text": "Dentist", "order": 0 }
+      }
+    }
+  }
+}

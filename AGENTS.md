@@ -114,6 +114,7 @@ Feature-area plans — read the one that matches what you are touching:
 | Definition authoring and previews | `21_DEFINITION_AUTHORING_AND_PREVIEWS_PLAN.md` |
 | Code highlighting, formatting, and execution | `22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` |
 | Extension SDK, host, and lazy loading | `23_EXTENSION_SDK_PLAN.md` |
+| Writing or changing one extension | `../extensions/README.md` (and the `create-extension` skill) |
 
 Standing contracts, read when the change touches them:
 

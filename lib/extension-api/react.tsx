@@ -8,7 +8,13 @@
  * extension's state or actions. That is API hygiene, not a security boundary
  * (plan §3 principle 8); the server re-checks everything.
  */
-import { useCallback, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import type { ZodType } from "zod";
 
 import { useDocumentExtensionState } from "@/components/extensions/use-document-extension-state";
@@ -16,6 +22,7 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import type {
   ExtensionLinks,
   ExtensionRenderContext,
+  ExtensionStateRow,
   ExtensionStateValue,
   ExtensionStateVisibility,
 } from "@/lib/extension-api";
@@ -82,6 +89,29 @@ export function ExtensionMarkdown({
 }
 
 /**
+ * An in-memory stand-in for the server's extension state, for documents that
+ * do not exist in the database (the extension playground, tests). Provide one
+ * with {@link ExtensionStateStoreProvider} and `useExtensionState` reads and
+ * writes it instead of calling the server.
+ */
+export type ExtensionStateStore = {
+  get: (extensionId: string, stateKey: string) => ExtensionStateRow | undefined;
+  set: (
+    extensionId: string,
+    stateKey: string,
+    state: ExtensionStateValue,
+    visibility: ExtensionStateVisibility,
+  ) => void;
+  subscribe: (listener: () => void) => () => void;
+};
+
+const ExtensionStateStoreContext = createContext<ExtensionStateStore | null>(null);
+
+export const ExtensionStateStoreProvider = ExtensionStateStoreContext.Provider;
+
+const noSubscription = () => () => undefined;
+
+/**
  * One of this extension's state rows on the current document.
  *
  * A read-only view starts from the page's prefetched row (no fetch). An
@@ -103,6 +133,13 @@ export function useExtensionState<T extends StateObject>(
     version?: number;
   },
 ) {
+  const store = useContext(ExtensionStateStoreContext);
+  const storeRow = useSyncExternalStore(
+    store?.subscribe ?? noSubscription,
+    () => (store && stateKey ? store.get(ctx.extensionId, stateKey) : undefined),
+    () => (store && stateKey ? store.get(ctx.extensionId, stateKey) : undefined),
+  );
+
   const prefetched = stateKey ? ctx.state[stateKey] : undefined;
   const seed = ctx.canEdit ? undefined : prefetched;
   const initialState = useMemo(
@@ -129,23 +166,37 @@ export function useExtensionState<T extends StateObject>(
     visibility: prefetched?.visibility ?? options.visibility ?? "private",
     // No document or no key: nothing to load or save. Public surfaces render
     // only from the prefetched row; their visitors cannot call the state action.
+    // With an in-memory store there is no server to talk to.
     disabled:
+      Boolean(store) ||
       !ctx.documentId ||
       !stateKey ||
       (ctx.surface !== "workspace" && !initialState),
   });
 
+  const raw = store ? (storeRow?.state ?? null) : state;
   const { schema } = options;
   const value = useMemo(() => {
-    const parsed = schema.safeParse(state ?? {});
+    const parsed = schema.safeParse(raw ?? {});
     return parsed.success ? parsed.data : null;
-  }, [schema, state]);
+  }, [schema, raw]);
 
+  const createVisibility = options.visibility ?? "private";
   const set = useCallback(
     (next: T) => {
-      if (ctx.canEdit) setState(next);
+      if (!ctx.canEdit) return;
+      if (store && stateKey) {
+        store.set(
+          ctx.extensionId,
+          stateKey,
+          next,
+          storeRow?.visibility ?? createVisibility,
+        );
+        return;
+      }
+      setState(next);
     },
-    [ctx.canEdit, setState],
+    [ctx.canEdit, ctx.extensionId, createVisibility, setState, stateKey, store, storeRow],
   );
 
   return { value, set, status, error };

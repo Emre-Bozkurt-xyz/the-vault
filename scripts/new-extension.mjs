@@ -108,6 +108,14 @@ export default function ${pascal}Block({ ctx, attributes }: BlockProps) {
 `;
 }
 
+// One fixture, so the extension shows up in the playground straight away.
+files["fixtures/basic.md"] = `# ${title}
+
+${want.render ? `A block rendered by this extension:
+
+:::${name}{id=demo}
+` : "TODO: a document that exercises this extension."}`;
+
 if (want.editor) {
   const inserted = want.render ? `:::${name}` : title;
   files["editor.tsx"] = `import { Puzzle } from "lucide-react";
@@ -156,8 +164,8 @@ export default defineServer(manifest, {
 `;
 }
 
-fs.mkdirSync(dir, { recursive: true });
 for (const [file, contents] of Object.entries(files)) {
+  fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
   fs.writeFileSync(path.join(dir, file), contents);
   console.log(`created extensions/${name}/${file}`);
 }
@@ -168,6 +176,6 @@ execFileSync(process.execPath, [path.join(root, "scripts", "generate-extension-r
 
 console.log(`
 Next:
-  - replace the TODOs, then \`npm test -- extensions\` (the contract test covers it)
-  - style it in app/styles and follow docs/CSS_CONTRACT.md
-  - enable it in Settings → Extensions to try the editor side`);
+  - read extensions/README.md, replace the TODOs, then \`npm test -- extensions\`
+  - see it at /dev/extensions/${id} (npm run dev), fixtures in extensions/${name}/fixtures/
+  - style it in app/styles and follow docs/CSS_CONTRACT.md`);

@@ -36,6 +36,10 @@ import {
   createRenderContext,
   type DocumentExtensions,
 } from "@/lib/extension-api";
+import {
+  ExtensionStateStoreProvider,
+  type ExtensionStateStore,
+} from "@/lib/extension-api/react";
 import { parseExtensionBlockLine } from "@/lib/extension-host/blocks";
 import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type {
@@ -139,6 +143,12 @@ export type LiveBlockOptions = {
    * editor), blocks render document-less and read-only.
    */
   extensions?: DocumentExtensions | null;
+  /**
+   * An in-memory state store for extension widgets (the extension playground).
+   * Widgets mount in their own React roots, which do not inherit context, so
+   * the engine provides it to each root itself.
+   */
+  extensionStateStore?: ExtensionStateStore | null;
 };
 type LiveBlockWidgetOptions = LiveBlockOptions & LiveBlockWidgetContext;
 
@@ -814,6 +824,7 @@ class ExtensionBlockWidget extends WidgetType {
       widget.block.source === this.block.source &&
       widget.block.extensionId === this.block.extensionId &&
       widget.options.extensions === this.options.extensions &&
+      widget.options.extensionStateStore === this.options.extensionStateStore &&
       widget.options.assetLinks === this.options.assetLinks &&
       widget.options.wikiLinks === this.options.wikiLinks
     );
@@ -826,8 +837,7 @@ class ExtensionBlockWidget extends WidgetType {
     applyStableBlockWidgetSpacing(container);
 
     this.root = createRoot(container);
-    this.root.render(
-      createElement(ExtensionBlockHost, {
+    const host = createElement(ExtensionBlockHost, {
         // Live mode is where blocks are edited, so the widget carries the
         // page's own `canEdit` (Read mode always renders them read-only).
         ctx: createRenderContext(this.options.extensions, this.block.extensionId),
@@ -838,7 +848,10 @@ class ExtensionBlockWidget extends WidgetType {
           wikiLinks: this.options.wikiLinks,
           assetLinks: this.options.assetLinks,
         },
-      }),
+      });
+    const store = this.options.extensionStateStore;
+    this.root.render(
+      store ? createElement(ExtensionStateStoreProvider, { value: store }, host) : host,
     );
 
     return container;

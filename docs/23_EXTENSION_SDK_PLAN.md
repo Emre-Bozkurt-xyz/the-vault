@@ -618,9 +618,9 @@ treated its reading preference.
 **Slice 3 — Calendar end to end.** Done 2026-09-26. Host block engine (Read
 segmentation and Live widget), manifest-driven toolbar/slash/commands,
 per-extension error isolation (§18.5), `npm run ext:new` (§18.1), and the test
-helpers (§18.4). Still to do before slice 4: the playground and fixtures
-(§18.3), the author guide and the `create-extension` skill (§18.8), written
-against the migrated calendar. As built:
+helpers (§18.4). The playground and fixtures (§18.3), the author guide and
+the `create-extension` skill (§18.8) followed on 2026-09-26; see §18.9. As
+built:
 
 - `extensions/calendar/` now holds everything: `manifest.ts`, `render.tsx`
   (one leaf block, `load: () => import("./CalendarBlock")`), `editor.tsx` (the
@@ -757,7 +757,31 @@ Settled 2026-09-26.
 
 ## 18. Authoring Experience
 
-Settled 2026-09-26. The people writing extensions are mostly the maintainer and
+Settled 2026-09-26. Status: 18.1-18.5 and 18.8 are built; 18.6 (debug panel)
+and 18.7 (migrations) wait until needed. As built after slice 3:
+
+- **Playground**: `app/dev/extensions` (index) and `app/dev/extensions/[id]`,
+  404 in production. `components/extensions/playground/ExtensionPlayground.tsx`
+  renders each fixture as Live (a CodeMirror view running the host's
+  live-block engine, with a button per editor command), Read, Public and
+  Extension disabled, all from one in-memory state store, so an edit in Live
+  shows everywhere and the public pane shows only public rows. The settings
+  panel is generated from the manifest and reconfigures the Live view through
+  a compartment, never recreating it. The playground renders client-only
+  (see project-knowledge §16, heading ids).
+- **State store seam**: `ExtensionStateStoreProvider` in
+  `@/lib/extension-api/react`; `useExtensionState` uses a provided store instead
+  of server actions, and `LiveBlockOptions.extensionStateStore` provides it to
+  Live widgets, whose React roots do not inherit context.
+- **Fixtures**: `lib/extension-host/fixtures.ts` (`@today±N` tokens) and
+  `fixtures.server.ts`; the contract test validates fixture state against the
+  extension's state schemas. Calendar ships `fixtures/basic.md`.
+- **Docs**: `extensions/README.md` (the author guide) and
+  `.agents/skills/create-extension/SKILL.md` (the process), indexed in
+  `.agents/SKILLS.md` and mapped in `AGENTS.md`. `ext:new` now also writes a
+  fixture.
+
+The people writing extensions are mostly the maintainer and
 coding agents, so the aim is that the right thing is the default and a mistake
 fails loudly and early. Final verification still happens by hand in
 production, after dev testing; nothing here replaces that.
@@ -846,5 +870,5 @@ Built the first time a shipped shape changes.
 |---|---|
 | Slice 1 | generated registries, typed `define*` for manifest and server, contract test |
 | Slice 3 | `ext:new`, typed render/editor, test helpers, error isolation |
-| After slice 3 | playground and fixtures, author guide, skill |
+| After slice 3 | playground and fixtures, author guide, skill (done 2026-09-26) |
 | When first needed | debug panel, migrations, per-extension size budgets |

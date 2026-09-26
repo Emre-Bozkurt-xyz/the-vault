@@ -9,6 +9,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { assertManifest } from "@/lib/extension-api";
+import { parseFixtureState } from "@/lib/extension-host/fixtures";
 import { toVaultExtension } from "@/lib/extension-host/compat";
 import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import {
@@ -181,6 +182,34 @@ describe("every extension", () => {
           expect(rendered).toContain(name);
         }
       });
+
+      // Fixtures feed the playground (plan §18.3); a broken one should fail
+      // here, not there.
+      const fixturesDir = path.join(extensionsDir, folder.folder, "fixtures");
+      if (fs.existsSync(fixturesDir)) {
+        it("has fixture state that matches its declared state schemas", () => {
+          const declarations = serverExtensions[index].server?.state ?? [];
+          for (const file of fs.readdirSync(fixturesDir)) {
+            if (!file.endsWith(".state.json")) continue;
+            expect(
+              fs.existsSync(path.join(fixturesDir, file.replace(/\.state\.json$/, ".md"))),
+              `${file} has no matching .md fixture`,
+            ).toBe(true);
+
+            const rows = parseFixtureState(
+              fs.readFileSync(path.join(fixturesDir, file), "utf8"),
+            );
+            for (const [stateKey, row] of Object.entries(rows)) {
+              const declaration =
+                declarations.find((candidate) => candidate.key === stateKey) ??
+                declarations.find((candidate) => candidate.key === undefined);
+              expect(declaration, `${file}: no state schema covers "${stateKey}"`).toBeDefined();
+              const parsed = declaration!.schema.safeParse(row.state);
+              expect(parsed.success, `${file}: "${stateKey}" ${parsed.error?.message ?? ""}`).toBe(true);
+            }
+          }
+        });
+      }
 
       const client = clientExtensions[index];
       if (client.editor) {
