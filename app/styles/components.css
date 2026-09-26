@@ -760,35 +760,46 @@
     gap: 0.75rem;
   }
 
-  /* A caption rather than a title bar: the language sits top-right, and a copy
-     button appears beside it while the block is hovered. Touch screens have
-     no hover, so there it is simply always shown. */
+  /* A caption rather than a title bar: the language sits top-right. */
   .vault-md-code-header {
     justify-content: flex-end;
-    gap: 0.4rem;
     min-height: 1.9rem;
-    padding: 0.3rem 0.5rem 0 1rem;
+    padding: 0.3rem 0.6rem 0 1rem;
   }
 
-  /* Copy buttons, Read and Live mode alike. */
+  /*
+   * Copy. A bare icon — no box, no border — in both modes.
+   *
+   * On a block, the language label and the copy icon share one spot: hovering
+   * the block swaps them, the label lifting out as the icon rises in. Read
+   * mode keys this off :hover; Live mode off `vault-cm-code-hovered`, a class
+   * on the fence's first line, because a block there is several line elements
+   * and has no single element to hover.
+   */
+  .vault-md-code-badge,
+  .vault-markdown-editor .cm-line .vault-cm-code-header {
+    display: grid;
+    align-items: center;
+    justify-items: end;
+  }
+  /* The label is never a click target; it must not sit on top of the icon. */
+  .vault-md-code-badge > .vault-code-language { pointer-events: none; user-select: none; }
+  .vault-md-code-badge > *,
+  .vault-cm-code-header > * {
+    grid-area: 1 / 1;
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
   .vault-md-code-copy,
   .vault-cm-code-copy,
   .vault-md-inline-copy,
   .vault-cm-inline-copy-button {
-    display: grid;
-    place-items: center;
     padding: 0;
-    border: 1px solid var(--vault-code-edge, var(--border));
-    border-radius: 0.375rem;
-    background: var(--background);
+    border: 0;
+    background: transparent;
     color: var(--muted-foreground);
     cursor: pointer;
-    transition: opacity 120ms ease, color 120ms ease;
   }
-  .vault-md-code-copy,
-  .vault-cm-code-copy { width: 1.6rem; height: 1.6rem; }
-  .vault-md-code-copy svg,
-  .vault-cm-code-copy svg { width: 0.85rem; height: 0.85rem; }
   .vault-md-code-copy:hover,
   .vault-cm-code-copy:hover,
   .vault-md-inline-copy:hover,
@@ -797,57 +808,115 @@
   .vault-cm-code-copy[data-copied],
   .vault-md-inline-copy[data-copied],
   .vault-cm-inline-copy-button[data-copied] { color: var(--code-string); }
+  .vault-md-code-copy[data-copied] svg,
+  .vault-cm-code-copy[data-copied] svg,
+  .vault-md-inline-copy[data-copied] svg,
+  .vault-cm-inline-copy-button[data-copied] svg { animation: vault-copy-pop 280ms ease; }
   .vault-md-code-copy:focus-visible,
   .vault-cm-code-copy:focus-visible,
   .vault-md-inline-copy:focus-visible,
-  .vault-cm-inline-copy-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .vault-cm-inline-copy-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-radius: 0.25rem; }
 
-  .vault-md-code-copy { opacity: 0; }
+  .vault-md-code-copy,
+  .vault-cm-code-copy {
+    display: grid;
+    place-items: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    opacity: 0;
+    transform: translateY(0.3rem);
+    pointer-events: none;
+  }
+  .vault-md-code-copy svg,
+  .vault-cm-code-copy svg { width: 0.9rem; height: 0.9rem; }
+
+  .vault-md-code-block:hover .vault-md-code-badge > .vault-code-language,
+  .vault-md-code-block:focus-within .vault-md-code-badge > .vault-code-language,
+  .vault-markdown-editor .cm-line.vault-cm-code-hovered .vault-cm-code-label {
+    opacity: 0;
+    transform: translateY(-0.3rem);
+  }
   .vault-md-code-block:hover .vault-md-code-copy,
   .vault-md-code-copy:focus-visible,
-  .vault-md-code-copy[data-copied] { opacity: 1; }
+  .vault-md-code-copy[data-copied],
+  .vault-markdown-editor .cm-line.vault-cm-code-hovered .vault-cm-code-copy,
+  .vault-cm-code-copy[data-copied] {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+  /* No hover on touch screens: show the icon there instead of the label. */
   @media (hover: none) {
-    .vault-md-code-copy { opacity: 1; }
+    .vault-md-code-badge > .vault-code-language { opacity: 0; }
+    .vault-md-code-copy { opacity: 1; transform: none; pointer-events: auto; }
   }
 
-  /* Inline code: a small button over the span's top-right corner. It overlaps
-     the code slightly so the pointer never crosses a gap that would end the
-     hover on its way to the button. */
-  .vault-md-inline-code { position: relative; }
+  /*
+   * Inline code: the icon sits inside the chip at its right end, over a
+   * gradient in the chip's own colour, so the code fades out beneath it
+   * rather than being cut off. The gradient needs a solid colour, which is the
+   * chip's translucent fill composited over the page background.
+   */
+  .vault-markdown,
+  .vault-markdown-editor {
+    --vault-inline-code-solid: color-mix(in oklab, var(--muted) 75%, var(--background));
+  }
+  code.vault-md-code,
+  .vault-markdown-editor-live .cm-content .vault-cm-preview-code { position: relative; }
+  .vault-md-pre code.vault-md-code { position: static; }
   .vault-md-inline-copy,
   .vault-cm-inline-copy-button {
     position: absolute;
-    z-index: 2;
-    width: 1.35rem;
-    height: 1.35rem;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    width: min(2rem, 100%);
+    padding-right: 0.28rem;
+    border-radius: 0 calc(0.3rem - 1px) calc(0.3rem - 1px) 0;
+    background: linear-gradient(to right, transparent, var(--vault-inline-code-solid) 55%);
   }
   .vault-md-inline-copy svg,
-  .vault-cm-inline-copy-button svg { width: 0.7rem; height: 0.7rem; }
+  .vault-cm-inline-copy-button svg { width: 0.75rem; height: 0.75rem; }
+  /* Read mode: always present once hydrated, faded in by hover. */
   .vault-md-inline-copy {
-    top: -1rem;
-    right: -0.55rem;
     opacity: 0;
     pointer-events: none;
+    transition: opacity 150ms ease;
   }
-  .vault-md-inline-code:hover .vault-md-inline-copy,
+  .vault-md-inline-copy svg { transform: translateX(0.2rem); transition: transform 150ms ease; }
+  code.vault-md-code:hover > .vault-md-inline-copy,
   .vault-md-inline-copy:focus-visible,
   .vault-md-inline-copy[data-copied] {
     opacity: 1;
     pointer-events: auto;
   }
-  /* Live mode draws the button only while hovered, from a zero-width anchor
-     placed straight after the span, so it never moves the text around it. */
-  .vault-cm-inline-copy {
-    position: relative;
-    display: inline-block;
-    width: 0;
-    height: 0;
-    vertical-align: top;
+  code.vault-md-code:hover > .vault-md-inline-copy svg { transform: none; }
+  /* Live mode: the button only exists while hovered, so it animates in on creation. */
+  .vault-cm-inline-copy-button { animation: vault-inline-copy-in 150ms ease both; }
+
+  @keyframes vault-inline-copy-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
-  .vault-cm-inline-copy-button {
-    top: -0.95rem;
-    left: -0.75rem;
+  @keyframes vault-copy-pop {
+    0% { transform: scale(0.6); }
+    60% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vault-md-code-badge > *,
+    .vault-cm-code-header > *,
+    .vault-md-inline-copy,
+    .vault-md-inline-copy svg { transition: none; }
+    .vault-cm-inline-copy-button,
+    .vault-md-code-copy[data-copied] svg,
+    .vault-cm-code-copy[data-copied] svg,
+    .vault-md-inline-copy[data-copied] svg,
+    .vault-cm-inline-copy-button[data-copied] svg { animation: none; }
   }
 
   .vault-code-language {
@@ -899,9 +968,6 @@
     top: 50%;
     right: 0.75rem;
     transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
   }
   .vault-markdown-editor .cm-line .vault-cm-code-label {
     color: var(--muted-foreground);

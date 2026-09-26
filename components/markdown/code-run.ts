@@ -752,24 +752,27 @@ function copyButton(className: string, label: string, read: () => string | null)
   return button;
 }
 
-/** Top-right of an idle block: the language, and a copy button while hovered. */
+/**
+ * Top-right of an idle block: the language label, with a copy button stacked
+ * in the same spot. Hovering the block swaps one for the other. The swap is a
+ * class on the fence's first line rather than a different widget, so this DOM
+ * outlives the hover and CSS can animate both directions.
+ */
 class FenceHeaderWidget extends WidgetType {
-  constructor(private label: string, private copy: boolean) {
+  constructor(private label: string) {
     super();
   }
 
   eq(other: FenceHeaderWidget) {
-    return other.label === this.label && other.copy === this.copy;
+    return other.label === this.label;
   }
 
   toDOM(view: EditorView) {
     const header = document.createElement("span");
     header.className = "vault-cm-code-header";
-    if (this.copy) {
-      header.append(copyButton("vault-cm-code-copy", "Copy code", () => {
-        return codeFenceAt(view.state, view.posAtDOM(header))?.source ?? null;
-      }));
-    }
+    header.append(copyButton("vault-cm-code-copy", "Copy code", () => {
+      return codeFenceAt(view.state, view.posAtDOM(header))?.source ?? null;
+    }));
     if (this.label) {
       const span = document.createElement("span");
       span.className = "vault-cm-code-label";
@@ -796,7 +799,11 @@ function inlineCodeText(state: EditorState, from: number, to: number): string | 
   return /^ .* $/s.test(inner) && inner.trim() ? inner.slice(1, -1) : inner;
 }
 
-/** A zero-width anchor after inline code, holding a copy button above its end. */
+/**
+ * Inline code's copy button. It is placed just before the closing backtick,
+ * which puts it inside the chip's mark element, so CSS can pin it to the
+ * chip's own right edge with a fade over the text beneath.
+ */
 class InlineCopyWidget extends WidgetType {
   constructor(private from: number, private to: number) {
     super();
@@ -807,13 +814,10 @@ class InlineCopyWidget extends WidgetType {
   }
 
   toDOM(view: EditorView) {
-    const anchor = document.createElement("span");
-    anchor.className = "vault-cm-inline-copy";
-    anchor.append(copyButton("vault-cm-inline-copy-button", "Copy inline code", () => {
+    return copyButton("vault-cm-inline-copy-button", "Copy inline code", () => {
       const hover = view.state.field(codeHoverField);
       return hover?.kind === "inline" ? inlineCodeText(view.state, hover.from, hover.to) : null;
-    }));
-    return anchor;
+    });
   }
 
   ignoreEvent() {
@@ -933,9 +937,13 @@ function chromeDecorations(state: EditorState): DecorationSet {
       const language = resolveCodeLanguage(fence.info);
       const opening = state.doc.lineAt(fence.from);
       const label = language?.label ?? codeLanguageHint(fence.info).slice(0, 24);
-      const copy = hover?.kind === "fence" && hover.from === fence.from && !!fence.source;
-      if (label || copy) {
-        widgets.push(Decoration.widget({ widget: new FenceHeaderWidget(label, copy), side: 1 }).range(opening.to));
+      if (fence.source) {
+        widgets.push(Decoration.widget({ widget: new FenceHeaderWidget(label), side: 1 }).range(opening.to));
+        if (hover?.kind === "fence" && hover.from === fence.from) {
+          widgets.push(Decoration.line({ class: "vault-cm-code-hovered" }).range(opening.from));
+        }
+      } else if (label) {
+        widgets.push(Decoration.widget({ widget: new FenceHeaderWidget(label), side: 1 }).range(opening.to));
       }
 
       const runnable = capabilities?.enabled
@@ -953,8 +961,16 @@ function chromeDecorations(state: EditorState): DecorationSet {
       return false;
     },
   });
-  if (hover?.kind === "inline" && hover.to <= state.doc.length && inlineCodeText(state, hover.from, hover.to)) {
-    widgets.push(Decoration.widget({ widget: new InlineCopyWidget(hover.from, hover.to), side: 1 }).range(hover.to));
+  // Only a single-backtick span the cursor is not in: that is the form Live
+  // mode draws as a chip, and the button needs the chip to sit inside.
+  if (
+    hover?.kind === "inline"
+    && hover.to <= state.doc.length
+    && (head < hover.from || head > hover.to)
+    && state.sliceDoc(hover.from, hover.from + 2).match(/^`[^`]/)
+    && inlineCodeText(state, hover.from, hover.to)
+  ) {
+    widgets.push(Decoration.widget({ widget: new InlineCopyWidget(hover.from, hover.to), side: -1 }).range(hover.to - 1));
   }
   return Decoration.set(widgets, true);
 }

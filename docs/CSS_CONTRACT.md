@@ -160,7 +160,8 @@ Fenced code. See `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md`.
 | `.vault-md-code-block` | wrapper around the header and `<pre>` |
 | `.vault-md-code-header` | header strip holding the label and Copy |
 | `.vault-md-code-copy` | the block's copy button (hidden until hover; hydrated pages only) |
-| `.vault-md-inline-code` / `.vault-md-inline-copy` | wrapper and copy button around inline code, **hydrated pages only** — static embeds render a bare `.vault-md-code` |
+| `.vault-md-code-badge` | the spot shared by the language label and the copy button |
+| `.vault-md-inline-copy` | inline code's copy button, rendered **inside** the `<code>` on hydrated pages only — static embeds render a bare `.vault-md-code` |
 | `.vault-code-language` | the language label |
 
 `.vault-md-pre` and `.vault-md-code` keep their existing meaning and still sit

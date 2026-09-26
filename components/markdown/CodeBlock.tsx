@@ -52,9 +52,13 @@ export function CodeBlock({ children, source, info, className, style }: {
   return (
     <div className="vault-md-code-block">
       <div className="vault-md-code-header">
-        {/* The fence body ends in a newline; Live mode copies without it, and so does this. */}
-        {interactive ? <CopyButton read={() => source.replace(/\n$/, "")} className="vault-md-code-copy" label="Copy code" /> : null}
-        <span className="vault-code-language">{codeLanguageLabel(info)}</span>
+        {/* The label and the copy button share one spot; hovering the block
+            swaps them (CSS). The fence body ends in a newline, which Live mode
+            leaves out of a copy, and so does this. */}
+        <span className="vault-md-code-badge">
+          <span className="vault-code-language">{codeLanguageLabel(info)}</span>
+          {interactive ? <CopyButton read={() => source.replace(/\n$/, "")} className="vault-md-code-copy" label="Copy code" /> : null}
+        </span>
       </div>
       <pre className={className} style={style}>{children}</pre>
     </div>
@@ -62,9 +66,11 @@ export function CodeBlock({ children, source, info, className, style }: {
 }
 
 /**
- * Inline code with a copy button that appears over its end on hover. Before
- * hydration — and forever, in the static embed — it is exactly the `<code>`
- * it always was.
+ * Inline code with a copy button that fades in over its right end on hover.
+ * The button sits inside the `<code>` — it has no text, so `textContent` is
+ * still just the code — which keeps the element structure snippets target.
+ * Before hydration, and forever in the static embed, it is exactly the
+ * `<code>` it always was.
  */
 export function InlineCode({ children, className, style }: {
   children: ReactNode;
@@ -81,9 +87,9 @@ export function InlineCode({ children, className, style }: {
   }, [interactive]);
   if (!interactive) return <code className={className} style={style}>{children}</code>;
   return (
-    <span className="vault-md-inline-code">
-      <code ref={ref} className={className} style={style}>{children}</code>
+    <code ref={ref} className={className} style={style}>
+      {children}
       {nested ? null : <CopyButton read={() => ref.current?.textContent ?? ""} className="vault-md-inline-copy" label="Copy inline code" />}
-    </span>
+    </code>
   );
 }
