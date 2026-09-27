@@ -4,6 +4,7 @@ import { WorkspaceHistoryRestore } from "@/components/workspace/WorkspaceHistory
 import { buildPreferences } from "@/lib/settings/preferences";
 import { resolveKeybindings } from "@/lib/shortcuts/resolve";
 import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
+import { getCspNonce } from "@/lib/security/nonce";
 import { listUserSettings } from "@/server/user-settings";
 import { getWorkspaceData } from "@/server/workspace";
 import type { ReactNode } from "react";
@@ -34,11 +35,14 @@ export default async function WorkspaceLayout({
   const workspace = await getWorkspaceData();
   const userSettings = await listUserSettings({ userId: workspace.profile.id });
   const preferences = buildPreferences(userSettings);
+  // The theme script runs before hydration, so it needs the request's CSP nonce.
+  const nonce = await getCspNonce();
 
   return (
     <>
       <WorkspaceHistoryRestore />
       <script
+        nonce={nonce}
         dangerouslySetInnerHTML={{
           __html: workspaceThemeScript(preferences.appearance.themeId),
         }}
