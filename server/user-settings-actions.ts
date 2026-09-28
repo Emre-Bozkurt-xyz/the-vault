@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import {
+  getExtensionManifest,
   getInstalledExtensionIds,
-  manifestRegistry,
 } from "@/lib/extension-host/manifests";
 import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
 import { isShortcutId } from "@/lib/shortcuts/registry";
@@ -234,7 +234,7 @@ export async function saveAdvancedSettingsAction(input: unknown) {
 export async function resetUserExtensionSettingsAction(formData: FormData) {
   const user = await requireActiveUser();
   const extensionId = extensionIdSchema.parse(formData.get("extensionId"));
-  const extension = manifestRegistry.getExtension(extensionId);
+  const extension = getExtensionManifest(extensionId);
 
   if (!extension) {
     throw new Error("Unknown extension id.");
@@ -266,7 +266,7 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
       settings: z.record(z.string(), z.unknown()),
     })
     .parse(input);
-  const extension = manifestRegistry.getExtension(parsed.extensionId);
+  const extension = getExtensionManifest(parsed.extensionId);
 
   if (!extension) {
     throw new Error("Unknown extension id.");
@@ -312,8 +312,7 @@ function validateExtensionSettings(
   extensionId: string,
   settings: Record<string, unknown>,
 ) {
-  const extensionSettings =
-    manifestRegistry.getExtensionSettingsSchema(extensionId);
+  const extensionSettings = getExtensionManifest(extensionId)?.settings;
 
   if (!extensionSettings?.schema) {
     return settings;

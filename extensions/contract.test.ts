@@ -10,8 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { assertManifest } from "@/lib/extension-api";
 import { parseFixtureState } from "@/lib/extension-host/fixtures";
-import { toVaultExtension } from "@/lib/extension-host/compat";
-import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
+import { assertAgentActionInvariants } from "@/lib/extension-host/server";
 import {
   scanExtensions,
   staleRegistryFiles,
@@ -98,14 +97,8 @@ describe("every extension", () => {
     expect(new Set(claims).size).toBe(claims.length);
   });
 
-  it("builds a valid registry with its server module", () => {
-    expect(() =>
-      createVaultExtensionRegistry(
-        serverExtensions.map(({ manifest, server }) =>
-          toVaultExtension(manifest, server),
-        ),
-      ),
-    ).not.toThrow();
+  it("keeps every agent action unique, namespaced and within its permissions", () => {
+    expect(() => assertAgentActionInvariants(serverExtensions)).not.toThrow();
   });
 
   for (const [index, manifest] of extensionManifests.entries()) {

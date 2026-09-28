@@ -1,20 +1,43 @@
 import { extensionManifests } from "@/extensions/manifests";
-import { toVaultExtension } from "@/lib/extension-host/compat";
-import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
+import type {
+  ExtensionManifest,
+  SlashCommandContribution,
+} from "@/lib/extension-api";
 
 /**
- * Manifest-only view of the installed extensions: safe to import from client
- * code because it carries no server modules (agent handlers stay in
- * `lib/extension-host/server.ts`). Replaced the client uses of the old
- * `lib/extensions/catalog.ts`.
+ * The installed extensions' manifests, for code that needs what extensions
+ * *are* rather than what they do (`docs/23_EXTENSION_SDK_PLAN.md` §5): settings
+ * schemas, slash items, ids. Client-safe: manifests carry no server code (agent
+ * handlers stay in `lib/extension-host/server.ts`). Ordered by id.
  */
-export const manifestExtensions = extensionManifests.map((manifest) =>
-  toVaultExtension(manifest),
+export const installedManifests: readonly ExtensionManifest[] = [...extensionManifests].sort(
+  (a, b) => a.id.localeCompare(b.id),
 );
 
-export const manifestRegistry = createVaultExtensionRegistry(manifestExtensions);
+const byId = new Map(installedManifests.map((manifest) => [manifest.id, manifest]));
 
-/** Ids of every installed extension, in registry order. */
+/** Ids of every installed extension, in id order. */
 export function getInstalledExtensionIds(): string[] {
-  return manifestRegistry.getExtensions().map((extension) => extension.id);
+  return installedManifests.map((manifest) => manifest.id);
+}
+
+export function getExtensionManifest(extensionId: string): ExtensionManifest | null {
+  return byId.get(extensionId) ?? null;
+}
+
+/** A slash item with the extension that contributes it. */
+export type SlashCommandContributionEntry = SlashCommandContribution & {
+  sourceExtensionId: string;
+  sourceExtensionName: string;
+};
+
+/** Every installed extension's slash items; the editor filters by enablement. */
+export function getSlashCommandContributions(): SlashCommandContributionEntry[] {
+  return installedManifests.flatMap((manifest) =>
+    (manifest.slashCommands ?? []).map((contribution) => ({
+      ...contribution,
+      sourceExtensionId: manifest.id,
+      sourceExtensionName: manifest.name,
+    })),
+  );
 }

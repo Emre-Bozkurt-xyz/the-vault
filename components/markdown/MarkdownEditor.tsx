@@ -141,7 +141,7 @@ import {
   insertInline,
   runExtensionCommand,
 } from "@/lib/extension-host/editor-handle";
-import { manifestRegistry } from "@/lib/extension-host/manifests";
+import { getSlashCommandContributions } from "@/lib/extension-host/manifests";
 import {
   formatTagInput,
   parseDocumentMetadata,
@@ -507,7 +507,7 @@ export function MarkdownEditor({
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
     () =>
       toExtensionSlashCommands(
-        manifestRegistry.getSlashCommandContributions(),
+        getSlashCommandContributions(),
         enabledExtensionKey ? enabledExtensionKey.split("|") : [],
       ),
     [enabledExtensionKey],

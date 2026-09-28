@@ -4,7 +4,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 
-import { manifestRegistry } from "@/lib/extension-host/manifests";
+import { getSlashCommandContributions } from "@/lib/extension-host/manifests";
 
 import {
   createDirectiveCompletionSource,
@@ -312,7 +312,7 @@ describe("extension slash commands", () => {
 
 describe("registry slash contributions", () => {
   it("exposes the calendar contribution tagged with its source extension", () => {
-    const contributions = manifestRegistry.getSlashCommandContributions();
+    const contributions = getSlashCommandContributions();
     const calendar = contributions.find(
       (contribution) => contribution.id === "vault.calendar.slash",
     );
@@ -329,9 +329,7 @@ describe("registry slash contributions", () => {
     // The `:::` menu is built from this field alone, so a missing declaration is
     // an item silently absent from a menu rather than a type error.
     const byId = new Map(
-      manifestRegistry
-        .getSlashCommandContributions()
-        .map((contribution) => [contribution.id, contribution]),
+      getSlashCommandContributions().map((contribution) => [contribution.id, contribution]),
     );
 
     expect(byId.get("vault.calc.slash-block")?.directive).toBe("calc");
@@ -472,7 +470,7 @@ describe("directive completion source", () => {
  * the step the other tests skip.
  */
 describe("registry contributions reaching the menu", () => {
-  const contributions = manifestRegistry.getSlashCommandContributions();
+  const contributions = getSlashCommandContributions();
 
   it("carries a run contribution through the mapping intact", () => {
     const commands = toExtensionSlashCommands(contributions, ["vault.dictionary"]);

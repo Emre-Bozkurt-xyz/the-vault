@@ -19,7 +19,7 @@ import {
 } from "@/components/settings/settings-pages";
 import { SnippetsSettingsSection } from "@/components/settings/SnippetsSettingsSection";
 import { getInstalledExtensionIds } from "@/lib/extension-host/manifests";
-import { installedExtensions } from "@/lib/extension-host/server";
+import { serverExtensionEntries } from "@/lib/extension-host/server";
 import { buildPreferences } from "@/lib/settings/preferences";
 import { listOwnedFolderOptionsForUser } from "@/server/extension-documents";
 import { listConnectedAuthProviders } from "@/server/profile";
@@ -74,7 +74,9 @@ export async function buildSettingsPages(input: {
   const storedByExtension = new Map(
     userExtensionSettings.map((setting) => [setting.extensionId, setting]),
   );
-  const configurableExtensions = installedExtensions.filter(
+  const configurableExtensions = serverExtensionEntries
+    .map(({ manifest }) => manifest)
+    .filter(
     (extension) =>
       (storedByExtension.get(extension.id)?.enabled ??
         extension.defaultEnabled ??
@@ -197,7 +199,7 @@ export async function buildSettingsPages(input: {
       group: "extensions",
       content: (
         <ExtensionBrowserSection
-          extensions={installedExtensions}
+          extensions={serverExtensionEntries}
           userSettings={userExtensionSettings}
         />
       ),

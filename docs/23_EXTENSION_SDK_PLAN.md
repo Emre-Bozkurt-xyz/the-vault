@@ -1,6 +1,6 @@
 # Extension SDK and Host Plan
 
-Status as of 2026-09-26: **API settled; slices 0-4 implemented.** Slice 3
+Status as of 2026-09-28: **complete; slices 0-7 implemented.** Slice 3
 revised two parts of the design; see "Amendments from slice 3" at the end of §14. §16 records the
 decisions; §18 covers tooling for extension developers. This plan supersedes the registry shape in
 `docs/12_EXTENSION_REGISTRY_PLAN.md` §4 and §10 and the "Future Verified Extensions" note in
@@ -559,8 +559,8 @@ types and `define*` helpers, the generated registry files (§18.1), the lint
 rules with an allowlist, and the contract test (§18.4). As built:
 `lib/extensions/catalog.ts` is gone; each extension has `manifest.ts`,
 `server.ts` and, where the browser needs its state schema, `state.ts`.
-`lib/extension-host/compat.ts` adapts manifests and server modules to the
-legacy `VaultExtension` shape so existing consumers are unchanged, and the
+`lib/extension-host/compat.ts` (deleted in slice 7) adapted manifests and server modules to the
+legacy `VaultExtension` shape so existing consumers were unchanged, and the
 client reads `manifestRegistry` (no handlers) while server code reads
 `extensionRegistry`. The manifest keeps today's slash `insert`/`run` and
 command shapes until slice 3. Measured after the slice (same method as slice 0):
@@ -836,9 +836,27 @@ it); the calc toolbar button sits with the other extensions', alphabetically;
 Read-mode calc values are client components (server-rendered, hydrated), where
 they were server-only markup.
 
-**Slice 7 — Close-out.** Empty the lint allowlist, delete
-`lib/extensions/catalog.ts` and `components/extensions/`, update
-project-knowledge §3/§9/§18, and mark plan 12 §4/§10 superseded.
+**Slice 7 — Close-out.** Done 2026-09-28. The lint allowlists were already
+empty after slice 6, `catalog.ts` went in slice 1, and `components/extensions/`
+now holds only host components, so it stays. As built:
+
+- The compatibility layer is gone: `lib/extension-host/compat.ts`,
+  `lib/extensions/registry.ts` and the `VaultExtension` type (with the
+  contribution types only it used). Core reads manifests and server modules
+  through `lib/extension-host/manifests.ts` and `server.ts`; the agent-action
+  invariants moved to `assertAgentActionInvariants`, run at load and by the
+  contract test.
+- Acceptance (§15): the `vault.(calendar|calc|stickers|dictionary)` grep over
+  core finds only comments and tests that use the installed extensions as
+  data; both lint rules pass with empty allowlists; the registries are
+  generated; `server/extension-runtime.test.ts` covers the surface state
+  rules; settings changes reconfigure the editor (`@uiw/react-codemirror`
+  dispatches a reconfigure on the same view) rather than recreating it. Render
+  modules stay statically present by the slice 3 amendment, so "downloads no
+  `render` module" holds for their components and every heavier piece, not
+  for the light definition objects.
+- Found, not fixed: declared state schemas are not enforced on writes
+  (project-knowledge §16).
 
 ---
 

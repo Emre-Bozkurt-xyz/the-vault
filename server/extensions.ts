@@ -2,8 +2,13 @@ import "server-only";
 
 import { z } from "zod";
 
-import { extensionRegistry } from "@/lib/extension-host/server";
-import type { AgentActionEntry } from "@/lib/extensions/registry";
+import type { ExtensionManifest } from "@/lib/extension-api";
+import {
+  findAgentAction,
+  listAgentActions,
+  serverExtensionEntries,
+  type AgentActionEntry,
+} from "@/lib/extension-host/server";
 import type {
   ExtensionAgentActionContext,
   ExtensionAgentActionResult,
@@ -11,7 +16,6 @@ import type {
   ExtensionAgentWorkspaceContext,
   ExtensionPermission,
   ExtensionStateValue,
-  VaultExtension,
   VaultExtensionAgentAction,
 } from "@/lib/extensions/types";
 import { getDocumentAccess } from "@/lib/permissions";
@@ -54,16 +58,19 @@ const supportedActionPermissions = new Set<ExtensionPermission>([
 ]);
 
 /**
- * Resolves the set of extension ids enabled for a user: every `core` extension
- * always, plus built-ins the user has turned on (or that default to enabled and
- * have no explicit row yet). Mirrors the settings UI's notion of "enabled".
+ * The installed extensions enabled for a user: those they turned on, or that
+ * default to enabled and have no explicit row yet. Mirrors the settings UI's
+ * notion of "enabled".
  */
 export async function resolveEnabledExtensionsForUser(
   userId: string,
-): Promise<VaultExtension[]> {
+): Promise<ExtensionManifest[]> {
   const { enabledIds } = await resolveViewerExtensions(userId);
+  const enabled = new Set(enabledIds);
 
-  return extensionRegistry.getEnabledExtensions(enabledIds);
+  return serverExtensionEntries
+    .filter(({ manifest }) => enabled.has(manifest.id))
+    .map(({ manifest }) => manifest);
 }
 
 export type AgentActionDescriptor = {
@@ -129,9 +136,7 @@ export async function listAgentActionsForUser(
   const enabled = await resolveEnabledExtensionsForUser(userId);
   const enabledIds = new Set(enabled.map((extension) => extension.id));
 
-  const entries = extensionRegistry
-    .getAgentActions()
-    .filter(
+  const entries = listAgentActions().filter(
       (entry) =>
         enabledIds.has(entry.extension.id) && entry.action.agent !== false,
     );
@@ -380,7 +385,7 @@ export async function runAgentActionForUser({
   input,
   caller = "agent",
 }: RunAgentActionInput): Promise<ExtensionAgentActionResult> {
-  const entry = extensionRegistry.getAgentAction(actionId);
+  const entry = findAgentAction(actionId);
 
   // A UI-only action is reported to agents exactly like one that does not exist.
   if (!entry || (caller === "agent" && entry.action.agent === false)) {

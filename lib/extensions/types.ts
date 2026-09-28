@@ -1,4 +1,3 @@
-import type { CompletionSource } from "@codemirror/autocomplete";
 import type { EditorState, Extension, Range, StateEffect } from "@codemirror/state";
 import type { Decoration, KeyBinding, WidgetType } from "@codemirror/view";
 import type { ZodType } from "zod";
@@ -7,7 +6,6 @@ import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
 import type { FxRateTable } from "@/lib/fx/table";
 import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
 
-export type VaultExtensionKind = "core" | "built-in";
 export type VaultExtensionCategory =
   | "editor"
   | "document"
@@ -33,41 +31,6 @@ export type ExtensionStateValue =
   | string
   | ExtensionStateValue[]
   | { [key: string]: ExtensionStateValue };
-
-export type ExtensionDocumentContext = {
-  id: string;
-  canRead: boolean;
-  canEdit: boolean;
-};
-
-export type ExtensionUserContext = {
-  id: string;
-  role: "user" | "admin";
-} | null;
-
-export type ExtensionRuntimeContext = {
-  document: ExtensionDocumentContext;
-  user: ExtensionUserContext;
-  assets: ExtensionAssetApi;
-  state: ExtensionStateApi;
-};
-
-export type ExtensionAssetApi = {
-  resolve: (assetId: string) => AssetEmbedResolutionMap[string] | null;
-};
-
-export type ExtensionStateApi = {
-  get: (extensionId: string, stateKey?: string) => Promise<ExtensionStateValue | null>;
-  set: (
-    extensionId: string,
-    state: ExtensionStateValue,
-    options?: {
-      stateKey?: string;
-      visibility?: ExtensionStateVisibility;
-      version?: number;
-    },
-  ) => Promise<void>;
-};
 
 /**
  * State surface handed to an agent action handler. Unlike {@link ExtensionStateApi},
@@ -319,18 +282,6 @@ export type LiveBlockSpec<
   effects?: (state: EditorState, block: TBlock, context: TContext) => StateEffect<unknown>[];
 };
 
-export type MarkdownPreprocessor = (markdown: string, context: ExtensionRuntimeContext) => string;
-
-export type MarkdownRendererContribution = {
-  id: string;
-  priority: number;
-};
-
-export type CompletionContribution = {
-  id: string;
-  source: CompletionSource;
-};
-
 /**
  * An item an extension adds to the in-editor `/` slash menu. Kept deliberately
  * markdown-only (no editor `MarkdownFormat` coupling): an item inserts a block
@@ -384,35 +335,8 @@ export type SlashCommandContribution = {
   };
 };
 
-export type ToolbarContribution = {
-  id: string;
-  label: string;
-};
-
-export type ExtensionStateSchema = {
-  extensionId: string;
-  stateKey?: string;
-  version: number;
-  schema: ZodType<ExtensionStateValue>;
-};
-
 export type DocumentOverlayContribution = {
   id: string;
-};
-
-export type DocumentInspectorContribution = {
-  id: string;
-};
-
-export type WorkspacePageContribution = {
-  id: string;
-  href: string;
-  label: string;
-};
-
-export type WorkspacePanelContribution = {
-  id: string;
-  label: string;
 };
 
 export type CommandContribution = {
@@ -477,39 +401,3 @@ export type ExtensionSettingsField =
       emptyLabel: string;
     };
 
-export type VaultExtension = {
-  id: string;
-  name: string;
-  version: number;
-  kind: VaultExtensionKind;
-  description?: string;
-  category?: VaultExtensionCategory;
-  permissions?: ExtensionPermission[];
-  defaultEnabled?: boolean;
-  settings?: {
-    schema?: ZodType<Record<string, unknown>>;
-    defaults?: Record<string, unknown>;
-    sections?: ExtensionSettingsSection[];
-  };
-  markdown?: {
-    liveBlocks?: LiveBlockSpec[];
-    preprocessors?: MarkdownPreprocessor[];
-    renderers?: MarkdownRendererContribution[];
-    completions?: CompletionContribution[];
-    toolbarItems?: ToolbarContribution[];
-    slashCommands?: SlashCommandContribution[];
-  };
-  documentState?: {
-    schemas: ExtensionStateSchema[];
-    overlays?: DocumentOverlayContribution[];
-    inspectors?: DocumentInspectorContribution[];
-  };
-  workspace?: {
-    pages?: WorkspacePageContribution[];
-    panels?: WorkspacePanelContribution[];
-    commands?: CommandContribution[];
-  };
-  agent?: {
-    actions: VaultExtensionAgentAction[];
-  };
-};

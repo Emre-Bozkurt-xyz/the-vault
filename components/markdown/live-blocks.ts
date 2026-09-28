@@ -41,12 +41,10 @@ import {
   type ExtensionStateStore,
 } from "@/lib/extension-api/react";
 import { parseExtensionBlockLine } from "@/lib/extension-host/blocks";
-import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type {
   LiveBlockScanContext,
   LiveBlockSpec,
   LiveBlockWidgetContext,
-  VaultExtension,
 } from "@/lib/extensions/types";
 
 export type LiveAssetGroupLineKind = "first" | "middle" | "last" | "single";
@@ -232,22 +230,9 @@ const coreMarkdownLiveBlockSpecs = [
   },
 ] satisfies LiveBlockSpecForEditor[];
 
-const coreMarkdownLiveBlockExtension: VaultExtension = {
-  id: "vault.core-markdown-live-blocks",
-  name: "Core Markdown Live Blocks",
-  version: 1,
-  kind: "core",
-  markdown: {
-    liveBlocks: coreMarkdownLiveBlockSpecs as unknown as LiveBlockSpec[],
-  },
-};
-
-const liveBlockRegistry = createVaultExtensionRegistry([
-  coreMarkdownLiveBlockExtension,
-]);
-
-const liveBlockSpecs =
-  liveBlockRegistry.getMarkdownLiveBlockSpecs() as LiveBlockSpecForEditor[];
+// Extensions contribute through the one `extensionBlock` spec above, never a
+// spec of their own, so this list is complete.
+const liveBlockSpecs: readonly LiveBlockSpecForEditor[] = coreMarkdownLiveBlockSpecs;
 
 type LiveBlockSpecForEditor =
   Omit<

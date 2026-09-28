@@ -21,7 +21,7 @@ import {
 type ExtensionSettingsPageProps = {
   extensionId: string;
   version: number;
-  sections: ExtensionSettingsSection[];
+  sections: readonly ExtensionSettingsSection[];
   /** Defaults merged with what the user has stored. */
   values: Record<string, unknown>;
   defaults: Record<string, unknown>;

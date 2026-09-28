@@ -644,7 +644,7 @@ Slices 1-5 are implemented. All six languages run end to end locally under `runc
 
 ## Phase 25 - Extension SDK and Host
 
-Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). API and authoring experience settled (§16, §18). Slices 0-4 are implemented.
+Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). **Complete 2026-09-28**: slices 0-7 implemented.
 
 | Status | Task | Notes |
 |---|---|---|
@@ -657,7 +657,8 @@ Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). API and authoring experience
 | [x] | Slice 4 - Stickers | Done 2026-09-26. Host overlays (`ExtensionOverlayLayer`/`ExtensionOverlaySurface`), `pickAsset`, session events; `extensions/stickers/` owns `StickerDisplay`, `StickerLayer`, editor commands and a fixture; stickers render read-only for every workspace reader. Verified: tsc, tests, lint at baseline, build, Playwright on the stickers and calendar playgrounds |
 | [x] | Slice 5 - Dictionary | Done 2026-09-27. Link previews (`links.preview` → `ExtensionLinkHost` on read surfaces, `live-link-hover.ts` in Live), `openDialog`/`openLinkCompletion`/`openDocument` on the editor handle, `ctx.documents` (`server/extension-documents.ts`) replaces `definitions`; `extensions/dictionary/` owns render/editor/dialog; `server/definitions.ts` deleted; core lint allowlist empty. Verified: tsc, 685 tests, lint at baseline, clean build (public page 210 KB gz) |
 | [x] | Slice 6 - Calc | Done 2026-09-28. Generic directive grammar in core (`lib/markdown/directive-blocks.ts`, `directives.ts`, `directive-occurrences.ts`), container/inline host rendering with a per-document `analyze` pre-pass (`ExtensionDocumentProvider`, `ExtensionInlineHost`), lazy `live` contributions and editor `completions`; FX/ISO data in core `lib/fx` behind `@/lib/extension-api/fx`; calc wholly in `extensions/calc/`; `legacy.ts` deleted; both lint allowlists empty. Verified: tsc, 685 tests, lint at baseline, clean build (public 212 KB, doc 817 KB gz), Playwright on the calc fixture |
-| [ ] | Slice 7 - Close-out | Empty lint allowlist, delete `catalog.ts` and `components/extensions/`, docs |
+| [x] | Slice 7 - Close-out | Done 2026-09-28. Compat layer removed (`compat.ts`, `lib/extensions/registry.ts`, `VaultExtension`); core reads manifests/server modules via `lib/extension-host`; action invariants asserted at load; surface-state server test; plan 12 §4/§10 superseded. Verified: tsc, 691 tests, lint at baseline, clean build |
+| [ ] | Follow-up: enforce declared state schemas on writes | Found in slice 7; see project-knowledge §16 |
 
 ---
 
