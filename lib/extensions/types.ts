@@ -4,7 +4,7 @@ import type { Decoration, KeyBinding, WidgetType } from "@codemirror/view";
 import type { ZodType } from "zod";
 
 import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
-import type { FxRateTable } from "@/lib/calc/fx";
+import type { FxRateTable } from "@/lib/fx/table";
 import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
 
 export type VaultExtensionKind = "core" | "built-in";

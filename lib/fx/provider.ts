@@ -11,8 +11,8 @@
  * deployment.
  */
 
-import { isCurrencyCode } from "@/lib/calc/currency";
-import { isFxDayKey, type FxRateTable } from "@/lib/calc/fx";
+import { isCurrencyCode } from "@/lib/fx/currencies";
+import { isFxDayKey, type FxRateTable } from "@/lib/fx/table";
 
 export type FxProvider = {
   id: string;

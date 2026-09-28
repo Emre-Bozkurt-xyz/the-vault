@@ -2,16 +2,11 @@ import "server-only";
 
 import { z } from "zod";
 
+import { collectOccurrences } from "@/lib/extension-api/markdown";
 import { defineServer } from "@/lib/extension-api/server";
-// Core modules until slice 6 moves calc's engine into this folder (plan §14).
-import { parseCalcSettings } from "@/lib/calc/settings";
-import { EMPTY_PRESENTATION } from "@/lib/markdown/calc-directive";
-import {
-  buildCalcDocument,
-  calcKey,
-  calcPiecesFromMarkdown,
-} from "@/lib/markdown/calc-document";
 
+import { buildCalcDocument, calcRowKey } from "./lib/document";
+import { parseCalcSettings } from "./lib/settings";
 import manifest from "./manifest";
 
 const calcValueSchema = z.object({
@@ -100,7 +95,7 @@ export default defineServer(manifest, {
         const settings = parseCalcSettings(markdown);
         const fxTable = (await context.fx?.getTable()) ?? null;
 
-        const document = buildCalcDocument(calcPiecesFromMarkdown(markdown), {
+        const document = buildCalcDocument(collectOccurrences(markdown, manifest), {
           fxTable,
           displayCurrency: settings.displayCurrency,
         });
@@ -149,24 +144,29 @@ export default defineServer(manifest, {
         const settings = parseCalcSettings(markdown);
         const fxTable = (await context.fx?.getTable()) ?? null;
 
-        // Appended as one more occurrence at the end, so it sees every name
-        // the document binds and obeys the same definition-before-use rule
-        // a reader would.
-        const pieces = [
-          ...calcPiecesFromMarkdown(markdown),
+        // Appended as one more block at the end, so it sees every name the
+        // document binds and obeys the same definition-before-use rule a
+        // reader would.
+        const { occurrences } = collectOccurrences(markdown, manifest);
+        const document = buildCalcDocument(
           {
-            type: "calc-block" as const,
-            lines: [{ expression }],
-            presentation: EMPTY_PRESENTATION,
-            collapsed: false,
+            occurrences: [
+              ...occurrences,
+              {
+                kind: "block",
+                key: "evaluate",
+                name: "calc",
+                source: ":::calc",
+                // One line: a newline in the input must not smuggle in a
+                // second statement that binds or shadows a name.
+                body: expression.replace(/[\r\n]+/g, " "),
+                attributes: {},
+              },
+            ],
           },
-        ];
-
-        const document = buildCalcDocument(pieces, {
-          fxTable,
-          displayCurrency: settings.displayCurrency,
-        });
-        const result = document.results.get(calcKey(pieces.length - 1, 0));
+          { fxTable, displayCurrency: settings.displayCurrency },
+        );
+        const result = document.results.get(calcRowKey("evaluate", 0));
 
         if (!result) {
           throw new Error("Expression could not be evaluated.");

@@ -2,7 +2,7 @@ import { and, desc, eq, lte, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { fxRates } from "@/db/schema";
-import { fxDayKey, isFxDayKey, type FxRateTable } from "@/lib/calc/fx";
+import { fxDayKey, isFxDayKey, type FxRateTable } from "@/lib/fx/table";
 import {
   FX_BASE,
   frankfurterProvider,

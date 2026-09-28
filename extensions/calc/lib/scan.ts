@@ -1,0 +1,182 @@
+/**
+ * Lightweight scanner for inline `:calc[…]` occurrences, for the CodeMirror
+ * Live-mode decorations.
+ *
+ * Read mode locates occurrences by parsing the document with remark
+ * (`lib/markdown/calc-directive.ts`), which is exact but far too expensive to
+ * repeat on every keystroke. This is the editor's equivalent: one regex pass
+ * over the raw text, plus an exclusion callback the caller fills from
+ * CodeMirror's syntax tree.
+ *
+ * The scan is exact rather than approximate because the calc grammar contains
+ * no brackets or braces at all (see `lib/calc/tokenizer.ts`), so the first `]`
+ * always ends the expression and the first `}` always ends the attributes.
+ *
+ * `lib/calc/scan.test.ts` asserts this agrees with the remark collector on a
+ * shared corpus — the two must find the same occurrences in the same order, or
+ * a value would render differently in the editor than on the page.
+ */
+
+import { scanContainerBlocks } from "@/lib/extension-api";
+
+import { CALC_DIRECTIVE_NAME } from "./directive";
+
+/** A `:calc[…]{…}` occurrence located in raw text. */
+export type CalcScanMatch = {
+  /** Offset of the leading `:`. */
+  from: number;
+  /** Offset just past the final `]` or `}`. */
+  to: number;
+  /** Raw expression source, from between the brackets. */
+  expression: string;
+  /** Raw attribute source, or null when no `{…}` group followed. */
+  attributes: string | null;
+};
+
+const INLINE_CALC = /:calc\[([^\]\n]*)\](?:\{([^}\n]*)\})?/g;
+
+/**
+ * Finds inline occurrences in document order.
+ *
+ * `isExcluded` should report ranges the directive must not be recognized in —
+ * fenced code and inline code, so a document can show the syntax without
+ * evaluating it. Without it every match is accepted.
+ */
+export function scanInlineCalc(
+  text: string,
+  isExcluded?: (from: number, to: number) => boolean,
+): CalcScanMatch[] {
+  const matches: CalcScanMatch[] = [];
+
+  INLINE_CALC.lastIndex = 0;
+
+  for (const match of text.matchAll(INLINE_CALC)) {
+    const from = match.index;
+
+    if (from === undefined) {
+      continue;
+    }
+
+    // A backslash escapes the directive, matching the generic directive syntax.
+    if (from > 0 && text[from - 1] === "\\") {
+      continue;
+    }
+
+    const to = from + match[0].length;
+
+    if (isExcluded?.(from, to)) {
+      continue;
+    }
+
+    matches.push({
+      from,
+      to,
+      expression: match[1] ?? "",
+      attributes: match[2] ?? null,
+    });
+  }
+
+  return matches;
+}
+
+/**
+ * One statement line inside a block, located in the document.
+ *
+ * Live mode decorates the statement lines in place rather than replacing the
+ * block with one opaque widget, so it needs each line's own offsets — a widget
+ * covering the whole block gives CodeMirror nothing to map a click onto but the
+ * block's two ends.
+ */
+export type CalcBlockStatement = {
+  /** 1-based, to match CodeMirror. */
+  line: number;
+  /** Offset of the line's first character. */
+  from: number;
+  /** Offset just past the line's last character. */
+  to: number;
+  /** The trimmed statement source. */
+  source: string;
+};
+
+export type CalcBlockScan = {
+  /** Offset of the opening fence's first character. */
+  from: number;
+  /** Offset of the end of the closing fence (or the document end). */
+  to: number;
+  startLine: number;
+  endLine: number;
+  /** False when the block runs to the end of the document unterminated. */
+  closed: boolean;
+  attributes: Record<string, string>;
+  /** Statement sources, blank lines dropped. */
+  lines: string[];
+  /** The same statements, with their positions. */
+  statements: CalcBlockStatement[];
+};
+
+/**
+ * Finds `:::calc` blocks in raw text, skipping fenced code. Built on the host's
+ * own container scanner, so a block ends here exactly where Read mode and the
+ * editor's `:::` menu think it ends.
+ *
+ * Line numbers are 1-based to match CodeMirror's.
+ */
+export function scanCalcBlocks(text: string): CalcBlockScan[] {
+  return scanContainerBlocks(text, [CALC_DIRECTIVE_NAME]).map((block) => {
+    const statements = block.body.flatMap((line) => {
+      const source = line.text.trim();
+      return source ? [{ line: line.line, from: line.from, to: line.to, source }] : [];
+    });
+
+    return {
+      from: block.from,
+      to: block.to,
+      startLine: block.startLine,
+      endLine: block.endLine,
+      closed: block.closed,
+      attributes: block.attributes,
+      lines: statements.map((statement) => statement.source),
+      statements,
+    };
+  });
+}
+
+/**
+ * The `:::calc` block whose *body* contains `line` (1-based), or null.
+ *
+ * The fences themselves are not body: a cursor on `:::calc` is on the opening
+ * fence, and a cursor on the closing `:::` is on the closing fence. Both editor
+ * menus depend on that distinction — the operand menu only completes inside a
+ * statement, and the `:::` menu must stay shut on the line where `:::` means
+ * "close this block" rather than "open a new one".
+ *
+ * An unterminated block has no closing fence to exclude, so its body runs to the
+ * last line the scan reached.
+ */
+export function findCalcBlockBody(
+  text: string,
+  line: number,
+): CalcBlockScan | null {
+  return (
+    scanCalcBlocks(text).find(
+      (block) =>
+        line > block.startLine &&
+        (block.closed ? line < block.endLine : line <= block.endLine),
+    ) ?? null
+  );
+}
+
+/**
+ * True when `line` falls inside a `:::calc` block, counting the closing fence
+ * but not the opening one.
+ *
+ * The wider question {@link findCalcBlockBody} deliberately does not answer. The
+ * `:::` menu needs it because the closing fence is precisely where the menu is
+ * dangerous: a `:::` typed anywhere below an unclosed `:::calc` *is* the close,
+ * and an open menu would turn the Enter that follows into a nested block.
+ */
+export function isInsideCalcBlock(text: string, line: number): boolean {
+  return scanCalcBlocks(text).some(
+    (block) => line > block.startLine && line <= block.endLine,
+  );
+}

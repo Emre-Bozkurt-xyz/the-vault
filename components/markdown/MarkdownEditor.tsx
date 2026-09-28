@@ -47,7 +47,6 @@ import {
   BookOpenText,
   CheckCircle2,
   Eye,
-  Calculator,
   FileCode2,
   Grid3x3,
   Loader2,
@@ -68,12 +67,7 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { createCodeBlockExtension } from "@/components/markdown/code-block-extension";
 import { fencedCodeLanguage } from "@/components/markdown/code-languages";
 import { codeFenceAt, codeFenceLineNumbers } from "@/components/markdown/code-fences";
-import { createCalcCompletionSource } from "@/components/markdown/calc-completions";
 import { codeLanguageCompletionSource } from "@/components/markdown/code-language-completions";
-import {
-  createCalcLiveExtension,
-  getCalcBlockLineNumbers,
-} from "@/components/markdown/live-calc";
 import {
   createLiveBlockDecorationExtension,
   getLiveBlockLineNumbers,
@@ -131,20 +125,22 @@ import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
 import { useExtensionHost } from "@/components/extensions/ExtensionHostProvider";
-import type {
-  DocumentExtensions,
-  EditorModule,
-  JsonValue,
-  PickedAsset,
-  WikiLinkInfo,
+import { useLiveContributions } from "@/components/extensions/use-live-contributions";
+import {
+  createRenderContext,
+  type DocumentExtensions,
+  type EditorModule,
+  type JsonValue,
+  type PickedAsset,
+  type WikiLinkInfo,
 } from "@/lib/extension-api";
+import { scanExtensionContainers } from "@/lib/extension-host/blocks";
 import { resolveLinkPreview } from "@/lib/extension-host/links";
 import {
   insertBlock,
   insertInline,
   runExtensionCommand,
 } from "@/lib/extension-host/editor-handle";
-import { legacyExtensionProps } from "@/lib/extension-host/legacy";
 import { manifestRegistry } from "@/lib/extension-host/manifests";
 import {
   formatTagInput,
@@ -346,7 +342,6 @@ export function MarkdownEditor({
   // Aliased: `extensions` is this component's CodeMirror extension list.
   extensions: documentExtensions = null,
 }: MarkdownEditorProps) {
-  const { fxTable, calcEnabled } = legacyExtensionProps(documentExtensions);
   // Ids of the user's enabled extensions, used to gate extension slash items.
   const enabledExtensionIds = documentExtensions?.enabledIds;
   // Editor modules of those extensions, as the workspace host loads them
@@ -361,6 +356,18 @@ export function MarkdownEditor({
         .filter((editorModule): editorModule is EditorModule => Boolean(editorModule)),
     [enabledExtensionIds, hostModules],
   );
+  // Live-mode rendering follows content (the document's render set) and, for
+  // what the author is typing, enablement.
+  const liveExtensionIds = useMemo(
+    () => [
+      ...new Set([
+        ...(documentExtensions?.renderIds ?? []),
+        ...(enabledExtensionIds ?? []),
+      ]),
+    ],
+    [documentExtensions?.renderIds, enabledExtensionIds],
+  );
+  const liveContributions = useLiveContributions(liveExtensionIds);
   // The host's asset picker, which extension commands open through
   // `editor.pickAsset()`. One request at a time: a new one dismisses the last.
   const [assetPickRequest, setAssetPickRequest] = useState<{
@@ -1129,7 +1136,18 @@ export function MarkdownEditor({
             onConfigureAssetGroup: configureAssetGroup,
             extensions: documentExtensions,
           }),
-          createCalcLiveExtension({ fxTable }),
+          // Extensions' own Live-mode rendering (calc's inline values and
+          // declaration rows), for the document's render set and the author's
+          // enabled extensions. One that throws while building is left out
+          // rather than taking the editor down.
+          ...liveContributions.flatMap(({ extensionId, create }) => {
+            try {
+              return [create(createRenderContext(documentExtensions, extensionId))];
+            } catch (cause) {
+              console.error(`Live contribution for "${extensionId}" failed`, cause);
+              return [];
+            }
+          }),
           createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
           // Reads the map through the store rather than closing over
@@ -1173,11 +1191,22 @@ export function MarkdownEditor({
                   }),
                 ]
               : []),
-            // Operand completion inside `:calc[…]` and `:::calc` bodies. Gated
-            // on the extension, not on the insert-menu toggle: these are the
-            // document's own names, and an author who never opens a menu still
-            // needs them spelled correctly.
-            ...(calcEnabled ? [createCalcCompletionSource({ fxTable })] : []),
+            // Enabled extensions' completion sources (calc's operands inside
+            // `:calc[…]` and `:::calc`). Not gated on the insert-menu toggle:
+            // they complete the document's own names, which an author who never
+            // opens a menu still needs spelled correctly.
+            ...editorModules.flatMap((editorModule) => {
+              try {
+                return [
+                  ...(editorModule.completions?.(
+                    createRenderContext(documentExtensions, editorModule.manifestId),
+                  ) ?? []),
+                ];
+              } catch (cause) {
+                console.error(`Completions for "${editorModule.manifestId}" failed`, cause);
+                return [];
+              }
+            }),
             // Language names on a fence's opening line, with starter code for
             // a new block. Scoped to that one position, so it is always on.
             codeLanguageCompletionSource,
@@ -1244,8 +1273,7 @@ export function MarkdownEditor({
       runEditorCommand,
       extensionSlashCommands,
       slashMenuEnabled,
-      calcEnabled,
-      fxTable,
+      liveContributions,
     ],
   );
 
@@ -1386,11 +1414,6 @@ export function MarkdownEditor({
       return;
     }
 
-    if (format === "calcBlock") {
-      insertCalcBlock(view);
-      return;
-    }
-
     const linePrefix: Record<MarkdownFormat, string | null> = {
       heading1: "# ",
       heading2: "## ",
@@ -1409,7 +1432,6 @@ export function MarkdownEditor({
       table: null,
       region: null,
       horizontalRule: null,
-      calcBlock: null,
     };
     const prefix = linePrefix[format];
 
@@ -1613,7 +1635,6 @@ export function MarkdownEditor({
               <MarkdownToolbar
                 onFormat={applyFormat}
                 extensionItems={
-                  calcEnabled ||
                   editorModules.some((editorModule) => editorModule.toolbar.length > 0) ? (
                     <>
                       {editorModules.map((editorModule) =>
@@ -1628,11 +1649,6 @@ export function MarkdownEditor({
                           />
                         ) : null,
                       )}
-                      {calcEnabled ? (
-                        <CalcToolbarGroup
-                          onInsert={() => applyFormat("calcBlock")}
-                        />
-                      ) : null}
                     </>
                   ) : undefined
                 }
@@ -1888,25 +1904,6 @@ function ExtensionToolbarGroup({
           <Icon className="size-4" />
         </button>
       ))}
-    </div>
-  );
-}
-
-function CalcToolbarGroup({ onInsert }: { onInsert: () => void }) {
-  return (
-    <div
-      data-slot="button-group"
-      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
-    >
-      <button
-        type="button"
-        title="Insert calc block"
-        aria-label="Insert calc block"
-        onClick={onInsert}
-        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
-      >
-        <Calculator className="size-4" />
-      </button>
     </div>
   );
 }
@@ -3397,13 +3394,16 @@ function buildLivePreviewDecorations(
     ? []
     : view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
-  // Calc statements join the live-block lines so the markdown pass leaves them
-  // alone: `total = rent * 3 + cost * 2` is arithmetic, and reading those
-  // asterisks as emphasis would hide them from the author mid-expression.
-  const liveBlockLines = new Set([
-    ...getLiveBlockLineNumbers(view.state),
-    ...getCalcBlockLineNumbers(view.state),
-  ]);
+  // Extension containers' lines join the live-block lines so the markdown pass
+  // leaves them alone (plan §6, `live: "source"`): `total = rent * 3 + cost * 2`
+  // is arithmetic, and reading those asterisks as emphasis would hide them from
+  // the author mid-expression. The owning extension's `live` draws them.
+  const liveBlockLines = new Set(getLiveBlockLineNumbers(view.state));
+  for (const container of scanExtensionContainers(view.state.doc.toString())) {
+    for (let line = container.startLine; line <= container.endLine; line += 1) {
+      liveBlockLines.add(line);
+    }
+  }
   const doc = view.state.doc;
   const frontmatterEndLine = getFrontmatterEndLine(doc);
 
@@ -5899,25 +5899,6 @@ function ExtensionLinkHoverCard({
         <p className="vault-md-definition-card-empty">{preview.emptyText ?? ""}</p>
       )}
     </LinkHoverCard>
-  );
-}
-
-/**
- * Inserts a `:::calc` declarations block.
- *
- * A selection becomes the body, so lines already written as `rent = 1200 CAD`
- * can be turned into a block in place; with nothing selected the cursor lands
- * on a blank first statement line, ready for the first binding.
- */
-function insertCalcBlock(view: EditorView) {
-  const selection = view.state.selection.main;
-  const selected = view.state.sliceDoc(selection.from, selection.to).trim();
-  const opening = ":::calc\n";
-
-  insertBlock(
-    view,
-    `${opening}${selected}\n:::`,
-    selected ? null : opening.length,
   );
 }
 

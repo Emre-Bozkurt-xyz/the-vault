@@ -5,11 +5,13 @@
 // must stay light: definitions plus lazy component loaders (plan §4, §9).
 import type { RenderModule } from "@/lib/extension-api";
 
+import calcRender from "./calc/render";
 import calendarRender from "./calendar/render";
 import dictionaryRender from "./dictionary/render";
 import stickersRender from "./stickers/render";
 
 export const renderModules: readonly RenderModule[] = [
+  calcRender,
   calendarRender,
   dictionaryRender,
   stickersRender,

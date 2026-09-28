@@ -147,7 +147,7 @@ generally is forward-compatible, so new states never need new contract classes.
 `.vault-calc-block-foldable` marks a block rendered as `<details>`; use
 `[open]` for the expanded state.
 
-Every one of these is applied by `CalcValue`/`CalcBlock` after the rehype
+Every one of these is applied by calc's `CalcValue`/`CalcBlock` (`extensions/calc/`) after the rehype
 pipeline, so none appear in `lib/html-class.ts` and authored raw HTML cannot
 mint them.
 

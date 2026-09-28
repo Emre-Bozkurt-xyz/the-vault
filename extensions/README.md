@@ -16,8 +16,8 @@ reference extensions. Read them alongside this guide.
 | File | Answers | Loaded |
 |---|---|---|
 | `manifest.ts` | What is this extension? Id, name, permissions, settings, which syntax it owns, command metadata. Plain data. | Everywhere, always |
-| `render.tsx` | What do readers see? Block and overlay components, as lazy loaders. | Everywhere, statically; components load when used |
-| `editor.tsx` | What do authors use? Commands and toolbar buttons. | In the browser, once per session, only for users who enabled it |
+| `render.tsx` | What do readers see? Block, container, inline and overlay components, link previews, a document pre-pass (`analyze`) and Live-mode drawing (`live`), all as lazy loaders. | Everywhere, statically; each piece loads when a document uses it |
+| `editor.tsx` | What do authors use? Commands, toolbar buttons, dialogs, completions. | In the browser, once per session, only for users who enabled it |
 | `server.ts` | What runs on the server? State schemas, actions, data a page needs before rendering. | Server only |
 
 Only the manifest is required.
@@ -30,7 +30,11 @@ enabled the extension and can edit the document. When deciding where something
 goes, ask: is it part of the document, or a tool for writing it?
 
 **Syntax is a directive or a fence.** A block is `:::name{attributes}` on its
-own line. An inline value is `:name[…]{…}`. A diagram-style renderer claims a
+own line (`syntax.blocks`), or `:::name{…}` … `:::` with a body
+(`syntax.containers`, whose source stays editable in Live mode, drawn by your
+`live`). An inline value is `:name[…]{…}` (`syntax.inline`). If values depend on
+each other across the page, as calc's names do, `analyze` sees every occurrence
+in order once and your components read its result. A diagram-style renderer claims a
 fence language. Claim names in the manifest's `syntax`; never invent new
 Markdown grammar. A document whose extension is gone then still reads as its
 source.
@@ -41,7 +45,8 @@ These are enforced: ESLint for imports, the contract test
 (`extensions/contract.test.ts`) for the rest. `npm run lint` and `npm test` tell
 you when you break one.
 
-1. **Import only your own folder (relative paths), `@/lib/extension-api`,
+1. **Import only your own folder (relative paths), `@/lib/extension-api` (and
+   its subpaths: `/react`, `/server`, `/testing`, `/fx`, `/markdown`, `/codemirror`),
    `@/components/ui/*` and `@/lib/utils`**, plus packages. If you need something
    from Vault that the SDK does not offer, the answer is to add it to the SDK,
    not to reach around it.
@@ -214,7 +219,8 @@ Actions are what MCP agents call, and what your own UI calls through
   invariants, unique syntax claims, no static client imports in render modules,
   every claimed block rendered, every command handled, fixture state valid.
 - **Fixtures** are sample documents in `fixtures/<name>.md`, with optional
-  state in `fixtures/<name>.state.json`:
+  state in `fixtures/<name>.state.json` and optional render data (what your
+  `loadRenderData` returns on a real page) in `fixtures/<name>.data.json`:
 
   ```json
   { "stopwatch:a": { "visibility": "public", "state": { "startedAt": "@today" } } }
@@ -233,9 +239,6 @@ Actions are what MCP agents call, and what your own UI calls through
 
 The SDK grows with each extension moved behind it (plan §14):
 
-- **Container blocks** (`:::name` … `:::` with a body) and inline directives are
-  claimed in `syntax.containers` / `syntax.inline`, but the host does not
-  render them yet (calc, slice 6).
 - **Fence renderers** are designed in the plan but not built. (Link previews,
   dialogs and link completion are supported; see the dictionary.)
 - **Styles** live in `app/styles/components.css`, following

@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import type { FxRateTable } from "@/lib/calc/fx";
-import { toVaultExtension } from "@/lib/extension-host/compat";
+import type { SlashCommandContribution } from "@/lib/extension-api";
+import type { FxRateTable } from "@/lib/extension-api/fx";
 import type {
   ExtensionAgentActionContext,
-  VaultExtensionAgentAction,
-} from "@/lib/extensions/types";
+  ExtensionServerModule,
+} from "@/lib/extension-api/server";
 
 import manifest from "./manifest";
 import server from "./server";
 
-const localBuiltInExtensions = [toVaultExtension(manifest, server)];
+type ServerAction = ExtensionServerModule["actions"][number];
 
 const TABLE: FxRateTable = {
   base: "EUR",
@@ -36,10 +36,8 @@ Quarter total :calc[rent * 3 + domains], EU host :calc[300 EUR].
 Broken: :calc[2 CAD * 3 CAD].
 `;
 
-function action(id: string): VaultExtensionAgentAction {
-  const found = localBuiltInExtensions
-    .flatMap((extension) => extension.agent?.actions ?? [])
-    .find((candidate) => candidate.id === id);
+function action(id: string): ServerAction {
+  const found = server.actions.find((candidate) => candidate.id === id);
 
   if (!found) {
     throw new Error(`no action ${id}`);
@@ -206,23 +204,19 @@ describe("vault.calc.evaluate", () => {
 });
 
 describe("the calc extension registration", () => {
-  const calc = localBuiltInExtensions.find(
-    (extension) => extension.id === "vault.calc",
-  );
-
   it("declares only the permissions its actions use", () => {
-    expect(calc?.permissions).toEqual(["document:read"]);
+    expect(manifest.permissions).toEqual(["document:read"]);
 
-    for (const declared of calc?.agent?.actions ?? []) {
+    for (const declared of server.actions) {
       for (const permission of declared.permissions ?? []) {
-        expect(calc?.permissions).toContain(permission);
+        expect(manifest.permissions).toContain(permission);
       }
     }
   });
 
   it("offers both slash commands", () => {
     expect(
-      calc?.markdown?.slashCommands?.map((command) => command.label),
+      manifest.slashCommands?.map((command) => command.label),
     ).toEqual(["calc", "calcblock"]);
   });
 
@@ -230,7 +224,7 @@ describe("the calc extension registration", () => {
   // sentence must not be inserted as its own block, which is what every other
   // extension contribution does and what the default placement still means.
   it("marks the inline value inline and leaves the block a block", () => {
-    const [inline, block] = calc?.markdown?.slashCommands ?? [];
+    const [inline, block]: readonly SlashCommandContribution[] = manifest.slashCommands;
 
     expect(inline.insert!.placement).toBe("inline");
     expect(inline.insert!.markdown).toBe(":calc[]");
@@ -241,7 +235,7 @@ describe("the calc extension registration", () => {
   // The cursor has to land inside the brackets and on the blank statement line
   // respectively, or every insertion needs the same two keystrokes to fix up.
   it("seats the cursor where the author types next", () => {
-    const [inline, block] = calc?.markdown?.slashCommands ?? [];
+    const [inline, block] = manifest.slashCommands ?? [];
 
     expect((inline.insert!.markdown as string).slice(inline.insert!.cursorOffset)).toBe(
       "]",

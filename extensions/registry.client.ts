@@ -18,6 +18,7 @@ export type ClientExtensionEntry = {
 export const clientExtensions: readonly ClientExtensionEntry[] = [
   {
     manifest: calcManifest,
+    editor: () => import("./calc/editor"),
   },
   {
     manifest: calendarManifest,

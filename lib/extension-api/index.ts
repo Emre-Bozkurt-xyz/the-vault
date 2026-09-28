@@ -9,6 +9,8 @@
  *
  * Isomorphic: imported by the server, by client components, and by manifests.
  */
+import type { CompletionSource } from "@codemirror/autocomplete";
+import type { Extension } from "@codemirror/state";
 import type { ComponentType } from "react";
 import type { ZodType } from "zod";
 
@@ -48,17 +50,25 @@ export {
   wikiTitleKey,
 } from "@/lib/wiki-links";
 
+// Directive grammar is core; extensions read their own blocks with the same
+// scanner the host uses, so the two cannot disagree about where one ends.
+export {
+  parseDirectiveAttributes,
+  scanContainerBlocks,
+  type ContainerBlockScan,
+  type ContainerBodyLine,
+} from "@/lib/markdown/directive-blocks";
+
 /** Directive and fence names an extension owns (plan §3 principle 4, §5). */
 export type ExtensionSyntax = {
   /** Single-line `:::name{…}` block directives, rendered by the host (plan §6). */
   blocks?: readonly string[];
   /**
-   * `:::name` … `:::` container directives with a body. Claimed for render-set
-   * detection; host rendering of containers arrives with calc (plan §14 slice
-   * 6), so until then the owning extension's code in core renders them.
+   * `:::name{…}` … `:::` container directives with a body. The host renders
+   * them in Read mode and leaves their source alone in Live mode (plan §6).
    */
   containers?: readonly string[];
-  /** `:name[…]{…}` inline directives. */
+  /** `:name[…]{…}` inline directives, rendered by the host in Read mode. */
   inline?: readonly string[];
   /** Fence languages, e.g. ```` ```mermaid ````. */
   fences?: readonly string[];
@@ -188,26 +198,73 @@ export type ExtensionLinks = {
   assetLinks?: AssetEmbedResolutionMap;
 };
 
-/** What a block component receives (plan §6). All of it is serialisable. */
+/**
+ * One claimed directive in a document, as the `analyze` pre-pass and the
+ * components see it (plan §6). Keys are unique within one rendered document and
+ * stable across renders of the same text.
+ */
+export type ExtensionOccurrence =
+  | {
+      kind: "inline";
+      key: string;
+      name: string;
+      /** The directive as written, e.g. `:calc[rent * 3]{as=USD}`. */
+      source: string;
+      /** Raw text between the brackets (never parsed Markdown), or null without them. */
+      label: string | null;
+      attributes: Record<string, string>;
+    }
+  | {
+      kind: "block";
+      key: string;
+      name: string;
+      /** The opening line, trimmed. */
+      source: string;
+      /** The lines between the fences, as written. */
+      body: string;
+      attributes: Record<string, string>;
+    };
+
+export type InlineOccurrence = Extract<ExtensionOccurrence, { kind: "inline" }>;
+
+/** What `analyze` receives: this extension's occurrences, in document order. */
+export type AnalyzableDocument = {
+  /** The whole document, frontmatter included. */
+  markdown: string;
+  occurrences: ExtensionOccurrence[];
+};
+
+export type Analyzer = (doc: AnalyzableDocument, ctx: ExtensionRenderContext) => unknown;
+
+/**
+ * A document-wide pre-pass (plan §6): runs once per rendered document, before
+ * any of the extension's components, which receive its result as `analysis`.
+ * For work that must see every occurrence in order, like calc binding names top
+ * to bottom. Loaded lazily with the components that need it.
+ */
+export type AnalyzeContribution = {
+  load: () => Promise<{ default: Analyzer }>;
+};
+
+/** What a block component receives (plan §6). */
 export type BlockProps<TSettings = Record<string, unknown>> = {
   ctx: ExtensionRenderContext<TSettings>;
   /** The directive name, e.g. `calendar`. */
   name: string;
   /** Parsed `{key=value}` attributes of the directive line. */
   attributes: Record<string, string>;
-  /** The directive's source text. */
+  /** The opening line's source text. */
   source: string;
+  /** A container's body as written; null for a leaf block. */
+  body: string | null;
+  /** A container's occurrence key in `analysis`; null for a leaf block. */
+  occurrenceKey: string | null;
+  /** The extension's `analyze` result for this document, or null without one. */
+  analysis: unknown;
   links: ExtensionLinks;
 };
 
-/**
- * One `:::name{…}` block an extension renders. Only the single-line (`leaf`)
- * form with a Live-mode widget exists so far; container blocks and
- * source-mode rendering arrive with calc (plan §14 slice 6).
- */
-export type BlockContribution = {
-  form: "leaf";
-  live: "widget";
+type LazyBlock = {
   /**
    * The component, loaded lazily. Never import a component statically into a
    * render module: server pages bundle every client component they reference
@@ -215,6 +272,38 @@ export type BlockContribution = {
    * rejects a static import of a `"use client"` file here.
    */
   load: () => Promise<{ default: ComponentType<BlockProps> }>;
+};
+
+/**
+ * One `:::name{…}` block an extension renders (plan §6). A `leaf` is a single
+ * line whose component replaces it in Live mode too (`widget`). A `container`
+ * has a body and keeps its source editable in Live mode (`source`): the host
+ * only claims its lines, and the extension's `live` contribution decorates them.
+ */
+export type BlockContribution =
+  | ({ form: "leaf"; live: "widget" } & LazyBlock)
+  | ({ form: "container"; live: "source" } & LazyBlock);
+
+/** What an inline directive component receives (plan §6). */
+export type InlineProps<TSettings = Record<string, unknown>> = {
+  ctx: ExtensionRenderContext<TSettings>;
+  occurrence: InlineOccurrence;
+  /** The extension's `analyze` result for this document, or null without one. */
+  analysis: unknown;
+};
+
+/** One `:name[…]` inline directive an extension renders in Read mode. */
+export type InlineContribution = {
+  load: () => Promise<{ default: ComponentType<InlineProps> }>;
+};
+
+/**
+ * Live-mode rendering (plan §6): CodeMirror extensions that draw this
+ * extension's syntax while the source stays editable, for every author of a
+ * document that uses it. Privileged: it sees the whole editor. Loaded lazily.
+ */
+export type LiveContribution = {
+  load: () => Promise<{ default: (ctx: ExtensionRenderContext) => Extension }>;
 };
 
 type SyntaxNames<M extends ExtensionManifest, K extends keyof ExtensionSyntax> =
@@ -283,8 +372,11 @@ export type LinkContribution = {
 export type RenderModule = {
   manifestId: string;
   blocks: Readonly<Record<string, BlockContribution>>;
+  inline: Readonly<Record<string, InlineContribution>>;
   overlays: Readonly<Record<string, OverlayContribution>>;
   links: LinkContribution | null;
+  analyze: AnalyzeContribution | null;
+  live: LiveContribution | null;
 };
 
 /**
@@ -294,22 +386,42 @@ export type RenderModule = {
 export function defineRender<const M extends ExtensionManifest>(
   manifest: M,
   render: {
-    blocks?: { [K in SyntaxNames<M, "blocks">]?: BlockContribution };
+    /** Leaf blocks (`syntax.blocks`) and containers (`syntax.containers`). */
+    blocks?: {
+      [K in SyntaxNames<M, "blocks">]?: Extract<BlockContribution, { form: "leaf" }>;
+    } & {
+      [K in SyntaxNames<M, "containers">]?: Extract<BlockContribution, { form: "container" }>;
+    };
+    inline?: { [K in SyntaxNames<M, "inline">]?: InlineContribution };
     /**
      * Read-only overlays, keyed by manifest overlay id. They render for every
      * reader of a document that has this extension's state, enabled or not.
      */
     overlays?: { [K in OverlayIds<M>]?: OverlayContribution };
     links?: LinkContribution;
+    analyze?: AnalyzeContribution;
+    live?: LiveContribution;
   },
 ): RenderModule {
-  const claimed = new Set(manifest.syntax?.blocks ?? []);
+  const leaves = new Set(manifest.syntax?.blocks ?? []);
+  const containers = new Set(manifest.syntax?.containers ?? []);
   const blocks = (render.blocks ?? {}) as Record<string, BlockContribution>;
 
-  for (const name of Object.keys(blocks)) {
+  for (const [name, block] of Object.entries(blocks)) {
+    const claimed = block.form === "leaf" ? leaves : containers;
     if (!claimed.has(name)) {
       throw new Error(
-        `"${manifest.id}" renders block "${name}" without claiming it in manifest.syntax.blocks.`,
+        `"${manifest.id}" renders ${block.form} block "${name}" without claiming it in manifest.syntax.${block.form === "leaf" ? "blocks" : "containers"}.`,
+      );
+    }
+  }
+
+  const inlineClaims = new Set(manifest.syntax?.inline ?? []);
+  const inline = (render.inline ?? {}) as Record<string, InlineContribution>;
+  for (const name of Object.keys(inline)) {
+    if (!inlineClaims.has(name)) {
+      throw new Error(
+        `"${manifest.id}" renders inline "${name}" without claiming it in manifest.syntax.inline.`,
       );
     }
   }
@@ -322,7 +434,15 @@ export function defineRender<const M extends ExtensionManifest>(
     }
   }
 
-  return { manifestId: manifest.id, blocks, overlays, links: render.links ?? null };
+  return {
+    manifestId: manifest.id,
+    blocks,
+    inline,
+    overlays,
+    links: render.links ?? null,
+    analyze: render.analyze ?? null,
+    live: render.live ?? null,
+  };
 }
 
 /**
@@ -411,6 +531,7 @@ export type EditorModule = {
   toolbar: readonly ToolbarContributionItem[];
   overlays: Readonly<Record<string, ComponentType<OverlayProps>>>;
   dialogs: Readonly<Record<string, ComponentType<DialogProps>>>;
+  completions: ((ctx: ExtensionRenderContext) => readonly CompletionSource[]) | null;
 };
 
 /**
@@ -433,6 +554,11 @@ export function defineEditor<const M extends ExtensionManifest>(
     overlays?: { [K in OverlayIds<M>]?: ComponentType<OverlayProps> };
     /** Dialogs this extension's commands open with `editor.openDialog(id)`. */
     dialogs?: Record<string, ComponentType<DialogProps>>;
+    /**
+     * Autocompletion sources, shown in the editor's one completion tooltip
+     * beside the host's own. Privileged: they see the whole document.
+     */
+    completions?: (ctx: ExtensionRenderContext) => readonly CompletionSource[];
   },
 ): EditorModule {
   return {
@@ -441,6 +567,7 @@ export function defineEditor<const M extends ExtensionManifest>(
     toolbar: editor.toolbar ?? [],
     overlays: (editor.overlays ?? {}) as Record<string, ComponentType<OverlayProps>>,
     dialogs: editor.dialogs ?? {},
+    completions: editor.completions ?? null,
   };
 }
 

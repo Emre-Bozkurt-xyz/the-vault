@@ -170,18 +170,31 @@ describe("every extension", () => {
         }
       });
 
-      // A claimed block without a component would render as its fallback
-      // forever: the host has nothing to load.
-      it("renders every block it claims", () => {
-        const rendered = new Set(
-          Object.keys(
-            renderModules.find((module) => module.manifestId === manifest.id)?.blocks ?? {},
-          ),
-        );
+      // A claimed block or inline directive without a component would render
+      // as its fallback forever: the host has nothing to load.
+      it("renders every block, container and inline directive it claims", () => {
+        const renderModule = renderModules.find((module) => module.manifestId === manifest.id);
+        const blocks = renderModule?.blocks ?? {};
+
         for (const name of manifest.syntax?.blocks ?? []) {
-          expect(rendered).toContain(name);
+          expect(blocks[name]?.form).toBe("leaf");
+        }
+        for (const name of manifest.syntax?.containers ?? []) {
+          expect(blocks[name]?.form).toBe("container");
+        }
+        for (const name of manifest.syntax?.inline ?? []) {
+          expect(Object.keys(renderModule?.inline ?? {})).toContain(name);
         }
       });
+
+      // A container keeps its source in Live mode (`live: "source"`), so
+      // without a `live` contribution it would show there as bare text.
+      if ((manifest.syntax?.containers ?? []).length > 0) {
+        it("draws its containers in Live mode", () => {
+          const renderModule = renderModules.find((module) => module.manifestId === manifest.id);
+          expect(renderModule?.live).not.toBeNull();
+        });
+      }
 
       // Fixtures feed the playground (plan §18.3); a broken one should fail
       // here, not there.

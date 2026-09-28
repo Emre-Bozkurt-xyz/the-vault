@@ -31,30 +31,33 @@ import {
   transformAssetEmbeds,
   type AssetEmbedResolutionMap,
 } from "@/lib/asset-embeds";
-import { CalcBlock } from "@/components/extensions/CalcBlock";
-import { CalcValue } from "@/components/extensions/CalcValue";
 import { ExtensionBlockHost } from "@/components/extensions/ExtensionBlockHost";
+import {
+  ExtensionDocumentProvider,
+  ExtensionInlineHost,
+} from "@/components/extensions/ExtensionDocumentHost";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
 import { ExtensionLinkHost } from "@/components/extensions/ExtensionLinkHost";
-import { splitExtensionBlocks, type ParsedExtensionBlock } from "@/lib/extension-host/blocks";
+import { extensionDirectiveOwners } from "@/lib/extension-host/blocks";
+import { planExtensionParts } from "@/lib/extension-host/plan";
 import {
-  calcRemarkPlugins,
-  remarkCalc,
-  splitCalcBlockSegments,
-  type CalcBlockLine,
-} from "@/lib/markdown/calc-directive";
-import { createRenderContext, type DocumentExtensions } from "@/lib/extension-api";
-import { legacyExtensionProps } from "@/lib/extension-host/legacy";
-import { parseCalcSettings } from "@/lib/calc/settings";
+  createRenderContext,
+  type AnalyzableDocument,
+  type DocumentExtensions,
+} from "@/lib/extension-api";
 import {
-  buildCalcDocument,
-  calcKey,
-  EMPTY_CALC_DOCUMENT,
-  type CalcPiece,
-  type ResolvedCalc,
-} from "@/lib/markdown/calc-document";
+  createDirectivePlanState,
+  type DirectivePart,
+  type DirectivePlanState,
+} from "@/lib/markdown/directive-occurrences";
+import {
+  directiveRemarkPlugins,
+  EXTENSION_INLINE_ELEMENT,
+  EXTENSION_INLINE_KEY_ATTRIBUTE,
+  remarkInlineDirectives,
+} from "@/lib/markdown/directives";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
 import { inlineStyleToReactStyle } from "@/lib/html-style";
 import {
@@ -308,6 +311,11 @@ function iframeDimension(value: unknown, fallback: number, max: number) {
   return Math.min(parsed, max);
 }
 
+/** Claimed inline directive names, for the render plugin. */
+const inlineDirectiveNames: ReadonlySet<string> = new Set(
+  extensionDirectiveOwners.inline.keys(),
+);
+
 function normalizeSelfClosingIframes(markdown: string) {
   return markdown.replace(/<iframe\b([^>]*)\/>/gi, "<iframe$1></iframe>");
 }
@@ -315,7 +323,6 @@ function normalizeSelfClosingIframes(markdown: string) {
 function createMarkdownComponents(
   disableLinks: boolean,
   headingIds: Map<string, number>,
-  calcResults: Map<string, ResolvedCalc>,
   /**
    * Resolved wiki-link targets, keyed by href. Empty when the surface has no
    * resolution map, or inside a hover card — see `a` below.
@@ -596,14 +603,12 @@ function createMarkdownComponents(
   input(props) {
     return <input {...props} className="vault-md-checkbox" disabled />;
   },
-  // `remarkCalc` emits `<vault-calc data-calc-key>` for each inline `:calc[…]`.
-  // The element carries only the key; the component supplies every class, which
-  // is what keeps calc's contract classes out of the raw-HTML className filter
-  // in `rehypeSanitizeContent`.
-  "vault-calc": (props: { "data-calc-key"?: string }) => (
-    <CalcValue
-      resolved={calcResults.get(props["data-calc-key"] ?? "") ?? null}
-    />
+  // `remarkInlineDirectives` emits this element, carrying only a key, for each
+  // claimed inline directive (`:calc[…]`). The extension's component supplies
+  // every class, which keeps them out of the raw-HTML className filter in
+  // `rehypeSanitizeContent`.
+  [EXTENSION_INLINE_ELEMENT]: (props: Record<string, string | undefined>) => (
+    <ExtensionInlineHost occurrenceKey={props[EXTENSION_INLINE_KEY_ATTRIBUTE]} />
   ),
   } as Components;
 }
@@ -928,7 +933,6 @@ export function MarkdownDocument({
   embedTrail = [],
   extensions,
 }: MarkdownDocumentProps) {
-  const { fxTable } = legacyExtensionProps(extensions);
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
     : "_No content yet._";
@@ -943,32 +947,19 @@ export function MarkdownDocument({
   // document, not restart in each one.
   const linkOccurrences = new Map<string, number>();
 
-  // Calc values are evaluated once, here, before anything renders: names bind
-  // top-to-bottom across the whole document, but the document is rendered as
-  // several independent `MarkdownSegment`s, so no segment can evaluate on its
-  // own. Splitting therefore happens once and each piece keeps a stable index.
-  // Pure in its inputs (the accumulator is created fresh per render), so a
-  // StrictMode double-render produces identical indices.
-  const calcPieces: CalcPiece[] = [];
+  // Extension directives are planned once, here, before anything renders: an
+  // extension's `analyze` (calc binding names top to bottom) needs every
+  // occurrence in document order, but the document renders as several
+  // independent `MarkdownSegment`s. One plan state numbers pieces across the
+  // whole document. Pure in its inputs (the state is fresh per render), so a
+  // StrictMode double-render produces identical keys.
+  const plan = createDirectivePlanState();
   const blockParts = blocks.map((block) =>
-    block.type === "markdown"
-      ? planMarkdownParts(block.markdown, calcPieces)
-      : null,
+    block.type === "markdown" ? planExtensionParts(block.markdown, plan) : null,
   );
-  // `calc_currency` is read here rather than passed in, so every surface that
-  // renders a document honours it — including previews and embeds that never
-  // touch a page component. `calc_rate_date` cannot work this way: it decides
-  // which table to *fetch*, which has to happen before render (see the pages).
-  const calcSettings = parseCalcSettings(bodyMarkdown);
-  const calcDocument =
-    calcPieces.length > 0
-      ? buildCalcDocument(calcPieces, {
-          fxTable,
-          displayCurrency: calcSettings.displayCurrency,
-        })
-      : EMPTY_CALC_DOCUMENT;
+  const extensionDocuments = groupOccurrences(plan, markdown || "");
 
-  return (
+  const rendered = (
     <div
       className={cn(
         "vault-markdown",
@@ -988,7 +979,6 @@ export function MarkdownDocument({
             headingIds={headingIds}
             linkOccurrences={linkOccurrences}
             extensions={extensions ?? null}
-            calcResults={calcDocument.results}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1014,6 +1004,42 @@ export function MarkdownDocument({
       )}
     </div>
   );
+
+  // Only documents with occurrences carry the provider (and its data) to the
+  // client; the rest render exactly as they did.
+  return Object.keys(extensionDocuments).length > 0 ? (
+    <ExtensionDocumentProvider
+      extensions={extensions ?? null}
+      documents={extensionDocuments}
+    >
+      {rendered}
+    </ExtensionDocumentProvider>
+  ) : (
+    rendered
+  );
+}
+
+/**
+ * Per extension, the occurrences `analyze` receives. The document's text is
+ * reduced to its frontmatter, the only part an analyzer reads beyond its own
+ * occurrences (calc's `calc_currency`), so the page does not carry the whole
+ * body to the browser twice.
+ */
+function groupOccurrences(
+  plan: DirectivePlanState,
+  markdown: string,
+): Record<string, AnalyzableDocument> {
+  const documents: Record<string, AnalyzableDocument> = {};
+  const frontmatter = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(markdown)?.[0] ?? "";
+
+  for (const found of plan.occurrences) {
+    const { owner, ...occurrence } = found;
+    (documents[owner] ??= { markdown: frontmatter, occurrences: [] }).occurrences.push(
+      occurrence,
+    );
+  }
+
+  return documents;
 }
 
 function VaultRegion({
@@ -1072,70 +1098,6 @@ function VaultRegion({
   );
 }
 
-/**
- * One renderable piece of a markdown block, after extension-block and
- * `:::calc` splitting. Markdown and calc-block parts carry the index of their entry in the
- * document's calc piece list, which is how a rendered value finds its
- * pre-computed result.
- */
-type MarkdownPart =
-  | { kind: "markdown"; markdown: string; pieceIndex: number }
-  | {
-      kind: "calc-block";
-      lines: CalcBlockLine[];
-      collapsed: boolean;
-      pieceIndex: number;
-    }
-  | ({ kind: "extension-block" } & ParsedExtensionBlock);
-
-/**
- * Splits one markdown block into ordered parts, appending every calc-bearing
- * piece to `pieces` so the caller can evaluate them in document order.
- *
- * Appends to a caller-owned array rather than returning one because piece
- * indices must be unique across the *whole* document, not per block.
- */
-function planMarkdownParts(
-  markdown: string,
-  pieces: CalcPiece[],
-): MarkdownPart[] {
-  const parts: MarkdownPart[] = [];
-
-  for (const segment of splitExtensionBlocks(markdown)) {
-    if (segment.type === "block") {
-      const { type, ...block } = segment;
-      void type;
-      parts.push({ kind: "extension-block", ...block });
-      continue;
-    }
-
-    for (const piece of splitCalcBlockSegments(segment.markdown)) {
-      const pieceIndex = pieces.length;
-
-      if (piece.type === "markdown") {
-        pieces.push({ type: "markdown", markdown: piece.markdown });
-        parts.push({ kind: "markdown", markdown: piece.markdown, pieceIndex });
-        continue;
-      }
-
-      pieces.push({
-        type: "calc-block",
-        lines: piece.lines,
-        presentation: piece.presentation,
-        collapsed: piece.collapsed,
-      });
-      parts.push({
-        kind: "calc-block",
-        lines: piece.lines,
-        collapsed: piece.collapsed,
-        pieceIndex,
-      });
-    }
-  }
-
-  return parts;
-}
-
 function MarkdownBlock({
   parts,
   disableLinks,
@@ -1144,47 +1106,34 @@ function MarkdownBlock({
   headingIds,
   linkOccurrences,
   extensions,
-  calcResults,
 }: {
-  parts: MarkdownPart[];
+  parts: DirectivePart[];
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
-  calcResults: Map<string, ResolvedCalc>;
 }) {
   return (
     <>
       {parts.map((part, index) => {
-        if (part.kind === "extension-block") {
+        if (part.kind === "leaf" || part.kind === "container") {
           return (
             <ExtensionBlockHost
               key={`block-${index}-${part.source}`}
               // Read mode is read-only for every block; editing happens in
               // Live mode, whose widget passes the page's own `canEdit`.
               ctx={{
-                ...createRenderContext(extensions, part.extensionId),
+                ...createRenderContext(extensions, part.owner),
                 canEdit: false,
               }}
               name={part.name}
               attributes={part.attributes}
               source={part.source}
+              body={part.kind === "container" ? part.body : null}
+              occurrenceKey={part.kind === "container" ? part.key : null}
               links={{ wikiLinks, assetLinks }}
-            />
-          );
-        }
-
-        if (part.kind === "calc-block") {
-          return (
-            <CalcBlock
-              key={`calc-${index}`}
-              collapsed={part.collapsed}
-              rows={part.lines.map(
-                (_line, row) =>
-                  calcResults.get(calcKey(part.pieceIndex, row)) ?? null,
-              )}
             />
           );
         }
@@ -1204,7 +1153,6 @@ function MarkdownBlock({
             linkOccurrences={linkOccurrences}
             extensions={extensions}
             keyPrefix={String(part.pieceIndex)}
-            calcResults={calcResults}
           />
         );
       })}
@@ -1221,7 +1169,6 @@ function MarkdownSegment({
   linkOccurrences,
   extensions,
   keyPrefix,
-  calcResults,
 }: {
   markdown: string;
   disableLinks: boolean;
@@ -1231,7 +1178,6 @@ function MarkdownSegment({
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   keyPrefix: string;
-  calcResults: Map<string, ResolvedCalc>;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1244,10 +1190,16 @@ function MarkdownSegment({
 
   return (
     <ReactMarkdown
-      // `calcRemarkPlugins` is shared with the pre-pass that produced
-      // `calcResults`: both must walk identical trees or a key assigned here
-      // would point at another expression's result.
-      remarkPlugins={[...calcRemarkPlugins, [remarkCalc, { keyPrefix }]]}
+      // `directiveRemarkPlugins` is shared with the pre-pass that collected the
+      // occurrences: both must walk identical trees or a key assigned here
+      // would point at another occurrence.
+      remarkPlugins={[
+        ...directiveRemarkPlugins,
+        [
+          remarkInlineDirectives,
+          { names: inlineDirectiveNames, keyPrefix },
+        ],
+      ]}
       rehypePlugins={[
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],
@@ -1258,7 +1210,6 @@ function MarkdownSegment({
       components={createMarkdownComponents(
         disableLinks,
         headingIds,
-        calcResults,
         linkTargets,
         linkOccurrences,
         extensions,

@@ -772,10 +772,69 @@ Behaviour changes: hovering an unresolved link offers "Define" (authors with
 the dictionary enabled). Repeat mentions are quieted per the reader's own
 `definitionEmphasis` setting on every surface.
 
-**Slice 6 — Calc.** `analyze`, inline directives, container blocks with
-`live: "source"`, completions, and the FX currency primitives moving to core.
-Deepest integration, so it goes last. If a contribution type turns out wrong,
-it is revised here rather than special-cased.
+**Slice 6 — Calc.** Done 2026-09-28. `analyze`, inline directives, container
+blocks with `live: "source"`, completions, and the FX currency primitives in
+core. As built:
+
+- **Directive grammar is core and generic.** `lib/markdown/directive-blocks.ts`
+  scans leaf and container blocks (fenced-code aware; an unclosed container
+  runs to the end) and is the one scanner behind Read mode, the Live engine,
+  the `:::` menu and extensions (`scanContainerBlocks` in the SDK).
+  `lib/markdown/directives.ts` holds the shared remark plugin list, the inline
+  collector and the render plugin (`<vault-extension-inline
+  data-extension-key>`), all walking one traversal, so a claimed directive
+  nested in an unclaimed one is neither collected nor keyed (the old calc pair
+  disagreed there). Unclaimed directives are restored as literal text there,
+  for every document. `lib/markdown/directive-occurrences.ts` plans a Markdown
+  run into parts and keys occurrences (`<piece>`, `<piece>:<n>`).
+- **Host.** `lib/extension-host/blocks.ts` builds the owner maps from manifests
+  (leaf and container share the `:::name` namespace; inline is separate) and
+  stays parser-free, because client host components import it;
+  `lib/extension-host/plan.ts` is the parsing half, for `MarkdownDocument`.
+  `MarkdownDocument` plans every run with one state, groups occurrences per
+  extension (document text reduced to its frontmatter) and wraps its output in
+  `ExtensionDocumentProvider` only when there are any.
+  `ExtensionInlineHost` (mapped from the element) and `ExtensionBlockHost`
+  (now leaf or container) load component and analyzer together
+  (`extension-analysis.tsx`); the analysis runs once per document object and
+  analyzer, client-side (it is a render-module loader), during SSR as well.
+- **SDK.** `BlockContribution` is `leaf`/`widget` or `container`/`source`;
+  `BlockProps` gained `body`, `occurrenceKey`, `analysis`; `InlineProps`,
+  `InlineContribution`, `AnalyzeContribution` (`Analyzer(doc, ctx)` over
+  `AnalyzableDocument { markdown: frontmatter, occurrences }`),
+  `LiveContribution` (lazy `(ctx) => Extension`) and `EditorModule.completions`
+  are new. Subpaths: `@/lib/extension-api/fx` (ISO currency data and
+  `FxRateTable`, from core `lib/fx/currencies.ts` / `lib/fx/table.ts`),
+  `/markdown` (`collectOccurrences(markdown, manifest)`, keyed as a page keys
+  them, for agent actions) and `/codemirror` (`isInsideCode`,
+  `getFrontmatterEndLine`). `analysis` is a prop, not `ctx.analysis` as §6
+  sketched: it is computed in the browser and is not serialisable.
+- **Editor.** `use-live-contributions.ts` loads `live` for the render set plus
+  the author's enabled extensions; the editor adds them and editor modules'
+  completions, skips every installed container's lines in the Markdown pass,
+  and the `:::` menu stays shut inside any container
+  (`isInsideExtensionContainer`). `CalcToolbarGroup`, `insertCalcBlock`, the
+  `calcBlock` format and `legacy.ts` are gone.
+- **Calc** lives entirely in `extensions/calc/`: `lib/` (engine, FX math,
+  presentation, `document.ts` over host occurrences, `scan.ts` on the SDK
+  scanner), `analyze.ts`, `CalcInline.tsx`, `CalcBlock.tsx`, `live.ts`,
+  `completions.ts`, `editor.tsx` (`vault.calc.insertBlock`, toolbar,
+  completions) and a fixture with FX data. Its agent actions use
+  `collectOccurrences`. Both extension lint allowlists are now empty.
+- **Playground.** Fixtures may carry `<fixture>.data.json` (what
+  `loadRenderData` returns); the Live pane loads `live` contributions.
+  Verified with Playwright on the calc fixture: the four panes agree value for
+  value, conversions carry provenance, no console errors.
+- **Bundle** (clean build, same method as slice 0): public page 212 KB gzip
+  (210 after slice 5; +2 KB for the document host), doc page 817 KB (822 before),
+  calc's engine in no route entry. A first cut put the remark parser into
+  `blocks.ts` and every public page grew to 251 KB; hence the `plan.ts` split.
+
+Behaviour changes: `calc_currency` now applies in Read mode and on public
+pages (it was read from frontmatter-stripped text, so only Live mode honoured
+it); the calc toolbar button sits with the other extensions', alphabetically;
+Read-mode calc values are client components (server-rendered, hydrated), where
+they were server-only markup.
 
 **Slice 7 — Close-out.** Empty the lint allowlist, delete
 `lib/extensions/catalog.ts` and `components/extensions/`, update

@@ -6,11 +6,14 @@
  *   <fixture>.md          the document
  *   <fixture>.state.json  optional state rows: { "<stateKey>": { "state": …,
  *                         "visibility": "private" | "public" | "editor-only" } }
+ *   <fixture>.data.json   optional render data, standing in for what the
+ *                         extension's `loadRenderData` returns on a real page
  *
  * In state files, the string `"@today"`, `"@today+N"` or `"@today-N"` becomes a
  * `YYYY-MM-DD` day key relative to now, so date-shaped fixtures stay visible.
  */
 import type {
+  JsonValue,
   ExtensionStateRow,
   ExtensionStateValue,
   ExtensionStateVisibility,
@@ -20,6 +23,8 @@ export type ExtensionFixture = {
   name: string;
   markdown: string;
   state: Record<string, ExtensionStateRow>;
+  /** Render data from `<fixture>.data.json`, or null. */
+  data: JsonValue | null;
 };
 
 const visibilities: ReadonlySet<string> = new Set(["private", "public", "editor-only"]);

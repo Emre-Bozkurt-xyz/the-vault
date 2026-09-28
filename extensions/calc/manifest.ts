@@ -31,4 +31,11 @@ export default defineManifest({
       insert: { markdown: ":::calc\n\n:::", cursorOffset: 8 },
     },
   ],
+  commands: [
+    {
+      id: "vault.calc.insertBlock",
+      label: "Insert calc block",
+      description: "Insert a :::calc declarations block; a selection becomes its body.",
+    },
+  ],
 });

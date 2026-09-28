@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { toVaultExtension } from "@/lib/extension-host/compat";
 import type {
   ExtensionAgentActionContext,
   ExtensionAgentDocumentSummary,
-  VaultExtensionAgentAction,
-} from "@/lib/extensions/types";
+  ExtensionServerModule,
+} from "@/lib/extension-api/server";
 
 import manifest, { dictionarySettingsSchema } from "./manifest";
 import server from "./server";
 
-const localBuiltInExtensions = [toVaultExtension(manifest, server)];
+type ServerAction = ExtensionServerModule["actions"][number];
 
 /** Definitions as the host's documents service lists them (tag `definition`). */
 const DEFINITION_DOCUMENTS: ExtensionAgentDocumentSummary[] = [
@@ -36,10 +35,8 @@ const DEFINITIONS = DEFINITION_DOCUMENTS.map((row) => ({
   summary: row.summary,
 }));
 
-function action(id: string): VaultExtensionAgentAction {
-  const found = localBuiltInExtensions
-    .flatMap((extension) => extension.agent?.actions ?? [])
-    .find((candidate) => candidate.id === id);
+function action(id: string): ServerAction {
+  const found = server.actions.find((candidate) => candidate.id === id);
 
   if (!found) {
     throw new Error(`no action ${id}`);
@@ -252,9 +249,7 @@ describe("vault.dictionary.defineTerm", () => {
 });
 
 describe("vault.dictionary settings", () => {
-  const extension = localBuiltInExtensions.find(
-    (candidate) => candidate.id === "vault.dictionary",
-  );
+  const extension = manifest;
 
   it("parses an empty stored value to the declared defaults", () => {
     expect(dictionarySettingsSchema.parse({})).toEqual(extension?.settings?.defaults);

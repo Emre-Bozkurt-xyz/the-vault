@@ -17,18 +17,21 @@ import {
   ExtensionOverlayLayer,
   ExtensionOverlaySurface,
 } from "@/components/extensions/ExtensionOverlays";
+import { useLiveContributions } from "@/components/extensions/use-live-contributions";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { createLiveBlockDecorationExtension } from "@/components/markdown/live-blocks";
 import { extensionManifests } from "@/extensions/manifests";
 import { clientExtensions } from "@/extensions/registry.client";
-import type {
-  DocumentExtensions,
-  EditorModule,
-  ExtensionManifest,
-  ExtensionSettingsField,
-  ExtensionStateRow,
-  ExtensionSurface,
-  PickedAsset,
+import {
+  createRenderContext,
+  type DocumentExtensions,
+  type EditorModule,
+  type ExtensionManifest,
+  type ExtensionSettingsField,
+  type ExtensionStateRow,
+  type ExtensionSurface,
+  type JsonValue,
+  type PickedAsset,
 } from "@/lib/extension-api";
 import {
   ExtensionStateStoreProvider,
@@ -95,6 +98,7 @@ function documentExtensions(input: {
   enabled: boolean;
   settings: Record<string, unknown>;
   defaults: Record<string, unknown>;
+  data: JsonValue | null;
 }): DocumentExtensions {
   return {
     surface: input.surface,
@@ -106,7 +110,8 @@ function documentExtensions(input: {
     settings: { [input.extensionId]: input.enabled ? input.settings : input.defaults },
     // Blocks read state through the in-memory store, never from here.
     state: {},
-    data: {},
+    // What `loadRenderData` would return, from the fixture's `.data.json`.
+    data: input.data === null ? {} : { [input.extensionId]: input.data },
   };
 }
 
@@ -217,14 +222,22 @@ function FixtureView({
 
   const surfaces = useMemo(() => {
     const make = (surface: ExtensionSurface, canEdit: boolean, enabled: boolean) =>
-      documentExtensions({ extensionId: manifest.id, surface, canEdit, enabled, settings, defaults });
+      documentExtensions({
+        extensionId: manifest.id,
+        surface,
+        canEdit,
+        enabled,
+        settings,
+        defaults,
+        data: fixture.data,
+      });
     return {
       live: make("workspace", true, true),
       read: make("workspace", true, true),
       public: make("public", false, false),
       disabled: make("workspace", false, false),
     };
-  }, [defaults, manifest.id, settings]);
+  }, [defaults, fixture.data, manifest.id, settings]);
 
   return (
     <section className="grid gap-3 rounded-lg border border-border/60 p-4">
@@ -265,7 +278,7 @@ function FixtureView({
         </Pane>
         <Pane
           title="Public"
-          detail="Anonymous reader of a published page: public state only. Data a real page gets from the server (loadRenderData) is absent here."
+          detail="Anonymous reader of a published page: public state only. Render data comes from the fixture's .data.json, if any."
         >
           <ExtensionStateStoreProvider value={publicStore}>
             <ExtensionOverlaySurface extensions={surfaces.public}>
@@ -318,6 +331,9 @@ function LiveEditor({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [liveBlocks] = useState(() => new Compartment());
+  // The extension's own Live-mode rendering (`live`), as the editor loads it.
+  const liveExtensionIds = useMemo(() => [extensions.renderIds[0]], [extensions.renderIds]);
+  const liveContributions = useLiveContributions(liveExtensionIds);
   const onChangeRef = useRef(onChange);
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -351,15 +367,18 @@ function LiveEditor({
   // Settings changes reconfigure only the block compartment, never the view.
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: liveBlocks.reconfigure(
+      effects: liveBlocks.reconfigure([
         createLiveBlockDecorationExtension({
           assetLinks: {},
           extensions,
           extensionStateStore: store,
         }),
-      ),
+        ...liveContributions.map(({ extensionId, create }) =>
+          create(createRenderContext(extensions, extensionId)),
+        ),
+      ]),
     });
-  }, [extensions, liveBlocks, store]);
+  }, [extensions, liveBlocks, liveContributions, store]);
 
   const commands = Object.keys(editorModule?.commands ?? {});
 

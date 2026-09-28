@@ -43,13 +43,7 @@ const CORE_RESTRICTION = {
 };
 
 // Extension files still importing core modules.
-const MIGRATION_ALLOWLIST_EXTENSIONS = [
-  "extensions/calc/server.ts", // calc engine: slice 6
-  // Build the legacy registry shape through the host adapter; move to
-  // `@/lib/extension-api/testing` when calc (slice 6) and dictionary (slice 5) do.
-  "extensions/calc/server.test.ts",
-  "extensions/dictionary/server.test.ts",
-];
+const MIGRATION_ALLOWLIST_EXTENSIONS = [];
 
 // Core files still importing an extension's folder.
 const MIGRATION_ALLOWLIST_CORE = [];

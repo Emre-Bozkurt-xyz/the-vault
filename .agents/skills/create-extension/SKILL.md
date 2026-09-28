@@ -20,7 +20,7 @@ process. Read the README first if you have not this session.
    widgets, diagrams). Core Markdown features are not; see plan 12 §8. If
    unsure, ask the user.
 2. **Can the SDK express it?** Check the README's "Not supported yet" list. If
-   the extension needs a missing host capability (container blocks, overlays,
+   the extension needs a missing host capability (fence renderers,
    a new host service), that is a host change: build it generically in
    `lib/extension-host` / `lib/extension-api` for every extension, following
    `docs/23_EXTENSION_SDK_PLAN.md`, and say so to the user before starting. Never

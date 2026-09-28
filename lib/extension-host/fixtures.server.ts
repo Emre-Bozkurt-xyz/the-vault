@@ -39,7 +39,13 @@ export async function readExtensionFixtures(
     } catch (cause) {
       if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
     }
-    fixtures.push({ name, markdown, state });
+    let data = null;
+    try {
+      data = JSON.parse(await fs.readFile(path.join(dir, `${name}.data.json`), "utf8"));
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+    }
+    fixtures.push({ name, markdown, state, data });
   }
   return fixtures;
 }

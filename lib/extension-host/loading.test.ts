@@ -11,6 +11,7 @@ function entry(id: string, hasEditor: boolean): ClientExtensionEntry {
     toolbar: [],
     overlays: {},
     dialogs: {},
+    completions: null,
   };
   return {
     manifest: { id } as ExtensionManifest,

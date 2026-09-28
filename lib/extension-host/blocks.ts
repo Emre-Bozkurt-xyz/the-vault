@@ -1,18 +1,31 @@
 import { extensionManifests } from "@/extensions/manifests";
+import type { ExtensionManifest } from "@/lib/extension-api";
+import {
+  isInsideContainerBlock,
+  parseDirectiveAttributes,
+  scanContainerBlocks,
+  type ContainerBlockScan,
+} from "@/lib/markdown/directive-blocks";
+import type { DirectiveOwners } from "@/lib/markdown/directive-occurrences";
+
+export { parseDirectiveAttributes };
 
 /**
- * The host's view of extension blocks (`docs/23_EXTENSION_SDK_PLAN.md` §6):
- * which `:::name{…}` directives are claimed, how to read one, and how to split
- * a document around them. Used by both Read mode (`MarkdownDocument`) and the
- * Live-mode engine (`live-blocks.ts`), so the two can never disagree about what
- * is a block.
+ * The host's view of extension directives (`docs/23_EXTENSION_SDK_PLAN.md` §6):
+ * which `:::name` blocks and `:name[…]` inline directives are claimed, by whom,
+ * and how a document splits around them. Read mode (`MarkdownDocument`), the
+ * Live-mode engine (`live-blocks.ts`, the editor's container exclusion) and the
+ * `:::` menu all ask here, so they can never disagree about what is a block.
+ *
+ * Light on purpose: client host components import it, so it must never reach
+ * the Markdown parser (`plan.ts` does that, for the renderer).
  *
  * Built from manifests alone, never from render modules. `MarkdownDocument`
  * renders on the server, and a server module that can reach a render module's
  * `import("./SomeBlock")` makes Next bundle that client component into the
- * page's entry chunk (plan §14 slice 0). Which names are blocks is grammar, so
- * it is manifest data; the component loaders stay browser-only in
- * `ExtensionBlockHost`.
+ * page's entry chunk (plan §14 slice 0). Which names are directives is grammar,
+ * so it is manifest data; the component loaders stay browser-only in the host
+ * components.
  */
 
 /** Directive names core owns; an extension may not claim them. */
@@ -21,37 +34,82 @@ export const CORE_DIRECTIVE_NAMES: ReadonlySet<string> = new Set(["assets"]);
 export type ExtensionBlockDefinition = {
   extensionId: string;
   name: string;
-  /** Only single-line (`leaf`) blocks exist so far; container blocks come with calc. */
-  form: "leaf";
+  /** `leaf`: `:::name{…}` alone. `container`: `:::name{…}` … `:::` with a body. */
+  form: "leaf" | "container";
 };
 
-function buildBlockIndex(): ReadonlyMap<string, ExtensionBlockDefinition> {
-  const index = new Map<string, ExtensionBlockDefinition>();
+/** Builds the owner maps from manifests; throws on a collision. */
+export function buildDirectiveOwners(
+  manifests: readonly ExtensionManifest[],
+): DirectiveOwners {
+  const leaf = new Map<string, string>();
+  const container = new Map<string, string>();
+  const inline = new Map<string, string>();
 
-  for (const manifest of extensionManifests) {
+  const claim = (
+    map: Map<string, string>,
+    others: ReadonlyArray<Map<string, string>>,
+    name: string,
+    owner: string,
+    written: string,
+  ) => {
+    const key = name.toLowerCase();
+
+    if (CORE_DIRECTIVE_NAMES.has(key)) {
+      throw new Error(`"${owner}" claims core directive "${written}".`);
+    }
+
+    const existing = map.get(key) ?? others.map((other) => other.get(key)).find(Boolean);
+    if (existing) {
+      throw new Error(`"${written}" is claimed by both "${existing}" and "${owner}".`);
+    }
+
+    map.set(key, owner);
+  };
+
+  for (const manifest of manifests) {
+    // A leaf and a container are both written `:::name`, so the two share one
+    // namespace. Inline `:name[…]` is its own.
     for (const name of manifest.syntax?.blocks ?? []) {
-      const key = name.toLowerCase();
-
-      if (CORE_DIRECTIVE_NAMES.has(key)) {
-        throw new Error(`"${manifest.id}" claims core directive ":::${name}".`);
-      }
-
-      const existing = index.get(key);
-      if (existing) {
-        throw new Error(
-          `":::${name}" is claimed by both "${existing.extensionId}" and "${manifest.id}".`,
-        );
-      }
-
-      index.set(key, { extensionId: manifest.id, name: key, form: "leaf" });
+      claim(leaf, [container], name, manifest.id, `:::${name}`);
+    }
+    for (const name of manifest.syntax?.containers ?? []) {
+      claim(container, [leaf], name, manifest.id, `:::${name}`);
+    }
+    for (const name of manifest.syntax?.inline ?? []) {
+      claim(inline, [], name, manifest.id, `:${name}[…]`);
     }
   }
 
-  return index;
+  return { leaf, container, inline };
 }
 
-/** Every claimed extension block, keyed by lowercase directive name. */
-export const extensionBlocks = buildBlockIndex();
+/** Every installed extension's directive claims. */
+export const extensionDirectiveOwners = buildDirectiveOwners(extensionManifests);
+
+/** Every claimed `:::name` block, leaf or container, keyed by lowercase name. */
+export const extensionBlocks: ReadonlyMap<string, ExtensionBlockDefinition> = new Map<
+  string,
+  ExtensionBlockDefinition
+>([
+  ...[...extensionDirectiveOwners.leaf].map(
+    ([name, extensionId]): [string, ExtensionBlockDefinition] => [
+      name,
+      { extensionId, name, form: "leaf" },
+    ],
+  ),
+  ...[...extensionDirectiveOwners.container].map(
+    ([name, extensionId]): [string, ExtensionBlockDefinition] => [
+      name,
+      { extensionId, name, form: "container" },
+    ],
+  ),
+]);
+
+/** Claimed container names, for the Live-mode scans. */
+export const extensionContainerNames: readonly string[] = [
+  ...extensionDirectiveOwners.container.keys(),
+];
 
 /** `extensionId:name`, the key block components are registered under. */
 export function extensionBlockKey(extensionId: string, name: string): string {
@@ -59,22 +117,6 @@ export function extensionBlockKey(extensionId: string, name: string): string {
 }
 
 const leafDirectivePattern = /^:::\s*([a-z][\w-]*)\s*(?:\{([^}\n]*)\})?\s*$/i;
-const attributePattern =
-  /([A-Za-z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s}]+)))?/g;
-
-/** `key=value key="v" flag` → `{ key: "value", key: "v", flag: "" }`. */
-export function parseDirectiveAttributes(
-  raw: string | null | undefined,
-): Record<string, string> {
-  const attributes: Record<string, string> = {};
-  if (!raw) return attributes;
-
-  for (const match of raw.matchAll(attributePattern)) {
-    attributes[match[1]] = match[2] ?? match[3] ?? match[4] ?? "";
-  }
-
-  return attributes;
-}
 
 export type ParsedExtensionBlock = {
   extensionId: string;
@@ -84,8 +126,9 @@ export type ParsedExtensionBlock = {
 };
 
 /**
- * The claimed leaf block on this line, or null. Surrounding whitespace is
- * ignored, as the calendar anchor always allowed.
+ * The claimed leaf block on this line, or null (Live mode). Surrounding
+ * whitespace is ignored, as the calendar anchor always allowed. A container's
+ * opening line is never a leaf: treating it as one would orphan its body.
  */
 export function parseExtensionBlockLine(
   line: string,
@@ -106,63 +149,17 @@ export function parseExtensionBlockLine(
   };
 }
 
-export type ExtensionBlockSegment =
-  | { type: "markdown"; markdown: string }
-  | ({ type: "block" } & ParsedExtensionBlock);
+/** Installed container blocks in `text`, in CodeMirror coordinates. */
+export function scanExtensionContainers(text: string): ContainerBlockScan[] {
+  return extensionContainerNames.length === 0
+    ? []
+    : scanContainerBlocks(text, extensionContainerNames);
+}
 
-/**
- * Splits Markdown into runs of plain Markdown and claimed extension blocks, so
- * a renderer can mount each block where its anchor sits. Lines inside fenced
- * code are never blocks.
- */
-export function splitExtensionBlocks(
-  markdown: string,
-  blocks: ReadonlyMap<string, ExtensionBlockDefinition> = extensionBlocks,
-): ExtensionBlockSegment[] {
-  if (blocks.size === 0) return [{ type: "markdown", markdown }];
-
-  const segments: ExtensionBlockSegment[] = [];
-  let buffer: string[] = [];
-  let openFence: { marker: string; length: number } | null = null;
-
-  const flush = () => {
-    if (buffer.length > 0) {
-      segments.push({ type: "markdown", markdown: buffer.join("\n") });
-      buffer = [];
-    }
-  };
-
-  for (const line of markdown.split(/\r?\n/)) {
-    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-
-    if (openFence) {
-      if (
-        fence &&
-        fence[1][0] === openFence.marker &&
-        fence[1].length >= openFence.length &&
-        !fence[2].trim()
-      ) {
-        openFence = null;
-      }
-      buffer.push(line);
-      continue;
-    }
-
-    if (fence) {
-      openFence = { marker: fence[1][0], length: fence[1].length };
-      buffer.push(line);
-      continue;
-    }
-
-    const block = parseExtensionBlockLine(line, blocks);
-    if (block) {
-      flush();
-      segments.push({ type: "block", ...block });
-    } else {
-      buffer.push(line);
-    }
-  }
-
-  flush();
-  return segments;
+/** Whether 1-based `line` is inside an installed container (closing fence included). */
+export function isInsideExtensionContainer(text: string, line: number): boolean {
+  return (
+    extensionContainerNames.length > 0 &&
+    isInsideContainerBlock(text, line, extensionContainerNames)
+  );
 }

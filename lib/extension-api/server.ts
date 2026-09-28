@@ -15,13 +15,13 @@ import type {
   ExtensionSurface,
   JsonValue,
 } from "@/lib/extension-api";
-import type { FxRateTable } from "@/lib/calc/fx";
+import type { FxRateTable } from "@/lib/fx/table";
 import type {
   ExtensionStateValue,
   VaultExtensionAgentAction,
 } from "@/lib/extensions/types";
 
-export type { FxRateTable } from "@/lib/calc/fx";
+export type { FxRateTable } from "@/lib/fx/table";
 
 export type {
   ExtensionAgentActionContext,
