@@ -162,28 +162,38 @@ export type ExtensionAgentWorkspaceStateApi = {
   listAcrossDocuments: () => Promise<ExtensionAgentWorkspaceStateEntry[]>;
 };
 
-/** One definition document, as an agent action sees it. */
-export type ExtensionAgentDefinitionEntry = {
+/** One document, as an extension action sees it in a listing. */
+export type ExtensionAgentDocumentSummary = {
   documentId: string;
-  /** The definition's title — the term itself. */
-  term: string;
+  title: string;
   aliases: string[];
   summary: string | null;
 };
 
 /**
- * Dictionary surface for agent actions (`docs/20_DICTIONARY_EXTENSION_PLAN.md`).
+ * Document services for extension actions (`docs/23_EXTENSION_SDK_PLAN.md` §8).
  *
- * Handlers may not import `db`, so definition lookup and creation arrive here,
- * pre-bound to the acting user. `create` exists only with `document:write`.
+ * Handlers may not import `db`, so document lookup and creation arrive here,
+ * pre-bound to the acting user and generic: the dictionary builds definitions
+ * out of these without the host knowing what a definition is. `listByTag`
+ * needs `document:read`; `findOwnedByTitle` and `create` need `document:write`.
  */
-export type ExtensionAgentDefinitionsApi = {
-  list: () => Promise<ExtensionAgentDefinitionEntry[]>;
+export type ExtensionAgentDocumentsApi = {
+  /** Documents carrying a tag that the user can read. */
+  listByTag: (tagSlug: string) => Promise<ExtensionAgentDocumentSummary[]>;
+  /** A document the user owns with this title (case-insensitive), or null. */
+  findOwnedByTitle?: (
+    title: string,
+  ) => Promise<{ documentId: string; title: string } | null>;
+  /**
+   * Creates a document the user owns, in the first of `folderIds` they may add
+   * to (each is permission-checked), else at their vault root.
+   */
   create?: (input: {
-    term: string;
-    /** Seeds the definition's `summary:` — the text a reader sees on hover. */
-    summary?: string;
-  }) => Promise<{ documentId: string; term: string; created: boolean }>;
+    title: string;
+    markdown: string;
+    folderIds?: ReadonlyArray<string | null | undefined>;
+  }) => Promise<{ documentId: string; title: string }>;
 };
 
 export type ExtensionAgentWorkspaceContext = {
@@ -208,12 +218,17 @@ export type ExtensionAgentActionContext = {
    */
   fx?: { getTable: () => Promise<FxRateTable | null> };
   /**
-   * Definitions the acting user can read, and (with `document:write`) a way to
-   * create one. Top-level rather than under `document`/`workspace` because it is
-   * user-scoped either way — the same reasoning as `fx`, except this one *is*
-   * permission-gated.
+   * Documents the acting user can read, and (with `document:write`) ways to
+   * find and create their own. Top-level rather than under `document`/
+   * `workspace` because it is user-scoped either way — the same reasoning as
+   * `fx`, except this one *is* permission-gated.
    */
-  definitions?: ExtensionAgentDefinitionsApi;
+  documents?: ExtensionAgentDocumentsApi;
+  /**
+   * The acting user's settings for this extension (schema defaults when they
+   * have none stored).
+   */
+  settings: Record<string, unknown>;
   /** Present for `scope: "document"` actions. */
   document?: ExtensionAgentDocumentContext;
   /** Present for `scope: "workspace"` actions. */

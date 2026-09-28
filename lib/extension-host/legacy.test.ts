@@ -21,38 +21,25 @@ describe("legacyExtensionProps", () => {
   it("falls back to today's defaults when nothing is resolved (embeds)", () => {
     expect(legacyExtensionProps(null)).toEqual({
       fxTable: null,
-      definitionEmphasis: "every",
       calcEnabled: false,
-      dictionaryEnabled: false,
     });
   });
 
-  it("gates authoring on both enablement and edit access", () => {
-    const enabledIds = ["vault.calc", "vault.dictionary"];
+  it("gates calc authoring on both enablement and edit access", () => {
+    const enabledIds = ["vault.calc"];
 
-    const editor = legacyExtensionProps(extensions({ enabledIds }));
-    expect(editor.calcEnabled).toBe(true);
-
-    const reader = legacyExtensionProps(extensions({ enabledIds, canEdit: false }));
-    expect(reader.calcEnabled).toBe(false);
-    // The dictionary also carries a reading preference, so readers keep it.
-    expect(reader.dictionaryEnabled).toBe(true);
+    expect(legacyExtensionProps(extensions({ enabledIds })).calcEnabled).toBe(true);
+    expect(
+      legacyExtensionProps(extensions({ enabledIds, canEdit: false })).calcEnabled,
+    ).toBe(false);
   });
 
-  it("reads settings and render data under their old names", () => {
+  it("reads calc's render data under its old name", () => {
     const fxTable = { base: "EUR", date: "2026-09-26", provider: "ECB", rates: {} };
     const props = legacyExtensionProps(
-      extensions({
-        settings: {
-          "vault.dictionary": { definitionEmphasis: "first" },
-        },
-        data: {
-          "vault.calc": { fxTable },
-        },
-      }),
+      extensions({ data: { "vault.calc": { fxTable } } }),
     );
 
     expect(props.fxTable).toEqual(fxTable);
-    expect(props.definitionEmphasis).toBe("first");
   });
 });

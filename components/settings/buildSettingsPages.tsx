@@ -21,7 +21,7 @@ import { SnippetsSettingsSection } from "@/components/settings/SnippetsSettingsS
 import { getInstalledExtensionIds } from "@/lib/extension-host/manifests";
 import { installedExtensions } from "@/lib/extension-host/server";
 import { buildPreferences } from "@/lib/settings/preferences";
-import { listOwnedFolderOptionsForUser } from "@/server/definitions-data";
+import { listOwnedFolderOptionsForUser } from "@/server/extension-documents";
 import { listConnectedAuthProviders } from "@/server/profile";
 import {
   getViewerStylingPreference,

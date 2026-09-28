@@ -23,9 +23,10 @@ import {
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
 import { getAssetForUser } from "@/server/assets";
 import {
-  createDefinitionForUser,
-  listDefinitionsForUser,
-} from "@/server/definitions-data";
+  createDocumentForUser,
+  findOwnedDocumentByTitleForUser,
+  listDocumentsByTagForUser,
+} from "@/server/extension-documents";
 import {
   getDocumentForUser,
 } from "@/server/documents-data";
@@ -406,8 +407,10 @@ export async function runAgentActionForUser({
   let fxTable: Awaited<ReturnType<typeof getFxRateTable>> | undefined;
 
   const actionPermissions = new Set(entry.action.permissions ?? []);
+  const viewer = await resolveViewerExtensions(userId);
   const context: ExtensionAgentActionContext = {
     user: { id: userId },
+    settings: viewer.settings[entry.extension.id] ?? {},
     fx: {
       // Memoized per call so an action reading rates twice makes one request.
       getTable: async () => {
@@ -417,35 +420,16 @@ export async function runAgentActionForUser({
     },
   };
 
-  // The dictionary surface. Gated like every other capability: reading needs
-  // `document:read`, and creating a definition is a document write.
+  // Document services. Gated like every other capability: listing needs
+  // `document:read`; finding your own documents to reuse and creating new ones
+  // are document writes.
   if (actionPermissions.has("document:read")) {
-    context.definitions = {
-      list: () => listDefinitionsForUser(userId),
+    context.documents = {
+      listByTag: (tagSlug) => listDocumentsByTagForUser(userId, tagSlug),
       ...(actionPermissions.has("document:write")
         ? {
-            create: async ({
-              term,
-              summary,
-            }: {
-              term: string;
-              summary?: string;
-            }) => {
-              const result = await createDefinitionForUser(userId, {
-                term,
-                summary,
-              });
-
-              if (!result.ok) {
-                throw new Error(result.message);
-              }
-
-              return {
-                documentId: result.documentId,
-                term: result.title,
-                created: result.created,
-              };
-            },
+            findOwnedByTitle: (title) => findOwnedDocumentByTitleForUser(userId, title),
+            create: (documentInput) => createDocumentForUser(userId, documentInput),
           }
         : {}),
     };

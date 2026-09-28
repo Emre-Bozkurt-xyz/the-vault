@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildDefinitionsByHref,
+  buildWikiLinkTargetsByHref,
   countWikiLinkTargets,
   buildWikiLinkResolutionMap,
   hrefWithoutFragment,
@@ -228,7 +228,7 @@ describe("hrefWithoutFragment", () => {
   });
 });
 
-describe("buildDefinitionsByHref", () => {
+describe("buildWikiLinkTargetsByHref", () => {
   const resolutions = buildWikiLinkResolutionMap(
     [
       row({
@@ -248,39 +248,47 @@ describe("buildDefinitionsByHref", () => {
     { definitionDocumentIds: new Set(["def"]) },
   );
 
-  it("indexes a definition by its href, once", () => {
-    const definitions = buildDefinitionsByHref(resolutions);
+  it("indexes each resolved target by its href, once, whatever key reached it", () => {
+    const targets = buildWikiLinkTargetsByHref(resolutions);
 
-    expect(definitions.size).toBe(1);
-    expect(definitions.get("/docs/def")).toEqual({
+    expect(targets.get("/docs/def")).toEqual({
       label: "Idempotence",
+      href: "/docs/def",
+      isDefinition: true,
       preview: "Repeating it changes nothing.",
+    });
+    expect(targets.get("/docs/plain")).toEqual({
+      label: "Plain",
+      href: "/docs/plain",
+      isDefinition: false,
+      preview: null,
     });
   });
 
-  it("excludes non-definitions", () => {
-    expect(buildDefinitionsByHref(resolutions).has("/docs/plain")).toBe(false);
-  });
-
-  it("excludes a definition with nothing to show", () => {
+  // Whether a definition with no preview gets a card is the dictionary's call
+  // (its link preview returns null), not the index's.
+  it("keeps a definition with nothing to show, without a preview", () => {
     const empty = buildWikiLinkResolutionMap(
       [row({ id: "def", title: "Term", markdown: "" })],
       workspaceHref,
       { definitionDocumentIds: new Set(["def"]) },
     );
 
-    expect(buildDefinitionsByHref(empty).size).toBe(0);
+    expect(buildWikiLinkTargetsByHref(empty).get("/docs/def")).toMatchObject({
+      isDefinition: true,
+      preview: null,
+    });
   });
 
   it("returns an empty index when there is no resolution map", () => {
-    expect(buildDefinitionsByHref(undefined).size).toBe(0);
+    expect(buildWikiLinkTargetsByHref(undefined).size).toBe(0);
   });
 
   it("caches per resolution map and re-derives for a different one", () => {
-    const first = buildDefinitionsByHref(resolutions);
+    const first = buildWikiLinkTargetsByHref(resolutions);
 
-    expect(buildDefinitionsByHref(resolutions)).toBe(first);
-    expect(buildDefinitionsByHref({ ...resolutions })).not.toBe(first);
+    expect(buildWikiLinkTargetsByHref(resolutions)).toBe(first);
+    expect(buildWikiLinkTargetsByHref({ ...resolutions })).not.toBe(first);
   });
 });
 

@@ -67,7 +67,7 @@ export default defineManifest({
       title: "Define a term",
       keywords: "definition dictionary glossary term explain",
       // `run`, not `insert`: this creates a document, which no markdown
-      // insertion can express. The editor supplies the implementation.
+      // insertion can express. The editor module implements the command.
       run: { command: "vault.dictionary.newDefinition" },
     },
     {
@@ -76,6 +76,18 @@ export default defineManifest({
       title: "Reference a definition",
       keywords: "definition dictionary glossary lookup link",
       run: { command: "vault.dictionary.insertReference" },
+    },
+  ],
+  commands: [
+    {
+      id: "vault.dictionary.newDefinition",
+      label: "Define a term",
+      description: "Create a definition document and link to it here.",
+    },
+    {
+      id: "vault.dictionary.insertReference",
+      label: "Reference a definition",
+      description: "Link to a term you have already defined.",
     },
   ],
 });

@@ -236,8 +236,8 @@ The SDK grows with each extension moved behind it (plan §14):
 - **Container blocks** (`:::name` … `:::` with a body) and inline directives are
   claimed in `syntax.containers` / `syntax.inline`, but the host does not
   render them yet (calc, slice 6).
-- **Link decorators** (dictionary, slice 5) and **fence renderers** are
-  designed in the plan but not built.
+- **Fence renderers** are designed in the plan but not built. (Link previews,
+  dialogs and link completion are supported; see the dictionary.)
 - **Styles** live in `app/styles/components.css`, following
   [`docs/CSS_CONTRACT.md`](../docs/CSS_CONTRACT.md); extensions do not ship
   their own stylesheet yet.

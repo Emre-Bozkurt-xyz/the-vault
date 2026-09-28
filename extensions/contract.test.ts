@@ -79,16 +79,6 @@ function isClientModule(file: string): boolean {
   return firstStatement === '"use client";' || firstStatement === "'use client';";
 }
 
-/**
- * Capabilities the editor provides itself, which a slash `run` item may name
- * without its extension declaring a command. Shrinks as the dictionary moves
- * behind the SDK (plan §14 slice 5).
- */
-const HOST_COMMANDS = new Set([
-  "vault.dictionary.newDefinition",
-  "vault.dictionary.insertReference",
-]);
-
 describe("every extension", () => {
   const folders = scanExtensions(extensionsDir);
 
@@ -140,11 +130,8 @@ describe("every extension", () => {
         for (const slash of manifest.slashCommands ?? []) {
           if (slash.run) {
             expect(slash.run.command.startsWith(`${manifest.id}.`)).toBe(true);
-            // Either one of this extension's commands (run by its editor
-            // module) or a host capability the editor itself provides.
-            if (!HOST_COMMANDS.has(slash.run.command)) {
-              expect(declared).toContain(slash.run.command);
-            }
+            // One of this extension's commands, run by its editor module.
+            expect(declared).toContain(slash.run.command);
           }
         }
       });

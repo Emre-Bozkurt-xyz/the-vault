@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { BookMarked } from "lucide-react";
 
+import type { DialogProps } from "@/lib/extension-api";
+import { useExtensionAction } from "@/lib/extension-api/react";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -129,5 +132,67 @@ export function NewDefinitionDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** What the dialog closes with; `openDialog` resolves to it. */
+export type NewDefinitionResult = {
+  documentId: string;
+  title: string;
+  created: boolean;
+  /** Whether a definition line was given (a stub with none earns a tab). */
+  hasSummary: boolean;
+};
+
+/**
+ * The dialog as the host opens it (`editor.openDialog("newDefinition")`). It
+ * creates the definition through the dictionary's own `defineTerm` action, the
+ * same code path agents use, and closes with the result.
+ */
+export default function NewDefinitionDialogHost({ ctx, props, close }: DialogProps) {
+  const { term = "", linksHere = true } = (props ?? {}) as {
+    term?: string;
+    linksHere?: boolean;
+  };
+  const defineTerm = useExtensionAction(ctx, "vault.dictionary.defineTerm");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <NewDefinitionDialog
+      open
+      initialTerm={term}
+      linksHere={linksHere}
+      pending={pending}
+      error={error}
+      onCancel={() => close(null)}
+      onSubmit={({ term: nextTerm, summary }) => {
+        setPending(true);
+        setError(null);
+        void defineTerm({
+          term: nextTerm,
+          summary: summary.trim() || undefined,
+          // The folder the author is writing in; their configured folder, if
+          // any, still wins on the server.
+          folderId: ctx.folderId,
+        }).then((outcome) => {
+          setPending(false);
+
+          if (!outcome.ok) {
+            setError(outcome.error);
+            return;
+          }
+
+          const data = outcome.data as { documentId: string; term: string; created: boolean };
+          const result: NewDefinitionResult = {
+            documentId: data.documentId,
+            title: data.term,
+            created: data.created,
+            hasSummary: Boolean(summary.trim()),
+          };
+          close(result);
+        });
+      }}
+    />
   );
 }

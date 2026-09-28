@@ -7,43 +7,44 @@ import { PreviewCard } from "@base-ui/react/preview-card";
 import { cn } from "@/lib/utils";
 
 /**
- * The hover preview for a link that points at a definition document
- * (`docs/20_DICTIONARY_EXTENSION_PLAN.md`). Hovering the term shows a rendered
- * miniature of its definition, so a reader never has to leave the sentence.
+ * The hover card for a wiki link that an extension previews
+ * (`docs/23_EXTENSION_SDK_PLAN.md` §6 links; the dictionary's definition cards
+ * are the first use). Hovering the link shows a rendered miniature of what it
+ * points at, so a reader never has to leave the sentence.
  *
  * Two entry points, one popup:
  *
- * - `DefinitionPreviewCard` wraps a link on a read surface, where Base UI owns
- *   the trigger and therefore the hover timing, the `safePolygon` path into the
+ * - `LinkPreviewCard` wraps a link on a read surface, where Base UI owns the
+ *   trigger and therefore the hover timing, the `safePolygon` path into the
  *   card, focus handling and dismissal.
- * - `DefinitionHoverCard` is the Live-mode form, anchored to a CodeMirror span
- *   that is not a React element. There is no trigger for Base UI to attach to,
- *   so the hover timing lives in the editor extension (`live-definitions.ts`),
+ * - `LinkHoverCard` is the Live-mode form, anchored to a CodeMirror span that
+ *   is not a React element. There is no trigger for Base UI to attach to, so
+ *   the hover timing lives in the editor extension (`live-link-hover.ts`),
  *   which keeps the card open by checking whether it is `:hover`ed.
  *
- * Both render `DefinitionCardPopup`, so the surfaces cannot drift.
+ * Both render `LinkCardPopup`, so the surfaces cannot drift.
  *
- * Rendered previews arrive as React nodes, not Markdown: this module would
- * otherwise have to import `MarkdownDocument`, which imports this one, and that
- * cycle resolves to `undefined` at module init rather than failing loudly. The
- * caller renders the Markdown with links disabled, which also caps preview depth
- * at zero.
+ * Previews arrive as React nodes, not Markdown: this module would otherwise
+ * have to import `MarkdownDocument`, which imports this one, and that cycle
+ * resolves to `undefined` at module init rather than failing loudly. The
+ * caller renders the Markdown with links disabled, which also caps preview
+ * depth at zero.
+ *
+ * The CSS classes keep their original `vault-md-definition-*` names: they are
+ * part of the stylesheet contract (`docs/CSS_CONTRACT.md`).
  */
-export function DefinitionPreviewCard({
+export function LinkPreviewCard({
   href,
-  label,
+  title,
   preview,
   quiet = false,
   children,
 }: {
   href: string;
-  /** The definition's title, shown as the card's heading. */
-  label: string;
+  /** The card's heading. */
+  title: string;
   preview: ReactNode;
-  /**
-   * A repeat mention under the reader's "first mention" setting: still linked
-   * and still previewable, but not emphasized.
-   */
+  /** Still linked and previewable, but not emphasized (e.g. a repeat mention). */
   quiet?: boolean;
   /** The link text as it appears in the sentence. */
   children: ReactNode;
@@ -63,25 +64,22 @@ export function DefinitionPreviewCard({
       >
         {children}
       </PreviewCard.Trigger>
-      <DefinitionCardPopup
-        label={label}
-        footer={<DefinitionCardOpenLink href={href} />}
-      >
+      <LinkCardPopup title={title} footer={<LinkCardOpenLink href={href} />}>
         {preview}
-      </DefinitionCardPopup>
+      </LinkCardPopup>
     </PreviewCard.Root>
   );
 }
 
-export function DefinitionHoverCard({
+export function LinkHoverCard({
   anchor,
-  label,
+  title,
   footer,
   onClose,
   children,
 }: {
   anchor: HTMLElement;
-  label: string;
+  title: string;
   footer?: ReactNode;
   /** Escape or an outside press — the extension closes on its own otherwise. */
   onClose: () => void;
@@ -96,15 +94,15 @@ export function DefinitionHoverCard({
         }
       }}
     >
-      <DefinitionCardPopup anchor={anchor} label={label} footer={footer}>
+      <LinkCardPopup anchor={anchor} title={title} footer={footer}>
         {children}
-      </DefinitionCardPopup>
+      </LinkCardPopup>
     </PreviewCard.Root>
   );
 }
 
-/** "Open" — the way out of a card and into the definition itself. */
-export function DefinitionCardOpenLink({ href }: { href: string }) {
+/** "Open" — the way out of a card and into the linked document itself. */
+export function LinkCardOpenLink({ href }: { href: string }) {
   return (
     <Link href={href} className="vault-md-definition-card-action">
       Open
@@ -112,14 +110,14 @@ export function DefinitionCardOpenLink({ href }: { href: string }) {
   );
 }
 
-function DefinitionCardPopup({
+function LinkCardPopup({
   anchor,
-  label,
+  title,
   footer,
   children,
 }: {
   anchor?: HTMLElement;
-  label: string;
+  title: string;
   footer?: ReactNode;
   children: ReactNode;
 }) {
@@ -132,7 +130,7 @@ function DefinitionCardPopup({
         align="start"
       >
         <PreviewCard.Popup className="vault-md-definition-card">
-          <p className="vault-md-definition-card-title">{label}</p>
+          <p className="vault-md-definition-card-title">{title}</p>
           <div className="vault-md-definition-card-body">{children}</div>
           {footer ? (
             <div className="vault-md-definition-card-footer">{footer}</div>

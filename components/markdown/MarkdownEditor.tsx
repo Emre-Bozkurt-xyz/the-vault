@@ -92,17 +92,16 @@ import {
 } from "@/components/markdown/slash-commands";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import {
-  DefinitionCardOpenLink,
-  DefinitionHoverCard,
-} from "@/components/markdown/DefinitionPreviewCard";
-import { NewDefinitionDialog } from "@/components/markdown/NewDefinitionDialog";
+  LinkCardOpenLink,
+  LinkHoverCard,
+} from "@/components/markdown/LinkPreviewCard";
 import {
-  createDefinitionHoverExtension,
-  definitionScopeField,
-  definitionScopeMarker,
-  narrowWikiCompletionToDefinitions,
-  type DefinitionHoverTarget,
-} from "@/components/markdown/live-definitions";
+  createLinkHoverExtension,
+  linkCompletionFilterAt,
+  linkCompletionScopeField,
+  narrowLinkCompletion,
+  type LinkHoverTarget,
+} from "@/components/markdown/live-link-hover";
 import { InheritedTagList } from "@/components/inherited-tag-list";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
@@ -135,8 +134,11 @@ import { useExtensionHost } from "@/components/extensions/ExtensionHostProvider"
 import type {
   DocumentExtensions,
   EditorModule,
+  JsonValue,
   PickedAsset,
+  WikiLinkInfo,
 } from "@/lib/extension-api";
+import { resolveLinkPreview } from "@/lib/extension-host/links";
 import {
   insertBlock,
   insertInline,
@@ -161,7 +163,6 @@ import {
   saveDocumentTitleAction,
   saveMarkdownDocumentAction,
 } from "@/server/documents";
-import { createDefinitionDocumentAction } from "@/server/definitions";
 import type { PickerAsset } from "@/server/asset-picker-actions";
 
 type MarkdownEditorProps = {
@@ -392,8 +393,33 @@ export function MarkdownEditor({
       return null;
     });
   }, []);
+  // An extension dialog open through `editor.openDialog()`. One at a time: a
+  // new request dismisses the previous one.
+  const [dialogRequest, setDialogRequest] = useState<{
+    extensionId: string;
+    id: string;
+    props: JsonValue | undefined;
+    resolve: (result: JsonValue | null) => void;
+    key: number;
+  } | null>(null);
+  const openDialog = useCallback(
+    (extensionId: string, id: string, props?: JsonValue) =>
+      new Promise<JsonValue | null>((resolve) => {
+        setDialogRequest((previous) => {
+          previous?.resolve(null);
+          return { extensionId, id, props, resolve, key: Date.now() };
+        });
+      }),
+    [],
+  );
+  const settleDialog = useCallback((result: JsonValue | null) => {
+    setDialogRequest((request) => {
+      request?.resolve(result);
+      return null;
+    });
+  }, []);
   const runEditorCommand = useCallback(
-    (view: EditorView, commandId: string) => {
+    (view: EditorView, commandId: string, args?: JsonValue) => {
       const owner = editorModules.find((candidate) => candidate.commands[commandId]);
       if (!owner) return;
 
@@ -403,12 +429,21 @@ export function MarkdownEditor({
         {
           extensionId: owner.manifestId,
           documentId,
+          folderId,
           settings: documentExtensions?.settings[owner.manifestId] ?? {},
+          args,
         },
-        { pickAsset },
+        {
+          pickAsset,
+          openDialog,
+          openLinkCompletion: (commandView, options) =>
+            openLinkCompletionAt(commandView as EditorView, options?.filter),
+          openDocument: (id, documentTitle) =>
+            dispatchWorkspaceOpenTab({ href: `/docs/${id}`, title: documentTitle }),
+        },
       );
     },
-    [documentExtensions, documentId, editorModules, pickAsset],
+    [documentExtensions, documentId, editorModules, folderId, openDialog, pickAsset],
   );
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
@@ -449,37 +484,19 @@ export function MarkdownEditor({
   // `applyFormat` is defined below the extension memo, so the insertion-menu
   // sources reach it through this ref rather than closing over it directly.
   const applyFormatRef = useRef<((format: MarkdownFormat) => void) | null>(null);
-  // The Live-mode definition hover card. All hover timing lives in the
-  // extension's own closure (`live-definitions.ts`); the only thing crossing the
-  // boundary is this setter, which React guarantees is stable.
-  const [definitionHover, setDefinitionHover] =
-    useState<DefinitionHoverTarget | null>(null);
+  // The Live-mode link hover card, for links an extension previews. All hover
+  // timing lives in the extension's own closure (`live-link-hover.ts`); the
+  // only thing crossing the boundary is this setter, which React guarantees is
+  // stable.
+  const [linkHover, setLinkHover] = useState<LinkHoverTarget | null>(null);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
-  );
-  // `/def` (`extensions/dictionary/manifest.ts`). Only the term is held here; the view is
-  // read from `viewRef` at submit time, so the link lands in the live editor
-  // rather than in whatever view instance existed when the dialog opened.
-  // `key` remounts the dialog per invocation — the same term can be defined
-  // twice in a row, so the term alone cannot be the key. `linksHere` is false
-  // when defining an existing unresolved link, which must not insert a second.
-  const [newDefinition, setNewDefinition] = useState<{
-    term: string;
-    linksHere: boolean;
-    key: number;
-  } | null>(null);
-  const [newDefinitionPending, setNewDefinitionPending] = useState(false);
-  const [newDefinitionError, setNewDefinitionError] = useState<string | null>(
-    null,
   );
   // Slash items contributed by the user's enabled extensions. Keyed on a joined
   // string (rebuilt inside) so a fresh `enabledExtensionIds` array reference
   // doesn't churn this memo — and, downstream, reconfigure the whole editor.
   const enabledExtensionKey = (enabledExtensionIds ?? []).join("|");
-  const dictionaryEnabled = (enabledExtensionIds ?? []).includes(
-    "vault.dictionary",
-  );
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
     () =>
       toExtensionSlashCommands(
@@ -813,11 +830,7 @@ export function MarkdownEditor({
       // these dispatch to the editor view, and a memoized value whose functions
       // mutate an argument is something the React Compiler will not compile
       // around. The handlers themselves are module-level, like `insertBlock`.
-      const hostCommands: Record<string, (view: EditorView) => void> = {
-        "vault.dictionary.newDefinition": (view: EditorView) =>
-          openNewDefinitionDialog(view, setNewDefinition, setNewDefinitionError),
-        "vault.dictionary.insertReference": insertDefinitionReference,
-      };
+      const hostCommands: Record<string, (view: EditorView) => void> = {};
       // Loaded editor modules' commands, which slash `run` items name. An item
       // whose module has not loaded yet stays hidden until it has.
       for (const editorModule of editorModules) {
@@ -827,9 +840,10 @@ export function MarkdownEditor({
         }
       }
       const baseExtensions = [
-      // `/term`'s definitions-only narrowing (`live-definitions.ts`). Registered
-      // for every mode, since the slash menu is not Live-only.
-      definitionScopeField,
+      // An extension's `openLinkCompletion({ filter })` narrowing (e.g. the
+      // dictionary's `/term`). Registered for every mode, since the slash menu
+      // is not Live-only.
+      linkCompletionScopeField,
       markdownLanguage({
         codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({
@@ -1119,14 +1133,14 @@ export function MarkdownEditor({
           createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
           // Reads the map through the store rather than closing over
-          // `wikiLinkMap`, so a definition looked up after the wiki-link
-          // completion refreshed it previews the current text.
-          createDefinitionHoverExtension({
+          // `wikiLinkMap`, so a link resolved after the wiki-link completion
+          // refreshed it previews the current text. Extensions decide which
+          // links get a card (the dictionary's definitions and, for authors
+          // who use it, its offer to define an unresolved term).
+          createLinkHoverExtension({
             getWikiLinks: () => wikiLinkMapStore.get(),
-            onChange: setDefinitionHover,
-            // Previews are for everyone; offering to *define* a term is an
-            // authoring affordance, so it follows the extension switch.
-            offerDefine: dictionaryEnabled,
+            hasPreview: (link) => Boolean(resolveLinkPreview(link, documentExtensions)),
+            onChange: setLinkHover,
           }),
         );
       }
@@ -1136,6 +1150,9 @@ export function MarkdownEditor({
           override: [
             ...(slashMenuEnabled
               ? [
+                  // The sources call these only on input, never during render;
+                  // the compiler cannot see that through the closures.
+                  // eslint-disable-next-line react-hooks/refs
                   createSlashCommandCompletionSource({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
@@ -1146,6 +1163,7 @@ export function MarkdownEditor({
                   // The `:::` fence is the other way into the same items, so it
                   // rides the same settings toggle: turning the insert menu off
                   // has to turn off every way of reaching it.
+                  // eslint-disable-next-line react-hooks/refs
                   createDirectiveCompletionSource({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
@@ -1228,7 +1246,6 @@ export function MarkdownEditor({
       slashMenuEnabled,
       calcEnabled,
       fxTable,
-      dictionaryEnabled,
     ],
   );
 
@@ -1781,109 +1798,33 @@ export function MarkdownEditor({
           </div>
         </div>
         </DocumentOverlayHost>
-        {newDefinition ? (
-          <NewDefinitionDialog
-            key={newDefinition.key}
-            open
-            initialTerm={newDefinition.term}
-            linksHere={newDefinition.linksHere}
-            pending={newDefinitionPending}
-            error={newDefinitionError}
-            onCancel={() => {
-              setNewDefinition(null);
-              setNewDefinitionError(null);
+        {dialogRequest ? (
+          <ExtensionDialog
+            key={dialogRequest.key}
+            request={dialogRequest}
+            editorModules={editorModules}
+            context={{
+              documentId,
+              folderId,
+              settings: documentExtensions?.settings[dialogRequest.extensionId] ?? {},
             }}
-            onSubmit={({ term, summary }) => {
-              const { linksHere } = newDefinition;
-              setNewDefinitionPending(true);
-              setNewDefinitionError(null);
-              void createDefinitionDocumentAction({
-                term,
-                summary,
-                currentFolderId: folderId,
-              }).then((result) => {
-                setNewDefinitionPending(false);
-
-                if (!result.ok) {
-                  setNewDefinitionError(result.message);
-                  return;
-                }
-
-                setNewDefinition(null);
-
-                const view = viewRef.current;
-
-                if (linksHere && view) {
-                  // The resolved title, not the typed term: an existing
-                  // definition is reused, and the link has to name it.
-                  insertInline(
-                    view,
-                    `[[${escapeWikiLinkLabel(result.title)}]]`,
-                    null,
-                  );
-                }
-
-                view?.focus();
-
-                // Only a definition that still needs writing earns a tab — one
-                // created with its definition line is already complete. Never a
-                // navigation either way: the author is mid-sentence.
-                if (result.created && !summary.trim()) {
-                  dispatchWorkspaceOpenTab({
-                    href: `/docs/${result.documentId}`,
-                    title: result.title,
-                  });
-                }
-              });
-            }}
+            onClose={settleDialog}
           />
         ) : null}
-        {definitionHover ? (
-          <DefinitionHoverCard
-            // Keyed on the term so moving between two terms remounts the card
+        {linkHover ? (
+          <ExtensionLinkHoverCard
+            // Keyed on the link so moving between two links remounts the card
             // rather than sliding one popup across the page.
-            key={
-              definitionHover.kind === "definition"
-                ? `definition:${definitionHover.label}`
-                : `undefined:${definitionHover.target}`
-            }
-            anchor={definitionHover.anchor}
-            label={
-              definitionHover.kind === "definition"
-                ? definitionHover.label
-                : definitionHover.target
-            }
-            footer={
-              definitionHover.kind === "definition" ? (
-                <DefinitionCardOpenLink href={definitionHover.href} />
-              ) : (
-                <button
-                  type="button"
-                  className="vault-md-definition-card-action"
-                  onClick={() => {
-                    const term = definitionHover.target;
-                    setDefinitionHover(null);
-                    setNewDefinitionError(null);
-                    setNewDefinition({ term, linksHere: false, key: Date.now() });
-                  }}
-                >
-                  Define
-                </button>
-              )
-            }
-            onClose={() => setDefinitionHover(null)}
-          >
-            {definitionHover.kind === "definition" ? (
-              <MarkdownDocument
-                markdown={definitionHover.preview}
-                disableLinks
-                compact
-                contained={false}
-              />
-            ) : (
-              <p className="vault-md-definition-card-empty">Not defined yet.</p>
-            )}
-          </DefinitionHoverCard>
+            key={`${linkHover.link.resolved ? "link" : "unresolved"}:${linkHover.link.target}`}
+            hover={linkHover}
+            extensions={documentExtensions}
+            onAction={(command, args) => {
+              setLinkHover(null);
+              const view = viewRef.current;
+              if (view) runEditorCommand(view, command, args);
+            }}
+            onClose={() => setLinkHover(null)}
+          />
         ) : null}
         <p className="sr-only" aria-live="polite">
           {statusText}. {collaborationStatusText}.
@@ -4592,10 +4533,10 @@ function createWikiLinkCompletionSource(
       embedSessionToken,
     );
     wikiLinkMapStore.set(freshWikiLinks);
-    // `/term` narrows one specific `[[`; every other one still offers every
-    // document the author can reach.
-    const definitionsOnly =
-      definitionScopeMarker(context.state) === region.markerFrom;
+    // An extension's `openLinkCompletion` narrows one specific `[[` (the
+    // dictionary's `/term`); every other one still offers every document the
+    // author can reach.
+    const linkFilter = linkCompletionFilterAt(context.state, region.markerFrom);
 
     return {
       from: region.headingFrom ?? region.markerTo,
@@ -4604,7 +4545,7 @@ function createWikiLinkCompletionSource(
         freshWikiLinks,
         region.hasClosingMarker,
         region.query,
-        definitionsOnly,
+        linkFilter,
       ),
       validFor: (text: string) =>
         /^[^\[\]\n]*$/.test(text) &&
@@ -4949,7 +4890,7 @@ function createWikiLinkCompletionOptions(
   wikiLinks?: WikiLinkResolutionMap,
   hasClosingMarker = false,
   query = "",
-  definitionsOnly = false,
+  linkFilter: ((link: WikiLinkInfo) => boolean) | null = null,
 ): Completion[] {
   const options: Completion[] = [];
   const targetOptions = createWikiTargetCompletionOptions(
@@ -4966,7 +4907,16 @@ function createWikiLinkCompletionOptions(
     if (
       !isWikiCompletionDocumentKey(key) ||
       resolution.status !== "resolved" ||
-      (definitionsOnly && !resolution.isDefinition) ||
+      (linkFilter &&
+        !linkFilter({
+          target: resolution.label ?? key,
+          label: resolution.label ?? key,
+          href: resolution.href ?? null,
+          resolved: true,
+          isDefinition: Boolean(resolution.isDefinition),
+          preview: resolution.preview ?? null,
+          occurrence: 0,
+        })) ||
       !matchesWikiResolutionCompletionQuery(key, resolution, query)
     ) {
       continue;
@@ -5846,41 +5796,110 @@ function toggleCodeFence(view: EditorView) {
 }
 
 /**
- * `/def` — opens the term dialog. Module-level, and takes the setters, so the
- * handler the editor hands to the slash menu is not a memoized closure that
- * mutates its argument (see `hostCommands` in the extensions memo).
+ * `editor.openLinkCompletion()`: types `[[` at the selection and opens the
+ * wiki-link completion, narrowed by `filter` when one is given. The narrowing
+ * is keyed to the marker just inserted, so an unrelated `[[` still offers
+ * every document the author can reach.
  */
-function openNewDefinitionDialog(
+function openLinkCompletionAt(
   view: EditorView,
-  setDefinition: (definition: {
-    term: string;
-    linksHere: boolean;
-    key: number;
-  }) => void,
-  setError: (error: string | null) => void,
+  filter?: (link: WikiLinkInfo) => boolean,
 ) {
-  const { from, to } = view.state.selection.main;
-  setError(null);
-  setDefinition({
-    // A selected word is almost always the term being defined.
-    term: from === to ? "" : view.state.sliceDoc(from, to).trim(),
-    linksHere: true,
-    key: Date.now(),
-  });
-}
-
-/** `/term` — opens a wiki-link completion narrowed to definitions. */
-function insertDefinitionReference(view: EditorView) {
   const { from, to } = view.state.selection.main;
   view.dispatch({
     changes: { from, to, insert: "[[" },
     selection: EditorSelection.cursor(from + 2),
   });
-  // Keyed to the marker just inserted, so an unrelated `[[` still offers every
-  // document the author can reach.
-  narrowWikiCompletionToDefinitions(view, from);
+  if (filter) {
+    narrowLinkCompletion(view, { markerFrom: from, filter });
+  }
   view.focus();
   startCompletion(view);
+}
+
+/** An open extension dialog (`editor.openDialog`), rendered by the host. */
+function ExtensionDialog({
+  request,
+  editorModules,
+  context,
+  onClose,
+}: {
+  request: { extensionId: string; id: string; props: JsonValue | undefined };
+  editorModules: EditorModule[];
+  context: { documentId: string; folderId: string | null; settings: Record<string, unknown> };
+  onClose: (result: JsonValue | null) => void;
+}) {
+  const Dialog = editorModules.find(
+    (candidate) => candidate.manifestId === request.extensionId,
+  )?.dialogs[request.id];
+
+  useEffect(() => {
+    // A dialog id no loaded module declares resolves as dismissed, never hangs.
+    if (!Dialog) onClose(null);
+  }, [Dialog, onClose]);
+
+  if (!Dialog) return null;
+
+  return (
+    <Dialog
+      ctx={{ extensionId: request.extensionId, ...context }}
+      props={request.props}
+      close={(result) => onClose(result ?? null)}
+    />
+  );
+}
+
+/**
+ * The Live-mode hover card for a link an extension previews: its preview, and
+ * either a way into the linked document or the extension's action (e.g. the
+ * dictionary's "Define" on an unresolved term).
+ */
+function ExtensionLinkHoverCard({
+  hover,
+  extensions,
+  onAction,
+  onClose,
+}: {
+  hover: LinkHoverTarget;
+  extensions: DocumentExtensions | null;
+  onAction: (command: string, args?: JsonValue) => void;
+  onClose: () => void;
+}) {
+  const resolved = resolveLinkPreview(hover.link, extensions);
+  if (!resolved) return null;
+  const { preview } = resolved;
+
+  return (
+    <LinkHoverCard
+      anchor={hover.anchor}
+      title={preview.title}
+      footer={
+        preview.action ? (
+          <button
+            type="button"
+            className="vault-md-definition-card-action"
+            onClick={() => onAction(preview.action!.command, preview.action!.args)}
+          >
+            {preview.action.label}
+          </button>
+        ) : hover.link.href ? (
+          <LinkCardOpenLink href={hover.link.href} />
+        ) : null
+      }
+      onClose={onClose}
+    >
+      {preview.markdown ? (
+        <MarkdownDocument
+          markdown={preview.markdown}
+          disableLinks
+          compact
+          contained={false}
+        />
+      ) : (
+        <p className="vault-md-definition-card-empty">{preview.emptyText ?? ""}</p>
+      )}
+    </LinkHoverCard>
+  );
 }
 
 /**

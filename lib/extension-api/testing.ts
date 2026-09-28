@@ -12,6 +12,7 @@ import type {
   ExtensionRenderContext,
   JsonValue,
   PickedAsset,
+  WikiLinkInfo,
 } from "@/lib/extension-api";
 import { createEditorHandle } from "@/lib/extension-host/editor-handle";
 
@@ -51,12 +52,19 @@ export async function runCommand(
   markdown: string,
   options: {
     settings?: Record<string, unknown>;
+    folderId?: string | null;
+    args?: JsonValue;
     pickAsset?: (request: Parameters<EditorHandle["pickAsset"]>[0]) => PickedAsset | null;
+    /** What a dialog the command opens closes with (null, as if dismissed, by default). */
+    dialogResult?: (id: string, props: JsonValue | undefined) => JsonValue | null;
   } = {},
 ): Promise<{
   markdown: string;
   cursor: number;
   events: Array<{ name: string; payload: JsonValue | undefined }>;
+  dialogs: Array<{ id: string; props: JsonValue | undefined }>;
+  linkCompletions: Array<{ filter: ((link: WikiLinkInfo) => boolean) | null }>;
+  openedDocuments: Array<{ documentId: string; title: string }>;
 }> {
   const handler = editor.commands[commandId];
   if (!handler) {
@@ -82,18 +90,42 @@ export async function runCommand(
   };
 
   const events: Array<{ name: string; payload: JsonValue | undefined }> = [];
+  const dialogs: Array<{ id: string; props: JsonValue | undefined }> = [];
+  const linkCompletions: Array<{ filter: ((link: WikiLinkInfo) => boolean) | null }> = [];
+  const openedDocuments: Array<{ documentId: string; title: string }> = [];
   const pickAsset = options.pickAsset;
   await handler(
-    createEditorHandle(view, {
-      pickAsset: pickAsset ? async (request) => pickAsset(request) : undefined,
-    }),
+    createEditorHandle(
+      view,
+      {
+        pickAsset: pickAsset ? async (request) => pickAsset(request) : undefined,
+        openDialog: async (_extensionId, id, props) => {
+          dialogs.push({ id, props });
+          return options.dialogResult?.(id, props) ?? null;
+        },
+        openLinkCompletion: (_view, completion) => {
+          linkCompletions.push({ filter: completion?.filter ?? null });
+        },
+        openDocument: (documentId, title) => openedDocuments.push({ documentId, title }),
+      },
+      editor.manifestId,
+    ),
     {
       extensionId: editor.manifestId,
       documentId: null,
+      folderId: options.folderId ?? null,
       settings: options.settings ?? {},
+      args: options.args,
       emit: (name, payload) => events.push({ name, payload }),
     },
   );
 
-  return { markdown: state.doc.toString(), cursor: state.selection.main.head, events };
+  return {
+    markdown: state.doc.toString(),
+    cursor: state.selection.main.head,
+    events,
+    dialogs,
+    linkCompletions,
+    openedDocuments,
+  };
 }

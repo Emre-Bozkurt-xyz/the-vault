@@ -42,6 +42,7 @@ export type {
 // extension never reaches into `lib/` for them.
 export {
   countWikiLinkTargets,
+  escapeWikiLinkLabel,
   wikiDocKey,
   wikiKeyForTarget,
   wikiTitleKey,
@@ -79,7 +80,7 @@ export type ExtensionManifest = {
     sections?: readonly ExtensionSettingsSection[];
   };
   syntax?: ExtensionSyntax;
-  /** Render even when no syntax or state is present (e.g. link decorators). */
+  /** Render even when no syntax or state is present (e.g. link previews). */
   renderAlways?: boolean;
   /** Prefetch this extension's state rows with the page. Defaults to true. */
   prefetchState?: boolean;
@@ -235,10 +236,55 @@ export type OverlayContribution = {
   load: () => Promise<{ default: ComponentType<OverlayProps> }>;
 };
 
+/**
+ * A wiki link, as a link preview sees it (plan §6). Built by the host from the
+ * document's resolved links, in Read mode and in Live mode.
+ */
+export type WikiLinkInfo = {
+  /** The link as written: `Term`, `doc:<id>`, … */
+  target: string;
+  /** The resolved document's title, else the written label. */
+  label: string;
+  href: string | null;
+  resolved: boolean;
+  /** Whether the target is a document tagged `definition` (core data). */
+  isDefinition: boolean;
+  /** Bounded Markdown the target offers for previews, when it has any. */
+  preview: string | null;
+  /** How many earlier links in this document point at the same target (Read mode). */
+  occurrence: number;
+};
+
+/** What a link preview shows in its hover card. */
+export type LinkPreview = {
+  title: string;
+  /** Rendered with links disabled, so a card never opens another. */
+  markdown: string | null;
+  /** Shown instead of `markdown` when there is none. */
+  emptyText?: string;
+  /** De-emphasize the link itself (e.g. every mention after the first). */
+  quiet?: boolean;
+  /**
+   * A button on the card in the editor, running one of this extension's
+   * commands with `args`. Ignored on read surfaces.
+   */
+  action?: { label: string; command: string; args?: JsonValue };
+};
+
+/**
+ * Hover previews for wiki links (plan §6). A pure function of the link and the
+ * render context, called in Read mode, on public pages and in Live mode.
+ * Privileged: it sees every link in every document.
+ */
+export type LinkContribution = {
+  preview: (link: WikiLinkInfo, ctx: ExtensionRenderContext) => LinkPreview | null;
+};
+
 export type RenderModule = {
   manifestId: string;
   blocks: Readonly<Record<string, BlockContribution>>;
   overlays: Readonly<Record<string, OverlayContribution>>;
+  links: LinkContribution | null;
 };
 
 /**
@@ -254,6 +300,7 @@ export function defineRender<const M extends ExtensionManifest>(
      * reader of a document that has this extension's state, enabled or not.
      */
     overlays?: { [K in OverlayIds<M>]?: OverlayContribution };
+    links?: LinkContribution;
   },
 ): RenderModule {
   const claimed = new Set(manifest.syntax?.blocks ?? []);
@@ -275,7 +322,7 @@ export function defineRender<const M extends ExtensionManifest>(
     }
   }
 
-  return { manifestId: manifest.id, blocks, overlays };
+  return { manifestId: manifest.id, blocks, overlays, links: render.links ?? null };
 }
 
 /**
@@ -297,6 +344,18 @@ export type EditorHandle = {
     kinds: ReadonlyArray<"image" | "pdf">;
     title?: string;
   }) => Promise<PickedAsset | null>;
+  /**
+   * Opens one of this extension's dialogs (`dialogs` in `defineEditor`) and
+   * resolves to what it closed with, or null when dismissed or unavailable.
+   */
+  openDialog: (id: string, props?: JsonValue) => Promise<JsonValue | null>;
+  /**
+   * Types `[[` at the cursor and opens wiki-link completion, offering only the
+   * links `filter` accepts (all when omitted). Applies to that one `[[` only.
+   */
+  openLinkCompletion: (options?: { filter?: (link: WikiLinkInfo) => boolean }) => void;
+  /** Opens a document in a workspace tab without navigating away. */
+  openDocument: (documentId: string, title: string) => void;
 };
 
 export type PickedAsset = {
@@ -309,7 +368,11 @@ export type PickedAsset = {
 export type EditorCommandContext = {
   extensionId: string;
   documentId: string | null;
+  /** The folder of the document being edited, or null at the vault root. */
+  folderId: string | null;
   settings: Record<string, unknown>;
+  /** Arguments from the caller, e.g. a link preview's `action.args`. */
+  args?: JsonValue;
   /**
    * Sends a session event to this extension's components on this document,
    * received with `useSessionEvent` (e.g. a command handing a picked asset to
@@ -333,11 +396,21 @@ export type ToolbarContributionItem = {
   icon: ComponentType<{ className?: string }>;
 };
 
+/** What a dialog component receives (plan §7). */
+export type DialogProps = {
+  ctx: Pick<EditorCommandContext, "extensionId" | "documentId" | "folderId" | "settings">;
+  /** What `openDialog` was called with. */
+  props: JsonValue | undefined;
+  /** Closes the dialog; `openDialog` resolves to `result` (null if omitted). */
+  close: (result?: JsonValue | null) => void;
+};
+
 export type EditorModule = {
   manifestId: string;
   commands: Readonly<Record<string, CommandHandler>>;
   toolbar: readonly ToolbarContributionItem[];
   overlays: Readonly<Record<string, ComponentType<OverlayProps>>>;
+  dialogs: Readonly<Record<string, ComponentType<DialogProps>>>;
 };
 
 /**
@@ -358,6 +431,8 @@ export function defineEditor<const M extends ExtensionManifest>(
      * same id.
      */
     overlays?: { [K in OverlayIds<M>]?: ComponentType<OverlayProps> };
+    /** Dialogs this extension's commands open with `editor.openDialog(id)`. */
+    dialogs?: Record<string, ComponentType<DialogProps>>;
   },
 ): EditorModule {
   return {
@@ -365,6 +440,7 @@ export function defineEditor<const M extends ExtensionManifest>(
     commands: editor.commands as Record<string, CommandHandler>,
     toolbar: editor.toolbar ?? [],
     overlays: (editor.overlays ?? {}) as Record<string, ComponentType<OverlayProps>>,
+    dialogs: editor.dialogs ?? {},
   };
 }
 

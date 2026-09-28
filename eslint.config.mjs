@@ -52,9 +52,7 @@ const MIGRATION_ALLOWLIST_EXTENSIONS = [
 ];
 
 // Core files still importing an extension's folder.
-const MIGRATION_ALLOWLIST_CORE = [
-  "server/definitions.ts", // dictionary settings: slice 5
-];
+const MIGRATION_ALLOWLIST_CORE = [];
 
 const eslintConfig = defineConfig([
   ...nextVitals,

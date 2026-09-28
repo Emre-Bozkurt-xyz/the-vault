@@ -25,6 +25,7 @@ export const clientExtensions: readonly ClientExtensionEntry[] = [
   },
   {
     manifest: dictionaryManifest,
+    editor: () => import("./dictionary/editor"),
   },
   {
     manifest: stickersManifest,

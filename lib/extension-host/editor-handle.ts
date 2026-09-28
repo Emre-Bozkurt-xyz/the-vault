@@ -73,12 +73,23 @@ export function insertInline(
  */
 export type EditorHostServices = {
   pickAsset?: EditorHandle["pickAsset"];
+  /** Receives the extension id so a dialog id resolves in the right module. */
+  openDialog?: (
+    extensionId: string,
+    ...args: Parameters<EditorHandle["openDialog"]>
+  ) => ReturnType<EditorHandle["openDialog"]>;
+  openLinkCompletion?: (
+    view: EditorViewLike,
+    ...args: Parameters<EditorHandle["openLinkCompletion"]>
+  ) => void;
+  openDocument?: EditorHandle["openDocument"];
 };
 
 /** The {@link EditorHandle} an extension command receives, over one view. */
 export function createEditorHandle(
   view: EditorViewLike,
   services: EditorHostServices = {},
+  extensionId = "",
 ): EditorHandle {
   return {
     insertBlock: (markdown, options) =>
@@ -91,6 +102,12 @@ export function createEditorHandle(
     },
     pickAsset: (options) =>
       services.pickAsset ? services.pickAsset(options) : Promise.resolve(null),
+    openDialog: (id, props) =>
+      services.openDialog
+        ? services.openDialog(extensionId, id, props)
+        : Promise.resolve(null),
+    openLinkCompletion: (options) => services.openLinkCompletion?.(view, options),
+    openDocument: (documentId, title) => services.openDocument?.(documentId, title),
   };
 }
 
@@ -124,7 +141,10 @@ export function runExtensionCommand(
   };
 
   try {
-    const result = handler(createEditorHandle(view, services), context);
+    const result = handler(
+      createEditorHandle(view, services, scope.extensionId),
+      context,
+    );
     if (result instanceof Promise) result.catch(report);
   } catch (cause) {
     report(cause);

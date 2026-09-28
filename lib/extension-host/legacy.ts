@@ -8,17 +8,13 @@ import type { DocumentExtensions } from "@/lib/extension-api";
  * Until each extension's rendering moves behind the SDK, the editor, the
  * renderer and the pages need these values under their old names. Keeping every
  * such read here means core names extensions in one file, not across pages, and
- * each later slice deletes its part:
- *
- * - dictionary (slice 5): `definitionEmphasis`
- * - calc (slice 6): `fxTable`
+ * each later slice deletes its part. Calendar, stickers and the dictionary are
+ * gone from it; what remains is calc's (slice 6), after which this file goes.
  */
 export type LegacyExtensionProps = {
   fxTable: FxRateTable | null;
-  definitionEmphasis: "every" | "first";
   /** Authoring switch: the viewer enabled the extension and can edit. */
   calcEnabled: boolean;
-  dictionaryEnabled: boolean;
 };
 
 type CalcData = { fxTable?: FxRateTable | null };
@@ -26,19 +22,12 @@ type CalcData = { fxTable?: FxRateTable | null };
 export function legacyExtensionProps(
   extensions: DocumentExtensions | null | undefined,
 ): LegacyExtensionProps {
-  const data = (id: string) => extensions?.data[id] as unknown;
-  const settings = (id: string) => extensions?.settings[id] ?? {};
-  const authoring = (id: string) =>
-    Boolean(extensions?.canEdit && extensions.enabledIds.includes(id));
-
-  const emphasis = settings("vault.dictionary").definitionEmphasis;
+  const calcData = extensions?.data["vault.calc"] as CalcData | undefined;
 
   return {
-    fxTable: (data("vault.calc") as CalcData | undefined)?.fxTable ?? null,
-    definitionEmphasis: emphasis === "first" ? "first" : "every",
-    calcEnabled: authoring("vault.calc"),
-    // Unlike the others, not gated on `canEdit`: besides `/def` it carries the
-    // viewer's reading preference, which applies in the read view too.
-    dictionaryEnabled: Boolean(extensions?.enabledIds.includes("vault.dictionary")),
+    fxTable: calcData?.fxTable ?? null,
+    calcEnabled: Boolean(
+      extensions?.canEdit && extensions.enabledIds.includes("vault.calc"),
+    ),
   };
 }

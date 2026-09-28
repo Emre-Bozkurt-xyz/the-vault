@@ -37,7 +37,7 @@ import { ExtensionBlockHost } from "@/components/extensions/ExtensionBlockHost";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
-import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
+import { ExtensionLinkHost } from "@/components/extensions/ExtensionLinkHost";
 import { splitExtensionBlocks, type ParsedExtensionBlock } from "@/lib/extension-host/blocks";
 import {
   calcRemarkPlugins,
@@ -63,7 +63,7 @@ import {
 } from "@/lib/markdown/sanitize";
 import { cn } from "@/lib/utils";
 import {
-  buildDefinitionsByHref,
+  buildWikiLinkTargetsByHref,
   extractMarkdownTarget,
   hrefWithoutFragment,
   normalizeWikiFragmentForHref,
@@ -71,7 +71,7 @@ import {
   slugifyMarkdownHeading,
   transformWikiLinks,
   type WikiDocumentEmbedBlock,
-  type WikiLinkDefinition,
+  type WikiLinkTarget,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
 
@@ -317,12 +317,17 @@ function createMarkdownComponents(
   headingIds: Map<string, number>,
   calcResults: Map<string, ResolvedCalc>,
   /**
-   * Links that point at a definition document, keyed by href. Empty when the
-   * surface has no resolution map, or inside a hover card — see `a` below.
+   * Resolved wiki-link targets, keyed by href. Empty when the surface has no
+   * resolution map, or inside a hover card — see `a` below.
    */
-  definitions: Map<string, WikiLinkDefinition>,
-  /** Definitions already mentioned in this document, or null for "every". */
-  definitionMentions: Set<string> | null,
+  linkTargets: Map<string, WikiLinkTarget>,
+  /**
+   * Links to each target seen so far in this document, so an extension's
+   * preview can treat a repeat mention differently (the dictionary's "first
+   * mention" emphasis).
+   */
+  linkOccurrences: Map<string, number>,
+  extensions: DocumentExtensions | null,
 ): Components {
   const headingProps = (
     children: ReactNode,
@@ -544,44 +549,10 @@ function createMarkdownComponents(
     const linkTarget =
       safeTarget ??
       (safeHref.startsWith("/") || safeHref.startsWith("#") ? undefined : "_blank");
-    const definition =
-      isAssetFileCard || isAssetFileAction
-        ? undefined
-        : definitions.get(hrefWithoutFragment(safeHref));
-
-    if (definition) {
-      const definitionKey = hrefWithoutFragment(safeHref);
-      // Only the first mention is emphasized; later ones stay linked and still
-      // preview. Mutated during render exactly like `headingIds` — the set is
-      // created fresh per `MarkdownDocument` render, so a StrictMode double
-      // render starts from empty both times.
-      const quiet = definitionMentions?.has(definitionKey) ?? false;
-      definitionMentions?.add(definitionKey);
-
-      return (
-        <DefinitionPreviewCard
-          href={safeHref}
-          label={definition.label}
-          quiet={quiet}
-          preview={
-            // Rendered here rather than inside the card so the card never has to
-            // import this module back. `disableLinks` is also what caps preview
-            // depth at zero: every link inside a card renders as plain text, so
-            // no card can open another.
-            <MarkdownDocument
-              markdown={definition.preview}
-              disableLinks
-              compact
-              contained={false}
-            />
-          }
-        >
-          {children}
-        </DefinitionPreviewCard>
-      );
-    }
-
-    return (
+    const targetKey = hrefWithoutFragment(safeHref);
+    const wikiTarget =
+      isAssetFileCard || isAssetFileAction ? undefined : linkTargets.get(targetKey);
+    const plainLink = (
       <a
         href={safeHref}
         rel={linkTarget === "_blank" ? (rel || "noreferrer") : undefined}
@@ -591,6 +562,36 @@ function createMarkdownComponents(
         {children}
       </a>
     );
+
+    if (wikiTarget) {
+      // Counted during render exactly like `headingIds`: the map is created
+      // fresh per `MarkdownDocument` render, so a StrictMode double render
+      // starts from zero both times.
+      const occurrence = linkOccurrences.get(targetKey) ?? 0;
+      linkOccurrences.set(targetKey, occurrence + 1);
+
+      // Extensions decide whether this link gets a hover card (the
+      // dictionary's definition previews); without one it is `plainLink`.
+      return (
+        <ExtensionLinkHost
+          link={{
+            target: wikiTarget.label,
+            label: wikiTarget.label,
+            href: safeHref,
+            resolved: true,
+            isDefinition: wikiTarget.isDefinition,
+            preview: wikiTarget.preview,
+            occurrence,
+          }}
+          extensions={extensions}
+          fallback={plainLink}
+        >
+          {children}
+        </ExtensionLinkHost>
+      );
+    }
+
+    return plainLink;
   },
   input(props) {
     return <input {...props} className="vault-md-checkbox" disabled />;
@@ -927,7 +928,7 @@ export function MarkdownDocument({
   embedTrail = [],
   extensions,
 }: MarkdownDocumentProps) {
-  const { fxTable, definitionEmphasis } = legacyExtensionProps(extensions);
+  const { fxTable } = legacyExtensionProps(extensions);
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
     : "_No content yet._";
@@ -938,10 +939,9 @@ export function MarkdownDocument({
   const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);
   const headingIds = new Map<string, number>();
   // Created per render and threaded down the same path as `headingIds`, because
-  // "first mention" has to span every Markdown segment of the document, not
-  // restart in each one. Null means every mention is emphasized.
-  const definitionMentions =
-    definitionEmphasis === "first" ? new Set<string>() : null;
+  // a link's occurrence has to count across every Markdown segment of the
+  // document, not restart in each one.
+  const linkOccurrences = new Map<string, number>();
 
   // Calc values are evaluated once, here, before anything renders: names bind
   // top-to-bottom across the whole document, but the document is rendered as
@@ -986,7 +986,7 @@ export function MarkdownDocument({
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
-            definitionMentions={definitionMentions}
+            linkOccurrences={linkOccurrences}
             extensions={extensions ?? null}
             calcResults={calcDocument.results}
           />
@@ -1142,7 +1142,7 @@ function MarkdownBlock({
   wikiLinks,
   assetLinks,
   headingIds,
-  definitionMentions,
+  linkOccurrences,
   extensions,
   calcResults,
 }: {
@@ -1151,7 +1151,7 @@ function MarkdownBlock({
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
-  definitionMentions: Set<string> | null;
+  linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   calcResults: Map<string, ResolvedCalc>;
 }) {
@@ -1201,7 +1201,8 @@ function MarkdownBlock({
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
-            definitionMentions={definitionMentions}
+            linkOccurrences={linkOccurrences}
+            extensions={extensions}
             keyPrefix={String(part.pieceIndex)}
             calcResults={calcResults}
           />
@@ -1217,7 +1218,8 @@ function MarkdownSegment({
   wikiLinks,
   assetLinks,
   headingIds,
-  definitionMentions,
+  linkOccurrences,
+  extensions,
   keyPrefix,
   calcResults,
 }: {
@@ -1226,7 +1228,8 @@ function MarkdownSegment({
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
-  definitionMentions: Set<string> | null;
+  linkOccurrences: Map<string, number>;
+  extensions: DocumentExtensions | null;
   keyPrefix: string;
   calcResults: Map<string, ResolvedCalc>;
 }) {
@@ -1237,7 +1240,7 @@ function MarkdownSegment({
   // Derived rather than threaded down beside `wikiLinks`: the derivation is
   // cached against the map's identity, so asking per segment costs one lookup.
   // A card's own inner render passes no `wikiLinks`, which is how nesting stops.
-  const definitions = buildDefinitionsByHref(wikiLinks);
+  const linkTargets = buildWikiLinkTargetsByHref(wikiLinks);
 
   return (
     <ReactMarkdown
@@ -1256,8 +1259,9 @@ function MarkdownSegment({
         disableLinks,
         headingIds,
         calcResults,
-        definitions,
-        definitionMentions,
+        linkTargets,
+        linkOccurrences,
+        extensions,
       )}
     >
       {renderedMarkdown}

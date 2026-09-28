@@ -724,8 +724,53 @@ enabled stickers. A sticker picked while the layout was still loading used to
 be dropped; it is now placed once loading finishes. The extension toolbar
 order is now editor-module extensions (alphabetical) then calc.
 
-**Slice 5 — Dictionary.** `links`, `live`, dialogs, `openLinkCompletion`, and the
-generic `documents` service. Remove `definitions` from the core action context.
+**Slice 5 — Dictionary.** Done 2026-09-27. `links`, dialogs,
+`openLinkCompletion`, and the generic `documents` service; `definitions` is
+gone from the core action context. As built:
+
+- **Link previews** replace link decorators: a render module's
+  `links.preview(link, ctx)` returns a `LinkPreview` (`title`, `markdown` or
+  `emptyText`, `quiet`, an optional `action` naming a command) or `null`. The
+  host hands it a `WikiLinkInfo` (`target`, `label`, `href`, `resolved`,
+  `isDefinition`, `preview`, `occurrence` on the page). The first non-null
+  preview wins (`lib/extension-host/links.ts`). Read surfaces render links
+  through `components/extensions/ExtensionLinkHost.tsx`; Live mode's hover
+  extension (`live-link-hover.ts`, renamed from `live-definitions.ts`) asks
+  the same resolver. `DefinitionPreviewCard` became the generic
+  `LinkPreviewCard` / `LinkHoverCard`; `lib/wiki-links.ts` builds
+  `WikiLinkTarget`s for every resolved link, not only definitions. A separate
+  `live` contribution was not needed.
+- **Dialogs**: `defineEditor({ dialogs })` and `editor.openDialog(id, props)`
+  resolve with the dialog's `close(result)`. `MarkdownEditor` renders one
+  extension dialog at a time. Also new on the handle: `openLinkCompletion({
+  filter })` (the `[[` completion narrowed by a predicate) and
+  `openDocument(id, title)`. Commands receive `folderId` and `args`.
+- **Documents service**: `ctx.documents` (`listByTag`, and with
+  `document:write` `findOwnedByTitle` / `create`) backed by
+  `server/extension-documents.ts` (renamed from `definitions-data.ts`). The
+  dialog calls `vault.dictionary.defineTerm` through the action dispatcher,
+  which also covers MCP; `server/definitions.ts` (the old `/def` server action)
+  is deleted. `ctx.settings` now carries the caller's settings for the
+  extension.
+- `extensions/dictionary/` owns `render.tsx` (previews, plus the "Define"
+  offer on unresolved links for authors who enabled it), `editor.tsx` (`/def`
+  and `/term` as declared commands) and `NewDefinitionDialog.tsx`. The
+  contract test's `HOST_COMMANDS` exception and the core lint allowlist are
+  gone; `legacy.ts` now holds only calc's props.
+- Bundle: the link host is a client component on every read surface, so it
+  loads the preview's `MarkdownDocument` with `next/dynamic`. A static import
+  put react-markdown and KaTeX back into every public page (433 KB gz); with
+  the dynamic import it measures 210 KB, and the doc page 824 KB.
+  `NewDefinitionDialog` and `defineTerm` are in no route entry except the dev
+  playground's.
+- Lint: the React compiler started flagging the slash/directive completion
+  sources in `MarkdownEditor`'s extension memo ("passing a ref to a
+  function"); they call their callbacks only on input. Both calls carry a
+  commented `react-hooks/refs` disable, so the baseline stays at 17.
+
+Behaviour changes: hovering an unresolved link offers "Define" (authors with
+the dictionary enabled). Repeat mentions are quieted per the reader's own
+`definitionEmphasis` setting on every surface.
 
 **Slice 6 — Calc.** `analyze`, inline directives, container blocks with
 `live: "source"`, completions, and the FX currency primitives moving to core.

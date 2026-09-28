@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   findWikiLinkAt,
-  isUndefinedTermKey,
-} from "@/components/markdown/live-definitions";
+  isTitleLinkKey,
+} from "@/components/markdown/live-link-hover";
 import { wikiKeyForTarget } from "@/lib/wiki-links";
 
 describe("findWikiLinkAt", () => {
@@ -57,24 +57,24 @@ describe("findWikiLinkAt", () => {
   });
 });
 
-describe("isUndefinedTermKey", () => {
-  it("offers to define a link that names a term by title", () => {
-    expect(isUndefinedTermKey(wikiKeyForTarget("Backpressure"))).toBe(true);
-    expect(isUndefinedTermKey(wikiKeyForTarget("Retry Policy#Limits"))).toBe(true);
+describe("isTitleLinkKey", () => {
+  it("accepts a link that names a document by title", () => {
+    expect(isTitleLinkKey(wikiKeyForTarget("Backpressure"))).toBe(true);
+    expect(isTitleLinkKey(wikiKeyForTarget("Retry Policy#Limits"))).toBe(true);
   });
 
-  it("never offers to define a broken id, public or guide reference", () => {
+  it("rejects id, public and guide references, which are broken rather than creatable", () => {
     expect(
-      isUndefinedTermKey(wikiKeyForTarget("doc:11111111-1111-4111-8111-111111111111")),
+      isTitleLinkKey(wikiKeyForTarget("doc:11111111-1111-4111-8111-111111111111")),
     ).toBe(false);
     expect(
-      isUndefinedTermKey(wikiKeyForTarget("11111111-1111-4111-8111-111111111111")),
+      isTitleLinkKey(wikiKeyForTarget("11111111-1111-4111-8111-111111111111")),
     ).toBe(false);
-    expect(isUndefinedTermKey(wikiKeyForTarget("public:some-slug"))).toBe(false);
-    expect(isUndefinedTermKey(wikiKeyForTarget("guide:getting-started"))).toBe(false);
+    expect(isTitleLinkKey(wikiKeyForTarget("public:some-slug"))).toBe(false);
+    expect(isTitleLinkKey(wikiKeyForTarget("guide:getting-started"))).toBe(false);
   });
 
   it("rejects an empty title key", () => {
-    expect(isUndefinedTermKey("title:")).toBe(false);
+    expect(isTitleLinkKey("title:")).toBe(false);
   });
 });

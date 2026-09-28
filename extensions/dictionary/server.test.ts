@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { toVaultExtension } from "@/lib/extension-host/compat";
 import type {
   ExtensionAgentActionContext,
-  ExtensionAgentDefinitionEntry,
+  ExtensionAgentDocumentSummary,
   VaultExtensionAgentAction,
 } from "@/lib/extensions/types";
 
@@ -12,20 +12,29 @@ import server from "./server";
 
 const localBuiltInExtensions = [toVaultExtension(manifest, server)];
 
-const DEFINITIONS: ExtensionAgentDefinitionEntry[] = [
+/** Definitions as the host's documents service lists them (tag `definition`). */
+const DEFINITION_DOCUMENTS: ExtensionAgentDocumentSummary[] = [
   {
     documentId: "11111111-1111-4111-8111-111111111111",
-    term: "Idempotence",
+    title: "Idempotence",
     aliases: ["idempotent"],
     summary: "Repeating the call changes nothing.",
   },
   {
     documentId: "22222222-2222-4222-8222-222222222222",
-    term: "Backpressure",
+    title: "Backpressure",
     aliases: [],
     summary: null,
   },
 ];
+
+/** The same, as the dictionary's actions report them. */
+const DEFINITIONS = DEFINITION_DOCUMENTS.map((row) => ({
+  documentId: row.documentId,
+  term: row.title,
+  aliases: row.aliases,
+  summary: row.summary,
+}));
 
 function action(id: string): VaultExtensionAgentAction {
   const found = localBuiltInExtensions
@@ -39,40 +48,45 @@ function action(id: string): VaultExtensionAgentAction {
   return found;
 }
 
+type CreatedDocument = {
+  title: string;
+  markdown: string;
+  folderIds: ReadonlyArray<string | null | undefined>;
+};
+
 /** The sandbox the dispatcher builds, with only what these actions may use. */
 function context(options: {
   markdown?: string;
-  definitions?: ExtensionAgentDefinitionEntry[];
+  documents?: ExtensionAgentDocumentSummary[];
   canCreate?: boolean;
-  created?: string[];
+  created?: CreatedDocument[];
+  listedTags?: string[];
+  settings?: Record<string, unknown>;
 }) {
   const created = options.created ?? [];
+  const rows = options.documents ?? DEFINITION_DOCUMENTS;
 
   return {
     user: { id: "u1" },
-    definitions: {
-      list: async () => options.definitions ?? DEFINITIONS,
+    settings: options.settings ?? dictionarySettingsSchema.parse({}),
+    documents: {
+      listByTag: async (tagSlug: string) => {
+        options.listedTags?.push(tagSlug);
+        return rows;
+      },
       ...(options.canCreate
         ? {
-            create: async ({
-              term,
-              summary,
-            }: {
-              term: string;
-              summary?: string;
-            }) => {
-              created.push(`${term}|${summary ?? ""}`);
-              const existing = (options.definitions ?? DEFINITIONS).find(
-                (row) => row.term.toLowerCase() === term.toLowerCase(),
+            findOwnedByTitle: async (title: string) => {
+              const existing = rows.find(
+                (row) => row.title.toLowerCase() === title.toLowerCase(),
               );
-
               return existing
-                ? {
-                    documentId: existing.documentId,
-                    term: existing.term,
-                    created: false,
-                  }
-                : { documentId: "new-id", term, created: true };
+                ? { documentId: existing.documentId, title: existing.title }
+                : null;
+            },
+            create: async (input: CreatedDocument) => {
+              created.push({ ...input, folderIds: input.folderIds ?? [] });
+              return { documentId: "new-id", title: input.title };
             },
           }
         : {}),
@@ -95,8 +109,10 @@ describe("vault.dictionary.listDefinitions", () => {
   const listDefinitions = action("vault.dictionary.listDefinitions");
 
   it("returns every definition with its aliases and summary", async () => {
-    const result = await listDefinitions.handler({}, context({}));
+    const listedTags: string[] = [];
+    const result = await listDefinitions.handler({}, context({ listedTags }));
 
+    expect(listedTags).toEqual(["definition"]);
     expect(result.data).toEqual({ definitions: DEFINITIONS });
     expect(result.message).toBe("2 definitions.");
   });
@@ -113,14 +129,13 @@ describe("vault.dictionary.listDefinitions", () => {
 
     expect((byTerm.data as { definitions: unknown[] }).definitions).toHaveLength(1);
     expect(
-      (byAlias.data as { definitions: ExtensionAgentDefinitionEntry[] })
-        .definitions[0].term,
+      (byAlias.data as { definitions: typeof DEFINITIONS }).definitions[0].term,
     ).toBe("Idempotence");
   });
 
   it("refuses without the read capability", async () => {
     await expect(
-      listDefinitions.handler({}, { user: { id: "u1" } }),
+      listDefinitions.handler({}, { user: { id: "u1" }, settings: {} }),
     ).rejects.toThrow(/read access/);
   });
 });
@@ -184,19 +199,39 @@ describe("vault.dictionary.listUndefinedTerms", () => {
 describe("vault.dictionary.defineTerm", () => {
   const defineTerm = action("vault.dictionary.defineTerm");
 
-  it("creates a definition and passes the summary through", async () => {
-    const created: string[] = [];
+  it("creates a definition document with the tag and the summary", async () => {
+    const created: CreatedDocument[] = [];
     const result = await defineTerm.handler(
       { term: "Backoff", summary: "Waiting longer after each failure." },
       context({ canCreate: true, created }),
     );
 
-    expect(created).toEqual(["Backoff|Waiting longer after each failure."]);
+    expect(created).toHaveLength(1);
+    expect(created[0].title).toBe("Backoff");
+    expect(created[0].markdown).toMatch(/^---\n/);
+    expect(created[0].markdown).toMatch(/tags:.*definition/);
+    expect(created[0].markdown).toMatch(/summary: .*Waiting longer after each failure\./);
     expect(result.data).toEqual({
       documentId: "new-id",
       term: "Backoff",
       created: true,
     });
+  });
+
+  it("files it in the configured folder first, then the author's current one", async () => {
+    const created: CreatedDocument[] = [];
+    const configured = "33333333-3333-4333-8333-333333333333";
+    const current = "44444444-4444-4444-8444-444444444444";
+    await defineTerm.handler(
+      { term: "Backoff", folderId: current },
+      context({
+        canCreate: true,
+        created,
+        settings: dictionarySettingsSchema.parse({ newDefinitionFolderId: configured }),
+      }),
+    );
+
+    expect(created[0].folderIds).toEqual([configured, current]);
   });
 
   it("keeps an existing definition rather than overwriting it", async () => {

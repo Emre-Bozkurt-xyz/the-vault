@@ -7,6 +7,7 @@ import {
 } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
+import type { WikiLinkInfo } from "@/lib/extension-api";
 import {
   parseWikiLinkParts,
   wikiKeyForTarget,
@@ -14,41 +15,26 @@ import {
 } from "@/lib/wiki-links";
 
 /**
- * Live-mode hover previews for wiki links that point at a definition document
- * (`docs/20_DICTIONARY_EXTENSION_PLAN.md` slice 3).
+ * Live-mode hover cards for wiki links that an extension previews
+ * (`docs/23_EXTENSION_SDK_PLAN.md` §6; the dictionary's definition cards are
+ * the first use).
  *
  * The card itself is the same React component the read surfaces use — this
- * module only answers "which definition, anchored to which element", and hands
- * that to the editor to render. Two things follow from that split:
+ * module only answers "which link, anchored to which element", and hands that
+ * to the editor, which asks the extensions what the card shows. Two things
+ * follow from that split:
  *
- * - Nothing here is baked into a decoration. The plan expected per-target
- *   `data-` attributes on the wiki-link mark, but resolving the target from
- *   live document state on hover is both less code and *more* correct: an
- *   attribute captured when a decoration was built can be stale by the time the
- *   pointer arrives, whereas the document cannot be.
- * - The Live-mode link keeps its existing wiki-link styling. A wiki link in the
- *   editor already announces itself (weight 500 plus a primary-coloured
- *   underline); adding the Read-mode definition weight on top would be
- *   differentiating something that is already distinct.
+ * - Nothing here is baked into a decoration. Resolving the target from live
+ *   document state on hover is both less code and *more* correct than a
+ *   `data-` attribute captured when a decoration was built, which can be stale
+ *   by the time the pointer arrives.
+ * - The Live-mode link keeps its existing wiki-link styling: a wiki link in the
+ *   editor already announces itself.
  */
-export type DefinitionHoverTarget =
-  | {
-      kind: "definition";
-      anchor: HTMLElement;
-      label: string;
-      preview: string;
-      href: string;
-    }
-  /**
-   * A `[[Term]]` that resolves to nothing. Offered only when the author can act
-   * on it (the Dictionary extension is on), so the card can say "not defined yet"
-   * and offer to define it without the term being retyped.
-   */
-  | {
-      kind: "undefined";
-      anchor: HTMLElement;
-      target: string;
-    };
+export type LinkHoverTarget = {
+  anchor: HTMLElement;
+  link: WikiLinkInfo;
+};
 
 /** Class the live-preview pass puts on a rendered wiki link's visible text. */
 const wikiLinkClass = "vault-cm-preview-wiki-link";
@@ -83,16 +69,23 @@ export function findWikiLinkAt(
   return null;
 }
 
+/** True for a resolution-map key that names a document by title. */
+export function isTitleLinkKey(key: string) {
+  return key.startsWith("title:") && key.length > "title:".length;
+}
+
 /**
- * Resolves the hovered DOM node to a definition, or null when it is not over a
- * wiki link, the link does not resolve, or the target is not a definition.
+ * The wiki link under the hovered DOM node, or null.
+ *
+ * An unresolved link is returned (as `resolved: false`) only when it names a
+ * document by title: that is something an extension may offer to create, while
+ * an unresolved `[[doc:…]]` or `[[public:…]]` is just a broken reference.
  */
-export function findDefinitionAtNode(
+export function findLinkAtNode(
   view: EditorView,
   node: EventTarget | null,
   wikiLinks: WikiLinkResolutionMap,
-  options: { offerDefine?: boolean } = {},
-): DefinitionHoverTarget | null {
+): LinkHoverTarget | null {
   const element = node instanceof Element ? node : null;
   const anchor = element?.closest(`.${wikiLinkClass}`);
 
@@ -110,39 +103,44 @@ export function findDefinitionAtNode(
   }
 
   const line = view.state.doc.lineAt(position);
-  const link = findWikiLinkAt(line.text, position - line.from);
+  const found = findWikiLinkAt(line.text, position - line.from);
 
-  if (!link) {
+  if (!found) {
     return null;
   }
 
-  const key = wikiKeyForTarget(link.target);
+  const key = wikiKeyForTarget(found.target);
   const resolution = wikiLinks[key];
 
   if (!resolution) {
-    // Only a *title* link names a term. An unresolved `[[doc:…]]` or
-    // `[[public:…]]` is a broken reference, not something to define.
-    return options.offerDefine && isUndefinedTermKey(key)
-      ? { kind: "undefined", anchor, target: link.target }
+    return isTitleLinkKey(key)
+      ? {
+          anchor,
+          link: {
+            target: found.target,
+            label: found.label,
+            href: null,
+            resolved: false,
+            isDefinition: false,
+            preview: null,
+            occurrence: 0,
+          },
+        }
       : null;
   }
 
-  if (!resolution.isDefinition || !resolution.preview || !resolution.href) {
-    return null;
-  }
-
   return {
-    kind: "definition",
     anchor,
-    label: resolution.label ?? link.label,
-    preview: resolution.preview,
-    href: resolution.href,
+    link: {
+      target: found.target,
+      label: resolution.label ?? found.label,
+      href: resolution.href ?? null,
+      resolved: true,
+      isDefinition: Boolean(resolution.isDefinition),
+      preview: resolution.preview ?? null,
+      occurrence: 0,
+    },
   };
-}
-
-/** True for a resolution-map key that names a term by title. */
-export function isUndefinedTermKey(key: string) {
-  return key.startsWith("title:") && key.length > "title:".length;
 }
 
 /**
@@ -161,12 +159,12 @@ export function isUndefinedTermKey(key: string) {
  * the card is `:hover`ed, and reschedules if so. The card scrolls, so being able
  * to travel into it and stay is not optional.
  */
-export function createDefinitionHoverExtension(options: {
+export function createLinkHoverExtension(options: {
   getWikiLinks: () => WikiLinkResolutionMap;
-  /** Also open a "not defined yet" card over unresolved term links. */
-  offerDefine?: boolean;
+  /** Whether any extension previews this link; only those open a card. */
+  hasPreview: (link: WikiLinkInfo) => boolean;
   /** Stable setter — pass React's `setState`, not a fresh closure per render. */
-  onChange: (target: DefinitionHoverTarget | null) => void;
+  onChange: (target: LinkHoverTarget | null) => void;
   openDelayMs?: number;
   closeDelayMs?: number;
 }): Extension {
@@ -220,12 +218,8 @@ export function createDefinitionHoverExtension(options: {
           return false;
         }
 
-        const target = findDefinitionAtNode(
-          view,
-          event.target,
-          options.getWikiLinks(),
-          { offerDefine: options.offerDefine },
-        );
+        const found = findLinkAtNode(view, event.target, options.getWikiLinks());
+        const target = found && options.hasPreview(found.link) ? found : null;
 
         if (!target) {
           if (current) {
@@ -268,7 +262,8 @@ export function createDefinitionHoverExtension(options: {
 }
 
 /**
- * Position of the `[[` that `/term` inserted, or null.
+ * A filter on the wiki-link completion opened at one `[[` (an extension's
+ * `editor.openLinkCompletion({ filter })`, e.g. the dictionary's `/term`).
  *
  * Lives in editor state rather than in a React store because the editor builds
  * its extensions inside a `useMemo`, and a handler that mutates a memoized
@@ -276,13 +271,18 @@ export function createDefinitionHoverExtension(options: {
  * simply where this belongs: the narrowing is a property of one spot in the
  * document, and `mapPos` keeps it pinned there through edits.
  */
-const setDefinitionScope = StateEffect.define<number | null>();
+export type LinkCompletionScope = {
+  markerFrom: number;
+  filter: (link: WikiLinkInfo) => boolean;
+};
 
-export const definitionScopeField = StateField.define<number | null>({
+const setLinkCompletionScope = StateEffect.define<LinkCompletionScope | null>();
+
+export const linkCompletionScopeField = StateField.define<LinkCompletionScope | null>({
   create: () => null,
   update(value, transaction) {
     for (const effect of transaction.effects) {
-      if (effect.is(setDefinitionScope)) {
+      if (effect.is(setLinkCompletionScope)) {
         return effect.value;
       }
     }
@@ -293,23 +293,30 @@ export const definitionScopeField = StateField.define<number | null>({
 
     // `TrackDel` returns null when the marker's own text was deleted, which is
     // exactly when the narrowing should stop applying.
-    return transaction.changes.mapPos(value, -1, MapMode.TrackDel) ?? null;
+    const markerFrom = transaction.changes.mapPos(value.markerFrom, -1, MapMode.TrackDel);
+    return markerFrom === null ? null : { ...value, markerFrom };
   },
 });
 
 /**
- * Narrows the next wiki-link completion at `markerFrom` to definitions.
+ * Narrows the next wiki-link completion at `markerFrom` to links `filter`
+ * accepts.
  *
  * Never cleared explicitly: a marker that no longer matches the open completion
- * region simply stops applying, and the next `/term` overwrites it.
+ * region simply stops applying, and the next narrowing overwrites it.
  */
-export function narrowWikiCompletionToDefinitions(
-  view: EditorView,
-  markerFrom: number,
+export function narrowLinkCompletion(
+  view: Pick<EditorView, "dispatch">,
+  scope: LinkCompletionScope,
 ) {
-  view.dispatch({ effects: setDefinitionScope.of(markerFrom) });
+  view.dispatch({ effects: setLinkCompletionScope.of(scope) });
 }
 
-export function definitionScopeMarker(state: EditorState) {
-  return state.field(definitionScopeField, false) ?? null;
+/** The completion filter for the `[[` at `markerFrom`, if one applies. */
+export function linkCompletionFilterAt(
+  state: EditorState,
+  markerFrom: number,
+): LinkCompletionScope["filter"] | null {
+  const scope = state.field(linkCompletionScopeField, false) ?? null;
+  return scope && scope.markerFrom === markerFrom ? scope.filter : null;
 }

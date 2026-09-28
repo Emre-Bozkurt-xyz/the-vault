@@ -381,6 +381,7 @@ function LiveEditor({
                   {
                     extensionId: editorModule.manifestId,
                     documentId: PLAYGROUND_DOCUMENT_ID,
+                    folderId: null,
                     settings,
                   },
                   { pickAsset: promptForAsset },

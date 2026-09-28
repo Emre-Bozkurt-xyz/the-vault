@@ -6,9 +6,11 @@
 import type { RenderModule } from "@/lib/extension-api";
 
 import calendarRender from "./calendar/render";
+import dictionaryRender from "./dictionary/render";
 import stickersRender from "./stickers/render";
 
 export const renderModules: readonly RenderModule[] = [
   calendarRender,
+  dictionaryRender,
   stickersRender,
 ];

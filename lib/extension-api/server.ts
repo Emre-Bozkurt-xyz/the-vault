@@ -27,8 +27,15 @@ export type {
   ExtensionAgentActionContext,
   ExtensionAgentActionResult,
   ExtensionAgentActionScope,
-  ExtensionAgentDefinitionEntry,
+  ExtensionAgentDocumentsApi,
+  ExtensionAgentDocumentSummary,
 } from "@/lib/extensions/types";
+
+// Core document data an extension may read or write through the documents
+// service: the reserved `definition` tag, and the frontmatter serializer that
+// escapes metadata exactly as the Properties panel does.
+export { definitionTagSlug } from "@/lib/definitions";
+export { updateDocumentMetadataFrontmatter } from "@/lib/content-metadata";
 
 /**
  * An action, typed against its manifest: the id must sit in the extension's
