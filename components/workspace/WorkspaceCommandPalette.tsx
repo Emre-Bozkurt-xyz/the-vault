@@ -13,7 +13,6 @@ import {
   Archive,
   Blocks,
   BookOpen,
-  CalendarPlus,
   FilePlus,
   FileText,
   Globe2,
@@ -30,14 +29,15 @@ import {
   Share2,
   ShieldCheck,
   Slash,
-  Sticker,
   UserRound,
   Users,
   X,
   type LucideIcon,
+  Puzzle,
 } from "lucide-react";
 
 import { rankCommands } from "@/components/workspace/command-ranking";
+import { clientExtensions } from "@/extensions/registry.client";
 import { useVaultTheme } from "@/components/theme-provider";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import { useGlobalShortcuts } from "@/components/shortcuts/KeybindingsProvider";
@@ -346,29 +346,29 @@ export function WorkspaceCommandPalette() {
         });
       }
 
-      if (doc.canEdit && doc.calendarEnabled) {
-        list.push({
-          id: "doc-insert-calendar",
-          slug: "insert-calendar",
-          label: "Insert calendar",
-          group: "This document",
-          keywords: "month block extension",
-          icon: CalendarPlus,
-          run: () => dispatchDocumentCommand("insert-calendar"),
-        });
+      // Editor commands of the extensions this viewer can author with, from
+      // their manifests (docs/23_EXTENSION_SDK_PLAN.md §7). Only extensions
+      // with an editor module: a command needs code to run.
+      if (doc.canEdit) {
+        for (const entry of clientExtensions) {
+          if (!entry.editor || !doc.authoringExtensionIds.includes(entry.manifest.id)) {
+            continue;
+          }
+
+          for (const command of entry.manifest.commands ?? []) {
+            list.push({
+              id: `doc-${command.id}`,
+              slug: command.id.slice(entry.manifest.id.length + 1),
+              label: command.label,
+              group: "This document",
+              keywords: `extension ${entry.manifest.name} ${command.description ?? ""}`,
+              icon: Puzzle,
+              run: () => dispatchDocumentCommand(`extension:${command.id}`),
+            });
+          }
+        }
       }
 
-      if (doc.canEdit && doc.stickersEnabled) {
-        list.push({
-          id: "doc-insert-sticker",
-          slug: "insert-sticker",
-          label: "Insert sticker",
-          group: "This document",
-          keywords: "asset image extension",
-          icon: Sticker,
-          run: () => dispatchDocumentCommand("insert-sticker"),
-        });
-      }
 
       if (doc.canDelete) {
         list.push({

@@ -31,30 +31,33 @@ import {
   transformAssetEmbeds,
   type AssetEmbedResolutionMap,
 } from "@/lib/asset-embeds";
-import { CalcBlock } from "@/components/extensions/CalcBlock";
-import { CalcValue } from "@/components/extensions/CalcValue";
-import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { ExtensionBlockHost } from "@/components/extensions/ExtensionBlockHost";
+import {
+  ExtensionDocumentProvider,
+  ExtensionInlineHost,
+} from "@/components/extensions/ExtensionDocumentHost";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
-import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
-import { splitCalendarSegments } from "@/lib/calendar";
+import { ExtensionLinkHost } from "@/components/extensions/ExtensionLinkHost";
+import { extensionDirectiveOwners } from "@/lib/extension-host/blocks";
+import { planExtensionParts } from "@/lib/extension-host/plan";
 import {
-  calcRemarkPlugins,
-  remarkCalc,
-  splitCalcBlockSegments,
-  type CalcBlockLine,
-} from "@/lib/markdown/calc-directive";
-import type { FxRateTable } from "@/lib/calc/fx";
-import { parseCalcSettings } from "@/lib/calc/settings";
+  createRenderContext,
+  type AnalyzableDocument,
+  type DocumentExtensions,
+} from "@/lib/extension-api";
 import {
-  buildCalcDocument,
-  calcKey,
-  EMPTY_CALC_DOCUMENT,
-  type CalcPiece,
-  type ResolvedCalc,
-} from "@/lib/markdown/calc-document";
-import type { CalendarState } from "@/lib/extensions/catalog";
+  createDirectivePlanState,
+  type DirectivePart,
+  type DirectivePlanState,
+} from "@/lib/markdown/directive-occurrences";
+import {
+  directiveRemarkPlugins,
+  EXTENSION_INLINE_ELEMENT,
+  EXTENSION_INLINE_KEY_ATTRIBUTE,
+  remarkInlineDirectives,
+} from "@/lib/markdown/directives";
 import { stripDocumentFrontmatter } from "@/lib/content-metadata";
 import { inlineStyleToReactStyle } from "@/lib/html-style";
 import {
@@ -63,7 +66,7 @@ import {
 } from "@/lib/markdown/sanitize";
 import { cn } from "@/lib/utils";
 import {
-  buildDefinitionsByHref,
+  buildWikiLinkTargetsByHref,
   extractMarkdownTarget,
   hrefWithoutFragment,
   normalizeWikiFragmentForHref,
@@ -71,7 +74,7 @@ import {
   slugifyMarkdownHeading,
   transformWikiLinks,
   type WikiDocumentEmbedBlock,
-  type WikiLinkDefinition,
+  type WikiLinkTarget,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
 
@@ -86,28 +89,18 @@ type MarkdownDocumentProps = {
   embedDepth?: number;
   embedTrail?: string[];
   /**
-   * When set, `:::calendar{id=…}` anchors render as read-only calendars for this
-   * document. Pass `calendarStates` on public/SSR surfaces to seed entries
-   * without a client fetch; omit it for authenticated viewers (the widget then
-   * fetches its own readable state).
+   * What the page resolved about extensions (`resolveDocumentExtensions`):
+   * the context extension blocks render with (their document, settings and
+   * prefetched state), the FX table for `:calc`, and the viewer's
+   * definition-emphasis preference. Passed in rather than fetched so
+   * `MarkdownDocument` stays synchronous and usable from client components.
+   *
+   * Only the top-level render of a document passes it. Nested renders (document
+   * embeds, previews, text inside a block) omit it, so a block there gets an
+   * anonymous, document-less context and can never read or write the outer
+   * document's state.
    */
-  documentId?: string;
-  calendarStates?: Record<string, CalendarState>;
-  /**
-   * Daily FX rates for `:calc` conversions. Server surfaces fetch this with
-   * `getFxRateTable()` and pass it down; omitted, conversions report
-   * `missing-rate` and every other value still renders. Passed as a prop rather
-   * than fetched here so `MarkdownDocument` stays synchronous and usable from
-   * client components.
-   */
-  fxTable?: FxRateTable | null;
-  /**
-   * How links to definitions are emphasized: every mention (the default), or
-   * only the first mention of each definition in this document. A *reading*
-   * preference of the viewer's, not part of the document — so an anonymous
-   * reader of a public page always gets the default.
-   */
-  definitionEmphasis?: "every" | "first";
+  extensions?: DocumentExtensions | null;
 };
 
 const maxWikiEmbedDepth = 2;
@@ -318,6 +311,11 @@ function iframeDimension(value: unknown, fallback: number, max: number) {
   return Math.min(parsed, max);
 }
 
+/** Claimed inline directive names, for the render plugin. */
+const inlineDirectiveNames: ReadonlySet<string> = new Set(
+  extensionDirectiveOwners.inline.keys(),
+);
+
 function normalizeSelfClosingIframes(markdown: string) {
   return markdown.replace(/<iframe\b([^>]*)\/>/gi, "<iframe$1></iframe>");
 }
@@ -325,14 +323,18 @@ function normalizeSelfClosingIframes(markdown: string) {
 function createMarkdownComponents(
   disableLinks: boolean,
   headingIds: Map<string, number>,
-  calcResults: Map<string, ResolvedCalc>,
   /**
-   * Links that point at a definition document, keyed by href. Empty when the
-   * surface has no resolution map, or inside a hover card — see `a` below.
+   * Resolved wiki-link targets, keyed by href. Empty when the surface has no
+   * resolution map, or inside a hover card — see `a` below.
    */
-  definitions: Map<string, WikiLinkDefinition>,
-  /** Definitions already mentioned in this document, or null for "every". */
-  definitionMentions: Set<string> | null,
+  linkTargets: Map<string, WikiLinkTarget>,
+  /**
+   * Links to each target seen so far in this document, so an extension's
+   * preview can treat a repeat mention differently (the dictionary's "first
+   * mention" emphasis).
+   */
+  linkOccurrences: Map<string, number>,
+  extensions: DocumentExtensions | null,
 ): Components {
   const headingProps = (
     children: ReactNode,
@@ -554,44 +556,10 @@ function createMarkdownComponents(
     const linkTarget =
       safeTarget ??
       (safeHref.startsWith("/") || safeHref.startsWith("#") ? undefined : "_blank");
-    const definition =
-      isAssetFileCard || isAssetFileAction
-        ? undefined
-        : definitions.get(hrefWithoutFragment(safeHref));
-
-    if (definition) {
-      const definitionKey = hrefWithoutFragment(safeHref);
-      // Only the first mention is emphasized; later ones stay linked and still
-      // preview. Mutated during render exactly like `headingIds` — the set is
-      // created fresh per `MarkdownDocument` render, so a StrictMode double
-      // render starts from empty both times.
-      const quiet = definitionMentions?.has(definitionKey) ?? false;
-      definitionMentions?.add(definitionKey);
-
-      return (
-        <DefinitionPreviewCard
-          href={safeHref}
-          label={definition.label}
-          quiet={quiet}
-          preview={
-            // Rendered here rather than inside the card so the card never has to
-            // import this module back. `disableLinks` is also what caps preview
-            // depth at zero: every link inside a card renders as plain text, so
-            // no card can open another.
-            <MarkdownDocument
-              markdown={definition.preview}
-              disableLinks
-              compact
-              contained={false}
-            />
-          }
-        >
-          {children}
-        </DefinitionPreviewCard>
-      );
-    }
-
-    return (
+    const targetKey = hrefWithoutFragment(safeHref);
+    const wikiTarget =
+      isAssetFileCard || isAssetFileAction ? undefined : linkTargets.get(targetKey);
+    const plainLink = (
       <a
         href={safeHref}
         rel={linkTarget === "_blank" ? (rel || "noreferrer") : undefined}
@@ -601,18 +569,46 @@ function createMarkdownComponents(
         {children}
       </a>
     );
+
+    if (wikiTarget) {
+      // Counted during render exactly like `headingIds`: the map is created
+      // fresh per `MarkdownDocument` render, so a StrictMode double render
+      // starts from zero both times.
+      const occurrence = linkOccurrences.get(targetKey) ?? 0;
+      linkOccurrences.set(targetKey, occurrence + 1);
+
+      // Extensions decide whether this link gets a hover card (the
+      // dictionary's definition previews); without one it is `plainLink`.
+      return (
+        <ExtensionLinkHost
+          link={{
+            target: wikiTarget.label,
+            label: wikiTarget.label,
+            href: safeHref,
+            resolved: true,
+            isDefinition: wikiTarget.isDefinition,
+            preview: wikiTarget.preview,
+            occurrence,
+          }}
+          extensions={extensions}
+          fallback={plainLink}
+        >
+          {children}
+        </ExtensionLinkHost>
+      );
+    }
+
+    return plainLink;
   },
   input(props) {
     return <input {...props} className="vault-md-checkbox" disabled />;
   },
-  // `remarkCalc` emits `<vault-calc data-calc-key>` for each inline `:calc[…]`.
-  // The element carries only the key; the component supplies every class, which
-  // is what keeps calc's contract classes out of the raw-HTML className filter
-  // in `rehypeSanitizeContent`.
-  "vault-calc": (props: { "data-calc-key"?: string }) => (
-    <CalcValue
-      resolved={calcResults.get(props["data-calc-key"] ?? "") ?? null}
-    />
+  // `remarkInlineDirectives` emits this element, carrying only a key, for each
+  // claimed inline directive (`:calc[…]`). The extension's component supplies
+  // every class, which keeps them out of the raw-HTML className filter in
+  // `rehypeSanitizeContent`.
+  [EXTENSION_INLINE_ELEMENT]: (props: Record<string, string | undefined>) => (
+    <ExtensionInlineHost occurrenceKey={props[EXTENSION_INLINE_KEY_ATTRIBUTE]} />
   ),
   } as Components;
 }
@@ -935,10 +931,7 @@ export function MarkdownDocument({
   assetLinks,
   embedDepth = 0,
   embedTrail = [],
-  documentId,
-  calendarStates,
-  fxTable,
-  definitionEmphasis = "every",
+  extensions,
 }: MarkdownDocumentProps) {
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
@@ -950,37 +943,23 @@ export function MarkdownDocument({
   const blocks = splitWikiDocumentEmbeds(sourceMarkdown, wikiLinks);
   const headingIds = new Map<string, number>();
   // Created per render and threaded down the same path as `headingIds`, because
-  // "first mention" has to span every Markdown segment of the document, not
-  // restart in each one. Null means every mention is emphasized.
-  const definitionMentions =
-    definitionEmphasis === "first" ? new Set<string>() : null;
+  // a link's occurrence has to count across every Markdown segment of the
+  // document, not restart in each one.
+  const linkOccurrences = new Map<string, number>();
 
-  // Calc values are evaluated once, here, before anything renders: names bind
-  // top-to-bottom across the whole document, but the document is rendered as
-  // several independent `MarkdownSegment`s, so no segment can evaluate on its
-  // own. Splitting therefore happens once and each piece keeps a stable index.
-  // Pure in its inputs (the accumulator is created fresh per render), so a
-  // StrictMode double-render produces identical indices.
-  const calcPieces: CalcPiece[] = [];
+  // Extension directives are planned once, here, before anything renders: an
+  // extension's `analyze` (calc binding names top to bottom) needs every
+  // occurrence in document order, but the document renders as several
+  // independent `MarkdownSegment`s. One plan state numbers pieces across the
+  // whole document. Pure in its inputs (the state is fresh per render), so a
+  // StrictMode double-render produces identical keys.
+  const plan = createDirectivePlanState();
   const blockParts = blocks.map((block) =>
-    block.type === "markdown"
-      ? planMarkdownParts(block.markdown, Boolean(documentId), calcPieces)
-      : null,
+    block.type === "markdown" ? planExtensionParts(block.markdown, plan) : null,
   );
-  // `calc_currency` is read here rather than passed in, so every surface that
-  // renders a document honours it — including previews and embeds that never
-  // touch a page component. `calc_rate_date` cannot work this way: it decides
-  // which table to *fetch*, which has to happen before render (see the pages).
-  const calcSettings = parseCalcSettings(bodyMarkdown);
-  const calcDocument =
-    calcPieces.length > 0
-      ? buildCalcDocument(calcPieces, {
-          fxTable,
-          displayCurrency: calcSettings.displayCurrency,
-        })
-      : EMPTY_CALC_DOCUMENT;
+  const extensionDocuments = groupOccurrences(plan, markdown || "");
 
-  return (
+  const rendered = (
     <div
       className={cn(
         "vault-markdown",
@@ -998,10 +977,8 @@ export function MarkdownDocument({
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
-            definitionMentions={definitionMentions}
-            documentId={documentId}
-            calendarStates={calendarStates}
-            calcResults={calcDocument.results}
+            linkOccurrences={linkOccurrences}
+            extensions={extensions ?? null}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1027,6 +1004,42 @@ export function MarkdownDocument({
       )}
     </div>
   );
+
+  // Only documents with occurrences carry the provider (and its data) to the
+  // client; the rest render exactly as they did.
+  return Object.keys(extensionDocuments).length > 0 ? (
+    <ExtensionDocumentProvider
+      extensions={extensions ?? null}
+      documents={extensionDocuments}
+    >
+      {rendered}
+    </ExtensionDocumentProvider>
+  ) : (
+    rendered
+  );
+}
+
+/**
+ * Per extension, the occurrences `analyze` receives. The document's text is
+ * reduced to its frontmatter, the only part an analyzer reads beyond its own
+ * occurrences (calc's `calc_currency`), so the page does not carry the whole
+ * body to the browser twice.
+ */
+function groupOccurrences(
+  plan: DirectivePlanState,
+  markdown: string,
+): Record<string, AnalyzableDocument> {
+  const documents: Record<string, AnalyzableDocument> = {};
+  const frontmatter = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(markdown)?.[0] ?? "";
+
+  for (const found of plan.occurrences) {
+    const { owner, ...occurrence } = found;
+    (documents[owner] ??= { markdown: frontmatter, occurrences: [] }).occurrences.push(
+      occurrence,
+    );
+  }
+
+  return documents;
 }
 
 function VaultRegion({
@@ -1085,129 +1098,42 @@ function VaultRegion({
   );
 }
 
-/**
- * One renderable piece of a markdown block, after calendar and `:::calc`
- * splitting. Markdown and calc-block parts carry the index of their entry in the
- * document's calc piece list, which is how a rendered value finds its
- * pre-computed result.
- */
-type MarkdownPart =
-  | { kind: "markdown"; markdown: string; pieceIndex: number }
-  | {
-      kind: "calc-block";
-      lines: CalcBlockLine[];
-      collapsed: boolean;
-      pieceIndex: number;
-    }
-  | { kind: "calendar"; id: string | null };
-
-/**
- * Splits one markdown block into ordered parts, appending every calc-bearing
- * piece to `pieces` so the caller can evaluate them in document order.
- *
- * Appends to a caller-owned array rather than returning one because piece
- * indices must be unique across the *whole* document, not per block.
- */
-function planMarkdownParts(
-  markdown: string,
-  withCalendars: boolean,
-  pieces: CalcPiece[],
-): MarkdownPart[] {
-  // Calendars only render where a documentId is in scope (the doc viewer /
-  // public page). Without it (e.g. nested entry-text renders) the fence is left
-  // as-is, exactly as before.
-  const segments = withCalendars
-    ? splitCalendarSegments(markdown)
-    : [{ type: "markdown" as const, markdown }];
-
-  const parts: MarkdownPart[] = [];
-
-  for (const segment of segments) {
-    if (segment.type === "calendar") {
-      parts.push({ kind: "calendar", id: segment.id });
-      continue;
-    }
-
-    for (const piece of splitCalcBlockSegments(segment.markdown)) {
-      const pieceIndex = pieces.length;
-
-      if (piece.type === "markdown") {
-        pieces.push({ type: "markdown", markdown: piece.markdown });
-        parts.push({ kind: "markdown", markdown: piece.markdown, pieceIndex });
-        continue;
-      }
-
-      pieces.push({
-        type: "calc-block",
-        lines: piece.lines,
-        presentation: piece.presentation,
-        collapsed: piece.collapsed,
-      });
-      parts.push({
-        kind: "calc-block",
-        lines: piece.lines,
-        collapsed: piece.collapsed,
-        pieceIndex,
-      });
-    }
-  }
-
-  return parts;
-}
-
 function MarkdownBlock({
   parts,
   disableLinks,
   wikiLinks,
   assetLinks,
   headingIds,
-  definitionMentions,
-  documentId,
-  calendarStates,
-  calcResults,
+  linkOccurrences,
+  extensions,
 }: {
-  parts: MarkdownPart[];
+  parts: DirectivePart[];
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
-  definitionMentions: Set<string> | null;
-  documentId?: string;
-  calendarStates?: Record<string, CalendarState>;
-  calcResults: Map<string, ResolvedCalc>;
+  linkOccurrences: Map<string, number>;
+  extensions: DocumentExtensions | null;
 }) {
   return (
     <>
       {parts.map((part, index) => {
-        if (part.kind === "calendar") {
+        if (part.kind === "leaf" || part.kind === "container") {
           return (
-            <CalendarBlock
-              key={`calendar-${index}-${part.id ?? "none"}`}
-              documentId={documentId as string}
-              calendarId={part.id}
-              canEdit={false}
-              prefetchedState={
-                calendarStates
-                  ? part.id
-                    ? calendarStates[part.id] ?? null
-                    : null
-                  : undefined
-              }
-              wikiLinks={wikiLinks}
-              assetLinks={assetLinks}
-            />
-          );
-        }
-
-        if (part.kind === "calc-block") {
-          return (
-            <CalcBlock
-              key={`calc-${index}`}
-              collapsed={part.collapsed}
-              rows={part.lines.map(
-                (_line, row) =>
-                  calcResults.get(calcKey(part.pieceIndex, row)) ?? null,
-              )}
+            <ExtensionBlockHost
+              key={`block-${index}-${part.source}`}
+              // Read mode is read-only for every block; editing happens in
+              // Live mode, whose widget passes the page's own `canEdit`.
+              ctx={{
+                ...createRenderContext(extensions, part.owner),
+                canEdit: false,
+              }}
+              name={part.name}
+              attributes={part.attributes}
+              source={part.source}
+              body={part.kind === "container" ? part.body : null}
+              occurrenceKey={part.kind === "container" ? part.key : null}
+              links={{ wikiLinks, assetLinks }}
             />
           );
         }
@@ -1224,9 +1150,9 @@ function MarkdownBlock({
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             headingIds={headingIds}
-            definitionMentions={definitionMentions}
+            linkOccurrences={linkOccurrences}
+            extensions={extensions}
             keyPrefix={String(part.pieceIndex)}
-            calcResults={calcResults}
           />
         );
       })}
@@ -1240,18 +1166,18 @@ function MarkdownSegment({
   wikiLinks,
   assetLinks,
   headingIds,
-  definitionMentions,
+  linkOccurrences,
+  extensions,
   keyPrefix,
-  calcResults,
 }: {
   markdown: string;
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
   assetLinks?: AssetEmbedResolutionMap;
   headingIds: Map<string, number>;
-  definitionMentions: Set<string> | null;
+  linkOccurrences: Map<string, number>;
+  extensions: DocumentExtensions | null;
   keyPrefix: string;
-  calcResults: Map<string, ResolvedCalc>;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1260,14 +1186,20 @@ function MarkdownSegment({
   // Derived rather than threaded down beside `wikiLinks`: the derivation is
   // cached against the map's identity, so asking per segment costs one lookup.
   // A card's own inner render passes no `wikiLinks`, which is how nesting stops.
-  const definitions = buildDefinitionsByHref(wikiLinks);
+  const linkTargets = buildWikiLinkTargetsByHref(wikiLinks);
 
   return (
     <ReactMarkdown
-      // `calcRemarkPlugins` is shared with the pre-pass that produced
-      // `calcResults`: both must walk identical trees or a key assigned here
-      // would point at another expression's result.
-      remarkPlugins={[...calcRemarkPlugins, [remarkCalc, { keyPrefix }]]}
+      // `directiveRemarkPlugins` is shared with the pre-pass that collected the
+      // occurrences: both must walk identical trees or a key assigned here
+      // would point at another occurrence.
+      remarkPlugins={[
+        ...directiveRemarkPlugins,
+        [
+          remarkInlineDirectives,
+          { names: inlineDirectiveNames, keyPrefix },
+        ],
+      ]}
       rehypePlugins={[
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],
@@ -1278,9 +1210,9 @@ function MarkdownSegment({
       components={createMarkdownComponents(
         disableLinks,
         headingIds,
-        calcResults,
-        definitions,
-        definitionMentions,
+        linkTargets,
+        linkOccurrences,
+        extensions,
       )}
     >
       {renderedMarkdown}

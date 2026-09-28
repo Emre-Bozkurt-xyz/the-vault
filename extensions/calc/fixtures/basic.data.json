@@ -1,0 +1,8 @@
+{
+  "fxTable": {
+    "base": "EUR",
+    "date": "2026-09-08",
+    "provider": "ECB",
+    "rates": { "USD": "1.1614", "CAD": "1.6033" }
+  }
+}

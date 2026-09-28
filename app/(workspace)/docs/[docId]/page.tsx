@@ -21,19 +21,13 @@ import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPan
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { getFxRateTable } from "@/server/fx-rates";
-import { parseCalcSettings } from "@/lib/calc/settings";
 import { resolveInheritedTagsForDocument } from "@/lib/folder-tags";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
-import {
-  calendarSettingsSchema,
-  dictionarySettingsSchema,
-} from "@/lib/extensions/catalog";
-import type { ExtensionStateVisibility } from "@/lib/extensions/types";
-import type { CalendarWeekStart } from "@/lib/calendar";
+import { ExtensionOverlaySurface } from "@/components/extensions/ExtensionOverlays";
+import { resolveDocumentExtensions } from "@/server/extension-runtime";
 import {
   listAssetResolutionsForDocument,
   listPrivateEmbeddedAssetsForPublish,
@@ -59,7 +53,7 @@ import {
 } from "@/server/friends-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { requireCompletedProfile } from "@/server/profile";
-import { getUserExtensionSetting, getUserSetting } from "@/server/user-settings";
+import { getUserSetting } from "@/server/user-settings";
 import { buildPreferences } from "@/lib/settings/preferences";
 import {
   getActiveSnippetCssForDocument,
@@ -105,10 +99,7 @@ export default async function DocumentPage({
     versions,
     assetLinks,
     privateEmbeddedAssets,
-    stickersExtSetting,
-    calendarExtSetting,
-    calcExtSetting,
-    dictionaryExtSetting,
+    documentExtensions,
     editorSetting,
     folderPath,
     inheritedTags,
@@ -143,62 +134,24 @@ export default async function DocumentPage({
             markdown: document.markdown,
           })
         : Promise.resolve([]),
-      document.access.canEdit
-        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.stickers" })
-        : Promise.resolve(null),
-      document.access.canEdit
-        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calendar" })
-        : Promise.resolve(null),
-      document.access.canEdit
-        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.calc" })
-        : Promise.resolve(null),
-      // Fetched for every viewer, not only editors: besides gating `/def`, it
-      // carries the viewer's own reading preference for definition links.
-      getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.dictionary" }),
+      // Which extensions the viewer enabled (and their settings), what this
+      // document needs rendered, prefetched state and render data such as the
+      // FX table for `:calc` — one object instead of a prop per extension.
+      resolveDocumentExtensions({
+        surface: "workspace",
+        document: { id: document.id, markdown: document.markdown },
+        canEdit: document.access.canEdit,
+        userId: session.user.id,
+      }),
       document.access.canEdit
         ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
         : Promise.resolve(null),
       getFolderPathForUser(document.folderId),
       resolveInheritedTagsForDocument(document.id),
     ]);
-  const stickersEnabled = stickersExtSetting?.enabled ?? false;
-  const calendarEnabled = calendarExtSetting?.enabled ?? false;
-  // Gates the calc toolbar button and its slash commands only. Calc VALUES
-  // always render, for the same reason calendars do: a document must read the
-  // same for every viewer, whatever they have switched on for themselves.
-  const calcEnabled = calcExtSetting?.enabled ?? false;
-  // Gates `/def` and `/term` only. Definition hover previews always render, for
-  // the same reason: a document must read the same for every viewer.
-  const dictionaryEnabled = dictionaryExtSetting?.enabled ?? false;
-  const dictionarySettings = dictionarySettingsSchema.safeParse(
-    dictionaryExtSetting?.settings ?? {},
-  );
-  // Only honoured while the extension is on: disabling it removes its settings
-  // page, and a preference nobody can see must not keep applying.
-  const definitionEmphasis =
-    dictionaryEnabled && dictionarySettings.success
-      ? dictionarySettings.data.definitionEmphasis
-      : "every";
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
-  // Enabled-extension ids gate extension-contributed editor slash commands.
-  const enabledExtensionIds = [
-    calendarEnabled ? "vault.calendar" : null,
-    stickersEnabled ? "vault.stickers" : null,
-    calcEnabled ? "vault.calc" : null,
-    dictionaryEnabled ? "vault.dictionary" : null,
-  ].filter((id): id is string => id !== null);
-  const calendarSettings = calendarSettingsSchema.safeParse(
-    calendarExtSetting?.settings ?? {},
-  );
-  const calendarWeekStartsOn: CalendarWeekStart =
-    calendarSettings.success && calendarSettings.data.weekStartsOn === "1"
-      ? 1
-      : 0;
-  const calendarVisibility: ExtensionStateVisibility = calendarSettings.success
-    ? calendarSettings.data.defaultVisibility
-    : "private";
   const wikiLinks = {
     ...readableWikiLinks,
     ...publicWikiLinks,
@@ -211,15 +164,6 @@ export default async function DocumentPage({
   // only affects other authors' styling in the non-owner read view.
   const attachedSnippetCss = await getActiveSnippetCssForDocument(document.id);
   const cspNonce = attachedSnippetCss ? await getCspNonce() : undefined;
-
-  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
-  // anything is cached, and returns null rather than throwing when it is not —
-  // conversions then report `missing-rate` and the document still renders.
-  // `calc_rate_date` pins the report to a day, so its totals stay the same
-  // on every reading instead of drifting with the market.
-  const fxTable = await getFxRateTable({
-    date: parseCalcSettings(document.markdown).rateDate ?? undefined,
-  });
 
   const applyStyling = document.access.canEdit
     ? true
@@ -283,8 +227,9 @@ export default async function DocumentPage({
           canShare: document.access.canShare,
           canPublish: document.access.canPublish,
           canDelete: document.access.canDelete,
-          calendarEnabled,
-          stickersEnabled,
+          authoringExtensionIds: document.access.canEdit
+            ? documentExtensions.enabledIds
+            : [],
         }}
         rightPanel={
           showRightPanel ? (
@@ -311,24 +256,17 @@ export default async function DocumentPage({
       <div className="vault-fade-up min-h-full">
         {document.access.canEdit ? (
           <MarkdownEditor
-            fxTable={fxTable}
+            extensions={documentExtensions}
             documentId={document.id}
             title={document.title}
             markdown={markdown}
             folderPath={folderPath}
             folderId={document.folderId}
-            definitionEmphasis={definitionEmphasis}
             inheritedTags={inheritedTags}
             shareLinkId={shareLinkId}
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
-            stickersEnabled={stickersEnabled}
-            calendarEnabled={calendarEnabled}
-            calcEnabled={calcEnabled}
-            enabledExtensionIds={enabledExtensionIds}
             slashMenuEnabled={slashMenuEnabled}
-            calendarWeekStartsOn={calendarWeekStartsOn}
-            calendarVisibility={calendarVisibility}
             snippetCss={editorSnippetCss}
             snippetNonce={cspNonce}
             collaboration={
@@ -354,6 +292,12 @@ export default async function DocumentPage({
               </h1>
             </div>
             <DocumentReadingFrame markdown={markdown}>
+              {/* Extension overlays (e.g. stickers) for readers too: rendering
+                  follows content, whether or not the reader enabled them. */}
+              <ExtensionOverlaySurface
+                extensions={documentExtensions}
+                links={{ wikiLinks, assetLinks }}
+              >
               <DocumentStyling
                 documentId={document.id}
                 snippetCss={readViewSnippetCss}
@@ -363,11 +307,10 @@ export default async function DocumentPage({
                   markdown={markdown}
                   wikiLinks={wikiLinks}
                   assetLinks={assetLinks}
-                  documentId={document.id}
-                  fxTable={fxTable}
-                  definitionEmphasis={definitionEmphasis}
+                  extensions={documentExtensions}
                 />
               </DocumentStyling>
+              </ExtensionOverlaySurface>
             </DocumentReadingFrame>
           </article>
         )}

@@ -2,7 +2,9 @@ import { OpenExtensionSettingsButton } from "@/components/settings/OpenExtension
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { setUserExtensionEnabledAction } from "@/server/user-settings-actions";
-import type { VaultExtension } from "@/lib/extensions/types";
+import type { ServerExtensionEntry } from "@/extensions/registry.server";
+import type { ExtensionManifest } from "@/lib/extension-api";
+import type { ExtensionServerModule } from "@/lib/extension-api/server";
 
 type UserExtensionSettingRecord = {
   extensionId: string;
@@ -12,7 +14,7 @@ type UserExtensionSettingRecord = {
 };
 
 type ExtensionBrowserSectionProps = {
-  extensions: VaultExtension[];
+  extensions: readonly ServerExtensionEntry[];
   userSettings: UserExtensionSettingRecord[];
 };
 
@@ -34,10 +36,10 @@ export function ExtensionBrowserSection({
 
   return (
     <div className="grid gap-3">
-      {extensions.map((extension) => {
+      {extensions.map(({ manifest: extension, server }) => {
         const setting = userSettingsByExtension.get(extension.id);
         const enabled = setting?.enabled ?? extension.defaultEnabled ?? false;
-        const contributionLabels = getContributionLabels(extension);
+        const contributionLabels = getContributionLabels(extension, server);
         const hasSettings = Boolean(extension.settings?.sections?.length);
 
         return (
@@ -103,7 +105,7 @@ export function ExtensionBrowserSection({
   );
 }
 
-function MetadataList({ label, items }: { label: string; items: string[] }) {
+function MetadataList({ label, items }: { label: string; items: readonly string[] }) {
   return (
     <div>
       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -120,34 +122,34 @@ function MetadataList({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-function getContributionLabels(extension: VaultExtension) {
+function getContributionLabels(
+  extension: ExtensionManifest,
+  server: ExtensionServerModule | null,
+) {
   const labels: string[] = [];
+  const syntax = extension.syntax;
 
-  if (extension.markdown?.slashCommands?.length) {
+  if (extension.slashCommands?.length) {
     labels.push("Slash commands");
   }
 
-  if (extension.markdown?.liveBlocks?.length) {
-    labels.push("Markdown live blocks");
+  if (syntax?.blocks?.length || syntax?.containers?.length) {
+    labels.push("Markdown blocks");
   }
 
-  if (extension.documentState?.overlays?.length) {
+  if (syntax?.inline?.length) {
+    labels.push("Inline values");
+  }
+
+  if (extension.overlays?.length) {
     labels.push("Document overlay");
   }
 
-  if (extension.workspace?.pages?.length) {
-    labels.push("Workspace page");
-  }
-
-  if (extension.workspace?.panels?.length) {
-    labels.push("Workspace panel");
-  }
-
-  if (extension.workspace?.commands?.length) {
+  if (extension.commands?.length) {
     labels.push("Commands");
   }
 
-  if (extension.agent?.actions.length) {
+  if (server?.actions.some((action) => action.agent !== false)) {
     labels.push("Agent actions");
   }
 

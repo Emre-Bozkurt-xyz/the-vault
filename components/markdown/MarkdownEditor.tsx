@@ -47,14 +47,11 @@ import {
   BookOpenText,
   CheckCircle2,
   Eye,
-  Calculator,
-  CalendarPlus,
   FileCode2,
   Grid3x3,
   Loader2,
   SlidersHorizontal,
   Save,
-  Sticker,
   Tags,
   X,
 } from "lucide-react";
@@ -62,7 +59,7 @@ import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 
 import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
-import { StickerLayer } from "@/components/extensions/StickerLayer";
+import { ExtensionOverlayLayer } from "@/components/extensions/ExtensionOverlays";
 import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
 import { EditorOutline } from "@/components/markdown/EditorOutline";
@@ -70,13 +67,7 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { createCodeBlockExtension } from "@/components/markdown/code-block-extension";
 import { fencedCodeLanguage } from "@/components/markdown/code-languages";
 import { codeFenceAt, codeFenceLineNumbers } from "@/components/markdown/code-fences";
-import type { FxRateTable } from "@/lib/calc/fx";
-import { createCalcCompletionSource } from "@/components/markdown/calc-completions";
 import { codeLanguageCompletionSource } from "@/components/markdown/code-language-completions";
-import {
-  createCalcLiveExtension,
-  getCalcBlockLineNumbers,
-} from "@/components/markdown/live-calc";
 import {
   createLiveBlockDecorationExtension,
   getLiveBlockLineNumbers,
@@ -95,17 +86,16 @@ import {
 } from "@/components/markdown/slash-commands";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import {
-  DefinitionCardOpenLink,
-  DefinitionHoverCard,
-} from "@/components/markdown/DefinitionPreviewCard";
-import { NewDefinitionDialog } from "@/components/markdown/NewDefinitionDialog";
+  LinkCardOpenLink,
+  LinkHoverCard,
+} from "@/components/markdown/LinkPreviewCard";
 import {
-  createDefinitionHoverExtension,
-  definitionScopeField,
-  definitionScopeMarker,
-  narrowWikiCompletionToDefinitions,
-  type DefinitionHoverTarget,
-} from "@/components/markdown/live-definitions";
+  createLinkHoverExtension,
+  linkCompletionFilterAt,
+  linkCompletionScopeField,
+  narrowLinkCompletion,
+  type LinkHoverTarget,
+} from "@/components/markdown/live-link-hover";
 import { InheritedTagList } from "@/components/inherited-tag-list";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Button } from "@/components/ui/button";
@@ -130,14 +120,28 @@ import {
   type AssetGroupWidth,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
-import { formatCalendarFence, generateCalendarId } from "@/lib/calendar";
 import { subscribeToDocumentCommand } from "@/lib/document-command-events";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
-import type { CalendarWeekStart } from "@/lib/calendar";
-import { localExtensionRegistry } from "@/lib/extensions/catalog";
-import type { ExtensionStateVisibility } from "@/lib/extensions/types";
+import { useExtensionHost } from "@/components/extensions/ExtensionHostProvider";
+import { useLiveContributions } from "@/components/extensions/use-live-contributions";
+import {
+  createRenderContext,
+  type DocumentExtensions,
+  type EditorModule,
+  type JsonValue,
+  type PickedAsset,
+  type WikiLinkInfo,
+} from "@/lib/extension-api";
+import { scanExtensionContainers } from "@/lib/extension-host/blocks";
+import { resolveLinkPreview } from "@/lib/extension-host/links";
+import {
+  insertBlock,
+  insertInline,
+  runExtensionCommand,
+} from "@/lib/extension-host/editor-handle";
+import { getSlashCommandContributions } from "@/lib/extension-host/manifests";
 import {
   formatTagInput,
   parseDocumentMetadata,
@@ -155,16 +159,17 @@ import {
   saveDocumentTitleAction,
   saveMarkdownDocumentAction,
 } from "@/server/documents";
-import { createDefinitionDocumentAction } from "@/server/definitions";
 import type { PickerAsset } from "@/server/asset-picker-actions";
 
 type MarkdownEditorProps = {
   /**
-   * Daily FX rates for `:calc` conversions in the read-mode preview, passed
-   * down from the server page. Without it an author would see `missing-rate`
-   * while readers of the same document see converted values.
+   * What the page resolved about extensions (`resolveDocumentExtensions`): which
+   * the user enabled, their settings, and render data such as the FX table
+   * (without it an author would see `missing-rate` in the preview while readers
+   * see converted values). Omitted in the Den embed editor, where every
+   * extension's authoring is off.
    */
-  fxTable?: FxRateTable | null;
+  extensions?: DocumentExtensions | null;
   documentId: string;
   title: string;
   markdown: string;
@@ -176,8 +181,6 @@ type MarkdownEditorProps = {
   folderPath?: string | null;
   /** The document's folder, so `/def` can file a new definition beside it. */
   folderId?: string | null;
-  /** The viewer's Dictionary reading preference, for the Read-mode preview. */
-  definitionEmphasis?: "every" | "first";
   /**
    * Tags this document picks up from its folders (see `lib/folder-tags.ts`).
    * Read-only here: they are not part of the Markdown, so the Properties panel
@@ -205,15 +208,8 @@ type MarkdownEditorProps = {
    * behavior is unchanged.
    */
   embedSessionToken?: string | null;
-  stickersEnabled?: boolean;
-  calendarEnabled?: boolean;
-  calcEnabled?: boolean;
-  /** Ids of the user's enabled extensions, used to gate extension slash items. */
-  enabledExtensionIds?: string[];
   /** Whether the in-editor `/` slash command menu is active (user preference). */
   slashMenuEnabled?: boolean;
-  calendarWeekStartsOn?: CalendarWeekStart;
-  calendarVisibility?: ExtensionStateVisibility;
   /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
   snippetCss?: string;
   snippetNonce?: string;
@@ -334,26 +330,128 @@ export function MarkdownEditor({
   markdown,
   folderPath = null,
   folderId = null,
-  definitionEmphasis = "every",
   inheritedTags,
   shareLinkId = null,
   collaboration = null,
   wikiLinks,
   assetLinks,
   embedSessionToken = null,
-  stickersEnabled = false,
-  calendarEnabled = false,
-  calcEnabled = false,
-  enabledExtensionIds,
   slashMenuEnabled = true,
-  calendarWeekStartsOn = 0,
-  calendarVisibility = "private",
   snippetCss = "",
   snippetNonce,
-  fxTable,
+  // Aliased: `extensions` is this component's CodeMirror extension list.
+  extensions: documentExtensions = null,
 }: MarkdownEditorProps) {
-  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
-  const [pendingStickerAsset, setPendingStickerAsset] = useState<PickerAsset | null>(null);
+  // Ids of the user's enabled extensions, used to gate extension slash items.
+  const enabledExtensionIds = documentExtensions?.enabledIds;
+  // Editor modules of those extensions, as the workspace host loads them
+  // (docs/23_EXTENSION_SDK_PLAN.md §7, §9). None in the Den embed editor, which
+  // has no host. Authoring only: this component mounts only for editors.
+  const extensionHost = useExtensionHost();
+  const hostModules = extensionHost?.modules;
+  const editorModules = useMemo(
+    () =>
+      (enabledExtensionIds ?? [])
+        .map((id) => hostModules?.[id]?.editor as EditorModule | undefined)
+        .filter((editorModule): editorModule is EditorModule => Boolean(editorModule)),
+    [enabledExtensionIds, hostModules],
+  );
+  // Live-mode rendering follows content (the document's render set) and, for
+  // what the author is typing, enablement.
+  const liveExtensionIds = useMemo(
+    () => [
+      ...new Set([
+        ...(documentExtensions?.renderIds ?? []),
+        ...(enabledExtensionIds ?? []),
+      ]),
+    ],
+    [documentExtensions?.renderIds, enabledExtensionIds],
+  );
+  const liveContributions = useLiveContributions(liveExtensionIds);
+  // The host's asset picker, which extension commands open through
+  // `editor.pickAsset()`. One request at a time: a new one dismisses the last.
+  const [assetPickRequest, setAssetPickRequest] = useState<{
+    kinds: ReadonlyArray<"image" | "pdf">;
+    title?: string;
+    resolve: (asset: PickedAsset | null) => void;
+  } | null>(null);
+  const pickAsset = useCallback(
+    (options: { kinds: ReadonlyArray<"image" | "pdf">; title?: string }) =>
+      new Promise<PickedAsset | null>((resolve) => {
+        setAssetPickRequest((previous) => {
+          previous?.resolve(null);
+          return { ...options, resolve };
+        });
+      }),
+    [],
+  );
+  const settleAssetPick = useCallback((asset: PickerAsset | null) => {
+    setAssetPickRequest((request) => {
+      request?.resolve(
+        asset
+          ? {
+              id: asset.id,
+              kind: asset.kind,
+              displayName: asset.displayName,
+              mimeType: asset.mimeType,
+            }
+          : null,
+      );
+      return null;
+    });
+  }, []);
+  // An extension dialog open through `editor.openDialog()`. One at a time: a
+  // new request dismisses the previous one.
+  const [dialogRequest, setDialogRequest] = useState<{
+    extensionId: string;
+    id: string;
+    props: JsonValue | undefined;
+    resolve: (result: JsonValue | null) => void;
+    key: number;
+  } | null>(null);
+  const openDialog = useCallback(
+    (extensionId: string, id: string, props?: JsonValue) =>
+      new Promise<JsonValue | null>((resolve) => {
+        setDialogRequest((previous) => {
+          previous?.resolve(null);
+          return { extensionId, id, props, resolve, key: Date.now() };
+        });
+      }),
+    [],
+  );
+  const settleDialog = useCallback((result: JsonValue | null) => {
+    setDialogRequest((request) => {
+      request?.resolve(result);
+      return null;
+    });
+  }, []);
+  const runEditorCommand = useCallback(
+    (view: EditorView, commandId: string, args?: JsonValue) => {
+      const owner = editorModules.find((candidate) => candidate.commands[commandId]);
+      if (!owner) return;
+
+      runExtensionCommand(
+        owner.commands[commandId],
+        view,
+        {
+          extensionId: owner.manifestId,
+          documentId,
+          folderId,
+          settings: documentExtensions?.settings[owner.manifestId] ?? {},
+          args,
+        },
+        {
+          pickAsset,
+          openDialog,
+          openLinkCompletion: (commandView, options) =>
+            openLinkCompletionAt(commandView as EditorView, options?.filter),
+          openDocument: (id, documentTitle) =>
+            dispatchWorkspaceOpenTab({ href: `/docs/${id}`, title: documentTitle }),
+        },
+      );
+    },
+    [documentExtensions, documentId, editorModules, folderId, openDialog, pickAsset],
+  );
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
   const [dirty, setDirty] = useState(false);
@@ -393,41 +491,23 @@ export function MarkdownEditor({
   // `applyFormat` is defined below the extension memo, so the insertion-menu
   // sources reach it through this ref rather than closing over it directly.
   const applyFormatRef = useRef<((format: MarkdownFormat) => void) | null>(null);
-  // The Live-mode definition hover card. All hover timing lives in the
-  // extension's own closure (`live-definitions.ts`); the only thing crossing the
-  // boundary is this setter, which React guarantees is stable.
-  const [definitionHover, setDefinitionHover] =
-    useState<DefinitionHoverTarget | null>(null);
+  // The Live-mode link hover card, for links an extension previews. All hover
+  // timing lives in the extension's own closure (`live-link-hover.ts`); the
+  // only thing crossing the boundary is this setter, which React guarantees is
+  // stable.
+  const [linkHover, setLinkHover] = useState<LinkHoverTarget | null>(null);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
-  );
-  // `/def` (`lib/extensions/catalog.ts`). Only the term is held here; the view is
-  // read from `viewRef` at submit time, so the link lands in the live editor
-  // rather than in whatever view instance existed when the dialog opened.
-  // `key` remounts the dialog per invocation — the same term can be defined
-  // twice in a row, so the term alone cannot be the key. `linksHere` is false
-  // when defining an existing unresolved link, which must not insert a second.
-  const [newDefinition, setNewDefinition] = useState<{
-    term: string;
-    linksHere: boolean;
-    key: number;
-  } | null>(null);
-  const [newDefinitionPending, setNewDefinitionPending] = useState(false);
-  const [newDefinitionError, setNewDefinitionError] = useState<string | null>(
-    null,
   );
   // Slash items contributed by the user's enabled extensions. Keyed on a joined
   // string (rebuilt inside) so a fresh `enabledExtensionIds` array reference
   // doesn't churn this memo — and, downstream, reconfigure the whole editor.
   const enabledExtensionKey = (enabledExtensionIds ?? []).join("|");
-  const dictionaryEnabled = (enabledExtensionIds ?? []).includes(
-    "vault.dictionary",
-  );
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
     () =>
       toExtensionSlashCommands(
-        localExtensionRegistry.getSlashCommandContributions(),
+        getSlashCommandContributions(),
         enabledExtensionKey ? enabledExtensionKey.split("|") : [],
       ),
     [enabledExtensionKey],
@@ -757,15 +837,20 @@ export function MarkdownEditor({
       // these dispatch to the editor view, and a memoized value whose functions
       // mutate an argument is something the React Compiler will not compile
       // around. The handlers themselves are module-level, like `insertBlock`.
-      const hostCommands = {
-        "vault.dictionary.newDefinition": (view: EditorView) =>
-          openNewDefinitionDialog(view, setNewDefinition, setNewDefinitionError),
-        "vault.dictionary.insertReference": insertDefinitionReference,
-      };
+      const hostCommands: Record<string, (view: EditorView) => void> = {};
+      // Loaded editor modules' commands, which slash `run` items name. An item
+      // whose module has not loaded yet stays hidden until it has.
+      for (const editorModule of editorModules) {
+        for (const commandId of Object.keys(editorModule.commands)) {
+          hostCommands[commandId] = (view: EditorView) =>
+            runEditorCommand(view, commandId);
+        }
+      }
       const baseExtensions = [
-      // `/term`'s definitions-only narrowing (`live-definitions.ts`). Registered
-      // for every mode, since the slash menu is not Live-only.
-      definitionScopeField,
+      // An extension's `openLinkCompletion({ filter })` narrowing (e.g. the
+      // dictionary's `/term`). Registered for every mode, since the slash menu
+      // is not Live-only.
+      linkCompletionScopeField,
       markdownLanguage({
         codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({
@@ -1049,23 +1134,31 @@ export function MarkdownEditor({
             assetLinks: assetLinkMap,
             wikiLinks: wikiLinkMap,
             onConfigureAssetGroup: configureAssetGroup,
-            documentId,
-            canEdit: true,
-            calendarWeekStartsOn,
-            calendarVisibility,
+            extensions: documentExtensions,
           }),
-          createCalcLiveExtension({ fxTable }),
+          // Extensions' own Live-mode rendering (calc's inline values and
+          // declaration rows), for the document's render set and the author's
+          // enabled extensions. One that throws while building is left out
+          // rather than taking the editor down.
+          ...liveContributions.flatMap(({ extensionId, create }) => {
+            try {
+              return [create(createRenderContext(documentExtensions, extensionId))];
+            } catch (cause) {
+              console.error(`Live contribution for "${extensionId}" failed`, cause);
+              return [];
+            }
+          }),
           createInlineMathTooltipExtension(),
           createMarkdownLivePreviewExtension(wikiLinkMap, assetLinkMap),
           // Reads the map through the store rather than closing over
-          // `wikiLinkMap`, so a definition looked up after the wiki-link
-          // completion refreshed it previews the current text.
-          createDefinitionHoverExtension({
+          // `wikiLinkMap`, so a link resolved after the wiki-link completion
+          // refreshed it previews the current text. Extensions decide which
+          // links get a card (the dictionary's definitions and, for authors
+          // who use it, its offer to define an unresolved term).
+          createLinkHoverExtension({
             getWikiLinks: () => wikiLinkMapStore.get(),
-            onChange: setDefinitionHover,
-            // Previews are for everyone; offering to *define* a term is an
-            // authoring affordance, so it follows the extension switch.
-            offerDefine: dictionaryEnabled,
+            hasPreview: (link) => Boolean(resolveLinkPreview(link, documentExtensions)),
+            onChange: setLinkHover,
           }),
         );
       }
@@ -1075,6 +1168,9 @@ export function MarkdownEditor({
           override: [
             ...(slashMenuEnabled
               ? [
+                  // The sources call these only on input, never during render;
+                  // the compiler cannot see that through the closures.
+                  // eslint-disable-next-line react-hooks/refs
                   createSlashCommandCompletionSource({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
@@ -1085,6 +1181,7 @@ export function MarkdownEditor({
                   // The `:::` fence is the other way into the same items, so it
                   // rides the same settings toggle: turning the insert menu off
                   // has to turn off every way of reaching it.
+                  // eslint-disable-next-line react-hooks/refs
                   createDirectiveCompletionSource({
                     applyFormat: (format) => applyFormatRef.current?.(format),
                     insertBlock,
@@ -1094,11 +1191,22 @@ export function MarkdownEditor({
                   }),
                 ]
               : []),
-            // Operand completion inside `:calc[…]` and `:::calc` bodies. Gated
-            // on the extension, not on the insert-menu toggle: these are the
-            // document's own names, and an author who never opens a menu still
-            // needs them spelled correctly.
-            ...(calcEnabled ? [createCalcCompletionSource({ fxTable })] : []),
+            // Enabled extensions' completion sources (calc's operands inside
+            // `:calc[…]` and `:::calc`). Not gated on the insert-menu toggle:
+            // they complete the document's own names, which an author who never
+            // opens a menu still needs spelled correctly.
+            ...editorModules.flatMap((editorModule) => {
+              try {
+                return [
+                  ...(editorModule.completions?.(
+                    createRenderContext(documentExtensions, editorModule.manifestId),
+                  ) ?? []),
+                ];
+              } catch (cause) {
+                console.error(`Completions for "${editorModule.manifestId}" failed`, cause);
+                return [];
+              }
+            }),
             // Language names on a fence's opening line, with starter code for
             // a new block. Scoped to that one position, so it is always on.
             codeLanguageCompletionSource,
@@ -1160,13 +1268,12 @@ export function MarkdownEditor({
       documentId,
       shareLinkId,
       embedSessionToken,
-      calendarWeekStartsOn,
-      calendarVisibility,
+      documentExtensions,
+      editorModules,
+      runEditorCommand,
       extensionSlashCommands,
       slashMenuEnabled,
-      calcEnabled,
-      fxTable,
-      dictionaryEnabled,
+      liveContributions,
     ],
   );
 
@@ -1307,16 +1414,6 @@ export function MarkdownEditor({
       return;
     }
 
-    if (format === "calendar") {
-      insertBlock(view, formatCalendarFence(generateCalendarId()), null);
-      return;
-    }
-
-    if (format === "calcBlock") {
-      insertCalcBlock(view);
-      return;
-    }
-
     const linePrefix: Record<MarkdownFormat, string | null> = {
       heading1: "# ",
       heading2: "## ",
@@ -1335,8 +1432,6 @@ export function MarkdownEditor({
       table: null,
       region: null,
       horizontalRule: null,
-      calendar: null,
-      calcBlock: null,
     };
     const prefix = linePrefix[format];
 
@@ -1351,18 +1446,17 @@ export function MarkdownEditor({
   }, []);
   applyFormatRef.current = applyFormat;
 
-  // The `/insert-calendar` and `/insert-sticker` command palette actions reach
-  // the active editor through the document command bus. Each is a no-op unless
-  // its extension is enabled (the palette also hides them when disabled).
+  // Command palette actions reach the active editor through the document
+  // command bus: an extension's commands as `extension:<command id>`, a no-op
+  // unless its editor module is loaded.
   useEffect(() => {
     return subscribeToDocumentCommand((type) => {
-      if (type === "insert-calendar" && calendarEnabled) {
-        applyFormat("calendar");
-      } else if (type === "insert-sticker" && stickersEnabled) {
-        setStickerPickerOpen(true);
+      if (type.startsWith("extension:")) {
+        const view = viewRef.current;
+        if (view) runEditorCommand(view, type.slice("extension:".length));
       }
     });
-  }, [applyFormat, calendarEnabled, stickersEnabled]);
+  }, [runEditorCommand]);
 
   const updateSelectedAssetAttributes = useCallback(
     (nextAttributes: Partial<AssetEmbedAttributes>) => {
@@ -1541,23 +1635,20 @@ export function MarkdownEditor({
               <MarkdownToolbar
                 onFormat={applyFormat}
                 extensionItems={
-                  stickersEnabled || calendarEnabled || calcEnabled ? (
+                  editorModules.some((editorModule) => editorModule.toolbar.length > 0) ? (
                     <>
-                      {calendarEnabled ? (
-                        <CalendarToolbarGroup
-                          onInsert={() => applyFormat("calendar")}
-                        />
-                      ) : null}
-                      {calcEnabled ? (
-                        <CalcToolbarGroup
-                          onInsert={() => applyFormat("calcBlock")}
-                        />
-                      ) : null}
-                      {stickersEnabled ? (
-                        <StickerToolbarGroup
-                          onAddSticker={() => setStickerPickerOpen(true)}
-                        />
-                      ) : null}
+                      {editorModules.map((editorModule) =>
+                        editorModule.toolbar.length > 0 ? (
+                          <ExtensionToolbarGroup
+                            key={editorModule.manifestId}
+                            items={editorModule.toolbar}
+                            onRun={(commandId) => {
+                              const view = viewRef.current;
+                              if (view) runEditorCommand(view, commandId);
+                            }}
+                          />
+                        ) : null,
+                      )}
                     </>
                   ) : undefined
                 }
@@ -1635,18 +1726,17 @@ export function MarkdownEditor({
             onChange={applyDocumentMetadata}
           />
         ) : null}
-        {/* Overlay host wraps only the content region so sticker coordinates
+        {/* Overlay host wraps only the content region so overlay coordinates
             track the document body, not the toolbar/title/properties chrome
             above it. */}
         <DocumentOverlayHost
           documentId={documentId}
           overlays={
-            stickersEnabled ? (
-              <StickerLayer
-                documentId={documentId}
-                canEdit
-                pendingAsset={pendingStickerAsset}
-                onPendingAssetPlaced={() => setPendingStickerAsset(null)}
+            documentExtensions ? (
+              <ExtensionOverlayLayer
+                extensions={documentExtensions}
+                links={{ wikiLinks: wikiLinkMap, assetLinks: assetLinkMap }}
+                editorModules={editorModules}
               />
             ) : undefined
           }
@@ -1716,8 +1806,7 @@ export function MarkdownEditor({
                     wikiLinks={wikiLinkMap}
                     assetLinks={assetLinkMap}
                     contained={false}
-                    fxTable={fxTable}
-                    definitionEmphasis={definitionEmphasis}
+                    extensions={documentExtensions}
                   />
                 </DocumentCanvas>
               </div>
@@ -1725,109 +1814,33 @@ export function MarkdownEditor({
           </div>
         </div>
         </DocumentOverlayHost>
-        {newDefinition ? (
-          <NewDefinitionDialog
-            key={newDefinition.key}
-            open
-            initialTerm={newDefinition.term}
-            linksHere={newDefinition.linksHere}
-            pending={newDefinitionPending}
-            error={newDefinitionError}
-            onCancel={() => {
-              setNewDefinition(null);
-              setNewDefinitionError(null);
+        {dialogRequest ? (
+          <ExtensionDialog
+            key={dialogRequest.key}
+            request={dialogRequest}
+            editorModules={editorModules}
+            context={{
+              documentId,
+              folderId,
+              settings: documentExtensions?.settings[dialogRequest.extensionId] ?? {},
             }}
-            onSubmit={({ term, summary }) => {
-              const { linksHere } = newDefinition;
-              setNewDefinitionPending(true);
-              setNewDefinitionError(null);
-              void createDefinitionDocumentAction({
-                term,
-                summary,
-                currentFolderId: folderId,
-              }).then((result) => {
-                setNewDefinitionPending(false);
-
-                if (!result.ok) {
-                  setNewDefinitionError(result.message);
-                  return;
-                }
-
-                setNewDefinition(null);
-
-                const view = viewRef.current;
-
-                if (linksHere && view) {
-                  // The resolved title, not the typed term: an existing
-                  // definition is reused, and the link has to name it.
-                  insertInline(
-                    view,
-                    `[[${escapeWikiLinkLabel(result.title)}]]`,
-                    null,
-                  );
-                }
-
-                view?.focus();
-
-                // Only a definition that still needs writing earns a tab — one
-                // created with its definition line is already complete. Never a
-                // navigation either way: the author is mid-sentence.
-                if (result.created && !summary.trim()) {
-                  dispatchWorkspaceOpenTab({
-                    href: `/docs/${result.documentId}`,
-                    title: result.title,
-                  });
-                }
-              });
-            }}
+            onClose={settleDialog}
           />
         ) : null}
-        {definitionHover ? (
-          <DefinitionHoverCard
-            // Keyed on the term so moving between two terms remounts the card
+        {linkHover ? (
+          <ExtensionLinkHoverCard
+            // Keyed on the link so moving between two links remounts the card
             // rather than sliding one popup across the page.
-            key={
-              definitionHover.kind === "definition"
-                ? `definition:${definitionHover.label}`
-                : `undefined:${definitionHover.target}`
-            }
-            anchor={definitionHover.anchor}
-            label={
-              definitionHover.kind === "definition"
-                ? definitionHover.label
-                : definitionHover.target
-            }
-            footer={
-              definitionHover.kind === "definition" ? (
-                <DefinitionCardOpenLink href={definitionHover.href} />
-              ) : (
-                <button
-                  type="button"
-                  className="vault-md-definition-card-action"
-                  onClick={() => {
-                    const term = definitionHover.target;
-                    setDefinitionHover(null);
-                    setNewDefinitionError(null);
-                    setNewDefinition({ term, linksHere: false, key: Date.now() });
-                  }}
-                >
-                  Define
-                </button>
-              )
-            }
-            onClose={() => setDefinitionHover(null)}
-          >
-            {definitionHover.kind === "definition" ? (
-              <MarkdownDocument
-                markdown={definitionHover.preview}
-                disableLinks
-                compact
-                contained={false}
-              />
-            ) : (
-              <p className="vault-md-definition-card-empty">Not defined yet.</p>
-            )}
-          </DefinitionHoverCard>
+            key={`${linkHover.link.resolved ? "link" : "unresolved"}:${linkHover.link.target}`}
+            hover={linkHover}
+            extensions={documentExtensions}
+            onAction={(command, args) => {
+              setLinkHover(null);
+              const view = viewRef.current;
+              if (view) runEditorCommand(view, command, args);
+            }}
+            onClose={() => setLinkHover(null)}
+          />
         ) : null}
         <p className="sr-only" aria-live="polite">
           {statusText}. {collaborationStatusText}.
@@ -1851,75 +1864,46 @@ export function MarkdownEditor({
           </div>
         ) : null}
       </div>
-      {stickersEnabled && (
+      {assetPickRequest ? (
         <ContentPickerDialog
-          open={stickerPickerOpen}
-          onOpenChange={setStickerPickerOpen}
-          filter={{ kinds: ["image"] }}
-          title="Pick a sticker"
-          onSelect={(asset) => {
-            setPendingStickerAsset(asset);
-            setStickerPickerOpen(false);
+          open
+          onOpenChange={(open) => {
+            if (!open) settleAssetPick(null);
           }}
+          filter={{ kinds: [...assetPickRequest.kinds] }}
+          title={assetPickRequest.title ?? "Pick an asset"}
+          onSelect={(asset) => settleAssetPick(asset)}
         />
-      )}
+      ) : null}
     </form>
   );
 }
 
-function CalendarToolbarGroup({ onInsert }: { onInsert: () => void }) {
+/** One extension's toolbar buttons, from its editor module (plan §7). */
+function ExtensionToolbarGroup({
+  items,
+  onRun,
+}: {
+  items: EditorModule["toolbar"];
+  onRun: (commandId: string) => void;
+}) {
   return (
     <div
       data-slot="button-group"
       className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
     >
-      <button
-        type="button"
-        title="Insert calendar"
-        aria-label="Insert calendar"
-        onClick={onInsert}
-        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
-      >
-        <CalendarPlus className="size-4" />
-      </button>
-    </div>
-  );
-}
-
-function CalcToolbarGroup({ onInsert }: { onInsert: () => void }) {
-  return (
-    <div
-      data-slot="button-group"
-      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
-    >
-      <button
-        type="button"
-        title="Insert calc block"
-        aria-label="Insert calc block"
-        onClick={onInsert}
-        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
-      >
-        <Calculator className="size-4" />
-      </button>
-    </div>
-  );
-}
-
-function StickerToolbarGroup({ onAddSticker }: { onAddSticker: () => void }) {
-  return (
-    <div
-      data-slot="button-group"
-      className="flex shrink-0 items-center rounded-md border border-border/60 bg-card/35 p-0.5 shadow-sm sm:p-1"
-    >
-      <button
-        type="button"
-        title="Add sticker"
-        aria-label="Add sticker"
-        onClick={onAddSticker}
-        className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
-      >
-        <Sticker className="size-4" />
-      </button>
+      {items.map(({ command, label, icon: Icon }) => (
+        <button
+          key={command}
+          type="button"
+          title={label}
+          aria-label={label}
+          onClick={() => onRun(command)}
+          className="grid size-8 place-items-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground sm:size-9"
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
     </div>
   );
 }
@@ -3410,13 +3394,16 @@ function buildLivePreviewDecorations(
     ? []
     : view.state.selection.ranges.map((range) => range.head);
   const codeFenceLines = getCodeFenceLines(view);
-  // Calc statements join the live-block lines so the markdown pass leaves them
-  // alone: `total = rent * 3 + cost * 2` is arithmetic, and reading those
-  // asterisks as emphasis would hide them from the author mid-expression.
-  const liveBlockLines = new Set([
-    ...getLiveBlockLineNumbers(view.state),
-    ...getCalcBlockLineNumbers(view.state),
-  ]);
+  // Extension containers' lines join the live-block lines so the markdown pass
+  // leaves them alone (plan §6, `live: "source"`): `total = rent * 3 + cost * 2`
+  // is arithmetic, and reading those asterisks as emphasis would hide them from
+  // the author mid-expression. The owning extension's `live` draws them.
+  const liveBlockLines = new Set(getLiveBlockLineNumbers(view.state));
+  for (const container of scanExtensionContainers(view.state.doc.toString())) {
+    for (let line = container.startLine; line <= container.endLine; line += 1) {
+      liveBlockLines.add(line);
+    }
+  }
   const doc = view.state.doc;
   const frontmatterEndLine = getFrontmatterEndLine(doc);
 
@@ -4546,10 +4533,10 @@ function createWikiLinkCompletionSource(
       embedSessionToken,
     );
     wikiLinkMapStore.set(freshWikiLinks);
-    // `/term` narrows one specific `[[`; every other one still offers every
-    // document the author can reach.
-    const definitionsOnly =
-      definitionScopeMarker(context.state) === region.markerFrom;
+    // An extension's `openLinkCompletion` narrows one specific `[[` (the
+    // dictionary's `/term`); every other one still offers every document the
+    // author can reach.
+    const linkFilter = linkCompletionFilterAt(context.state, region.markerFrom);
 
     return {
       from: region.headingFrom ?? region.markerTo,
@@ -4558,7 +4545,7 @@ function createWikiLinkCompletionSource(
         freshWikiLinks,
         region.hasClosingMarker,
         region.query,
-        definitionsOnly,
+        linkFilter,
       ),
       validFor: (text: string) =>
         /^[^\[\]\n]*$/.test(text) &&
@@ -4903,7 +4890,7 @@ function createWikiLinkCompletionOptions(
   wikiLinks?: WikiLinkResolutionMap,
   hasClosingMarker = false,
   query = "",
-  definitionsOnly = false,
+  linkFilter: ((link: WikiLinkInfo) => boolean) | null = null,
 ): Completion[] {
   const options: Completion[] = [];
   const targetOptions = createWikiTargetCompletionOptions(
@@ -4920,7 +4907,16 @@ function createWikiLinkCompletionOptions(
     if (
       !isWikiCompletionDocumentKey(key) ||
       resolution.status !== "resolved" ||
-      (definitionsOnly && !resolution.isDefinition) ||
+      (linkFilter &&
+        !linkFilter({
+          target: resolution.label ?? key,
+          label: resolution.label ?? key,
+          href: resolution.href ?? null,
+          resolved: true,
+          isDefinition: Boolean(resolution.isDefinition),
+          preview: resolution.preview ?? null,
+          occurrence: 0,
+        })) ||
       !matchesWikiResolutionCompletionQuery(key, resolution, query)
     ) {
       continue;
@@ -5800,99 +5796,109 @@ function toggleCodeFence(view: EditorView) {
 }
 
 /**
- * `/def` — opens the term dialog. Module-level, and takes the setters, so the
- * handler the editor hands to the slash menu is not a memoized closure that
- * mutates its argument (see `hostCommands` in the extensions memo).
+ * `editor.openLinkCompletion()`: types `[[` at the selection and opens the
+ * wiki-link completion, narrowed by `filter` when one is given. The narrowing
+ * is keyed to the marker just inserted, so an unrelated `[[` still offers
+ * every document the author can reach.
  */
-function openNewDefinitionDialog(
+function openLinkCompletionAt(
   view: EditorView,
-  setDefinition: (definition: {
-    term: string;
-    linksHere: boolean;
-    key: number;
-  }) => void,
-  setError: (error: string | null) => void,
+  filter?: (link: WikiLinkInfo) => boolean,
 ) {
-  const { from, to } = view.state.selection.main;
-  setError(null);
-  setDefinition({
-    // A selected word is almost always the term being defined.
-    term: from === to ? "" : view.state.sliceDoc(from, to).trim(),
-    linksHere: true,
-    key: Date.now(),
-  });
-}
-
-/** `/term` — opens a wiki-link completion narrowed to definitions. */
-function insertDefinitionReference(view: EditorView) {
   const { from, to } = view.state.selection.main;
   view.dispatch({
     changes: { from, to, insert: "[[" },
     selection: EditorSelection.cursor(from + 2),
   });
-  // Keyed to the marker just inserted, so an unrelated `[[` still offers every
-  // document the author can reach.
-  narrowWikiCompletionToDefinitions(view, from);
+  if (filter) {
+    narrowLinkCompletion(view, { markerFrom: from, filter });
+  }
   view.focus();
   startCompletion(view);
 }
 
-function insertBlock(view: EditorView, text: string, cursorOffset: number | null) {
-  const selection = view.state.selection.main;
-  const line = view.state.doc.lineAt(selection.from);
-  const needsLeadingBreak = selection.from > line.from;
-  const insert = `${needsLeadingBreak ? "\n\n" : ""}${text}\n`;
-  const cursorPosition =
-    cursorOffset === null
-      ? selection.from + insert.length
-      : selection.from + (needsLeadingBreak ? 2 : 0) + cursorOffset;
+/** An open extension dialog (`editor.openDialog`), rendered by the host. */
+function ExtensionDialog({
+  request,
+  editorModules,
+  context,
+  onClose,
+}: {
+  request: { extensionId: string; id: string; props: JsonValue | undefined };
+  editorModules: EditorModule[];
+  context: { documentId: string; folderId: string | null; settings: Record<string, unknown> };
+  onClose: (result: JsonValue | null) => void;
+}) {
+  const Dialog = editorModules.find(
+    (candidate) => candidate.manifestId === request.extensionId,
+  )?.dialogs[request.id];
 
-  view.dispatch({
-    changes: { from: selection.from, to: selection.to, insert },
-    selection: EditorSelection.cursor(cursorPosition),
-    scrollIntoView: true,
-  });
-  view.focus();
+  useEffect(() => {
+    // A dialog id no loaded module declares resolves as dismissed, never hangs.
+    if (!Dialog) onClose(null);
+  }, [Dialog, onClose]);
+
+  if (!Dialog) return null;
+
+  return (
+    <Dialog
+      ctx={{ extensionId: request.extensionId, ...context }}
+      props={request.props}
+      close={(result) => onClose(result ?? null)}
+    />
+  );
 }
 
 /**
- * Drops text at the cursor without disturbing the paragraph, replacing any
- * selection. The mid-sentence counterpart to `insertBlock`: an inline
- * `:calc[…]` typed after "The total is " must not become its own block.
+ * The Live-mode hover card for a link an extension previews: its preview, and
+ * either a way into the linked document or the extension's action (e.g. the
+ * dictionary's "Define" on an unresolved term).
  */
-function insertInline(
-  view: EditorView,
-  text: string,
-  cursorOffset: number | null,
-) {
-  const selection = view.state.selection.main;
-  const cursorPosition =
-    selection.from + (cursorOffset === null ? text.length : cursorOffset);
+function ExtensionLinkHoverCard({
+  hover,
+  extensions,
+  onAction,
+  onClose,
+}: {
+  hover: LinkHoverTarget;
+  extensions: DocumentExtensions | null;
+  onAction: (command: string, args?: JsonValue) => void;
+  onClose: () => void;
+}) {
+  const resolved = resolveLinkPreview(hover.link, extensions);
+  if (!resolved) return null;
+  const { preview } = resolved;
 
-  view.dispatch({
-    changes: { from: selection.from, to: selection.to, insert: text },
-    selection: EditorSelection.cursor(cursorPosition),
-    scrollIntoView: true,
-  });
-  view.focus();
-}
-
-/**
- * Inserts a `:::calc` declarations block.
- *
- * A selection becomes the body, so lines already written as `rent = 1200 CAD`
- * can be turned into a block in place; with nothing selected the cursor lands
- * on a blank first statement line, ready for the first binding.
- */
-function insertCalcBlock(view: EditorView) {
-  const selection = view.state.selection.main;
-  const selected = view.state.sliceDoc(selection.from, selection.to).trim();
-  const opening = ":::calc\n";
-
-  insertBlock(
-    view,
-    `${opening}${selected}\n:::`,
-    selected ? null : opening.length,
+  return (
+    <LinkHoverCard
+      anchor={hover.anchor}
+      title={preview.title}
+      footer={
+        preview.action ? (
+          <button
+            type="button"
+            className="vault-md-definition-card-action"
+            onClick={() => onAction(preview.action!.command, preview.action!.args)}
+          >
+            {preview.action.label}
+          </button>
+        ) : hover.link.href ? (
+          <LinkCardOpenLink href={hover.link.href} />
+        ) : null
+      }
+      onClose={onClose}
+    >
+      {preview.markdown ? (
+        <MarkdownDocument
+          markdown={preview.markdown}
+          disableLinks
+          compact
+          contained={false}
+        />
+      ) : (
+        <p className="vault-md-definition-card-empty">{preview.emptyText ?? ""}</p>
+      )}
+    </LinkHoverCard>
   );
 }
 

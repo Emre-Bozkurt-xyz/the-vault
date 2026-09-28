@@ -8,7 +8,7 @@ import {
 import { EditorSelection, type EditorState } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
 
-import { isInsideCalcBlock } from "@/lib/calc/scan";
+import { isInsideExtensionContainer } from "@/lib/extension-host/blocks";
 import type { SlashCommandContribution } from "@/lib/extensions/types";
 
 import { getFrontmatterEndLine, isInsideCode } from "./completion-context";
@@ -423,11 +423,10 @@ export function createDirectiveCompletionSource(
       return null;
     }
 
-    // Below an open `:::calc`, a `:::` is how you *close* the block — and the
-    // menu's own Enter key would turn that into a nested one. Suppressing it
-    // here is what makes the fence safe to type. Calc is the only body-bearing
-    // directive today; a second would want this generalised, not repeated.
-    if (isInsideCalcBlock(context.state.doc.toString(), line.number)) {
+    // Below an open container (`:::calc`), a `:::` is how you *close* the
+    // block — and the menu's own Enter key would turn that into a nested one.
+    // Suppressing it here is what makes the fence safe to type.
+    if (isInsideExtensionContainer(context.state.doc.toString(), line.number)) {
       return null;
     }
 

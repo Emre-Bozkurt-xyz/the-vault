@@ -22,6 +22,7 @@ context and pulls you toward advice that does not apply here.
 | Skill | When to load | Path |
 |---|---|---|
 | `update-docs` | **At the END of any unit of work that changed how the codebase behaves** — new/changed feature, route or API, component behavior, DB schema or migration, new dependency, behavior-changing bug fix, new architectural decision, or starting/finishing a planned phase. Skip for questions, code reading, reverted work, and cosmetic edits. | [`.agents/skills/update-docs/SKILL.md`](skills/update-docs/SKILL.md) |
+| `create-extension` | Building or changing an extension under `extensions/<name>/` (new extension, block, command, setting, state schema, agent action), or any request that would otherwise edit core files for one extension's sake. Not for core Markdown features. | [`.agents/skills/create-extension/SKILL.md`](skills/create-extension/SKILL.md) |
 | `shadcn` | Adding, styling, composing, or debugging shadcn/ui components and registries. This repo has a `components.json`, so it applies to most UI work. | [`.agents/skills/shadcn/SKILL.md`](skills/shadcn/SKILL.md) |
 | `frontend-design` | Building or restyling a page, view, or component where visual quality matters — not routine wiring of an existing pattern. | [`.agents/skills/frontend-design/SKILL.md`](skills/frontend-design/SKILL.md) |
 | `github-actions-docs` | Writing, debugging, or securing anything under `.github/workflows/`. | [`.agents/skills/github-actions-docs/SKILL.md`](skills/github-actions-docs/SKILL.md) |

@@ -7,8 +7,8 @@
 export type DocumentCommandType =
   | "open-share"
   | "open-history"
-  | "insert-calendar"
-  | "insert-sticker";
+  /** An extension editor command, by its manifest command id. */
+  | `extension:${string}`;
 
 const eventName = "vault:document-command";
 const openRightPanelEventName = "vault:open-right-panel";

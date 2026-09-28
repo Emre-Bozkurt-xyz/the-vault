@@ -1,13 +1,11 @@
-import type { CompletionSource } from "@codemirror/autocomplete";
 import type { EditorState, Extension, Range, StateEffect } from "@codemirror/state";
 import type { Decoration, KeyBinding, WidgetType } from "@codemirror/view";
 import type { ZodType } from "zod";
 
 import type { AssetEmbedResolutionMap } from "@/lib/asset-embeds";
-import type { FxRateTable } from "@/lib/calc/fx";
+import type { FxRateTable } from "@/lib/fx/table";
 import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
 
-export type VaultExtensionKind = "core" | "built-in";
 export type VaultExtensionCategory =
   | "editor"
   | "document"
@@ -33,41 +31,6 @@ export type ExtensionStateValue =
   | string
   | ExtensionStateValue[]
   | { [key: string]: ExtensionStateValue };
-
-export type ExtensionDocumentContext = {
-  id: string;
-  canRead: boolean;
-  canEdit: boolean;
-};
-
-export type ExtensionUserContext = {
-  id: string;
-  role: "user" | "admin";
-} | null;
-
-export type ExtensionRuntimeContext = {
-  document: ExtensionDocumentContext;
-  user: ExtensionUserContext;
-  assets: ExtensionAssetApi;
-  state: ExtensionStateApi;
-};
-
-export type ExtensionAssetApi = {
-  resolve: (assetId: string) => AssetEmbedResolutionMap[string] | null;
-};
-
-export type ExtensionStateApi = {
-  get: (extensionId: string, stateKey?: string) => Promise<ExtensionStateValue | null>;
-  set: (
-    extensionId: string,
-    state: ExtensionStateValue,
-    options?: {
-      stateKey?: string;
-      visibility?: ExtensionStateVisibility;
-      version?: number;
-    },
-  ) => Promise<void>;
-};
 
 /**
  * State surface handed to an agent action handler. Unlike {@link ExtensionStateApi},
@@ -162,28 +125,38 @@ export type ExtensionAgentWorkspaceStateApi = {
   listAcrossDocuments: () => Promise<ExtensionAgentWorkspaceStateEntry[]>;
 };
 
-/** One definition document, as an agent action sees it. */
-export type ExtensionAgentDefinitionEntry = {
+/** One document, as an extension action sees it in a listing. */
+export type ExtensionAgentDocumentSummary = {
   documentId: string;
-  /** The definition's title — the term itself. */
-  term: string;
+  title: string;
   aliases: string[];
   summary: string | null;
 };
 
 /**
- * Dictionary surface for agent actions (`docs/20_DICTIONARY_EXTENSION_PLAN.md`).
+ * Document services for extension actions (`docs/23_EXTENSION_SDK_PLAN.md` §8).
  *
- * Handlers may not import `db`, so definition lookup and creation arrive here,
- * pre-bound to the acting user. `create` exists only with `document:write`.
+ * Handlers may not import `db`, so document lookup and creation arrive here,
+ * pre-bound to the acting user and generic: the dictionary builds definitions
+ * out of these without the host knowing what a definition is. `listByTag`
+ * needs `document:read`; `findOwnedByTitle` and `create` need `document:write`.
  */
-export type ExtensionAgentDefinitionsApi = {
-  list: () => Promise<ExtensionAgentDefinitionEntry[]>;
+export type ExtensionAgentDocumentsApi = {
+  /** Documents carrying a tag that the user can read. */
+  listByTag: (tagSlug: string) => Promise<ExtensionAgentDocumentSummary[]>;
+  /** A document the user owns with this title (case-insensitive), or null. */
+  findOwnedByTitle?: (
+    title: string,
+  ) => Promise<{ documentId: string; title: string } | null>;
+  /**
+   * Creates a document the user owns, in the first of `folderIds` they may add
+   * to (each is permission-checked), else at their vault root.
+   */
   create?: (input: {
-    term: string;
-    /** Seeds the definition's `summary:` — the text a reader sees on hover. */
-    summary?: string;
-  }) => Promise<{ documentId: string; term: string; created: boolean }>;
+    title: string;
+    markdown: string;
+    folderIds?: ReadonlyArray<string | null | undefined>;
+  }) => Promise<{ documentId: string; title: string }>;
 };
 
 export type ExtensionAgentWorkspaceContext = {
@@ -208,12 +181,17 @@ export type ExtensionAgentActionContext = {
    */
   fx?: { getTable: () => Promise<FxRateTable | null> };
   /**
-   * Definitions the acting user can read, and (with `document:write`) a way to
-   * create one. Top-level rather than under `document`/`workspace` because it is
-   * user-scoped either way — the same reasoning as `fx`, except this one *is*
-   * permission-gated.
+   * Documents the acting user can read, and (with `document:write`) ways to
+   * find and create their own. Top-level rather than under `document`/
+   * `workspace` because it is user-scoped either way — the same reasoning as
+   * `fx`, except this one *is* permission-gated.
    */
-  definitions?: ExtensionAgentDefinitionsApi;
+  documents?: ExtensionAgentDocumentsApi;
+  /**
+   * The acting user's settings for this extension (schema defaults when they
+   * have none stored).
+   */
+  settings: Record<string, unknown>;
   /** Present for `scope: "document"` actions. */
   document?: ExtensionAgentDocumentContext;
   /** Present for `scope: "workspace"` actions. */
@@ -243,6 +221,12 @@ export type VaultExtensionAgentAction<TInput = unknown> = {
   scope: ExtensionAgentActionScope;
   /** Whether the action mutates state. Document-scoped mutating actions require edit access. */
   mutates?: boolean;
+  /**
+   * Whether MCP agents may discover and run this action. Defaults to true.
+   * `false` keeps an action for the extension's own UI only
+   * (`docs/23_EXTENSION_SDK_PLAN.md` §16 decision 3).
+   */
+  agent?: boolean;
   /**
    * Capabilities the handler needs. Must be a subset of the extension's own
    * `permissions`; the registry asserts this. Gates which `ctx` surfaces exist.
@@ -298,18 +282,6 @@ export type LiveBlockSpec<
   effects?: (state: EditorState, block: TBlock, context: TContext) => StateEffect<unknown>[];
 };
 
-export type MarkdownPreprocessor = (markdown: string, context: ExtensionRuntimeContext) => string;
-
-export type MarkdownRendererContribution = {
-  id: string;
-  priority: number;
-};
-
-export type CompletionContribution = {
-  id: string;
-  source: CompletionSource;
-};
-
 /**
  * An item an extension adds to the in-editor `/` slash menu. Kept deliberately
  * markdown-only (no editor `MarkdownFormat` coupling): an item inserts a block
@@ -363,35 +335,8 @@ export type SlashCommandContribution = {
   };
 };
 
-export type ToolbarContribution = {
-  id: string;
-  label: string;
-};
-
-export type ExtensionStateSchema = {
-  extensionId: string;
-  stateKey?: string;
-  version: number;
-  schema: ZodType<ExtensionStateValue>;
-};
-
 export type DocumentOverlayContribution = {
   id: string;
-};
-
-export type DocumentInspectorContribution = {
-  id: string;
-};
-
-export type WorkspacePageContribution = {
-  id: string;
-  href: string;
-  label: string;
-};
-
-export type WorkspacePanelContribution = {
-  id: string;
-  label: string;
 };
 
 export type CommandContribution = {
@@ -456,39 +401,3 @@ export type ExtensionSettingsField =
       emptyLabel: string;
     };
 
-export type VaultExtension = {
-  id: string;
-  name: string;
-  version: number;
-  kind: VaultExtensionKind;
-  description?: string;
-  category?: VaultExtensionCategory;
-  permissions?: ExtensionPermission[];
-  defaultEnabled?: boolean;
-  settings?: {
-    schema?: ZodType<Record<string, unknown>>;
-    defaults?: Record<string, unknown>;
-    sections?: ExtensionSettingsSection[];
-  };
-  markdown?: {
-    liveBlocks?: LiveBlockSpec[];
-    preprocessors?: MarkdownPreprocessor[];
-    renderers?: MarkdownRendererContribution[];
-    completions?: CompletionContribution[];
-    toolbarItems?: ToolbarContribution[];
-    slashCommands?: SlashCommandContribution[];
-  };
-  documentState?: {
-    schemas: ExtensionStateSchema[];
-    overlays?: DocumentOverlayContribution[];
-    inspectors?: DocumentInspectorContribution[];
-  };
-  workspace?: {
-    pages?: WorkspacePageContribution[];
-    panels?: WorkspacePanelContribution[];
-    commands?: CommandContribution[];
-  };
-  agent?: {
-    actions: VaultExtensionAgentAction[];
-  };
-};

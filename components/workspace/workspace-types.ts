@@ -34,9 +34,11 @@ export type ActiveDocumentCommandContext = {
   canShare: boolean;
   canPublish: boolean;
   canDelete: boolean;
-  /** Whether the calendar/stickers extensions are enabled for this viewer. */
-  calendarEnabled: boolean;
-  stickersEnabled: boolean;
+  /**
+   * Extensions this viewer enabled and can author with here (empty without
+   * edit access). The palette lists their editor commands.
+   */
+  authoringExtensionIds: string[];
 };
 
 export type WorkspaceLayoutState = {
