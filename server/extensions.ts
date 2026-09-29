@@ -24,7 +24,7 @@ import {
   applyAnchoredEdits,
   insertAtHeading,
 } from "@/lib/mcp/document-edits";
-import { withLiveDocumentText } from "@/lib/mcp/collab-write";
+import { withLiveDocumentText } from "@/lib/collab-write";
 import { getAssetForUser } from "@/server/assets";
 import {
   createDefinitionForUser,

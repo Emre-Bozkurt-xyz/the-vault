@@ -21,7 +21,7 @@ import {
 } from "@/lib/asset-embeds";
 import { maxMarkdownLength } from "@/lib/markdown";
 import { resolveMcpUserId } from "@/lib/mcp/user";
-import { withLiveDocumentText } from "@/lib/mcp/collab-write";
+import { withLiveDocumentText } from "@/lib/collab-write";
 import {
   appendMarkdown,
   applyAnchoredEdits,

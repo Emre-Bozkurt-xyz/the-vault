@@ -204,7 +204,7 @@ they stay on their indexed line numbers; that is the accepted cost.
 
 ### 5.2 Through the collaboration layer
 
-Writes go through `withLiveDocumentText` (`lib/mcp/collab-write.ts`). It opens the
+Writes go through `withLiveDocumentText` (`lib/collab-write.ts`, moved from `lib/mcp/` in slice 2). It opens the
 document's live Yjs session like a browser editor and lets the collab server's
 `onStoreDocument` do all persistence. Two changes are needed:
 

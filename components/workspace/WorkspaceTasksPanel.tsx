@@ -2,22 +2,50 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, ListChecks, RefreshCw } from "lucide-react";
+import {
+  Ban,
+  CalendarClock,
+  CalendarDays,
+  CalendarX2,
+  CircleDashed,
+  ListChecks,
+  MoreHorizontal,
+  RefreshCw,
+  Sun,
+  Sunrise,
+} from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import { todayDayKey } from "@/lib/calendar";
 import { requestEditorJump } from "@/lib/editor-jump-events";
-import { addDaysToDayKey, formatDueLabel } from "@/lib/tasks/dates";
+import { addDaysToDayKey, formatDueLabel, nextWeekStart } from "@/lib/tasks/dates";
+import type { TaskChange } from "@/lib/tasks/edit";
 import { cn } from "@/lib/utils";
-import { getTaskAgendaAction, type TaskAgendaResult } from "@/server/tasks";
+import {
+  getTaskAgendaAction,
+  updateTaskAction,
+  type TaskAgendaResult,
+} from "@/server/tasks";
 import type { AgendaTask } from "@/server/tasks-data";
 
 /**
- * The sidebar agenda (docs/23_TASKS_AND_AGENDA_PLAN.md §6.1, slice 1): open
- * tasks from the viewer's own documents, bucketed against the viewer's local
- * day. Read-only for now — ticking and rescheduling land with write-back in
- * slice 2. Clicking a task opens its document at the task's line.
+ * The sidebar agenda (docs/23_TASKS_AND_AGENDA_PLAN.md §6.1): open tasks from
+ * the viewer's own documents, bucketed against the viewer's local day. Ticking
+ * and rescheduling write back into the source document (slice 2); clicking a
+ * task's text opens the document at its line.
+ *
+ * Changes are optimistic. Writes to one document run one at a time, and each
+ * looks up its task's *current* line and text when it runs (tasks are keyed by
+ * document + ordinal, which a status or date edit never changes), so a second
+ * click on a row still finds the line the first click rewrote.
  */
 
 /**
@@ -26,12 +54,66 @@ import type { AgendaTask } from "@/server/tasks-data";
  */
 const refetchAfterSaveMs = 2500;
 
+type OkAgenda = Extract<TaskAgendaResult, { ok: true }>;
 type Section = { id: string; label: string; tasks: AgendaTask[]; overdue?: boolean };
+
+function taskKey(task: Pick<AgendaTask, "documentId" | "ordinal">) {
+  return `${task.documentId}:${task.ordinal}`;
+}
+
+function compareTasks(a: AgendaTask, b: AgendaTask) {
+  return (
+    a.dueDay.localeCompare(b.dueDay) ||
+    (a.dueTime ?? "99:99").localeCompare(b.dueTime ?? "99:99") ||
+    a.documentTitle.localeCompare(b.documentTitle) ||
+    a.ordinal - b.ordinal
+  );
+}
+
+/** What the server will return after `change`, applied locally ahead of it. */
+function applyLocally(agenda: OkAgenda, key: string, change: TaskChange): OkAgenda {
+  let laterCount = agenda.laterCount;
+  const tasks = agenda.tasks.flatMap((task) => {
+    if (taskKey(task) !== key) return [task];
+
+    if (change.type === "status") {
+      // Cancelled tasks leave the agenda; done ones stay struck through today.
+      if (change.status === "cancelled") return [];
+      return [
+        {
+          ...task,
+          status: change.status,
+          doneDay: change.status === "done" ? (task.doneDay ?? agenda.today) : null,
+        },
+      ];
+    }
+
+    if (change.day === null) return [];
+    if (change.day > agenda.through) {
+      laterCount += 1;
+      return [];
+    }
+    return [{ ...task, dueDay: change.day, dueTime: change.time ?? null }];
+  });
+
+  return { ...agenda, tasks: tasks.sort(compareTasks), laterCount };
+}
 
 export function WorkspaceTasksPanel() {
   const [result, setResult] = useState<TaskAgendaResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  /** Latest agenda the server returned, for looking up a task's current line. */
+  const serverAgendaRef = useRef<OkAgenda | null>(null);
+  /** Writes in flight; while any are, server responses must not overwrite optimistic rows. */
+  const pendingWritesRef = useRef(0);
+  const documentQueuesRef = useRef(new Map<string, Promise<void>>());
+
+  const acceptServerResult = useCallback((next: TaskAgendaResult) => {
+    if (next.ok) serverAgendaRef.current = next;
+    if (pendingWritesRef.current === 0) setResult(next);
+  }, []);
 
   // Only ever sets state after the request resolves, so calling it from an
   // effect never renders synchronously inside that effect.
@@ -46,10 +128,10 @@ export function WorkspaceTasksPanel() {
     }
 
     if (requestId === requestIdRef.current) {
-      setResult(next);
+      acceptServerResult(next);
       setRefreshing(false);
     }
-  }, []);
+  }, [acceptServerResult]);
 
   useEffect(() => {
     void load();
@@ -72,6 +154,52 @@ export function WorkspaceTasksPanel() {
     };
   }, [load]);
 
+  const changeTask = useCallback(
+    (task: AgendaTask, change: TaskChange) => {
+      const key = taskKey(task);
+
+      setNotice(null);
+      setResult((current) => (current?.ok ? applyLocally(current, key, change) : current));
+      pendingWritesRef.current += 1;
+
+      const queues = documentQueuesRef.current;
+      const previous = queues.get(task.documentId) ?? Promise.resolve();
+      const run = previous.then(async () => {
+        const latest =
+          serverAgendaRef.current?.tasks.find((candidate) => taskKey(candidate) === key) ?? task;
+        let next: TaskAgendaResult;
+
+        try {
+          next = await updateTaskAction({
+            today: todayDayKey(),
+            documentId: latest.documentId,
+            line: latest.line,
+            rawLine: latest.rawLine,
+            change,
+          });
+        } catch {
+          next = { ok: false, error: "Could not change the task." };
+        }
+
+        pendingWritesRef.current -= 1;
+
+        if (next.ok) {
+          acceptServerResult(next);
+        } else {
+          // Drop optimistic state and show what the documents really say.
+          setNotice(next.error);
+          if (pendingWritesRef.current === 0) void load();
+        }
+      });
+
+      queues.set(task.documentId, run);
+      void run.finally(() => {
+        if (queues.get(task.documentId) === run) queues.delete(task.documentId);
+      });
+    },
+    [acceptServerResult, load],
+  );
+
   const sections = useMemo<Section[]>(() => {
     if (!result?.ok) return [];
 
@@ -80,7 +208,10 @@ export function WorkspaceTasksPanel() {
     const upcoming: AgendaTask[] = [];
 
     for (const task of result.tasks) {
-      if (task.dueDay < result.today) overdue.push(task);
+      // A task finished today counts as today's work, whenever it was due.
+      if (task.status === "done") {
+        (task.dueDay > result.today ? upcoming : today).push(task);
+      } else if (task.dueDay < result.today) overdue.push(task);
       else if (task.dueDay === result.today) today.push(task);
       else upcoming.push(task);
     }
@@ -94,6 +225,7 @@ export function WorkspaceTasksPanel() {
 
   const refresh = () => {
     setRefreshing(true);
+    setNotice(null);
     void load();
   };
 
@@ -115,6 +247,12 @@ export function WorkspaceTasksPanel() {
         </button>
       </div>
 
+      {notice ? (
+        <p role="status" className="border-b border-border/70 px-3 py-1.5 text-xs text-destructive">
+          {notice}
+        </p>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {result === null ? (
           <p className="px-2 py-3 text-xs text-muted-foreground">Loading tasks…</p>
@@ -134,16 +272,19 @@ export function WorkspaceTasksPanel() {
                     )}
                   >
                     {section.label}
-                    <span className="font-normal tabular-nums">{section.tasks.length}</span>
+                    <span className="font-normal tabular-nums">
+                      {section.tasks.filter((task) => task.status !== "done").length}
+                    </span>
                   </h3>
                   <div className="grid gap-0.5">
                     {section.tasks.map((task) => (
                       <TaskRow
-                        key={`${task.documentId}:${task.ordinal}`}
+                        key={taskKey(task)}
                         task={task}
                         today={result.today}
                         showDue={section.id !== "today"}
                         overdue={Boolean(section.overdue)}
+                        onChange={(change) => changeTask(task, change)}
                       />
                     ))}
                   </div>
@@ -167,38 +308,58 @@ function TaskRow({
   today,
   showDue,
   overdue,
+  onChange,
 }: {
   task: AgendaTask;
   today: string;
   showDue: boolean;
   overdue: boolean;
+  onChange: (change: TaskChange) => void;
 }) {
-  const href = `/docs/${task.documentId}`;
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+  const done = task.status === "done";
   const context = task.heading ? `${task.documentTitle} › ${task.heading}` : task.documentTitle;
+  const setDue = (day: string | null) => onChange({ type: "due", day });
+
+  const pickDate = () => {
+    const input = dateInputRef.current;
+    if (!input) return;
+    try {
+      input.showPicker();
+    } catch {
+      input.focus();
+    }
+  };
 
   return (
-    <Link
-      href={href}
-      onClick={() =>
-        requestEditorJump({
-          documentId: task.documentId,
-          line: task.line,
-          text: task.rawLine,
-        })
-      }
-      // No "active" highlight: tasks cluster in a few documents, so marking
-      // every row of the open one would light up most of the list.
-      className="grid grid-cols-[0.95rem_minmax(0,1fr)] gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-    >
-      <span
-        className="vault-task-box mt-[0.2rem]"
+    // No "active document" highlight: tasks cluster in a few documents, so
+    // marking every row of the open one would light up most of the list.
+    <div className="group relative grid grid-cols-[0.95rem_minmax(0,1fr)_1.5rem] items-start gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent">
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={done}
+        aria-label={done ? "Mark not done" : "Mark done"}
+        title={done ? "Mark not done" : "Mark done"}
+        onClick={() => onChange({ type: "status", status: done ? "open" : "done" })}
+        className="vault-task-box mt-[0.2rem] cursor-pointer"
         data-status={task.status}
-        data-overdue={overdue ? "true" : undefined}
-        aria-label={task.status === "in_progress" ? "In progress" : "Open"}
-        role="img"
+        data-overdue={overdue && !done ? "true" : undefined}
       />
-      <span className="min-w-0">
-        <span className="vault-task-md block text-foreground">
+
+      <Link
+        href={`/docs/${task.documentId}`}
+        onClick={() =>
+          requestEditorJump({ documentId: task.documentId, line: task.line, text: task.rawLine })
+        }
+        className="min-w-0 group-hover:text-sidebar-accent-foreground"
+      >
+        <span
+          className={cn(
+            "vault-task-md block",
+            done ? "text-muted-foreground line-through" : "text-foreground",
+          )}
+        >
           {task.text ? (
             <MarkdownDocument markdown={task.text} contained={false} disableLinks />
           ) : (
@@ -207,22 +368,75 @@ function TaskRow({
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="min-w-0 truncate">{context}</span>
-          {showDue ? (
+          {showDue || task.dueTime ? (
             <span
               className={cn(
                 "ml-auto shrink-0 tabular-nums",
-                overdue ? "text-destructive" : null,
+                overdue && !done ? "text-destructive" : null,
               )}
             >
-              {formatDueLabel(task.dueDay, today)}
-              {task.dueTime ? ` ${task.dueTime}` : ""}
+              {showDue ? formatDueLabel(task.dueDay, today) : ""}
+              {task.dueTime ? `${showDue ? " " : ""}${task.dueTime}` : ""}
             </span>
-          ) : task.dueTime ? (
-            <span className="ml-auto shrink-0 tabular-nums">{task.dueTime}</span>
           ) : null}
         </span>
-      </span>
-    </Link>
+      </Link>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Task actions"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-muted/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+        >
+          <MoreHorizontal className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setDue(today)}>
+            <Sun /> Today
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setDue(addDaysToDayKey(today, 1))}>
+            <Sunrise /> Tomorrow
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setDue(nextWeekStart(today))}>
+            <CalendarDays /> Next week
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={pickDate}>
+            <CalendarClock /> Pick date…
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setDue(null)}>
+            <CalendarX2 /> Clear date
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {task.status === "in_progress" ? (
+            <DropdownMenuItem onClick={() => onChange({ type: "status", status: "open" })}>
+              <CircleDashed /> Not started
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onClick={() => onChange({ type: "status", status: "in_progress" })}>
+              <CircleDashed /> In progress
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => onChange({ type: "status", status: "cancelled" })}
+          >
+            <Ban /> Cancel task
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* The native picker behind "Pick date…"; visually hidden, anchored to the row. */}
+      <input
+        ref={dateInputRef}
+        type="date"
+        tabIndex={-1}
+        aria-hidden="true"
+        defaultValue={task.dueDay}
+        onChange={(event) => {
+          if (event.target.value) setDue(event.target.value);
+        }}
+        className="pointer-events-none absolute bottom-0 right-2 size-px opacity-0"
+      />
+    </div>
   );
 }
 

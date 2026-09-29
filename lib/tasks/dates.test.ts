@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { addDaysToDayKey, daysBetween, formatDueLabel } from "@/lib/tasks/dates";
+import {
+  addDaysToDayKey,
+  daysBetween,
+  formatDueLabel,
+  nextWeekStart,
+} from "@/lib/tasks/dates";
 
 describe("task day keys", () => {
   it("adds days across month and year boundaries", () => {
     expect(addDaysToDayKey("2026-09-28", 7)).toBe("2026-10-05");
     expect(addDaysToDayKey("2026-12-31", 1)).toBe("2027-01-01");
     expect(addDaysToDayKey("2028-03-01", -1)).toBe("2028-02-29");
+  });
+
+  it("finds the coming Monday", () => {
+    expect(nextWeekStart("2026-09-28")).toBe("2026-10-05"); // Monday → next Monday
+    expect(nextWeekStart("2026-09-29")).toBe("2026-10-05"); // Tuesday
+    expect(nextWeekStart("2026-10-04")).toBe("2026-10-05"); // Sunday
   });
 
   it("counts days in either direction", () => {

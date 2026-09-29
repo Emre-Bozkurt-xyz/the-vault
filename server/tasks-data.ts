@@ -1,9 +1,11 @@
 import "server-only";
 
-import { and, asc, count, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { documentTaskIndex, documentTasks, documents } from "@/db/schema";
+import { withLiveDocumentText } from "@/lib/collab-write";
+import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
 import { parseTasks, type TaskStatus } from "@/lib/tasks/parse";
 
 /**
@@ -156,10 +158,14 @@ export type AgendaTask = {
   heading: string | null;
   dueDay: string;
   dueTime: string | null;
+  doneDay: string | null;
 };
 
 export type TaskAgenda = {
-  /** Open or in-progress dated tasks due on or before `through`, oldest first. */
+  /**
+   * Open or in-progress dated tasks due on or before `through`, oldest first,
+   * plus dated tasks completed `today`, so a tick does not make its row vanish.
+   */
   tasks: AgendaTask[];
   /** Open dated tasks due after `through`. */
   laterCount: number;
@@ -170,17 +176,22 @@ const agendaLimit = 300;
 
 /**
  * Open and in-progress tasks with a due day up to and including `through`,
- * from documents `userId` owns. Overdue tasks are included however old: the
- * caller buckets them against the viewer's own "today".
+ * from documents `userId` owns, plus dated tasks completed on `today`. Overdue
+ * tasks are included however old: the caller buckets them against the viewer's
+ * own "today".
  */
 export async function listAgendaTasks(
   userId: string,
+  today: string,
   through: string,
 ): Promise<TaskAgenda> {
-  const ownedOpen = and(
-    eq(documents.ownerId, userId),
-    isNull(documents.deletedAt),
-    inArray(documentTasks.status, ["open", "in_progress"]),
+  const owned = and(eq(documents.ownerId, userId), isNull(documents.deletedAt));
+  const ownedOpen = and(owned, inArray(documentTasks.status, ["open", "in_progress"]));
+  const doneToday = and(
+    owned,
+    eq(documentTasks.status, "done"),
+    eq(documentTasks.doneDay, today),
+    isNotNull(documentTasks.dueDay),
   );
 
   const [rows, [later]] = await Promise.all([
@@ -197,10 +208,11 @@ export async function listAgendaTasks(
         heading: documentTasks.heading,
         dueDay: documentTasks.dueDay,
         dueTime: documentTasks.dueTime,
+        doneDay: documentTasks.doneDay,
       })
       .from(documentTasks)
       .innerJoin(documents, eq(documents.id, documentTasks.documentId))
-      .where(and(ownedOpen, lte(documentTasks.dueDay, through)))
+      .where(or(and(ownedOpen, lte(documentTasks.dueDay, through)), doneToday))
       .orderBy(
         asc(documentTasks.dueDay),
         sql`${documentTasks.dueTime} asc nulls last`,
@@ -216,8 +228,77 @@ export async function listAgendaTasks(
   ]);
 
   return {
-    // `lte` on the due day already excludes undated rows.
+    // Both branches of the filter exclude undated rows.
     tasks: rows.map((row) => ({ ...row, dueDay: row.dueDay as string })),
     laterCount: later?.value ?? 0,
   };
+}
+
+/** The task's line is gone, changed, or ambiguous since the caller last read it. */
+export class TaskMovedError extends Error {
+  constructor() {
+    super("This task changed since the list was loaded.");
+    this.name = "TaskMovedError";
+  }
+}
+
+/**
+ * Applies one task change to the live document through the collaboration
+ * layer (so it merges with anyone editing), then reindexes the document from
+ * the text that write produced.
+ *
+ * The write records no restore point: a checkbox tick is not worth one, and the
+ * collab server's own threshold versioning still applies. Reindexing from the
+ * returned text matters because `documents.markdown` only catches up when the
+ * collab server's debounced store runs; a refetch before then would otherwise
+ * read the old line and revert the tick. The stamp stays at the document's
+ * current `updated_at`, so that store triggers one more reindex from the same
+ * text.
+ */
+export async function applyTaskChange(
+  userId: string,
+  input: {
+    documentId: string;
+    line: number;
+    rawLine: string;
+    change: TaskChange;
+    today: string;
+  },
+): Promise<void> {
+  const { markdown } = await withLiveDocumentText(
+    userId,
+    input.documentId,
+    (ytext) => {
+      const text = ytext.toString();
+      const located = locateTaskLine(text, input.line, input.rawLine);
+
+      if (!located) throw new TaskMovedError();
+
+      const lineText = (text.slice(located.offset).split("\n")[0] ?? "").replace(/\r$/, "");
+      const edits = planTaskEdit(lineText, input.change, input.today);
+
+      if (!edits) throw new TaskMovedError();
+
+      // Edits arrive last-first, so earlier offsets stay valid as each applies.
+      for (const edit of edits) {
+        const at = located.offset + edit.from;
+        if (edit.to > edit.from) ytext.delete(at, edit.to - edit.from);
+        if (edit.insert) ytext.insert(at, edit.insert);
+      }
+    },
+    { origin: "tasks", restorePoint: false },
+  );
+
+  const [row] = await db
+    .select({ updatedAt: sql<string>`${documents.updatedAt}::text` })
+    .from(documents)
+    .where(eq(documents.id, input.documentId));
+
+  if (row) {
+    await reindexDocumentTasks({
+      documentId: input.documentId,
+      markdown,
+      sourceUpdatedAt: row.updatedAt,
+    });
+  }
 }

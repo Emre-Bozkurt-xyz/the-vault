@@ -15,11 +15,22 @@ import { getDocumentAccess } from "@/lib/permissions";
 const syncTimeoutMs = 10_000;
 const flushTimeoutMs = 10_000;
 
+export type LiveDocumentWriteOptions = {
+  /** Yjs transaction origin. Defaults to `"mcp"`. */
+  origin?: string;
+  /**
+   * Record the pre-edit text as an `assistant` restore point. Defaults to true,
+   * which suits an AI rewrite; a task checkbox tick passes false, since one
+   * restore point per tick would bury the useful ones.
+   */
+  restorePoint?: boolean;
+};
+
 /**
  * Opens the document's live Yjs session (exactly like a browser editor), runs
  * `mutate` against the shared `markdown` Y.Text inside one transaction tagged
- * `"mcp"`, waits for the change to flush to the collaboration server, and returns
- * the resulting markdown.
+ * with `options.origin`, waits for the change to flush to the collaboration
+ * server, and returns the resulting markdown.
  *
  * Writing through the collaboration layer — rather than the `documents.markdown`
  * column directly — is what makes AI edits conflict-free with anyone editing
@@ -31,7 +42,9 @@ export async function withLiveDocumentText(
   userId: string,
   documentId: string,
   mutate: (ytext: Y.Text, ydoc: Y.Doc) => void,
+  options: LiveDocumentWriteOptions = {},
 ): Promise<{ markdown: string }> {
+  const { origin = "mcp", restorePoint = true } = options;
   const access = await getDocumentAccess(userId, documentId);
 
   if (!access.canEdit) {
@@ -93,14 +106,14 @@ export async function withLiveDocumentText(
     const ytext = ydoc.getText("markdown");
     const priorMarkdown = ytext.toString();
 
-    ydoc.transact(() => mutate(ytext, ydoc), "mcp");
+    ydoc.transact(() => mutate(ytext, ydoc), origin);
 
     const nextMarkdown = ytext.toString();
 
     // Snapshot the pre-edit state so each agent operation is its own restore
     // point (the collab server's own versioning is threshold-gated and would
     // miss small, rapid edits). Skipped when the edit was a no-op.
-    if (nextMarkdown !== priorMarkdown) {
+    if (restorePoint && nextMarkdown !== priorMarkdown) {
       await db.insert(documentVersions).values({
         documentId,
         createdBy: userId,

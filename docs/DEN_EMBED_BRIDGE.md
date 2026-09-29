@@ -16,7 +16,7 @@ Den (`den.ems-place.com`, a private chat app; separate owner-run codebase) wants
 **This is safe because it reuses machinery you already shipped:**
 - OAuth 2.0 AS with PKCE-S256 + dynamic registration (`lib/mcp/oauth.ts`, `lib/mcp/oauth-metadata.ts`).
 - `createCollabToken` (`lib/collab-token.ts`) — HMAC `v1.<payload>.<sig>` room tokens off `AUTH_SECRET`.
-- `withLiveDocumentText` (`lib/mcp/collab-write.ts`) — the proven CRDT-safe "edit exactly like a browser editor" pattern; the embed editor is its interactive sibling.
+- `withLiveDocumentText` (`lib/collab-write.ts`) — the proven CRDT-safe "edit exactly like a browser editor" pattern; the embed editor is its interactive sibling.
 - `/public/[slug]` — precedent for rendering a document **without the dashboard/editor shell**.
 
 ---

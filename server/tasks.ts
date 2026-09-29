@@ -4,8 +4,11 @@ import { z } from "zod";
 
 import { isValidDayKey } from "@/lib/calendar";
 import { addDaysToDayKey } from "@/lib/tasks/dates";
+import { TASK_TIME_PATTERN } from "@/lib/tasks/parse";
 import { requireActiveUser } from "@/server/authz";
 import {
+  TaskMovedError,
+  applyTaskChange,
   ensureTaskIndexFresh,
   listAgendaTasks,
   type TaskAgenda,
@@ -15,18 +18,56 @@ import { getUserExtensionSetting } from "@/server/user-settings";
 /** How far ahead the sidebar agenda looks, counting today. */
 const agendaHorizonDays = 7;
 
+const dayKeySchema = z.string().refine(isValidDayKey, "Must be a real YYYY-MM-DD date.");
+
 const agendaInputSchema = z.object({
   /** The viewer's local day. The server clock is never the reference. */
-  today: z.string().refine(isValidDayKey, "Must be a real YYYY-MM-DD date."),
+  today: dayKeySchema,
+});
+
+const updateTaskInputSchema = z.object({
+  today: dayKeySchema,
+  documentId: z.string().uuid(),
+  line: z.number().int().min(0),
+  rawLine: z.string().max(20_000),
+  change: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("status"),
+      status: z.enum(["open", "in_progress", "done", "cancelled"]),
+    }),
+    z.object({
+      type: z.literal("due"),
+      day: dayKeySchema.nullable(),
+      time: z.string().regex(TASK_TIME_PATTERN).nullable().optional(),
+    }),
+  ]),
 });
 
 export type TaskAgendaResult =
   | ({ ok: true; today: string; through: string } & TaskAgenda)
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: "moved" };
+
+async function requireTasksEnabled(userId: string): Promise<boolean> {
+  const setting = await getUserExtensionSetting({ userId, extensionId: "vault.tasks" });
+  return Boolean(setting?.enabled);
+}
+
+async function loadAgenda(userId: string, today: string): Promise<TaskAgendaResult> {
+  const through = addDaysToDayKey(today, agendaHorizonDays);
+  await ensureTaskIndexFresh(userId);
+  const agenda = await listAgendaTasks(userId, today, through);
+  return { ok: true, today, through, ...agenda };
+}
+
+const disabledResult: TaskAgendaResult = {
+  ok: false,
+  error: "Tasks is turned off in Settings → Extensions.",
+};
 
 /**
  * The sidebar agenda: open tasks due through today + 7 days (including every
- * overdue one) from documents the viewer owns. Refreshes the lazy index first.
+ * overdue one), and tasks completed today, from documents the viewer owns.
+ * Refreshes the lazy index first.
  */
 export async function getTaskAgendaAction(input: unknown): Promise<TaskAgendaResult> {
   const user = await requireActiveUser();
@@ -36,24 +77,60 @@ export async function getTaskAgendaAction(input: unknown): Promise<TaskAgendaRes
     return { ok: false, error: "Invalid date." };
   }
 
-  const setting = await getUserExtensionSetting({
-    userId: user.id,
-    extensionId: "vault.tasks",
-  });
-
-  if (!setting?.enabled) {
-    return { ok: false, error: "Tasks is turned off in Settings → Extensions." };
+  if (!(await requireTasksEnabled(user.id))) {
+    return disabledResult;
   }
 
-  const { today } = parsed.data;
-  const through = addDaysToDayKey(today, agendaHorizonDays);
-
   try {
-    await ensureTaskIndexFresh(user.id);
-    const agenda = await listAgendaTasks(user.id, through);
-    return { ok: true, today, through, ...agenda };
+    return await loadAgenda(user.id, parsed.data.today);
   } catch (error) {
     console.error("Failed to load the task agenda", error);
     return { ok: false, error: "Could not load tasks." };
+  }
+}
+
+/**
+ * Changes one task's status or due date in its source document and returns the
+ * refreshed agenda. The task is addressed by line + exact text (index row ids
+ * are not stable); a task that moved or changed since the caller's read yields
+ * `code: "moved"` rather than an edit to the wrong line. Edit access is checked
+ * by the collaboration write itself.
+ */
+export async function updateTaskAction(input: unknown): Promise<TaskAgendaResult> {
+  const user = await requireActiveUser();
+  const parsed = updateTaskInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid task change." };
+  }
+
+  if (!(await requireTasksEnabled(user.id))) {
+    return disabledResult;
+  }
+
+  const { today, documentId, line, rawLine, change } = parsed.data;
+
+  try {
+    await applyTaskChange(user.id, { documentId, line, rawLine, change, today });
+  } catch (error) {
+    if (error instanceof TaskMovedError) {
+      return { ok: false, code: "moved", error: "That task changed since the list loaded." };
+    }
+
+    console.error("Failed to update a task", error);
+    return {
+      ok: false,
+      error:
+        error instanceof Error && /collaboration/i.test(error.message)
+          ? "Could not reach the collaboration server, so the task was not changed."
+          : "Could not change the task.",
+    };
+  }
+
+  try {
+    return await loadAgenda(user.id, today);
+  } catch (error) {
+    console.error("Failed to reload the task agenda", error);
+    return { ok: false, error: "The task changed, but the list could not reload." };
   }
 }

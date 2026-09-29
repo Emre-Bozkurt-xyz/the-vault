@@ -266,6 +266,37 @@
     background: color-mix(in oklab, var(--background) 82%, var(--card) 18%);
   }
 
+  button.vault-task-box {
+    padding: 0;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+
+  button.vault-task-box:hover {
+    border-color: color-mix(in oklab, var(--primary) 70%, var(--foreground) 30%);
+  }
+
+  button.vault-task-box:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 60%, transparent);
+    outline-offset: 2px;
+  }
+
+  .vault-task-box[data-status="done"] {
+    border-color: color-mix(in oklab, var(--primary) 86%, var(--foreground) 14%);
+    background: var(--primary);
+  }
+
+  .vault-task-box[data-status="done"]::after {
+    position: absolute;
+    left: 0.29rem;
+    top: 0.1rem;
+    width: 0.3rem;
+    height: 0.52rem;
+    border: solid var(--primary-foreground);
+    border-width: 0 0.12rem 0.12rem 0;
+    content: "";
+    transform: rotate(45deg);
+  }
+
   .vault-task-box[data-status="in_progress"]::after {
     position: absolute;
     inset: 0.18rem;

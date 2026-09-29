@@ -29,6 +29,12 @@ export function addDaysToDayKey(dayKey: string, days: number): string {
   return fromUtcDate(date);
 }
 
+/** The Monday after `dayKey` (a week ahead when `dayKey` is itself a Monday). */
+export function nextWeekStart(dayKey: string): string {
+  const weekday = toUtcDate(dayKey).getUTCDay();
+  return addDaysToDayKey(dayKey, ((8 - weekday) % 7) || 7);
+}
+
 /** Whole days from `from` to `to` (negative when `to` is earlier). */
 export function daysBetween(from: string, to: string): number {
   return Math.round((toUtcDate(to).getTime() - toUtcDate(from).getTime()) / 86_400_000);
