@@ -238,6 +238,55 @@
     transform: rotate(45deg);
   }
 
+  /* A line reached through an editor jump (the task agenda): one soft pulse. */
+  .vault-cm-jump-flash {
+    animation: vault-cm-jump-flash 1.6s ease-out;
+  }
+
+  @keyframes vault-cm-jump-flash {
+    0%,
+    30% {
+      background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  /* Four-state task box used by agenda surfaces (open, in progress, done,
+     cancelled). Matches the document checkbox's size and edge. */
+  .vault-task-box {
+    position: relative;
+    display: inline-block;
+    width: 0.95rem;
+    height: 0.95rem;
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    border-radius: 0.28rem;
+    background: color-mix(in oklab, var(--background) 82%, var(--card) 18%);
+  }
+
+  .vault-task-box[data-status="in_progress"]::after {
+    position: absolute;
+    inset: 0.18rem;
+    border-radius: 0.1rem;
+    background: linear-gradient(135deg, var(--primary) 50%, transparent 50%);
+    content: "";
+  }
+
+  /* Task text rendered through MarkdownDocument inside a one-line row. */
+  .vault-task-md .vault-md-p {
+    display: inline;
+    margin: 0;
+    max-width: none;
+    font-size: inherit;
+    line-height: 1.35;
+  }
+
+  .vault-task-box[data-overdue="true"] {
+    border-color: color-mix(in oklab, var(--destructive) 75%, transparent);
+  }
+
   .vault-md-li:has(.vault-md-checkbox) {
     display: grid;
     grid-template-columns: 1rem minmax(0, 1fr);

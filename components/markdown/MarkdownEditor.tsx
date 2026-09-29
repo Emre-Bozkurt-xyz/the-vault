@@ -132,6 +132,11 @@ import {
 } from "@/lib/asset-embeds";
 import { formatCalendarFence, generateCalendarId } from "@/lib/calendar";
 import { subscribeToDocumentCommand } from "@/lib/document-command-events";
+import {
+  consumeEditorJump,
+  subscribeToEditorJumps,
+} from "@/lib/editor-jump-events";
+import { applyEditorJump } from "@/components/markdown/editor-jump";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
@@ -1484,6 +1489,51 @@ export function MarkdownEditor({
     },
     [collabSession, editorMode, isCollaborative],
   );
+
+  // Jumps to a line, e.g. from the task agenda (`lib/editor-jump-events.ts`).
+  // A retained jump waits for the view that will stay: with collaboration, the
+  // local view mounted first is replaced once the room syncs and its lines may
+  // be stale. A dead collab server must not strand the jump, hence
+  // `disconnected`. `viewEpoch` re-runs this when a new view mounts.
+  const jumpViewReady =
+    editorMode !== "read" &&
+    (!collaboration || isCollaborative || collabStatus === "disconnected");
+
+  useEffect(() => {
+    const view = viewRef.current;
+
+    if (!jumpViewReady || !view?.dom.isConnected) {
+      return;
+    }
+
+    const jump = consumeEditorJump(documentId);
+
+    if (jump) {
+      applyEditorJump(view, jump);
+    }
+  }, [documentId, jumpViewReady, viewEpoch]);
+
+  useEffect(() => {
+    return subscribeToEditorJumps((jump) => {
+      if (jump.documentId !== documentId) {
+        return;
+      }
+
+      // Read mode has no lines to jump to: switch to Live and let the effect
+      // above claim the retained jump once the editor view mounts.
+      if (editorMode === "read") {
+        changeEditorMode("live");
+        return;
+      }
+
+      const view = viewRef.current;
+
+      if (jumpViewReady && view?.dom.isConnected) {
+        consumeEditorJump(documentId);
+        applyEditorJump(view, jump);
+      }
+    });
+  }, [changeEditorMode, documentId, editorMode, jumpViewReady]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -49,6 +49,7 @@ export type TagCategory =
    */
   | "system";
 export type ContentTargetKind = "document" | "asset";
+export type DocumentTaskStatus = "open" | "in_progress" | "done" | "cancelled";
 export type DocumentExtensionStateVisibility =
   | "private"
   | "public"
@@ -769,6 +770,58 @@ export const documentTags = pgTable(
     index("document_tags_tag_id_idx").on(table.tagId),
   ],
 );
+
+/**
+ * One row per task line in a document (`lib/tasks/parse.ts`), regenerated
+ * wholesale whenever the document is reindexed. `id` is therefore NOT a stable
+ * task identity: write-back addresses a task by line + exact source text. See
+ * `docs/23_TASKS_AND_AGENDA_PLAN.md` §4-5.
+ */
+export const documentTasks = pgTable(
+  "document_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    line: integer("line").notNull(),
+    rawLine: text("raw_line").notNull(),
+    parentOrdinal: integer("parent_ordinal"),
+    status: text("status").$type<DocumentTaskStatus>().notNull(),
+    text: text("text").notNull(),
+    note: text("note"),
+    heading: text("heading"),
+    dueDay: date("due_day", { mode: "string" }),
+    dueTime: text("due_time"),
+    doneDay: date("done_day", { mode: "string" }),
+  },
+  (table) => [
+    uniqueIndex("document_tasks_document_ordinal_idx").on(
+      table.documentId,
+      table.ordinal,
+    ),
+    index("document_tasks_open_due_idx")
+      .on(table.dueDay)
+      .where(sql`${table.status} in ('open', 'in_progress')`),
+  ],
+);
+
+/**
+ * Freshness stamp per indexed document, including documents with no tasks, so
+ * a task-free document is not reparsed on every agenda read. The index is
+ * refreshed lazily: a document whose `updated_at` is newer than
+ * `source_updated_at` is reparsed before tasks are read.
+ */
+export const documentTaskIndex = pgTable("document_task_index", {
+  documentId: uuid("document_id")
+    .primaryKey()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }).notNull(),
+  indexedAt: timestamp("indexed_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
 
 export const assetTags = pgTable(
   "asset_tags",

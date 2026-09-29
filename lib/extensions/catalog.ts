@@ -1027,6 +1027,23 @@ export const localBuiltInExtensions: VaultExtension[] = [
     },
   },
   {
+    // Surfaces only: the sidebar agenda, and later the Tasks page, capture and
+    // query blocks. Task *syntax* (`[/]`, `:due[…]`) is core Markdown and renders
+    // for every viewer whether or not this is on. docs/23_TASKS_AND_AGENDA_PLAN.md
+    id: "vault.tasks",
+    name: "Tasks",
+    version: 1,
+    kind: "built-in",
+    category: "workspace",
+    description:
+      "An agenda of the task lines in your documents: what is overdue, due today and coming up, gathered from every note you own.",
+    defaultEnabled: false,
+    permissions: ["document:read"],
+    workspace: {
+      panels: [{ id: "vault.tasks.agenda", label: "Tasks" }],
+    },
+  },
+  {
     id: "vault.stickers",
     name: "Stickers",
     version: 1,
