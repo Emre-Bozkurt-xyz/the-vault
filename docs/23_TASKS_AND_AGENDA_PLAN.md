@@ -1,9 +1,8 @@
 # Tasks, Agenda, and Inbox
 
 Status as of 2026-09-29: **slice 1 is implemented** (parser, index tables,
-lazy refresh, read-only sidebar agenda, editor jump-to-line), verified by
-`tsc`, lint and unit tests only — the migration has not been applied to a real
-database and the panel has not been exercised in a browser. Slices 2-7 are not
+lazy refresh, read-only sidebar agenda, editor jump-to-line) and verified
+against real Postgres and in a browser (2026-09-29). Slices 2-7 are not
 started. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 25 in `docs/01_PROGRESS_TRACKER.md`.
 

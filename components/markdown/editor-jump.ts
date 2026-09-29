@@ -34,7 +34,11 @@ const flashDuration = 1600;
 const setFlash = StateEffect.define<number | null>();
 const flashLine = Decoration.line({ class: "vault-cm-jump-flash" });
 
-const flashField = StateField.define<DecorationSet>({
+/**
+ * The highlight's state. Must be part of the editor's own extension list
+ * (`MarkdownEditor`'s memo); an editor without it still jumps, unhighlighted.
+ */
+export const editorJumpHighlight = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(value, transaction) {
     let next = value.map(transaction.changes);
@@ -55,18 +59,9 @@ const flashField = StateField.define<DecorationSet>({
 
 /**
  * Scrolls the jump target to the middle of the viewport, puts the cursor at the
- * end of its line, and briefly highlights it. The highlight field is appended
- * to the view's configuration on first use rather than threaded through the
- * editor's extension list; if a later reconfigure drops it, the next jump adds
- * it again.
+ * end of its line, and briefly highlights it.
  */
 export function applyEditorJump(view: EditorView, jump: EditorJump) {
-  // A field added by `appendConfig` only sees effects from later transactions,
-  // so it is installed on its own before the flash is set.
-  if (view.state.field(flashField, false) === undefined) {
-    view.dispatch({ effects: StateEffect.appendConfig.of(flashField) });
-  }
-
   const line = view.state.doc.line(resolveJumpLine(view.state.doc, jump));
 
   view.dispatch({
@@ -79,7 +74,7 @@ export function applyEditorJump(view: EditorView, jump: EditorJump) {
   view.focus();
 
   window.setTimeout(() => {
-    if (view.dom.isConnected && view.state.field(flashField, false) !== undefined) {
+    if (view.dom.isConnected) {
       view.dispatch({ effects: setFlash.of(null) });
     }
   }, flashDuration);

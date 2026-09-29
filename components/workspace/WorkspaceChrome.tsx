@@ -246,7 +246,7 @@ export function WorkspaceChrome({
         }
         assetsPanel={<WorkspaceUtilityPanel mode="assets" activeHref={currentHref} />}
         tasksEnabled={workspaceState.tasksEnabled}
-        tasksPanel={<WorkspaceTasksPanel activeHref={baseCurrentHref} />}
+        tasksPanel={<WorkspaceTasksPanel />}
         adminPanel={
           <WorkspaceUtilityPanel
             mode="admin"

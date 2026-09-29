@@ -136,7 +136,10 @@ import {
   consumeEditorJump,
   subscribeToEditorJumps,
 } from "@/lib/editor-jump-events";
-import { applyEditorJump } from "@/components/markdown/editor-jump";
+import {
+  applyEditorJump,
+  editorJumpHighlight,
+} from "@/components/markdown/editor-jump";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
@@ -771,6 +774,10 @@ export function MarkdownEditor({
       // `/term`'s definitions-only narrowing (`live-definitions.ts`). Registered
       // for every mode, since the slash menu is not Live-only.
       definitionScopeField,
+      // Jump-to-line highlight (`editor-jump.ts`). Registered here, not appended
+      // at jump time: the editor reconfigures whenever this memo recomputes,
+      // which would drop an appended field and cut the highlight short.
+      editorJumpHighlight,
       markdownLanguage({
         codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({

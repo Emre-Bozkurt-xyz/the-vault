@@ -28,7 +28,7 @@ const refetchAfterSaveMs = 2500;
 
 type Section = { id: string; label: string; tasks: AgendaTask[]; overdue?: boolean };
 
-export function WorkspaceTasksPanel({ activeHref }: { activeHref: string }) {
+export function WorkspaceTasksPanel() {
   const [result, setResult] = useState<TaskAgendaResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const requestIdRef = useRef(0);
@@ -144,7 +144,6 @@ export function WorkspaceTasksPanel({ activeHref }: { activeHref: string }) {
                         today={result.today}
                         showDue={section.id !== "today"}
                         overdue={Boolean(section.overdue)}
-                        active={activeHref === `/docs/${task.documentId}`}
                       />
                     ))}
                   </div>
@@ -168,13 +167,11 @@ function TaskRow({
   today,
   showDue,
   overdue,
-  active,
 }: {
   task: AgendaTask;
   today: string;
   showDue: boolean;
   overdue: boolean;
-  active: boolean;
 }) {
   const href = `/docs/${task.documentId}`;
   const context = task.heading ? `${task.documentTitle} › ${task.heading}` : task.documentTitle;
@@ -189,10 +186,9 @@ function TaskRow({
           text: task.rawLine,
         })
       }
-      className={cn(
-        "grid grid-cols-[0.95rem_minmax(0,1fr)] gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        active ? "bg-sidebar-accent/60" : null,
-      )}
+      // No "active" highlight: tasks cluster in a few documents, so marking
+      // every row of the open one would light up most of the list.
+      className="grid grid-cols-[0.95rem_minmax(0,1fr)] gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
     >
       <span
         className="vault-task-box mt-[0.2rem]"
