@@ -15,7 +15,7 @@
 
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { isolateHistory } from "@codemirror/commands";
-import { Facet, Transaction, type Range } from "@codemirror/state";
+import { Facet, Transaction, type Range, type Text } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 
 import { todayDayKey } from "@/lib/calendar";
@@ -307,4 +307,70 @@ export function taskDateCompletionSource(context: CompletionContext): Completion
       }),
     ),
   };
+}
+
+const indentPattern = /^[ \t]*/;
+const childTaskPattern = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX/-])\](?=[ \t]|$)/;
+
+function indentWidth(text: string): number {
+  return (indentPattern.exec(text)?.[0] ?? "").replace(/\t/g, "    ").length;
+}
+
+/**
+ * Done/total over a task's DIRECT subtasks (cancelled ones not counted), read
+ * from the lines below it; null when it has none. Stops at the first line that
+ * is not indented under the task, so it only walks the task's own block.
+ */
+export function subtaskProgress(doc: Text, lineNumber: number): { done: number; total: number } | null {
+  const parentIndent = indentWidth(doc.line(lineNumber).text);
+  let childIndent: number | null = null;
+  let done = 0;
+  let total = 0;
+
+  for (let number = lineNumber + 1; number <= doc.lines; number += 1) {
+    const text = doc.line(number).text;
+    if (!text.trim()) continue;
+
+    const indent = indentWidth(text);
+    if (indent <= parentIndent) break;
+
+    const marker = childTaskPattern.exec(text);
+    if (!marker) continue;
+
+    childIndent ??= indent;
+    if (indent !== childIndent) continue;
+
+    const status = taskStatusFromMarker(marker[1]);
+    if (status === "cancelled") continue;
+    total += 1;
+    if (status === "done") done += 1;
+  }
+
+  return total > 0 ? { done, total } : null;
+}
+
+export class TaskProgressWidget extends WidgetType {
+  constructor(
+    private readonly done: number,
+    private readonly total: number,
+  ) {
+    super();
+  }
+
+  eq(widget: TaskProgressWidget) {
+    return widget.done === this.done && widget.total === this.total;
+  }
+
+  toDOM() {
+    const badge = document.createElement("span");
+    badge.className = "vault-cm-task-progress";
+    badge.dataset.complete = String(this.done === this.total);
+    badge.textContent = `${this.done}/${this.total}`;
+    badge.title = `${this.done} of ${this.total} subtasks done`;
+    return badge;
+  }
+
+  ignoreEvent() {
+    return false;
+  }
 }

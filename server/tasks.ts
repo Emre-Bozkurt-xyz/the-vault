@@ -14,8 +14,10 @@ import {
   getInboxDocumentId,
   getTaskDetail,
   listAgendaTasks,
+  listDocumentTasks,
   listTaskPageData,
   removeCapturedTask,
+  type DocumentTaskSummary,
   type TaskAgenda,
   type TaskDetail,
   type TaskPageData,
@@ -280,4 +282,16 @@ export async function getTaskDetailAction(input: unknown): Promise<TaskDetail | 
   }
 
   return getTaskDetail(user.id, parsed.data.documentId, parsed.data.ordinal);
+}
+
+/** A document's own tasks, for its side panel. Null when not readable. */
+export async function getDocumentTasksAction(input: unknown): Promise<DocumentTaskSummary[] | null> {
+  const user = await requireActiveUser();
+  const parsed = z.object({ documentId: z.string().uuid() }).safeParse(input);
+
+  if (!parsed.success || !(await requireTasksEnabled(user.id))) {
+    return null;
+  }
+
+  return listDocumentTasks(user.id, parsed.data.documentId);
 }

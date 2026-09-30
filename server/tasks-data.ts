@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { documentTags, documentTaskIndex, documentTasks, documents, tags } from "@/db/schema";
 import { withLiveDocumentText } from "@/lib/collab-write";
+import { getDocumentAccess } from "@/lib/permissions";
 import { parseCapture, type CapturedTask } from "@/lib/tasks/capture";
 import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
 import { parseTasks, type TaskStatus } from "@/lib/tasks/parse";
@@ -601,4 +602,48 @@ export async function getTaskDetail(
     subtasks,
     context: { startLine, lines: lines.slice(startLine, task.line + 4) },
   };
+}
+
+export type DocumentTaskSummary = {
+  line: number;
+  rawLine: string;
+  status: TaskStatus;
+  text: string;
+  dueDay: string | null;
+  dueTime: string | null;
+  parentOrdinal: number | null;
+  ordinal: number;
+};
+
+/**
+ * One document's tasks, parsed from its saved text rather than read from the
+ * index: this serves the document's own side panel, for anyone who can read
+ * it (shared documents included), and the index only covers owned documents.
+ * Null when the viewer cannot read it.
+ */
+export async function listDocumentTasks(
+  userId: string,
+  documentId: string,
+): Promise<DocumentTaskSummary[] | null> {
+  const access = await getDocumentAccess(userId, documentId);
+  if (!access.canRead) return null;
+
+  const [row] = await db
+    .select({ markdown: documents.markdown })
+    .from(documents)
+    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+    .limit(1);
+
+  if (!row) return null;
+
+  return parseTasks(row.markdown).map((task) => ({
+    line: task.line,
+    rawLine: task.rawLine,
+    status: task.status,
+    text: task.text,
+    dueDay: task.dueDay,
+    dueTime: task.dueTime,
+    parentOrdinal: task.parentOrdinal,
+    ordinal: task.ordinal,
+  }));
 }

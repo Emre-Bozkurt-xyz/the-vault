@@ -52,6 +52,8 @@ export const safeHtmlSchema: Schema = {
     // mapped to a date chip. Carries only its kind and a date value, which the
     // component re-validates; an authored copy can only display a date.
     "vault-task-date",
+    // `remarkTasks`: done/total over a task's direct subtasks. Two numbers.
+    "vault-task-progress",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -113,6 +115,7 @@ export const safeHtmlSchema: Schema = {
     // is built per render, so it reaches no private or cross-document data.
     "vault-calc": ["data-calc-key", "dataCalcKey"],
     "vault-task-date": ["data-kind", "dataKind", "data-value", "dataValue"],
+    "vault-task-progress": ["data-done", "dataDone", "data-total", "dataTotal"],
     // `[/]` and `[-]` task items (`remarkTasks`). Scoped to `li` for the same
     // reason as the calc key: it styles a checkbox and means nothing elsewhere.
     li: [...(defaultSchema.attributes?.li ?? []), "data-task-status", "dataTaskStatus"],

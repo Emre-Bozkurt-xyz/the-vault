@@ -1039,6 +1039,20 @@ export const localBuiltInExtensions: VaultExtension[] = [
       "An agenda of the task lines in your documents: what is overdue, due today and coming up, gathered from every note you own.",
     defaultEnabled: false,
     permissions: ["document:read"],
+    markdown: {
+      slashCommands: [
+        {
+          id: "vault.tasks.slash-query",
+          label: "tasks",
+          title: "Task list",
+          keywords: "agenda todo checklist query due week",
+          directive: "tasks",
+          // A live list of this document's open tasks due within a week.
+          // `scope=all` lists the reader's own tasks instead.
+          insert: { markdown: ":::tasks{due=week}" },
+        },
+      ],
+    },
     workspace: {
       panels: [{ id: "vault.tasks.agenda", label: "Tasks" }],
     },

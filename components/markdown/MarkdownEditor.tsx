@@ -142,7 +142,9 @@ import {
 } from "@/components/markdown/editor-jump";
 import {
   TaskCheckboxWidget,
+  TaskProgressWidget,
   addTaskDateDecorations,
+  subtaskProgress,
   taskAuthoringEnabled,
   taskDateCompletionSource,
 } from "@/components/markdown/live-tasks";
@@ -3992,6 +3994,16 @@ function decorateInactiveMarkdownLine(
       addTaskDateDecorations(ranges, lineFrom, text, /[xX]/.test(task[2]), (from, to) =>
         hasActivePositionInRange(activePositions, from, to),
       );
+
+      const progress = subtaskProgress(doc, lineNumber);
+      if (progress) {
+        ranges.push(
+          Decoration.widget({
+            widget: new TaskProgressWidget(progress.done, progress.total),
+            side: 1,
+          }).range(lineFrom + text.length),
+        );
+      }
     } else {
       const markerFrom = lineFrom + list[1].length;
       const markerTo = lineFrom + list[0].length;

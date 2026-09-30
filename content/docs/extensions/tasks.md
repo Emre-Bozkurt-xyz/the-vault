@@ -69,6 +69,37 @@ otherwise every old checklist would crowd it. Give a task a date to schedule it.
 Only documents **you own** feed your agenda. Tasks in documents others have
 shared with you are not included.
 
+## Tasks around the workspace
+
+- **Home page.** The new-tab page shows a **Today** section — overdue tasks and
+  tasks due today — that you can tick off without opening anything.
+- **Document side panel.** Each document's side panel has a **Tasks** section:
+  how many are open, the next due date, and the open tasks with their subtask
+  progress. Click one to jump to it.
+- **Subtask progress.** A task with nested subtasks shows how many are done,
+  such as `2/4`, in both the editor and the reading view.
+
+## Task lists inside a document
+
+Type `/tasks` to insert a live task list, or write the block yourself:
+
+```md
+:::tasks{due=week}
+```
+
+| Option | Values | Default |
+|---|---|---|
+| `scope` | `doc` (this document's tasks), `all` (your tasks everywhere) | `doc` |
+| `due` | `any`, `overdue`, `today`, `week`, `month`, `none` | `any` |
+| `status` | `open`, `done`, `all` | `open` |
+| `tag` | a document tag | — |
+| `title` | a heading for the block, in quotes | — |
+
+`week` and `month` include anything already overdue. A `scope=all` block always
+shows **the reader's own** tasks, never yours: share a "My week" document and
+each person sees their own week. On a public page it shows a short note
+instead.
+
 ## Capturing a task quickly
 
 Type into **Add task…** at the top of the Tasks sidebar, or press

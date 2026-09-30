@@ -34,11 +34,17 @@ import {
 import { CalcBlock } from "@/components/extensions/CalcBlock";
 import { CalcValue } from "@/components/extensions/CalcValue";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { TaskQueryBlock } from "@/components/tasks/TaskQueryBlock";
 import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
 import { DefinitionPreviewCard } from "@/components/markdown/DefinitionPreviewCard";
-import { splitCalendarSegments } from "@/lib/calendar";
+import { splitCalendarSegments, type CalendarSegment } from "@/lib/calendar";
+import {
+  splitTaskQuerySegments,
+  type TaskQuery,
+  type TaskQuerySegment,
+} from "@/lib/tasks/query";
 import {
   calcRemarkPlugins,
   remarkCalc,
@@ -63,6 +69,7 @@ import {
 } from "@/lib/markdown/sanitize";
 import {
   TASK_DATE_ELEMENT_NAME,
+  TASK_PROGRESS_ELEMENT_NAME,
   formatTaskDateAbsolute,
   remarkTasks,
 } from "@/lib/markdown/task-directives";
@@ -642,6 +649,25 @@ function createMarkdownComponents(
       </time>
     );
   },
+  // `remarkTasks` appends `<vault-task-progress>` to a task with subtasks.
+  [TASK_PROGRESS_ELEMENT_NAME]: (props: { "data-done"?: string; "data-total"?: string }) => {
+    const done = Number(props["data-done"]);
+    const total = Number(props["data-total"]);
+
+    if (!Number.isInteger(done) || !Number.isInteger(total) || total <= 0 || done < 0 || done > total) {
+      return null;
+    }
+
+    return (
+      <span
+        className="vault-md-task-progress"
+        data-complete={String(done === total)}
+        title={`${done} of ${total} subtasks done`}
+      >
+        {done}/{total}
+      </span>
+    );
+  },
   // `remarkCalc` emits `<vault-calc data-calc-key>` for each inline `:calc[…]`.
   // The element carries only the key; the component supplies every class, which
   // is what keeps calc's contract classes out of the raw-HTML className filter
@@ -1092,6 +1118,7 @@ export function MarkdownDocument({
             documentId={documentId}
             calendarStates={calendarStates}
             calcResults={calcDocument.results}
+            documentMarkdown={markdown || ""}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1189,7 +1216,8 @@ type MarkdownPart =
       collapsed: boolean;
       pieceIndex: number;
     }
-  | { kind: "calendar"; id: string | null };
+  | { kind: "calendar"; id: string | null }
+  | { kind: "tasks"; query: TaskQuery };
 
 /**
  * Splits one markdown block into ordered parts, appending every calc-bearing
@@ -1212,9 +1240,22 @@ function planMarkdownParts(
 
   const parts: MarkdownPart[] = [];
 
-  for (const segment of segments) {
+  // `:::tasks` blocks ride the same gate as calendars: they only render where
+  // a document is in scope, never inside nested previews of task text.
+  const expanded = segments.flatMap<CalendarSegment | TaskQuerySegment>((segment) =>
+    segment.type === "markdown" && withCalendars
+      ? splitTaskQuerySegments(segment.markdown)
+      : [segment],
+  );
+
+  for (const segment of expanded) {
     if (segment.type === "calendar") {
       parts.push({ kind: "calendar", id: segment.id });
+      continue;
+    }
+
+    if (segment.type === "tasks") {
+      parts.push({ kind: "tasks", query: segment.query });
       continue;
     }
 
@@ -1255,7 +1296,10 @@ function MarkdownBlock({
   documentId,
   calendarStates,
   calcResults,
+  documentMarkdown,
 }: {
+  /** The whole document, for `:::tasks{scope=doc}` blocks. */
+  documentMarkdown: string;
   parts: MarkdownPart[];
   disableLinks: boolean;
   wikiLinks?: WikiLinkResolutionMap;
@@ -1285,6 +1329,20 @@ function MarkdownBlock({
               }
               wikiLinks={wikiLinks}
               assetLinks={assetLinks}
+            />
+          );
+        }
+
+        if (part.kind === "tasks") {
+          return (
+            <TaskQueryBlock
+              key={`tasks-${index}`}
+              query={part.query}
+              documentMarkdown={documentMarkdown}
+              documentId={documentId}
+              // Only the public routes pass prefetched calendar state; there,
+              // a `scope=all` block must not fetch and rows must not link.
+              publicSurface={calendarStates !== undefined}
             />
           );
         }

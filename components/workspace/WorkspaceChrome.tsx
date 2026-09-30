@@ -9,9 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { buildDocumentFolderPaths } from "@/lib/folder-paths";
+import { subscribeToWorkspaceNavigation } from "@/lib/workspace-navigation";
 import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
 import { WorkspaceFileBrowser } from "@/components/workspace/WorkspaceFileBrowser";
 import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPanel";
@@ -106,7 +107,12 @@ export function WorkspaceChrome({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Navigation requested from outside the router's React tree (Live-mode
+  // block widgets); see `lib/workspace-navigation.ts`.
+  useEffect(() => subscribeToWorkspaceNavigation((href) => router.push(href)), [router]);
   const currentHref = useMemo(() => {
     const query = searchParams.toString();
     return query ? `${pathname}?${query}` : pathname;

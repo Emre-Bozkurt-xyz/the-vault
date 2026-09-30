@@ -1,8 +1,11 @@
 # Tasks, Agenda, and Inbox
 
-Status as of 2026-09-30: **slices 1-5 are implemented and verified** (index and
+Status as of 2026-09-30: **slices 1-6 are implemented and verified** (index and
 sidebar agenda, write-back, authoring in the editor, Inbox and capture, the
-Tasks page); slices 6-7 are not started. Deviation: the Inbox cannot yet be re-pointed from
+Tasks page, home/side-panel/query blocks/progress); slice 7 is not started.
+Query-block rows are read-only lists (tick in the document or the agenda), and
+the editor's own Read mode does not expand them, matching calendars, since it
+renders without a document id. Deviation: the Inbox cannot yet be re-pointed from
 Settings (§6.3), because settings have no document-picker field. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 25 in `docs/01_PROGRESS_TRACKER.md`.
 

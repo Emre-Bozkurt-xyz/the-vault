@@ -18,6 +18,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { CalendarBlock } from "@/components/extensions/CalendarBlock";
+import { TaskQueryBlock } from "@/components/tasks/TaskQueryBlock";
 import {
   getAssetEmbedClassName,
   getAssetEmbedStyle,
@@ -33,6 +34,7 @@ import {
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
 import { parseCalendarFence, type CalendarWeekStart } from "@/lib/calendar";
+import { parseTaskQueryFence, type TaskQuery } from "@/lib/tasks/query";
 import type { ExtensionStateVisibility } from "@/lib/extensions/types";
 import { createVaultExtensionRegistry } from "@/lib/extensions/registry";
 import type {
@@ -110,13 +112,29 @@ export type LiveCalendarBlock = {
   id: string | null;
 };
 
+export type LiveTaskQueryBlock = {
+  kind: "taskQuery";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+  query: TaskQuery;
+  /**
+   * The document's task lines, joined. A `scope=doc` block lists them, so it
+   * must re-render when they change — and only then, not on every keystroke.
+   */
+  signature: string;
+};
+
 export type LiveBlock =
   | LiveAssetGroupBlock
   | LiveCalloutBlock
   | LiveDocumentEmbedBlock
   | LiveTableBlock
   | LiveMathBlock
-  | LiveCalendarBlock;
+  | LiveCalendarBlock
+  | LiveTaskQueryBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -210,6 +228,14 @@ const coreMarkdownLiveBlockSpecs = [
       getLiveCalendarBlocks(state, context.occupiedRanges),
     widget: (block, context) =>
       new CalendarBlockWidget(block as LiveCalendarBlock, context),
+  },
+  {
+    id: "taskQuery",
+    priority: 15,
+    scan: (state, context) =>
+      getLiveTaskQueryBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new TaskQueryBlockWidget(block as LiveTaskQueryBlock, context),
   },
 ] satisfies LiveBlockSpecForEditor[];
 
@@ -790,6 +816,55 @@ class MathBlockWidget extends WidgetType {
   }
 }
 
+/** A `:::tasks{…}` block rendered as the shared React `TaskQueryBlock`. */
+class TaskQueryBlockWidget extends WidgetType {
+  private root: Root | null = null;
+
+  constructor(
+    private readonly block: LiveTaskQueryBlock,
+    private readonly options: LiveBlockOptions,
+  ) {
+    super();
+  }
+
+  eq(widget: TaskQueryBlockWidget) {
+    return (
+      widget.block.source === this.block.source &&
+      widget.options.documentId === this.options.documentId &&
+      (this.block.query.scope === "all" || widget.block.signature === this.block.signature)
+    );
+  }
+
+  toDOM(view: EditorView) {
+    const container = document.createElement("div");
+    container.className = "vault-cm-task-query-rendered";
+    container.contentEditable = "false";
+    applyStableBlockWidgetSpacing(container);
+
+    this.root = createRoot(container);
+    this.root.render(
+      createElement(TaskQueryBlock, {
+        query: this.block.query,
+        documentMarkdown: view.state.doc.toString(),
+        documentId: this.options.documentId,
+        publicSurface: false,
+      }),
+    );
+
+    return container;
+  }
+
+  destroy() {
+    const root = this.root;
+    this.root = null;
+    if (root) window.setTimeout(() => root.unmount(), 0);
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
 class CalendarBlockWidget extends WidgetType {
   private root: Root | null = null;
 
@@ -1212,6 +1287,49 @@ function getLiveDocumentEmbedBlocks(
       startLine: lineNumber,
       endLine: lineNumber,
       source,
+    });
+  }
+
+  return blocks;
+}
+
+const taskLinePattern = /^\s*(?:>\s*)*(?:[-*+]|\d{1,9}[.)])\s+\[[ xX/-]\]/;
+
+function getLiveTaskQueryBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveTaskQueryBlock[] {
+  const blocks: LiveTaskQueryBlock[] = [];
+  const doc = state.doc;
+  let signature: string | null = null;
+
+  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
+    const line = doc.line(lineNumber);
+
+    if (isInsideSyntaxRange(line.from, excludedRanges)) {
+      continue;
+    }
+
+    const query = parseTaskQueryFence(line.text);
+
+    if (!query) {
+      continue;
+    }
+
+    // Computed once per scan, and only for documents that hold a block.
+    signature ??= Array.from({ length: doc.lines }, (_, index) => doc.line(index + 1).text)
+      .filter((text) => taskLinePattern.test(text))
+      .join("\n");
+
+    blocks.push({
+      kind: "taskQuery",
+      from: line.from,
+      to: line.to,
+      startLine: lineNumber,
+      endLine: lineNumber,
+      source: line.text.trim(),
+      query,
+      signature,
     });
   }
 

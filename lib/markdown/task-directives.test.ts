@@ -66,6 +66,15 @@ describe("remarkTasks", () => {
     expect(html).toContain(":note[x]");
   });
 
+  it("adds subtask progress over direct children, ignoring cancelled ones", () => {
+    const html = render(
+      ["- [ ] parent", "  - [x] one", "  - [ ] two", "  - [-] dropped", "    - [x] grandchild", "- [ ] lone"].join("\n"),
+    );
+
+    expect(html).toContain('<vault-task-progress data-done="1" data-total="2"></vault-task-progress>');
+    expect(html.match(/vault-task-progress data/g)).toHaveLength(2); // parent, and "dropped" over its child
+  });
+
   it("formats dates without reading the clock", () => {
     expect(formatTaskDateAbsolute("2026-10-02")).toBe("Fri 2 Oct 2026");
     expect(formatTaskDateAbsolute("2026-10-02 14:30")).toBe("Fri 2 Oct 2026, 14:30");

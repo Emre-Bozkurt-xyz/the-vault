@@ -19,6 +19,7 @@ export default async function WorkspacePage() {
         recentDocuments={workspace.recent}
         searchableDocuments={[...workspace.owned, ...workspace.shared]}
         userLabel={userLabel}
+        tasksEnabled={workspace.tasksEnabled}
       />
     </>
   );

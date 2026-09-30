@@ -160,6 +160,9 @@ Task-list items and their dates. See `docs/23_TASKS_AND_AGENDA_PLAN.md`.
 | `.vault-md-checkbox` | a task item's checkbox (`<input type="checkbox">`) |
 | `.vault-md-task-text` | the inline content of a task item, after the checkbox |
 | `.vault-md-task-date` | a `:due[…]` / `:done[…]` chip (`<time datetime>`) |
+| `.vault-md-task-progress` | done/total over a task's direct subtasks (`data-complete="true"` when all done) |
+| `.vault-task-query` | a `:::tasks{…}` block (`data-scope="doc"` or `"all"`) |
+| `.vault-task-query-title` / `-list` / `-item` / `-text` / `-meta` / `-empty` | its header, rows and empty state |
 
 State is carried by data attributes: `.vault-md-li[data-task-status="<status>"]`
 for the two statuses GFM has no box for (`in_progress`, `cancelled`; open and

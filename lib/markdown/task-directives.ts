@@ -18,6 +18,7 @@ import { isValidDayKey } from "@/lib/calendar";
 import { TASK_TIME_PATTERN } from "@/lib/tasks/parse";
 
 export const TASK_DATE_ELEMENT_NAME = "vault-task-date";
+export const TASK_PROGRESS_ELEMENT_NAME = "vault-task-progress";
 
 type MdastNode = {
   type: string;
@@ -110,7 +111,58 @@ export function remarkTasks() {
     };
 
     visit(tree as MdastNode, false);
+    addSubtaskProgress(tree as MdastNode);
   };
+}
+
+function isTaskItem(node: MdastNode): boolean {
+  return node.type === "listItem" && (node.checked === true || node.checked === false);
+}
+
+function taskStatusOf(node: MdastNode): string {
+  const status = (node.data?.hProperties as Record<string, unknown> | undefined)?.["data-task-status"];
+  if (typeof status === "string") return status;
+  return node.checked ? "done" : "open";
+}
+
+/**
+ * Appends `<vault-task-progress data-done data-total>` to each task item that
+ * has direct subtasks. A second pass, after `[/]`/`[-]` children were claimed
+ * in the first, so cancelled subtasks are known and left out of the count.
+ */
+function addSubtaskProgress(node: MdastNode): void {
+  for (const child of node.children ?? []) addSubtaskProgress(child);
+
+  if (!isTaskItem(node)) return;
+
+  let done = 0;
+  let total = 0;
+
+  for (const list of node.children ?? []) {
+    if (list.type !== "list") continue;
+    for (const item of list.children ?? []) {
+      if (!isTaskItem(item)) continue;
+      const status = taskStatusOf(item);
+      if (status === "cancelled") continue;
+      total += 1;
+      if (status === "done") done += 1;
+    }
+  }
+
+  const paragraph = node.children?.[0];
+  if (total === 0 || paragraph?.type !== "paragraph") return;
+
+  paragraph.children = [
+    ...(paragraph.children ?? []),
+    {
+      type: "taskProgress",
+      data: {
+        hName: TASK_PROGRESS_ELEMENT_NAME,
+        hProperties: { "data-done": String(done), "data-total": String(total) },
+      },
+      children: [],
+    },
+  ];
 }
 
 const weekdayShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

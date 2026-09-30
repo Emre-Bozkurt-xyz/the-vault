@@ -344,6 +344,116 @@
     pointer-events: none;
   }
 
+  /* Subtask progress on a parent task: Live (`.vault-cm-`) and Read (`.vault-md-`). */
+  .vault-cm-task-progress,
+  .vault-md-task-progress {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    color: var(--muted-foreground);
+    font-size: 0.72em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
+    text-indent: 0;
+    vertical-align: 0.1em;
+  }
+
+  .vault-cm-task-progress[data-complete="true"],
+  .vault-md-task-progress[data-complete="true"] {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+    color: var(--foreground);
+  }
+
+  /* `:::tasks{…}` query blocks (`TaskQueryBlock`), in Read and Live mode. */
+  .vault-task-query {
+    margin: 0.75rem 0;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.6rem;
+    background: color-mix(in oklab, var(--card) 45%, transparent);
+    /* Live mode mounts this inside CodeMirror, whose content font may be mono. */
+    font-family: var(--font-sans);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    white-space: normal;
+  }
+
+  .vault-task-query-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.35rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .vault-task-query-title svg {
+    width: 0.85rem;
+    height: 0.85rem;
+  }
+
+  .vault-task-query-list {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .vault-task-query-item {
+    display: grid;
+    grid-template-columns: 0.95rem minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.55rem;
+    padding: 0.25rem 0.3rem;
+    border-radius: 0.35rem;
+    color: var(--foreground);
+    text-decoration: none;
+  }
+
+  a.vault-task-query-item:hover {
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  .vault-task-query-item .vault-task-box {
+    margin-top: 0.2rem;
+  }
+
+  .vault-task-query-text--closed {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  .vault-task-query-meta {
+    display: flex;
+    gap: 0.5rem;
+    padding-top: 0.1rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .vault-task-query-meta--overdue {
+    color: var(--destructive);
+  }
+
+  .vault-task-query-empty {
+    margin: 0.2rem 0.3rem;
+    color: var(--muted-foreground);
+    font-size: 0.85rem;
+  }
+
+  .vault-task-box[data-status="done"] + .vault-task-query-text,
+  .vault-task-box[data-status="cancelled"] + .vault-task-query-text {
+    color: var(--muted-foreground);
+  }
+
   /* A line reached through an editor jump (the task agenda): one soft pulse. */
   .vault-cm-jump-flash {
     animation: vault-cm-jump-flash 1.6s ease-out;
