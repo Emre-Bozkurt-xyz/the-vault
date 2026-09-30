@@ -12,9 +12,13 @@ import {
   captureTask,
   ensureTaskIndexFresh,
   getInboxDocumentId,
+  getTaskDetail,
   listAgendaTasks,
+  listTaskPageData,
   removeCapturedTask,
   type TaskAgenda,
+  type TaskDetail,
+  type TaskPageData,
 } from "@/server/tasks-data";
 import { getUserExtensionSetting } from "@/server/user-settings";
 
@@ -229,4 +233,51 @@ export async function undoCaptureAction(input: unknown): Promise<TaskAgendaResul
     console.error("Failed to undo a capture", error);
     return { ok: false, error: collabError(error, "Could not undo.") };
   }
+}
+
+export type TaskPageResult =
+  | ({ ok: true; today: string; inboxDocumentId: string | null } & TaskPageData)
+  | { ok: false; error: string };
+
+/** Everything the Tasks page shows; it filters and groups client-side. */
+export async function getTaskPageAction(input: unknown): Promise<TaskPageResult> {
+  const user = await requireActiveUser();
+  const parsed = agendaInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid date." };
+  }
+
+  if (!(await requireTasksEnabled(user.id))) {
+    return { ok: false, error: "Tasks is turned off in Settings → Extensions." };
+  }
+
+  try {
+    await ensureTaskIndexFresh(user.id);
+    const [data, inboxDocumentId] = await Promise.all([
+      listTaskPageData(user.id, parsed.data.today),
+      getInboxDocumentId(user.id),
+    ]);
+    return { ok: true, today: parsed.data.today, inboxDocumentId, ...data };
+  } catch (error) {
+    console.error("Failed to load the tasks page", error);
+    return { ok: false, error: "Could not load tasks." };
+  }
+}
+
+const taskDetailInputSchema = z.object({
+  documentId: z.string().uuid(),
+  ordinal: z.number().int().min(0),
+});
+
+/** The Tasks page's right-panel detail for one task. */
+export async function getTaskDetailAction(input: unknown): Promise<TaskDetail | null> {
+  const user = await requireActiveUser();
+  const parsed = taskDetailInputSchema.safeParse(input);
+
+  if (!parsed.success || !(await requireTasksEnabled(user.id))) {
+    return null;
+  }
+
+  return getTaskDetail(user.id, parsed.data.documentId, parsed.data.ordinal);
 }

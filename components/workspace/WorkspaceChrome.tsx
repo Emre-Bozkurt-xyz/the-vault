@@ -518,6 +518,10 @@ function inferWorkspacePage(
     return { type: "assets", title: "Assets", href: pathname };
   }
 
+  if (pathname === "/tasks") {
+    return { type: "tasks", title: "Tasks", href: pathname };
+  }
+
   if (pathname === "/dashboard/settings") {
     return { type: "settings", title: "Settings", href };
   }

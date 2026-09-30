@@ -3,33 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Ban,
   CalendarClock,
-  CalendarDays,
-  CalendarX2,
-  CircleDashed,
   Inbox,
   ListChecks,
-  MoreHorizontal,
   Plus,
   RefreshCw,
-  Sun,
-  Sunrise,
+  ArrowUpRight,
 } from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import { todayDayKey } from "@/lib/calendar";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { captureTaskFromClient } from "@/lib/tasks/capture-client";
-import { addDaysToDayKey, formatDueLabel, nextWeekStart } from "@/lib/tasks/dates";
+import { addDaysToDayKey, formatDueLabel } from "@/lib/tasks/dates";
 import type { TaskChange } from "@/lib/tasks/edit";
 import { cn } from "@/lib/utils";
 import { subscribeToTasksChanged } from "@/lib/workspace-toast";
@@ -319,6 +307,12 @@ export function WorkspaceTasksPanel() {
                 {result.laterCount} more due later.
               </p>
             ) : null}
+            <Link
+              href="/tasks"
+              className="mt-1 flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+            >
+              Open Tasks page <ArrowUpRight className="size-3" />
+            </Link>
           </>
         )}
       </div>
@@ -339,20 +333,8 @@ function TaskRow({
   overdue: boolean;
   onChange: (change: TaskChange) => void;
 }) {
-  const dateInputRef = useRef<HTMLInputElement | null>(null);
   const done = task.status === "done";
   const context = task.heading ? `${task.documentTitle} › ${task.heading}` : task.documentTitle;
-  const setDue = (day: string | null) => onChange({ type: "due", day });
-
-  const pickDate = () => {
-    const input = dateInputRef.current;
-    if (!input) return;
-    try {
-      input.showPicker();
-    } catch {
-      input.focus();
-    }
-  };
 
   return (
     // No "active document" highlight: tasks cluster in a few documents, so
@@ -405,59 +387,11 @@ function TaskRow({
         </span>
       </Link>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label="Task actions"
-          className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-muted/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
-        >
-          <MoreHorizontal className="size-3.5" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setDue(today)}>
-            <Sun /> Today
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setDue(addDaysToDayKey(today, 1))}>
-            <Sunrise /> Tomorrow
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setDue(nextWeekStart(today))}>
-            <CalendarDays /> Next week
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={pickDate}>
-            <CalendarClock /> Pick date…
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setDue(null)}>
-            <CalendarX2 /> Clear date
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {task.status === "in_progress" ? (
-            <DropdownMenuItem onClick={() => onChange({ type: "status", status: "open" })}>
-              <CircleDashed /> Not started
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem onClick={() => onChange({ type: "status", status: "in_progress" })}>
-              <CircleDashed /> In progress
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => onChange({ type: "status", status: "cancelled" })}
-          >
-            <Ban /> Cancel task
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* The native picker behind "Pick date…"; visually hidden, anchored to the row. */}
-      <input
-        ref={dateInputRef}
-        type="date"
-        tabIndex={-1}
-        aria-hidden="true"
-        defaultValue={task.dueDay ?? ""}
-        onChange={(event) => {
-          if (event.target.value) setDue(event.target.value);
-        }}
-        className="pointer-events-none absolute bottom-0 right-2 size-px opacity-0"
+      <TaskActionsMenu
+        task={task}
+        today={today}
+        onChange={onChange}
+        className="opacity-0 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
       />
     </div>
   );

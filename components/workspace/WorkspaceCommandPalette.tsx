@@ -97,6 +97,7 @@ const pageTypeIcon: Record<WorkspacePageType, LucideIcon> = {
   guide: BookOpen,
   gallery: LayoutGrid,
   assets: ImageIcon,
+  tasks: ListChecks,
   settings: Settings,
   admin: ShieldCheck,
 };
@@ -170,6 +171,19 @@ export function WorkspaceCommandPalette() {
         icon: Home,
         run: navigate("/workspace"),
       },
+      ...(tasksEnabled
+        ? [
+            {
+              id: "go-tasks",
+              slug: "tasks",
+              label: "Open tasks",
+              group: "Go to",
+              keywords: "agenda todo week month backlog schedule",
+              icon: ListChecks,
+              run: navigate("/tasks"),
+            },
+          ]
+        : []),
       {
         id: "go-gallery",
         slug: "gallery",
@@ -409,7 +423,7 @@ export function WorkspaceCommandPalette() {
     });
 
     return list;
-  }, [router, setTheme, activeDocument, isAdmin]);
+  }, [router, setTheme, activeDocument, isAdmin, tasksEnabled]);
 
   const recentPages = useRecentWorkspacePages();
 

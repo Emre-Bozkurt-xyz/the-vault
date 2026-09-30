@@ -5,7 +5,7 @@ import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql }
 import { z } from "zod";
 
 import { db } from "@/db";
-import { documentTaskIndex, documentTasks, documents } from "@/db/schema";
+import { documentTags, documentTaskIndex, documentTasks, documents, tags } from "@/db/schema";
 import { withLiveDocumentText } from "@/lib/collab-write";
 import { parseCapture, type CapturedTask } from "@/lib/tasks/capture";
 import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
@@ -430,4 +430,175 @@ async function reindexAfterWrite(documentId: string, markdown: string) {
   if (row) {
     await reindexDocumentTasks({ documentId, markdown, sourceUpdatedAt: row.updatedAt });
   }
+}
+
+export type PageTask = AgendaTask & {
+  folderId: string | null;
+  note: string | null;
+};
+
+export type TaskPageData = {
+  /** Every open or in-progress task (dated or not), plus tasks done today. */
+  tasks: PageTask[];
+  /** Tag slugs per document, for the tag filter. */
+  tagsByDocument: Record<string, string[]>;
+  tags: Array<{ slug: string; displayName: string }>;
+  /** True when the list hit its ceiling and some tasks are missing. */
+  truncated: boolean;
+};
+
+/** A page of this size stays responsive to filter client-side. */
+const pageTaskLimit = 2000;
+
+/**
+ * Everything the Tasks page (slice 5) filters and groups client-side: its
+ * Agenda, Week and Month views use the dated tasks, Backlog the undated ones.
+ * Personal scope, like the agenda.
+ */
+export async function listTaskPageData(userId: string, today: string): Promise<TaskPageData> {
+  const owned = and(eq(documents.ownerId, userId), isNull(documents.deletedAt));
+
+  const rows = await db
+    .select({
+      documentId: documentTasks.documentId,
+      documentTitle: documents.title,
+      folderId: documents.folderId,
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      parentOrdinal: documentTasks.parentOrdinal,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      note: documentTasks.note,
+      heading: documentTasks.heading,
+      dueDay: documentTasks.dueDay,
+      dueTime: documentTasks.dueTime,
+      doneDay: documentTasks.doneDay,
+    })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(
+      and(
+        owned,
+        or(
+          inArray(documentTasks.status, ["open", "in_progress"]),
+          and(eq(documentTasks.status, "done"), eq(documentTasks.doneDay, today)),
+        ),
+      ),
+    )
+    .orderBy(
+      sql`${documentTasks.dueDay} asc nulls last`,
+      sql`${documentTasks.dueTime} asc nulls last`,
+      asc(documents.title),
+      asc(documentTasks.ordinal),
+    )
+    .limit(pageTaskLimit + 1);
+
+  const truncated = rows.length > pageTaskLimit;
+  const tasks = rows.slice(0, pageTaskLimit);
+  const documentIds = [...new Set(tasks.map((task) => task.documentId))];
+  const tagRows = documentIds.length
+    ? await db
+        .select({
+          documentId: documentTags.documentId,
+          slug: tags.slug,
+          displayName: tags.displayName,
+        })
+        .from(documentTags)
+        .innerJoin(tags, eq(tags.id, documentTags.tagId))
+        .where(inArray(documentTags.documentId, documentIds))
+    : [];
+
+  const tagsByDocument: Record<string, string[]> = {};
+  const tagNames = new Map<string, string>();
+
+  for (const row of tagRows) {
+    (tagsByDocument[row.documentId] ??= []).push(row.slug);
+    tagNames.set(row.slug, row.displayName);
+  }
+
+  return {
+    tasks,
+    tagsByDocument,
+    tags: [...tagNames]
+      .map(([slug, displayName]) => ({ slug, displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    truncated,
+  };
+}
+
+export type TaskDetail = {
+  task: PageTask;
+  /** Direct subtasks in any status, for the checklist and progress. */
+  subtasks: Array<{
+    ordinal: number;
+    line: number;
+    rawLine: string;
+    status: TaskStatus;
+    text: string;
+    dueDay: string | null;
+  }>;
+  /** A few source lines around the task, from the last saved text. */
+  context: { startLine: number; lines: string[] };
+};
+
+/** The right-panel detail for one task, or null when it is not the user's. */
+export async function getTaskDetail(
+  userId: string,
+  documentId: string,
+  ordinal: number,
+): Promise<TaskDetail | null> {
+  const owned = and(
+    eq(documents.id, documentId),
+    eq(documents.ownerId, userId),
+    isNull(documents.deletedAt),
+  );
+
+  const [row] = await db
+    .select({
+      documentId: documentTasks.documentId,
+      documentTitle: documents.title,
+      folderId: documents.folderId,
+      markdown: documents.markdown,
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      parentOrdinal: documentTasks.parentOrdinal,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      note: documentTasks.note,
+      heading: documentTasks.heading,
+      dueDay: documentTasks.dueDay,
+      dueTime: documentTasks.dueTime,
+      doneDay: documentTasks.doneDay,
+    })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(and(owned, eq(documentTasks.ordinal, ordinal)))
+    .limit(1);
+
+  if (!row) return null;
+
+  const subtasks = await db
+    .select({
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      dueDay: documentTasks.dueDay,
+    })
+    .from(documentTasks)
+    .where(and(eq(documentTasks.documentId, documentId), eq(documentTasks.parentOrdinal, ordinal)))
+    .orderBy(asc(documentTasks.ordinal));
+
+  const { markdown, ...task } = row;
+  const lines = markdown.split(/\r?\n/);
+  const startLine = Math.max(0, task.line - 2);
+
+  return {
+    task,
+    subtasks,
+    context: { startLine, lines: lines.slice(startLine, task.line + 4) },
+  };
 }
