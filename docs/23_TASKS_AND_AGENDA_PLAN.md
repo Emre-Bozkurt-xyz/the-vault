@@ -1,8 +1,9 @@
 # Tasks, Agenda, and Inbox
 
-Status as of 2026-09-30: **slices 1-3 are implemented and verified** (index and
-sidebar agenda, write-back, authoring in the editor); slices 4-7 are not
-started. Decisions in §2 were confirmed with the user in conversation on
+Status as of 2026-09-30: **slices 1-4 are implemented and verified** (index and
+sidebar agenda, write-back, authoring in the editor, Inbox and capture); slices
+5-7 are not started. Deviation: the Inbox cannot yet be re-pointed from
+Settings (§6.3), because settings have no document-picker field. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 25 in `docs/01_PROGRESS_TRACKER.md`.
 
 ## 1. Product direction

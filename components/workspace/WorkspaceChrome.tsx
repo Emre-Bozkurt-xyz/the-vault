@@ -69,6 +69,7 @@ type WorkspaceChromeContextValue = {
   setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
   recentPages: WorkspacePageDescriptor[];
   isAdmin: boolean;
+  tasksEnabled: boolean;
 };
 
 const WorkspaceChromeContext =
@@ -85,6 +86,11 @@ export function useActiveDocumentCommand(): ActiveDocumentCommandContext | null 
 /** Recently opened workspace pages, most-recent first. Consumed by the palette. */
 export function useRecentWorkspacePages(): WorkspacePageDescriptor[] {
   return useContext(WorkspaceChromeContext)?.recentPages ?? [];
+}
+
+/** Whether the `vault.tasks` extension is on. Gates `/task` in the palette. */
+export function useWorkspaceTasksEnabled(): boolean {
+  return useContext(WorkspaceChromeContext)?.tasksEnabled ?? false;
 }
 
 /** Whether the signed-in user is an admin. Gates admin-only palette commands. */
@@ -196,8 +202,16 @@ export function WorkspaceChrome({
       setActiveDocument,
       recentPages,
       isAdmin,
+      tasksEnabled: workspaceState.tasksEnabled,
     }),
-    [handleSetActivePage, upsertDocument, activeDocument, recentPages, isAdmin],
+    [
+      handleSetActivePage,
+      upsertDocument,
+      activeDocument,
+      recentPages,
+      isAdmin,
+      workspaceState.tasksEnabled,
+    ],
   );
 
   return (

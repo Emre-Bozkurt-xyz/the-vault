@@ -26,8 +26,17 @@ function weekdayOf(dayKey: string): number {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
-/** Index of a weekday named by `word` (full name or a prefix of 2+ letters). */
-function weekdayIndex(word: string): number {
+/**
+ * Strict parsing is for dates found inside free text (quick capture), where
+ * "the cat sat" must not become Saturday and "call Tom" must not become
+ * tomorrow: only full weekday names, no `tom`/`tod`, and no month prefixes
+ * shorter than three letters. The `@` menu is explicit, so it is not strict.
+ */
+type ParseOptions = { strict?: boolean };
+
+/** Index of a weekday named by `word` (full name, or a prefix of 2+ letters when not strict). */
+function weekdayIndex(word: string, options: ParseOptions = {}): number {
+  if (options.strict) return weekdays.indexOf(word);
   if (word.length < 2) return -1;
   return weekdays.findIndex((name) => name.startsWith(word));
 }
@@ -81,9 +90,11 @@ function monthDay(today: string, month: number, day: number): string | null {
   return isValidDayKey(nextYear) ? nextYear : null;
 }
 
-function parseDay(text: string, today: string): string | null {
-  if (text === "today" || text === "tod") return today;
-  if (text === "tomorrow" || text === "tmrw" || text === "tom") return addDaysToDayKey(today, 1);
+function parseDay(text: string, today: string, options: ParseOptions = {}): string | null {
+  if (text === "today" || (!options.strict && text === "tod")) return today;
+  if (text === "tomorrow" || text === "tmrw" || (!options.strict && text === "tom")) {
+    return addDaysToDayKey(today, 1);
+  }
   if (text === "next week") return nextWeekStart(today);
   if (isValidDayKey(text)) return text;
 
@@ -95,11 +106,11 @@ function parseDay(text: string, today: string): string | null {
 
   const nextMatch = /^next ([a-z]+)$/.exec(text);
   if (nextMatch) {
-    const weekday = weekdayIndex(nextMatch[1]);
+    const weekday = weekdayIndex(nextMatch[1], options);
     return weekday === -1 ? null : addDaysToDayKey(nextWeekday(today, weekday), 7);
   }
 
-  const weekday = weekdayIndex(text);
+  const weekday = weekdayIndex(text, options);
   if (weekday !== -1) return nextWeekday(today, weekday);
 
   const monthFirst = /^([a-z]+) (\d{1,2})$/.exec(text);
@@ -116,18 +127,22 @@ function parseDay(text: string, today: string): string | null {
 }
 
 /** Parses a whole phrase, or returns null. */
-export function parseNaturalDate(input: string, today: string): NaturalDate | null {
+export function parseNaturalDate(
+  input: string,
+  today: string,
+  options: ParseOptions = {},
+): NaturalDate | null {
   const text = input.trim().toLowerCase().replace(/\s+/g, " ");
   if (!text) return null;
 
-  const day = parseDay(text, today);
+  const day = parseDay(text, today, options);
   if (day) return { day, time: null };
 
   // Try splitting a trailing time off: "fri 3pm", "tomorrow at 9:30am".
   const timed = /^(.*?)(?: at)? (\d{1,2}(?::\d{2})?\s*(?:am|pm)?)$/.exec(text);
   if (timed) {
     const time = parseTime(timed[2]);
-    const timedDay = time ? parseDay(timed[1], today) : null;
+    const timedDay = time ? parseDay(timed[1], today, options) : null;
     if (time && timedDay) return { day: timedDay, time };
   }
 

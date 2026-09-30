@@ -9,8 +9,11 @@ import { requireActiveUser } from "@/server/authz";
 import {
   TaskMovedError,
   applyTaskChange,
+  captureTask,
   ensureTaskIndexFresh,
+  getInboxDocumentId,
   listAgendaTasks,
+  removeCapturedTask,
   type TaskAgenda,
 } from "@/server/tasks-data";
 import { getUserExtensionSetting } from "@/server/user-settings";
@@ -44,8 +47,34 @@ const updateTaskInputSchema = z.object({
 });
 
 export type TaskAgendaResult =
-  | ({ ok: true; today: string; through: string } & TaskAgenda)
+  | ({ ok: true; today: string; through: string; inboxDocumentId: string | null } & TaskAgenda)
   | { ok: false; error: string; code?: "moved" };
+
+const captureInputSchema = z.object({
+  today: dayKeySchema,
+  text: z.string().max(2_000),
+});
+
+const undoCaptureInputSchema = z.object({
+  today: dayKeySchema,
+  documentId: z.string().uuid(),
+  line: z.number().int().min(0),
+  rawLine: z.string().max(20_000),
+});
+
+export type CaptureTaskResult =
+  | {
+      ok: true;
+      agenda: TaskAgendaResult;
+      /** Where the task landed, for the confirmation and for Undo. */
+      documentId: string;
+      line: number;
+      rawLine: string;
+      text: string;
+      dueDay: string | null;
+      dueTime: string | null;
+    }
+  | { ok: false; error: string };
 
 async function requireTasksEnabled(userId: string): Promise<boolean> {
   const setting = await getUserExtensionSetting({ userId, extensionId: "vault.tasks" });
@@ -55,8 +84,9 @@ async function requireTasksEnabled(userId: string): Promise<boolean> {
 async function loadAgenda(userId: string, today: string): Promise<TaskAgendaResult> {
   const through = addDaysToDayKey(today, agendaHorizonDays);
   await ensureTaskIndexFresh(userId);
-  const agenda = await listAgendaTasks(userId, today, through);
-  return { ok: true, today, through, ...agenda };
+  const inboxDocumentId = await getInboxDocumentId(userId);
+  const agenda = await listAgendaTasks(userId, today, through, inboxDocumentId);
+  return { ok: true, today, through, inboxDocumentId, ...agenda };
 }
 
 const disabledResult: TaskAgendaResult = {
@@ -118,13 +148,7 @@ export async function updateTaskAction(input: unknown): Promise<TaskAgendaResult
     }
 
     console.error("Failed to update a task", error);
-    return {
-      ok: false,
-      error:
-        error instanceof Error && /collaboration/i.test(error.message)
-          ? "Could not reach the collaboration server, so the task was not changed."
-          : "Could not change the task.",
-    };
+    return { ok: false, error: collabError(error, "Could not change the task.") };
   }
 
   try {
@@ -132,5 +156,77 @@ export async function updateTaskAction(input: unknown): Promise<TaskAgendaResult
   } catch (error) {
     console.error("Failed to reload the task agenda", error);
     return { ok: false, error: "The task changed, but the list could not reload." };
+  }
+}
+
+function collabError(error: unknown, fallback: string): string {
+  return error instanceof Error && /collaboration/i.test(error.message)
+    ? "Could not reach the collaboration server, so nothing was saved."
+    : fallback;
+}
+
+/**
+ * Quick capture: appends a task to the Inbox (created on first use), taking a
+ * trailing date from the text ("send invoice friday"). Returns where it landed,
+ * for the confirmation and its Undo, plus the refreshed agenda.
+ */
+export async function captureTaskAction(input: unknown): Promise<CaptureTaskResult> {
+  const user = await requireActiveUser();
+  const parsed = captureInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid task." };
+  }
+
+  if (!(await requireTasksEnabled(user.id))) {
+    return { ok: false, error: disabledResult.ok ? "" : disabledResult.error };
+  }
+
+  const { today, text } = parsed.data;
+
+  try {
+    const captured = await captureTask(user.id, { text, today });
+
+    if (!captured) {
+      return { ok: false, error: "Type the task first." };
+    }
+
+    return {
+      ok: true,
+      agenda: await loadAgenda(user.id, today),
+      documentId: captured.documentId,
+      line: captured.lineIndex,
+      rawLine: captured.line,
+      text: captured.text,
+      dueDay: captured.due?.day ?? null,
+      dueTime: captured.due?.time ?? null,
+    };
+  } catch (error) {
+    console.error("Failed to capture a task", error);
+    return { ok: false, error: collabError(error, "Could not add the task.") };
+  }
+}
+
+/** Undo for a capture: removes the captured line if it is still unchanged. */
+export async function undoCaptureAction(input: unknown): Promise<TaskAgendaResult> {
+  const user = await requireActiveUser();
+  const parsed = undoCaptureInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid undo." };
+  }
+
+  const { today, documentId, line, rawLine } = parsed.data;
+
+  try {
+    await removeCapturedTask(user.id, { documentId, line, rawLine });
+    return await loadAgenda(user.id, today);
+  } catch (error) {
+    if (error instanceof TaskMovedError) {
+      return { ok: false, code: "moved", error: "That task was already changed, so it was kept." };
+    }
+
+    console.error("Failed to undo a capture", error);
+    return { ok: false, error: collabError(error, "Could not undo.") };
   }
 }

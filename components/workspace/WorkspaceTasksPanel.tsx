@@ -8,8 +8,10 @@ import {
   CalendarDays,
   CalendarX2,
   CircleDashed,
+  Inbox,
   ListChecks,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   Sun,
   Sunrise,
@@ -26,9 +28,11 @@ import {
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import { todayDayKey } from "@/lib/calendar";
 import { requestEditorJump } from "@/lib/editor-jump-events";
+import { captureTaskFromClient } from "@/lib/tasks/capture-client";
 import { addDaysToDayKey, formatDueLabel, nextWeekStart } from "@/lib/tasks/dates";
 import type { TaskChange } from "@/lib/tasks/edit";
 import { cn } from "@/lib/utils";
+import { subscribeToTasksChanged } from "@/lib/workspace-toast";
 import {
   getTaskAgendaAction,
   updateTaskAction,
@@ -62,8 +66,12 @@ function taskKey(task: Pick<AgendaTask, "documentId" | "ordinal">) {
 }
 
 function compareTasks(a: AgendaTask, b: AgendaTask) {
+  // Undated (Inbox) tasks sort last.
+  const dayOrder =
+    a.dueDay === b.dueDay ? 0 : a.dueDay === null ? 1 : b.dueDay === null ? -1 : a.dueDay.localeCompare(b.dueDay);
+
   return (
-    a.dueDay.localeCompare(b.dueDay) ||
+    dayOrder ||
     (a.dueTime ?? "99:99").localeCompare(b.dueTime ?? "99:99") ||
     a.documentTitle.localeCompare(b.documentTitle) ||
     a.ordinal - b.ordinal
@@ -88,7 +96,12 @@ function applyLocally(agenda: OkAgenda, key: string, change: TaskChange): OkAgen
       ];
     }
 
-    if (change.day === null) return [];
+    // An undated Inbox task still belongs in the Inbox section.
+    if (change.day === null) {
+      return task.documentId === agenda.inboxDocumentId
+        ? [{ ...task, dueDay: null, dueTime: null }]
+        : [];
+    }
     if (change.day > agenda.through) {
       laterCount += 1;
       return [];
@@ -146,10 +159,14 @@ export function WorkspaceTasksPanel() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => void load(), refetchAfterSaveMs);
     });
+    // A capture or undo from anywhere (the palette included) already wrote
+    // through the index, so this refetch needs no delay.
+    const unsubscribeTasks = subscribeToTasksChanged(() => void load());
 
     return () => {
       window.removeEventListener("focus", onFocus);
       unsubscribe();
+      unsubscribeTasks();
       if (timer) clearTimeout(timer);
     };
   }, [load]);
@@ -206,10 +223,13 @@ export function WorkspaceTasksPanel() {
     const overdue: AgendaTask[] = [];
     const today: AgendaTask[] = [];
     const upcoming: AgendaTask[] = [];
+    const inbox: AgendaTask[] = [];
 
     for (const task of result.tasks) {
-      // A task finished today counts as today's work, whenever it was due.
-      if (task.status === "done") {
+      if (task.dueDay === null) {
+        inbox.push(task);
+      } else if (task.status === "done") {
+        // A task finished today counts as today's work, whenever it was due.
         (task.dueDay > result.today ? upcoming : today).push(task);
       } else if (task.dueDay < result.today) overdue.push(task);
       else if (task.dueDay === result.today) today.push(task);
@@ -220,6 +240,7 @@ export function WorkspaceTasksPanel() {
       { id: "overdue", label: "Overdue", tasks: overdue, overdue: true },
       { id: "today", label: "Today", tasks: today },
       { id: "upcoming", label: "Next 7 days", tasks: upcoming },
+      { id: "inbox", label: "Inbox", tasks: inbox },
     ];
   }, [result]);
 
@@ -246,6 +267,8 @@ export function WorkspaceTasksPanel() {
           <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
         </button>
       </div>
+
+      <CaptureBox />
 
       {notice ? (
         <p role="status" className="border-b border-border/70 px-3 py-1.5 text-xs text-destructive">
@@ -282,7 +305,7 @@ export function WorkspaceTasksPanel() {
                         key={taskKey(task)}
                         task={task}
                         today={result.today}
-                        showDue={section.id !== "today"}
+                        showDue={section.id !== "today" && section.id !== "inbox"}
                         overdue={Boolean(section.overdue)}
                         onChange={(change) => changeTask(task, change)}
                       />
@@ -368,14 +391,14 @@ function TaskRow({
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="min-w-0 truncate">{context}</span>
-          {showDue || task.dueTime ? (
+          {(showDue && task.dueDay) || task.dueTime ? (
             <span
               className={cn(
                 "ml-auto shrink-0 tabular-nums",
                 overdue && !done ? "text-destructive" : null,
               )}
             >
-              {showDue ? formatDueLabel(task.dueDay, today) : ""}
+              {showDue && task.dueDay ? formatDueLabel(task.dueDay, today) : ""}
               {task.dueTime ? `${showDue ? " " : ""}${task.dueTime}` : ""}
             </span>
           ) : null}
@@ -430,13 +453,56 @@ function TaskRow({
         type="date"
         tabIndex={-1}
         aria-hidden="true"
-        defaultValue={task.dueDay}
+        defaultValue={task.dueDay ?? ""}
         onChange={(event) => {
           if (event.target.value) setDue(event.target.value);
         }}
         className="pointer-events-none absolute bottom-0 right-2 size-px opacity-0"
       />
     </div>
+  );
+}
+
+/**
+ * Quick capture into the Inbox: "send invoice friday" becomes
+ * `- [ ] send invoice :due[<friday>]`. The confirmation (with Undo) is a
+ * workspace toast, shared with `/task` in the command palette.
+ */
+function CaptureBox() {
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!text.trim() || saving) return;
+    setSaving(true);
+    const result = await captureTaskFromClient(text);
+    setSaving(false);
+    if (result.ok) setText("");
+  };
+
+  return (
+    <form
+      className="border-b border-border/70 px-3 py-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <label className="flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background/55 px-2 focus-within:border-foreground/40">
+        <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="Add task…"
+          title="Add to your Inbox. A date at the end is picked up: “call Sam friday”."
+          aria-label="Add a task to your Inbox"
+          disabled={saving}
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+        />
+        <Inbox className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </label>
+    </form>
   );
 }
 

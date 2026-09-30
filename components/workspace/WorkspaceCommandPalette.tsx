@@ -35,6 +35,7 @@ import {
   Users,
   X,
   type LucideIcon,
+  ListChecks,
 } from "lucide-react";
 
 import { rankCommands } from "@/components/workspace/command-ranking";
@@ -45,6 +46,7 @@ import {
   useActiveDocumentCommand,
   useRecentWorkspacePages,
   useWorkspaceIsAdmin,
+  useWorkspaceTasksEnabled,
 } from "@/components/workspace/WorkspaceChrome";
 import type {
   WorkspacePageDescriptor,
@@ -63,6 +65,7 @@ import {
   publishDocumentAction,
   unpublishDocumentAction,
 } from "@/server/documents";
+import { captureTaskFromClient } from "@/lib/tasks/capture-client";
 import { cn } from "@/lib/utils";
 
 type CommandSearchResult = {
@@ -83,6 +86,8 @@ type WorkspaceCommand = {
   keywords: string;
   icon: LucideIcon;
   run: () => void | Promise<void>;
+  /** Instead of running, put this text in the bar and keep the palette open. */
+  fillQuery?: string;
 };
 
 const pageTypeIcon: Record<WorkspacePageType, LucideIcon> = {
@@ -119,6 +124,7 @@ export function WorkspaceCommandPalette() {
   const { setTheme } = useVaultTheme();
   const activeDocument = useActiveDocumentCommand();
   const isAdmin = useWorkspaceIsAdmin();
+  const tasksEnabled = useWorkspaceTasksEnabled();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CommandSearchResult[]>([]);
@@ -422,8 +428,62 @@ export function WorkspaceCommandPalette() {
       return [];
     }
 
-    return rankCommands(commands, commandTerm);
-  }, [isCommandMode, commandTerm, commands]);
+    // `/task <text>` captures into the Inbox. Matched on the raw text (the
+    // ranked term is lowercased) and placed first: the ranking would otherwise
+    // find nothing for "task call Sam friday".
+    const capture = tasksEnabled
+      ? /^task(?:\s+([\s\S]*))?$/i.exec(query.trimStart().slice(1).trim())
+      : null;
+
+    if (capture) {
+      const text = capture[1]?.trim() ?? "";
+      const captureCommand: WorkspaceCommand = text
+        ? {
+            id: "capture-task",
+            slug: "task",
+            label: `Add task: ${text}`,
+            group: "Tasks",
+            keywords: "",
+            icon: ListChecks,
+            run: () => {
+              void captureTaskFromClient(text);
+            },
+          }
+        : {
+            id: "capture-task-hint",
+            slug: "task",
+            label: "Add task to Inbox… (type it after /task)",
+            group: "Tasks",
+            keywords: "",
+            icon: ListChecks,
+            run: () => {},
+            fillQuery: "/task ",
+          };
+
+      return [captureCommand, ...(text ? [] : rankCommands(commands, commandTerm))];
+    }
+
+    const ranked = rankCommands(commands, commandTerm);
+
+    // Make `/task` discoverable from a partial `/ta`.
+    if (tasksEnabled && commandTerm && "task".startsWith(commandTerm)) {
+      return [
+        {
+          id: "capture-task-hint",
+          slug: "task",
+          label: "Add task to Inbox…",
+          group: "Tasks",
+          keywords: "",
+          icon: ListChecks,
+          run: () => {},
+          fillQuery: "/task ",
+        },
+        ...ranked,
+      ];
+    }
+
+    return ranked;
+  }, [isCommandMode, commandTerm, commands, query, tasksEnabled]);
 
   const groupedResults = useMemo(() => groupResults(results), [results]);
   const groupedCommands = useMemo(
@@ -544,6 +604,12 @@ export function WorkspaceCommandPalette() {
   }
 
   function runCommand(command: WorkspaceCommand) {
+    if (command.fillQuery !== undefined) {
+      setQuery(command.fillQuery);
+      inputRef.current?.focus();
+      return;
+    }
+
     closePalette();
     void command.run();
   }

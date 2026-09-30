@@ -2,11 +2,16 @@ import "server-only";
 
 import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
+import { z } from "zod";
+
 import { db } from "@/db";
 import { documentTaskIndex, documentTasks, documents } from "@/db/schema";
 import { withLiveDocumentText } from "@/lib/collab-write";
+import { parseCapture, type CapturedTask } from "@/lib/tasks/capture";
 import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
 import { parseTasks, type TaskStatus } from "@/lib/tasks/parse";
+import { createDocumentForUser } from "@/server/documents-data";
+import { getUserExtensionSetting, upsertUserExtensionSettings } from "@/server/user-settings";
 
 /**
  * The task index behind every agenda surface (docs/23_TASKS_AND_AGENDA_PLAN.md
@@ -156,7 +161,8 @@ export type AgendaTask = {
   status: TaskStatus;
   text: string;
   heading: string | null;
-  dueDay: string;
+  /** Null only for undated tasks in the Inbox document. */
+  dueDay: string | null;
   dueTime: string | null;
   doneDay: string | null;
 };
@@ -164,7 +170,8 @@ export type AgendaTask = {
 export type TaskAgenda = {
   /**
    * Open or in-progress dated tasks due on or before `through`, oldest first,
-   * plus dated tasks completed `today`, so a tick does not make its row vanish.
+   * plus dated tasks completed `today`, so a tick does not make its row vanish,
+   * plus the Inbox's undated tasks (last).
    */
   tasks: AgendaTask[];
   /** Open dated tasks due after `through`. */
@@ -184,15 +191,24 @@ export async function listAgendaTasks(
   userId: string,
   today: string,
   through: string,
+  inboxDocumentId: string | null = null,
 ): Promise<TaskAgenda> {
   const owned = and(eq(documents.ownerId, userId), isNull(documents.deletedAt));
   const ownedOpen = and(owned, inArray(documentTasks.status, ["open", "in_progress"]));
-  const doneToday = and(
-    owned,
-    eq(documentTasks.status, "done"),
-    eq(documentTasks.doneDay, today),
-    isNotNull(documentTasks.dueDay),
+  const doneToday = and(owned, eq(documentTasks.status, "done"), eq(documentTasks.doneDay, today));
+  const dated = or(
+    and(ownedOpen, lte(documentTasks.dueDay, through)),
+    and(doneToday, isNotNull(documentTasks.dueDay)),
   );
+  // Undated tasks only reach the agenda from the Inbox; anywhere else they
+  // are backlog (plan §2), or every old checklist would flood the list.
+  const inbox = inboxDocumentId
+    ? and(
+        eq(documentTasks.documentId, inboxDocumentId),
+        isNull(documentTasks.dueDay),
+        or(ownedOpen, doneToday),
+      )
+    : undefined;
 
   const [rows, [later]] = await Promise.all([
     db
@@ -212,9 +228,9 @@ export async function listAgendaTasks(
       })
       .from(documentTasks)
       .innerJoin(documents, eq(documents.id, documentTasks.documentId))
-      .where(or(and(ownedOpen, lte(documentTasks.dueDay, through)), doneToday))
+      .where(inbox ? or(dated, inbox) : dated)
       .orderBy(
-        asc(documentTasks.dueDay),
+        sql`${documentTasks.dueDay} asc nulls last`,
         sql`${documentTasks.dueTime} asc nulls last`,
         asc(documents.title),
         asc(documentTasks.ordinal),
@@ -227,11 +243,7 @@ export async function listAgendaTasks(
       .where(and(ownedOpen, gt(documentTasks.dueDay, through))),
   ]);
 
-  return {
-    // Both branches of the filter exclude undated rows.
-    tasks: rows.map((row) => ({ ...row, dueDay: row.dueDay as string })),
-    laterCount: later?.value ?? 0,
-  };
+  return { tasks: rows, laterCount: later?.value ?? 0 };
 }
 
 /** The task's line is gone, changed, or ambiguous since the caller last read it. */
@@ -289,16 +301,133 @@ export async function applyTaskChange(
     { origin: "tasks", restorePoint: false },
   );
 
+  await reindexAfterWrite(input.documentId, markdown);
+}
+
+/**
+ * `vault.tasks` extension settings. Only the Inbox pointer for now; the jsonb
+ * column may hold keys this build does not know, which are preserved.
+ */
+const tasksSettingsSchema = z
+  .object({ inboxDocumentId: z.string().uuid().nullable().optional() })
+  .passthrough();
+
+async function readTasksSettings(userId: string) {
+  const row = await getUserExtensionSetting({ userId, extensionId: "vault.tasks" });
+  const parsed = tasksSettingsSchema.safeParse(row?.settings ?? {});
+  return parsed.success ? parsed.data : {};
+}
+
+async function isUsableInbox(userId: string, documentId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(eq(documents.id, documentId), eq(documents.ownerId, userId), isNull(documents.deletedAt)),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * The Inbox document's id when it still exists and is still the user's, else
+ * null. Never creates one: reading the agenda should not make documents.
+ */
+export async function getInboxDocumentId(userId: string): Promise<string | null> {
+  const { inboxDocumentId } = await readTasksSettings(userId);
+  return inboxDocumentId && (await isUsableInbox(userId, inboxDocumentId))
+    ? inboxDocumentId
+    : null;
+}
+
+/**
+ * The capture target. Remembered by id, so renaming or moving it is fine; if it
+ * was deleted (or is in the Bin, or changed owner) a fresh "Inbox" is created
+ * at the root and remembered instead (plan §6.3).
+ */
+export async function resolveInboxDocument(userId: string): Promise<string> {
+  const existing = await getInboxDocumentId(userId);
+  if (existing) return existing;
+
+  const { id } = await createDocumentForUser(userId, { title: "Inbox" });
+  const settings = await readTasksSettings(userId);
+
+  await upsertUserExtensionSettings({
+    userId,
+    extensionId: "vault.tasks",
+    settings: { ...settings, inboxDocumentId: id },
+  });
+
+  return id;
+}
+
+export type CaptureResult = CapturedTask & {
+  documentId: string;
+  /** 0-based line the task landed on; with `line`, what Undo needs. */
+  lineIndex: number;
+};
+
+/**
+ * Appends one task line to the Inbox through the collaboration layer (so it
+ * merges with the Inbox if it is open), then reindexes from the returned text.
+ * Null when the input holds no task text.
+ */
+export async function captureTask(
+  userId: string,
+  input: { text: string; today: string },
+): Promise<CaptureResult | null> {
+  const captured = parseCapture(input.text, input.today);
+  if (!captured) return null;
+
+  const documentId = await resolveInboxDocument(userId);
+  let lineIndex = 0;
+
+  const { markdown } = await withLiveDocumentText(
+    userId,
+    documentId,
+    (ytext) => {
+      const current = ytext.toString();
+      const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+      // Lines before the insertion point, counting the separator's new line.
+      lineIndex = current.length === 0 ? 0 : current.split("\n").length - (separator ? 0 : 1);
+      ytext.insert(current.length, `${separator}${captured.line}\n`);
+    },
+    { origin: "tasks", restorePoint: false },
+  );
+
+  await reindexAfterWrite(documentId, markdown);
+  return { ...captured, documentId, lineIndex };
+}
+
+/** Undo for a capture: removes that line, if it is still exactly there. */
+export async function removeCapturedTask(
+  userId: string,
+  input: { documentId: string; line: number; rawLine: string },
+): Promise<void> {
+  const { markdown } = await withLiveDocumentText(
+    userId,
+    input.documentId,
+    (ytext) => {
+      const text = ytext.toString();
+      const located = locateTaskLine(text, input.line, input.rawLine);
+      if (!located) throw new TaskMovedError();
+
+      const end = text.indexOf("\n", located.offset);
+      ytext.delete(located.offset, (end === -1 ? text.length : end + 1) - located.offset);
+    },
+    { origin: "tasks", restorePoint: false },
+  );
+
+  await reindexAfterWrite(input.documentId, markdown);
+}
+
+async function reindexAfterWrite(documentId: string, markdown: string) {
   const [row] = await db
     .select({ updatedAt: sql<string>`${documents.updatedAt}::text` })
     .from(documents)
-    .where(eq(documents.id, input.documentId));
+    .where(eq(documents.id, documentId));
 
   if (row) {
-    await reindexDocumentTasks({
-      documentId: input.documentId,
-      markdown,
-      sourceUpdatedAt: row.updatedAt,
-    });
+    await reindexDocumentTasks({ documentId, markdown, sourceUpdatedAt: row.updatedAt });
   }
 }

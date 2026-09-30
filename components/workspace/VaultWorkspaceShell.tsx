@@ -32,6 +32,7 @@ import {
   openWorkspaceCommandPalette,
 } from "@/components/workspace/WorkspaceCommandPalette";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
+import { WorkspaceToast } from "@/components/workspace/WorkspaceToast";
 import {
   clampWidth,
   leftPanelWidthBounds,
@@ -467,6 +468,7 @@ export function VaultWorkspaceShell({
       ) : null}
 
       <WorkspaceCommandPalette />
+      <WorkspaceToast />
     </div>
   );
 }
