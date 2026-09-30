@@ -238,6 +238,112 @@
     transform: rotate(45deg);
   }
 
+  /* Live checkboxes are clickable (`live-tasks.ts`). */
+  .vault-cm-task-checkbox {
+    display: inline-block;
+    cursor: pointer;
+  }
+
+  .vault-cm-task-checkbox:hover {
+    border-color: color-mix(in oklab, var(--primary) 70%, var(--foreground) 30%);
+  }
+
+  /* In progress `[/]`: a half-filled box. Cancelled `[-]`: a struck box, and
+     the item's text struck through, in both editor and read views. */
+  .vault-cm-task-checkbox[data-status="in_progress"]::after,
+  .vault-md-li[data-task-status="in_progress"] > .vault-md-checkbox::after,
+  .vault-md-li[data-task-status="in_progress"] > p > .vault-md-checkbox::after {
+    position: absolute;
+    inset: 0.2rem;
+    border-radius: 0.1rem;
+    background: linear-gradient(135deg, var(--primary) 50%, transparent 50%);
+    content: "";
+  }
+
+  .vault-cm-task-checkbox[data-status="cancelled"]::after,
+  .vault-md-li[data-task-status="cancelled"] > .vault-md-checkbox::after,
+  .vault-md-li[data-task-status="cancelled"] > p > .vault-md-checkbox::after {
+    position: absolute;
+    left: 0.18rem;
+    right: 0.18rem;
+    top: calc(50% - 0.06rem);
+    height: 0.12rem;
+    border-radius: 1px;
+    background: var(--muted-foreground);
+    content: "";
+  }
+
+  .vault-md-li[data-task-status="cancelled"] {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  /* `:due[…]` / `:done[…]` as chips: Live (relative, `.vault-cm-task-date`) and
+     Read (absolute, clock-free, `.vault-md-task-date`). */
+  .vault-cm-task-date,
+  .vault-md-task-date {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin: 0 0.1rem;
+    padding: 0 0.4rem;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+    color: var(--muted-foreground);
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-decoration: none;
+    /* Live list lines use a hanging indent (negative text-indent); inherited,
+       it pulls the label out of the chip to the left. */
+    text-indent: 0;
+    vertical-align: 0.08em;
+    white-space: nowrap;
+  }
+
+  .vault-cm-task-date[data-editable="true"] {
+    cursor: pointer;
+  }
+
+  .vault-cm-task-date[data-editable="true"]:hover {
+    border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-cm-task-date[data-state="today"] {
+    border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-cm-task-date[data-state="overdue"] {
+    border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+    color: var(--destructive);
+  }
+
+  .vault-cm-task-date[data-state="done"],
+  .vault-md-task-date[data-kind="done"] {
+    border-style: dashed;
+    opacity: 0.75;
+  }
+
+  .vault-cm-task-date[data-state="invalid"] {
+    border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+    border-style: dashed;
+    color: var(--destructive);
+  }
+
+  /* The native picker behind a due chip: present for `showPicker()`, never seen. */
+  .vault-cm-task-date-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
   /* A line reached through an editor jump (the task agenda): one soft pulse. */
   .vault-cm-jump-flash {
     animation: vault-cm-jump-flash 1.6s ease-out;

@@ -403,6 +403,12 @@ export function remarkCalc(options: { keyPrefix: string }) {
         const child = children[position];
 
         if (DIRECTIVE_TYPES.has(child.type)) {
+          // Already claimed by another render plugin that runs first (task
+          // dates, `lib/markdown/task-directives.ts`): not ours to restore.
+          if (child.data?.hName) {
+            continue;
+          }
+
           if (isInlineCalcDirective(child)) {
             child.data = {
               ...child.data,

@@ -48,6 +48,10 @@ export const safeHtmlSchema: Schema = {
     // reach that mapping, so it is allowed as a tag — but it carries no content
     // of its own, only the lookup key below.
     "vault-calc",
+    // Emitted by `remarkTasks` for `:due[…]` / `:done[…]` on a task item and
+    // mapped to a date chip. Carries only its kind and a date value, which the
+    // component re-validates; an authored copy can only display a date.
+    "vault-task-date",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -108,6 +112,10 @@ export const safeHtmlSchema: Schema = {
     // value already computed elsewhere in the *same* document — the lookup map
     // is built per render, so it reaches no private or cross-document data.
     "vault-calc": ["data-calc-key", "dataCalcKey"],
+    "vault-task-date": ["data-kind", "dataKind", "data-value", "dataValue"],
+    // `[/]` and `[-]` task items (`remarkTasks`). Scoped to `li` for the same
+    // reason as the calc key: it styles a checkbox and means nothing elsewhere.
+    li: [...(defaultSchema.attributes?.li ?? []), "data-task-status", "dataTaskStatus"],
   },
   protocols: {
     ...defaultSchema.protocols,

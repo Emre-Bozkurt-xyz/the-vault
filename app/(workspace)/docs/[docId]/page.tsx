@@ -109,6 +109,7 @@ export default async function DocumentPage({
     calendarExtSetting,
     calcExtSetting,
     dictionaryExtSetting,
+    tasksExtSetting,
     editorSetting,
     folderPath,
     inheritedTags,
@@ -156,6 +157,9 @@ export default async function DocumentPage({
       // carries the viewer's own reading preference for definition links.
       getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.dictionary" }),
       document.access.canEdit
+        ? getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.tasks" })
+        : Promise.resolve(null),
+      document.access.canEdit
         ? getUserSetting({ userId: session.user.id, namespace: "editor", key: "defaults" })
         : Promise.resolve(null),
       getFolderPathForUser(document.folderId),
@@ -188,6 +192,9 @@ export default async function DocumentPage({
     stickersEnabled ? "vault.stickers" : null,
     calcEnabled ? "vault.calc" : null,
     dictionaryEnabled ? "vault.dictionary" : null,
+    // The `@` date menu and the `:done[…]` stamp on a checkbox click. Task
+    // rendering itself is core and does not depend on this.
+    tasksExtSetting?.enabled ? "vault.tasks" : null,
   ].filter((id): id is string => id !== null);
   const calendarSettings = calendarSettingsSchema.safeParse(
     calendarExtSetting?.settings ?? {},

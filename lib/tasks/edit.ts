@@ -105,14 +105,17 @@ function append(lineText: string, text: string): TextEdit {
  * Null when `lineText` is not a task line or the change is invalid.
  *
  * Status: done stamps `:done[today]` (kept if already present); any other
- * status removes `:done[…]`. Due: replaces the first `:due[…]` (removing any
+ * status removes `:done[…]`. With `stampDone: false` a status change touches
+ * only the marker — for a plain checkbox click by someone not using Tasks. Due: replaces the first `:due[…]` (removing any
  * duplicates), appends one when absent, or removes them all for `day: null`.
  */
 export function planTaskEdit(
   lineText: string,
   change: TaskChange,
   today: string,
+  options: { stampDone?: boolean } = {},
 ): TextEdit[] | null {
+  const { stampDone = true } = options;
   const task = readTaskLine(lineText);
 
   if (!task || !isValidDayKey(today)) return null;
@@ -129,7 +132,9 @@ export function planTaskEdit(
       edits.push({ from: task.markerOffset, to: task.markerOffset + 1, insert: nextMarker });
     }
 
-    if (change.status === "done") {
+    if (!stampDone) {
+      // Marker only.
+    } else if (change.status === "done") {
       if (doneFields.length === 0) edits.push(append(lineText, `:done[${today}]`));
     } else {
       for (const field of doneFields) edits.push(removal(lineText, field));

@@ -151,6 +151,22 @@ Every one of these is applied by `CalcValue`/`CalcBlock` after the rehype
 pipeline, so none appear in `lib/html-class.ts` and authored raw HTML cannot
 mint them.
 
+## Tasks
+
+Task-list items and their dates. See `docs/23_TASKS_AND_AGENDA_PLAN.md`.
+
+| Class | Element |
+|---|---|
+| `.vault-md-checkbox` | a task item's checkbox (`<input type="checkbox">`) |
+| `.vault-md-task-text` | the inline content of a task item, after the checkbox |
+| `.vault-md-task-date` | a `:due[…]` / `:done[…]` chip (`<time datetime>`) |
+
+State is carried by data attributes: `.vault-md-li[data-task-status="<status>"]`
+for the two statuses GFM has no box for (`in_progress`, `cancelled`; open and
+done use the checkbox's `:checked`), and `.vault-md-task-date[data-kind="due"|"done"]`.
+Read-view chips show an absolute date and never a relative or overdue state,
+because they also render on the server and on public pages.
+
 ## Code blocks
 
 Fenced code. See `docs/22_CODE_BLOCKS_AND_EXECUTION_PLAN.md`.

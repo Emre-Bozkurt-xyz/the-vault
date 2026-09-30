@@ -34,6 +34,12 @@ describe("planTaskEdit", () => {
     );
   });
 
+  it("changes only the marker when not stamping", () => {
+    const line = "- [x] a :done[2026-09-01]";
+    const edits = planTaskEdit(line, { type: "status", status: "open" }, today, { stampDone: false });
+    expect(applyTextEdits(line, edits ?? [])).toBe("- [ ] a :done[2026-09-01]");
+  });
+
   it("sets in-progress and cancelled markers", () => {
     expect(change("- [ ] a", { type: "status", status: "in_progress" })).toBe("- [/] a");
     expect(change("- [x] a :done[2026-09-01]", { type: "status", status: "cancelled" })).toBe("- [-] a");

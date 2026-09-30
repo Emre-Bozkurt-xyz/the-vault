@@ -61,6 +61,11 @@ import {
   rehypeSanitizeContent,
   safeHtmlSchema,
 } from "@/lib/markdown/sanitize";
+import {
+  TASK_DATE_ELEMENT_NAME,
+  formatTaskDateAbsolute,
+  remarkTasks,
+} from "@/lib/markdown/task-directives";
 import { cn } from "@/lib/utils";
 import {
   buildDefinitionsByHref,
@@ -492,8 +497,18 @@ function createMarkdownComponents(
   ol({ children, className, style }) {
     return <ol {...styledProps("vault-md-ol", className, style)}>{children}</ol>;
   },
-  li({ children, className, style }) {
-    return <li {...styledProps("vault-md-li", className, style)}>{children}</li>;
+  li({ children, className, style, ...rest }) {
+    // `remarkTasks` tags `[/]` and `[-]` items; the value only styles the box.
+    const status = (rest as { "data-task-status"?: string })["data-task-status"];
+
+    return (
+      <li
+        {...styledProps("vault-md-li", className, style)}
+        data-task-status={status === "in_progress" || status === "cancelled" ? status : undefined}
+      >
+        {groupTaskItemChildren(children)}
+      </li>
+    );
   },
   blockquote({ children, className, style }) {
     const callout = parseCalloutChildren(children);
@@ -605,6 +620,28 @@ function createMarkdownComponents(
   input(props) {
     return <input {...props} className="vault-md-checkbox" disabled />;
   },
+  // `remarkTasks` emits `<vault-task-date>` for `:due[…]` / `:done[…]` on a
+  // task item. Absolute and clock-free: this also renders on the server.
+  [TASK_DATE_ELEMENT_NAME]: (props: { "data-kind"?: string; "data-value"?: string }) => {
+    const value = props["data-value"] ?? "";
+    const kind = props["data-kind"] === "done" ? "done" : "due";
+
+    if (!/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(value)) {
+      return null;
+    }
+
+    return (
+      <time
+        className="vault-md-task-date"
+        data-kind={kind}
+        dateTime={value.replace(" ", "T")}
+        title={kind === "done" ? `Completed ${value}` : `Due ${value}`}
+      >
+        {kind === "done" ? "✓ " : ""}
+        {formatTaskDateAbsolute(value)}
+      </time>
+    );
+  },
   // `remarkCalc` emits `<vault-calc data-calc-key>` for each inline `:calc[…]`.
   // The element carries only the key; the component supplies every class, which
   // is what keeps calc's contract classes out of the raw-HTML className filter
@@ -615,6 +652,59 @@ function createMarkdownComponents(
     />
   ),
   } as Components;
+}
+
+const taskItemBlockTags = new Set([
+  "ul", "ol", "p", "div", "blockquote", "pre", "table", "hr",
+  "h1", "h2", "h3", "h4", "h5", "h6",
+]);
+
+/**
+ * A task item is a two-column grid (checkbox + content), and a grid makes each
+ * element child its own cell — so in a tight item, `**bold**`, a link or a date
+ * chip would drop onto a row of its own. This wraps each run of inline children
+ * after the checkbox in one `.vault-md-task-text` span; block children (nested
+ * lists, loose-list paragraphs) stay separate cells as before.
+ */
+function groupTaskItemChildren(children: ReactNode): ReactNode {
+  const items = Children.toArray(children);
+  const isCheckbox = (item: ReactNode) =>
+    isValidElement(item) && (item.props as { type?: unknown }).type === "checkbox";
+
+  if (!items.some(isCheckbox)) {
+    return children;
+  }
+
+  const isBlock = (item: ReactNode) => {
+    if (!isValidElement(item)) return false;
+    const tagName = (item.props as { node?: { tagName?: unknown } }).node?.tagName;
+    return typeof tagName === "string" && taskItemBlockTags.has(tagName);
+  };
+
+  const grouped: ReactNode[] = [];
+  let run: ReactNode[] = [];
+  const flush = () => {
+    if (run.some((item) => typeof item !== "string" || item.trim() !== "")) {
+      grouped.push(
+        <span key={`task-text-${grouped.length}`} className="vault-md-task-text">
+          {run}
+        </span>,
+      );
+    }
+    run = [];
+  };
+
+  for (const item of items) {
+    if (isCheckbox(item) || isBlock(item)) {
+      flush();
+      grouped.push(item);
+    } else {
+      run.push(item);
+    }
+  }
+
+  flush();
+  return grouped;
 }
 
 function Callout({
@@ -1267,7 +1357,9 @@ function MarkdownSegment({
       // `calcRemarkPlugins` is shared with the pre-pass that produced
       // `calcResults`: both must walk identical trees or a key assigned here
       // would point at another expression's result.
-      remarkPlugins={[...calcRemarkPlugins, [remarkCalc, { keyPrefix }]]}
+      // `remarkTasks` runs before `remarkCalc`, whose restore step would
+      // otherwise turn the task dates back into literal text.
+      remarkPlugins={[...calcRemarkPlugins, remarkTasks, [remarkCalc, { keyPrefix }]]}
       rehypePlugins={[
         rehypeRaw,
         [rehypeSanitize, safeHtmlSchema],

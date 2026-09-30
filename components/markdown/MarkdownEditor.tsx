@@ -140,6 +140,12 @@ import {
   applyEditorJump,
   editorJumpHighlight,
 } from "@/components/markdown/editor-jump";
+import {
+  TaskCheckboxWidget,
+  addTaskDateDecorations,
+  taskAuthoringEnabled,
+  taskDateCompletionSource,
+} from "@/components/markdown/live-tasks";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
@@ -432,6 +438,7 @@ export function MarkdownEditor({
   const dictionaryEnabled = (enabledExtensionIds ?? []).includes(
     "vault.dictionary",
   );
+  const tasksEnabled = (enabledExtensionIds ?? []).includes("vault.tasks");
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
     () =>
       toExtensionSlashCommands(
@@ -778,6 +785,9 @@ export function MarkdownEditor({
       // at jump time: the editor reconfigures whenever this memo recomputes,
       // which would drop an appended field and cut the highlight short.
       editorJumpHighlight,
+      // Gates the `@` date menu and the `:done[…]` stamp on a checkbox click
+      // (`live-tasks.ts`); rendering and plain toggling work regardless.
+      taskAuthoringEnabled.of(tasksEnabled),
       markdownLanguage({
         codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({
@@ -1085,6 +1095,8 @@ export function MarkdownEditor({
       baseExtensions.push(
         autocompletion({
           override: [
+            // `@` date menu on task lines; returns nothing unless Tasks is on.
+            taskDateCompletionSource,
             ...(slashMenuEnabled
               ? [
                   createSlashCommandCompletionSource({
@@ -1179,6 +1191,7 @@ export function MarkdownEditor({
       calcEnabled,
       fxTable,
       dictionaryEnabled,
+      tasksEnabled,
     ],
   );
 
@@ -3203,25 +3216,6 @@ function formatAssetFileSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-class TaskCheckboxWidget extends WidgetType {
-  constructor(private readonly checked: boolean) {
-    super();
-  }
-
-  eq(widget: TaskCheckboxWidget) {
-    return widget.checked === this.checked;
-  }
-
-  toDOM() {
-    const checkbox = document.createElement("span");
-    checkbox.className = "vault-cm-task-checkbox";
-    checkbox.dataset.checked = String(this.checked);
-    checkbox.setAttribute("aria-hidden", "true");
-
-    return checkbox;
-  }
-}
-
 class ListMarkerWidget extends WidgetType {
   constructor(private readonly marker: string) {
     super();
@@ -3747,7 +3741,7 @@ function getActiveMarkdownBlockRange(
     };
   }
 
-  const listPrefix = startLine.text.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/);
+  const listPrefix = startLine.text.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/);
 
   if (listPrefix) {
     let from = fromLineNumber;
@@ -3975,12 +3969,12 @@ function decorateInactiveMarkdownLine(
     ranges.push(hiddenMarkdown.range(lineFrom, lineFrom + quote[0].length));
   }
 
-  const list = text.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/);
+  const list = text.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/);
 
   if (list) {
     ranges.push(previewList.range(lineFrom));
 
-    const task = text.match(/^(\s*)[-*+]\s+\[([ xX])]\s+/);
+    const task = text.match(/^(\s*)[-*+]\s+\[([ xX/-])]\s+/);
 
     if (task) {
       const markerFrom = lineFrom + task[1].length;
@@ -3988,10 +3982,16 @@ function decorateInactiveMarkdownLine(
       if (!hasActivePositionInRange(activePositions, markerFrom, markerTo)) {
         ranges.push(
           Decoration.replace({
-            widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x"),
+            widget: new TaskCheckboxWidget(task[2]),
           }).range(markerFrom, markerTo),
         );
       }
+
+      // `:due[…]` / `:done[…]` chips (`live-tasks.ts`); source shows while the
+      // cursor is inside one.
+      addTaskDateDecorations(ranges, lineFrom, text, /[xX]/.test(task[2]), (from, to) =>
+        hasActivePositionInRange(activePositions, from, to),
+      );
     } else {
       const markerFrom = lineFrom + list[1].length;
       const markerTo = lineFrom + list[0].length;
@@ -5436,7 +5436,7 @@ function trailingBlockAnchorMatch(text: string) {
 }
 
 function isListContinuation(text: string) {
-  return /^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+|\S)/.test(text);
+  return /^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+|\S)/.test(text);
 }
 
 function CollaborationPresence({ users }: { users: CollabPresenceUser[] }) {
@@ -6156,7 +6156,7 @@ function getRemovablePrefixLength(
   }
 
   if (format === "taskList") {
-    return lineText.match(/^(\s*)[-*+]\s+\[[ xX]]\s+/)?.[0].length ?? 0;
+    return lineText.match(/^(\s*)[-*+]\s+\[[ xX/-]]\s+/)?.[0].length ?? 0;
   }
 
   if (format === "heading1" || format === "heading2" || format === "heading3") {
@@ -6176,7 +6176,7 @@ function prefixToReplace(format: MarkdownFormat, lineText: string) {
   }
 
   if (format === "bulletList" || format === "orderedList" || format === "taskList") {
-    return lineText.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/)?.[0] ?? null;
+    return lineText.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/)?.[0] ?? null;
   }
 
   if (format === "blockquote") {
