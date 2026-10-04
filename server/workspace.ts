@@ -21,7 +21,7 @@ import {
 import { requireCompletedProfile } from "@/server/profile";
 import { listPublishedOfficialDocs } from "@/server/official-docs";
 import { listServiceGroupsForUser } from "@/server/services";
-import { listUserSettings } from "@/server/user-settings";
+import { getUserExtensionSetting, listUserSettings } from "@/server/user-settings";
 import { buildPreferences } from "@/lib/settings/preferences";
 import {
   parseWorkspaceLayout,
@@ -69,6 +69,7 @@ export async function getWorkspaceData() {
     sharedFolderRows,
     archivedDocuments,
     services,
+    tasksSetting,
   ] = await Promise.all([
     listDocumentsForUser(session.user.id),
     listDocumentsInOwnedFoldersFromOthers(session.user.id),
@@ -79,6 +80,7 @@ export async function getWorkspaceData() {
     listSharedFoldersForUser(session.user.id),
     listArchivedDocumentsForUser(session.user.id),
     listServiceGroupsForUser(session.user.id),
+    getUserExtensionSetting({ userId: session.user.id, extensionId: "vault.tasks" }),
   ]);
 
   const ownedDocs: WorkspaceDocumentItem[] = ownedDocuments.map((document) => ({
@@ -201,6 +203,7 @@ export async function getWorkspaceData() {
     services,
     publicDocuments,
     guideGroups,
+    tasksEnabled: tasksSetting?.enabled ?? false,
     recent: [...owned, ...shared]
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, 8),

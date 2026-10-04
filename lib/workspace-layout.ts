@@ -26,6 +26,7 @@ const panelModes: WorkspacePanelMode[] = [
   "gallery",
   "assets",
   "docs",
+  "tasks",
   "admin",
 ];
 

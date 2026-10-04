@@ -16,6 +16,7 @@ import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
 import { WorkspaceFileBrowser } from "@/components/workspace/WorkspaceFileBrowser";
 import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPanel";
 import { WorkspaceSearchPanel } from "@/components/workspace/WorkspaceSearchPanel";
+import { WorkspaceTasksPanel } from "@/components/workspace/WorkspaceTasksPanel";
 import { WorkspaceUtilityPanel } from "@/components/workspace/WorkspaceUtilityPanel";
 import { VaultWorkspaceShell } from "@/components/workspace/VaultWorkspaceShell";
 import {
@@ -56,6 +57,8 @@ type WorkspaceChromeData = {
   services: WorkspaceServiceItem[];
   publicDocuments: WorkspacePublicDocumentItem[];
   guideGroups: WorkspaceGuideGroup[];
+  /** Whether the `vault.tasks` extension is on for this user. */
+  tasksEnabled: boolean;
 };
 
 type WorkspaceChromeContextValue = {
@@ -242,6 +245,8 @@ export function WorkspaceChrome({
           />
         }
         assetsPanel={<WorkspaceUtilityPanel mode="assets" activeHref={currentHref} />}
+        tasksEnabled={workspaceState.tasksEnabled}
+        tasksPanel={<WorkspaceTasksPanel activeHref={baseCurrentHref} />}
         adminPanel={
           <WorkspaceUtilityPanel
             mode="admin"

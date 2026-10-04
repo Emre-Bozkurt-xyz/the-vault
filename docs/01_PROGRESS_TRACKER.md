@@ -662,6 +662,23 @@ Plan: `docs/23_EXTENSION_SDK_PLAN.md` (2026-09-26). **Complete 2026-09-28**: sli
 
 ---
 
+## Phase 26 - Tasks, Agenda, and Inbox
+
+Plan: `docs/24_TASKS_AND_AGENDA_PLAN.md` (2026-09-28). Slice 1 implemented 2026-09-29; not yet run against a real database or in a browser.
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Record product decisions and architecture | 2026-09-28. Tasks are Markdown task lines with `:due[…]`/`:done[…]` directives and `[/]`/`[-]` states; the agenda is a singleton view over a lazily refreshed `document_tasks` index, never a document; one self-healing Inbox document for capture; personal scope (owned documents only); dated tasks + Inbox in the agenda, the rest in a Backlog; write-back through the collaboration layer. Assignment and shared-document scope deferred |
+| [~] | Slice 1 - Parser, index, read-only panel | 2026-09-29. `lib/tasks/parse.ts` (remark structure + raw-line markers, 15 tests), `document_tasks` + `document_task_index` (migration `0025_romantic_firelord.sql`, **not yet applied**), `server/tasks-data.ts` lazy refresh with the stamp kept as text (a JS Date drops Postgres microseconds and would force a reindex on every read), `getTaskAgendaAction`, `vault.tasks` (off by default), sidebar/mobile Tasks mode, `WorkspaceTasksPanel`, and jump-to-line (`lib/editor-jump-events.ts` + `components/markdown/editor-jump.ts`, 4 tests). `tsc` clean, 616 tests, lint at baseline. 2026-10-04: merged onto the extension SDK — `vault.tasks` is now the manifest-only `extensions/tasks/manifest.ts` (the SDK has no workspace-panel contribution, so the panel stays core, gated on the extension's enablement) and `isValidDayKey`/`todayDayKey` moved into `lib/tasks/dates.ts` since `lib/calendar.ts` became extension-private; 725 tests. **Open**: apply the migration, verify queries against real Postgres, browser pass |
+| [ ] | Slice 2 - Write-back | Generalize `withLiveDocumentText` (origin, optional snapshot), line locator, status/due actions, optimistic panel, reindex from returned text |
+| [ ] | Slice 3 - Authoring | Four-state markers in Live/Read, date chips + `remarkTasks`, `@` date menu, natural-date grammar, clickable Live checkboxes |
+| [ ] | Slice 4 - Inbox and capture | Inbox pointer, `/task` palette command, panel input, Undo toast, user guide |
+| [ ] | Slice 5 - Tasks page | Agenda/Week/Month/Backlog, filters, keyboard, task detail panel |
+| [ ] | Slice 6 - Everywhere else | Home Today section, document side-panel section, `:::tasks{…}` query blocks, subtask progress |
+| [ ] | Slice 7 - Agents and Calendar | MCP task actions, Calendar events in the agenda |
+
+---
+
 ## Bugs / Issues
 
 | Status | Issue | Priority | Notes |

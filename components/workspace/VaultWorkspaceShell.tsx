@@ -8,6 +8,7 @@ import {
   GripVertical,
   ImageIcon,
   LayoutGrid,
+  ListChecks,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -52,6 +53,9 @@ type VaultWorkspaceShellProps = {
   searchPanel?: ReactNode;
   galleryPanel?: ReactNode;
   assetsPanel?: ReactNode;
+  tasksPanel?: ReactNode;
+  /** Whether the `vault.tasks` extension is on; gates its panel mode. */
+  tasksEnabled?: boolean;
   adminPanel?: ReactNode;
   defaultPanelMode?: WorkspacePanelMode;
   initialLayout?: Partial<WorkspaceLayoutState>;
@@ -70,6 +74,8 @@ export function VaultWorkspaceShell({
   searchPanel,
   galleryPanel,
   assetsPanel,
+  tasksPanel,
+  tasksEnabled = false,
   adminPanel,
   defaultPanelMode = "files",
   initialLayout,
@@ -203,24 +209,36 @@ export function VaultWorkspaceShell({
     window.addEventListener("pointerup", onPointerUp, { once: true });
   }
 
+  // A persisted `tasks` mode outlives the extension being switched off; show
+  // the file browser rather than an empty panel with no rail icon to leave it.
+  const effectiveMode: WorkspacePanelMode =
+    panelMode === "tasks" && !tasksEnabled ? "files" : panelMode;
+
   const activePanel =
-    panelMode === "files"
+    effectiveMode === "files"
       ? filePanel
-      : panelMode === "docs"
+      : effectiveMode === "docs"
         ? docsPanel
-        : panelMode === "search"
+        : effectiveMode === "search"
           ? searchPanel
-          : panelMode === "gallery"
+          : effectiveMode === "gallery"
             ? galleryPanel
-            : panelMode === "assets"
+            : effectiveMode === "assets"
               ? assetsPanel
-              : panelMode === "admin"
-                ? adminPanel
-                : null;
+              : effectiveMode === "tasks"
+                ? tasksPanel
+                : effectiveMode === "admin"
+                  ? adminPanel
+                  : null;
 
   return (
     <div className="fixed inset-0 flex min-h-0 overflow-hidden bg-background text-foreground pt-safe pb-safe pl-safe pr-safe">
-      <WorkspaceIconRail mode={panelMode} onModeChange={changeMode} isAdmin={isAdmin} />
+      <WorkspaceIconRail
+        mode={effectiveMode}
+        onModeChange={changeMode}
+        isAdmin={isAdmin}
+        tasksEnabled={tasksEnabled}
+      />
 
       <aside
         className={cn(
@@ -230,7 +248,7 @@ export function VaultWorkspaceShell({
       >
         {activePanel}
         {!activePanel ? (
-          <PlaceholderPanel mode={panelMode} />
+          <PlaceholderPanel mode={effectiveMode} />
         ) : null}
       </aside>
       {!leftCollapsed ? (
@@ -388,9 +406,9 @@ export function VaultWorkspaceShell({
         >
           <SheetTitle className="sr-only">Workspace navigation</SheetTitle>
           <div className="flex items-center gap-1 overflow-x-auto border-b border-border/70 p-2">
-            {mobilePanelItems(isAdmin).map((item) => {
+            {mobilePanelItems(isAdmin, tasksEnabled).map((item) => {
               const Icon = item.icon;
-              const active = panelMode === item.mode;
+              const active = effectiveMode === item.mode;
               const className = cn(
                 "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 active && "bg-sidebar-accent text-sidebar-accent-foreground",
@@ -426,7 +444,7 @@ export function VaultWorkspaceShell({
             })}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
-            {activePanel ?? <PlaceholderPanel mode={panelMode} />}
+            {activePanel ?? <PlaceholderPanel mode={effectiveMode} />}
           </div>
         </SheetContent>
       </Sheet>
@@ -484,10 +502,16 @@ type MobilePanelItem = {
 
 // Mirrors `WorkspaceIconRail`: gallery/assets/admin navigate to their routes,
 // the rest just switch the active panel in place.
-function mobilePanelItems(isAdmin: boolean): MobilePanelItem[] {
+function mobilePanelItems(
+  isAdmin: boolean,
+  tasksEnabled: boolean,
+): MobilePanelItem[] {
   return [
     { label: "Files", mode: "files", icon: Files },
     { label: "Search", mode: "search", icon: Search },
+    ...(tasksEnabled
+      ? [{ label: "Tasks", mode: "tasks" as const, icon: ListChecks }]
+      : []),
     { label: "Gallery", mode: "gallery", icon: LayoutGrid, href: "/gallery" },
     { label: "Assets", mode: "assets", icon: ImageIcon, href: "/assets" },
     { label: "Docs", mode: "docs", icon: BookOpen },
@@ -536,6 +560,7 @@ function PlaceholderPanel({ mode }: { mode: WorkspacePanelMode }) {
     gallery: { title: "Gallery", body: "Public content browsing is next." },
     assets: { title: "Assets", body: "Uploaded images and files live here." },
     docs: { title: "Docs", body: "Official guide navigation will land here." },
+    tasks: { title: "Tasks", body: "Your agenda lives here." },
     admin: { title: "Admin", body: "Moderation and docs publishing tools." },
   };
   const label = labels[mode];

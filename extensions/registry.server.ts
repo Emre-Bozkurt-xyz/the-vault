@@ -9,6 +9,7 @@ import calcManifest from "./calc/manifest";
 import calendarManifest from "./calendar/manifest";
 import dictionaryManifest from "./dictionary/manifest";
 import stickersManifest from "./stickers/manifest";
+import tasksManifest from "./tasks/manifest";
 
 import calcServer from "./calc/server";
 import calendarServer from "./calendar/server";
@@ -25,4 +26,5 @@ export const serverExtensions: readonly ServerExtensionEntry[] = [
   { manifest: calendarManifest, server: calendarServer },
   { manifest: dictionaryManifest, server: dictionaryServer },
   { manifest: stickersManifest, server: stickersServer },
+  { manifest: tasksManifest, server: null },
 ];

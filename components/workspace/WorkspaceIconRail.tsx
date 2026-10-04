@@ -6,6 +6,7 @@ import {
   Files,
   ImageIcon,
   LayoutGrid,
+  ListChecks,
   Search,
   ShieldCheck,
 } from "lucide-react";
@@ -17,16 +18,22 @@ type WorkspaceIconRailProps = {
   mode: WorkspacePanelMode;
   onModeChange: (mode: WorkspacePanelMode) => void;
   isAdmin?: boolean;
+  /** The Tasks agenda is the `vault.tasks` extension's; hidden while it is off. */
+  tasksEnabled?: boolean;
 };
 
 export function WorkspaceIconRail({
   mode,
   onModeChange,
   isAdmin = false,
+  tasksEnabled = false,
 }: WorkspaceIconRailProps) {
   const items = [
     { label: "Files", mode: "files" as const, icon: Files },
     { label: "Search", mode: "search" as const, icon: Search },
+    ...(tasksEnabled
+      ? [{ label: "Tasks", mode: "tasks" as const, icon: ListChecks }]
+      : []),
     { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid, href: "/gallery" },
     { label: "Assets", mode: "assets" as const, icon: ImageIcon, href: "/assets" },
     { label: "Docs", mode: "docs" as const, icon: BookOpen },

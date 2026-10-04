@@ -9,6 +9,7 @@ import calcManifest from "./calc/manifest";
 import calendarManifest from "./calendar/manifest";
 import dictionaryManifest from "./dictionary/manifest";
 import stickersManifest from "./stickers/manifest";
+import tasksManifest from "./tasks/manifest";
 
 export type ClientExtensionEntry = {
   manifest: ExtensionManifest;
@@ -31,5 +32,8 @@ export const clientExtensions: readonly ClientExtensionEntry[] = [
   {
     manifest: stickersManifest,
     editor: () => import("./stickers/editor"),
+  },
+  {
+    manifest: tasksManifest,
   },
 ];

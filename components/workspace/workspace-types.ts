@@ -158,4 +158,5 @@ export type WorkspacePanelMode =
   | "gallery"
   | "assets"
   | "docs"
+  | "tasks"
   | "admin";
