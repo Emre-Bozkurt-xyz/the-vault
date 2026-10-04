@@ -1630,6 +1630,13 @@
     border-bottom: none;
   }
 
+  /* An error chip is a single part (the raw source), not name/`=`/value. Left in
+     the three-column flow it fills one cell and shifts every later row out of
+     its columns, so it takes the whole row instead. */
+  .vault-calc-block-row > .vault-calc-error > .vault-calc-expr {
+    grid-column: 1 / -1;
+  }
+
   .vault-calc-block-summary {
     display: flex;
     align-items: center;
