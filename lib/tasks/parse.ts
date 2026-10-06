@@ -6,7 +6,7 @@
  * actions), so it leans on the real Markdown structure rather than line regexes:
  * a checkbox inside a fenced code block is not a task, a checklist inside a
  * callout is, and `:due[…]` is recognised only as a directive node, never as
- * text inside inline code. See `docs/23_TASKS_AND_AGENDA_PLAN.md` §3.
+ * text inside inline code. See `docs/24_TASKS_AND_AGENDA_PLAN.md` §3.
  *
  * Two things come from the raw source instead of the tree:
  *
@@ -24,7 +24,7 @@ import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
-import { isValidDayKey } from "@/lib/calendar";
+import { isValidDayKey } from "@/lib/tasks/dates";
 
 export type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
 

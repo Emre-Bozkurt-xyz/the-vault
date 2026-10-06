@@ -1,5 +1,12 @@
 # Vault Extension Registry Plan
 
+> **Superseded in part, 2026-09-28.** `docs/23_EXTENSION_SDK_PLAN.md` (Phase 25,
+> complete) replaced §4's `VaultExtension` shape and registry, and §10's
+> groundwork slices, with the extension SDK: per-extension folders
+> (manifest / render / editor / server modules), generated registries and lazy
+> loading. Both sections are kept as history and no longer describe the code.
+> §3's storage model and §8's core/extension boundary still stand.
+
 ## 1. Goal
 
 Vault should support rich, optional features without turning the core editor into
@@ -171,6 +178,9 @@ state = { assetId: "...", viewport: ... }
 ---
 
 ## 4. Registry Shape
+
+> Superseded 2026-09-28 by `docs/23_EXTENSION_SDK_PLAN.md` §4–§8; the
+> `VaultExtension` type and `createVaultExtensionRegistry` are deleted.
 
 The registry should describe what an extension contributes without giving it
 unrestricted access to the app.
@@ -440,6 +450,8 @@ normal built-in extension, not as one-off workspace/editor code.
 ---
 
 ## 10. Near-Term Groundwork Plan
+
+> Superseded 2026-09-28 by `docs/23_EXTENSION_SDK_PLAN.md` §14 (slices 0–7).
 
 This is the concrete order for the next implementation pass.
 

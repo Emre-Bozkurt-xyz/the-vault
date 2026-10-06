@@ -113,7 +113,9 @@ Feature-area plans — read the one that matches what you are touching:
 | Dictionary extension | `20_DICTIONARY_EXTENSION_PLAN.md` |
 | Definition authoring and previews | `21_DEFINITION_AUTHORING_AND_PREVIEWS_PLAN.md` |
 | Code highlighting, formatting, and execution | `22_CODE_BLOCKS_AND_EXECUTION_PLAN.md` |
-| Tasks, agenda, and inbox | `23_TASKS_AND_AGENDA_PLAN.md` |
+| Extension SDK, host, and lazy loading | `23_EXTENSION_SDK_PLAN.md` |
+| Writing or changing one extension | `../extensions/README.md` (and the `create-extension` skill) |
+| Tasks, agenda, and inbox | `24_TASKS_AND_AGENDA_PLAN.md` |
 
 Standing contracts, read when the change touches them:
 

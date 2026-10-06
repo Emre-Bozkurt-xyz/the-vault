@@ -1,5 +1,5 @@
 /**
- * Read-mode rendering for task syntax (docs/23_TASKS_AND_AGENDA_PLAN.md §3, §7).
+ * Read-mode rendering for task syntax (docs/24_TASKS_AND_AGENDA_PLAN.md §3, §7).
  *
  * - `[/]` (in progress) and `[-]` (cancelled) list items: GFM only knows
  *   `[ ]` and `[x]`, so these arrive as paragraph text starting "[/] ". The
@@ -14,7 +14,7 @@
  * overdue colouring) are Live mode's job.
  */
 
-import { isValidDayKey } from "@/lib/calendar";
+import { isValidDayKey } from "@/lib/tasks/dates";
 import { TASK_TIME_PATTERN } from "@/lib/tasks/parse";
 
 export const TASK_DATE_ELEMENT_NAME = "vault-task-date";

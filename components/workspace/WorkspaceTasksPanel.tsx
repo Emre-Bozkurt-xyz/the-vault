@@ -14,10 +14,9 @@ import {
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
-import { todayDayKey } from "@/lib/calendar";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { captureTaskFromClient } from "@/lib/tasks/capture-client";
-import { addDaysToDayKey, formatDueLabel } from "@/lib/tasks/dates";
+import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
 import type { TaskChange } from "@/lib/tasks/edit";
 import { cn } from "@/lib/utils";
 import { subscribeToTasksChanged } from "@/lib/workspace-toast";
@@ -29,7 +28,7 @@ import {
 import type { AgendaTask } from "@/server/tasks-data";
 
 /**
- * The sidebar agenda (docs/23_TASKS_AND_AGENDA_PLAN.md §6.1): open tasks from
+ * The sidebar agenda (docs/24_TASKS_AND_AGENDA_PLAN.md §6.1): open tasks from
  * the viewer's own documents, bucketed against the viewer's local day. Ticking
  * and rescheduling write back into the source document (slice 2); clicking a
  * task's text opens the document at its line.

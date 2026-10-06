@@ -1,5 +1,5 @@
 /**
- * `:::tasks{…}` query blocks (docs/23_TASKS_AND_AGENDA_PLAN.md §6.4): a live
+ * `:::tasks{…}` query blocks (docs/24_TASKS_AND_AGENDA_PLAN.md §6.4): a live
  * task list embedded in any document.
  *
  *   :::tasks{due=week}                 this document's tasks due within a week

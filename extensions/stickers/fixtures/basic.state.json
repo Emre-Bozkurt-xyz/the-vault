@@ -1,0 +1,11 @@
+{
+  "layout": {
+    "visibility": "public",
+    "state": {
+      "items": {
+        "s_demo1": { "assetId": "00000000-0000-4000-8000-0000000000a1", "left": 420, "top": 40, "width": 110, "rotation": -8 },
+        "s_demo2": { "assetId": "00000000-0000-4000-8000-0000000000a2", "left": 300, "top": 180, "width": 80, "rotation": 12 }
+      }
+    }
+  }
+}

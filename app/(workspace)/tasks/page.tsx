@@ -2,7 +2,7 @@ import { TasksPage } from "@/components/tasks/TasksPage";
 import { getWorkspaceData } from "@/server/workspace";
 
 /**
- * The Tasks page (docs/23_TASKS_AND_AGENDA_PLAN.md §6.2). Everything else is
+ * The Tasks page (docs/24_TASKS_AND_AGENDA_PLAN.md §6.2). Everything else is
  * fetched client-side through `getTaskPageAction`, so the page can refresh
  * after each tick or reschedule without a navigation.
  */

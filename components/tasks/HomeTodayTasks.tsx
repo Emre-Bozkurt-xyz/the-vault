@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
-import { todayDayKey } from "@/lib/calendar";
+import { todayDayKey } from "@/lib/tasks/dates";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { formatDueLabel } from "@/lib/tasks/dates";
 import { plainTaskText } from "@/lib/tasks/query";

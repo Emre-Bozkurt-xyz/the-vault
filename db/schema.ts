@@ -775,7 +775,7 @@ export const documentTags = pgTable(
  * One row per task line in a document (`lib/tasks/parse.ts`), regenerated
  * wholesale whenever the document is reindexed. `id` is therefore NOT a stable
  * task identity: write-back addresses a task by line + exact source text. See
- * `docs/23_TASKS_AND_AGENDA_PLAN.md` §4-5.
+ * `docs/24_TASKS_AND_AGENDA_PLAN.md` §4-5.
  */
 export const documentTasks = pgTable(
   "document_tasks",

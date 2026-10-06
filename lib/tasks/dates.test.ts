@@ -4,6 +4,7 @@ import {
   addDaysToDayKey,
   daysBetween,
   formatDueLabel,
+  getMonthMatrix,
   nextWeekStart,
 } from "@/lib/tasks/dates";
 
@@ -35,5 +36,13 @@ describe("task day keys", () => {
     expect(formatDueLabel("2026-10-05", today)).toBe("Mon 5 Oct");
     expect(formatDueLabel("2026-09-24", today)).toBe("Thu 24 Sep");
     expect(formatDueLabel("2027-01-04", today)).toBe("Mon 4 Jan 2027");
+  });
+
+  it("builds a Monday-start month grid across a leap-day boundary", () => {
+    const weeks = getMonthMatrix({ year: 2028, month: 2 }, 1, "2028-02-29");
+    expect(weeks).toHaveLength(6);
+    expect(weeks[0][0].dayKey).toBe("2028-01-31");
+    expect(weeks[4][1]).toMatchObject({ dayKey: "2028-02-29", inMonth: true, isToday: true });
+    expect(weeks[5][6].dayKey).toBe("2028-03-12");
   });
 });

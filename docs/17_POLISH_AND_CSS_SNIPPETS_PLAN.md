@@ -495,3 +495,8 @@ preview (8.2) reuses `DocumentCanvas`.
 - Cap values (50 KB / 5 per doc / 50 per user) need confirmation once real
   snippets exist.
 - CSP rollout: how long to run report-only in production before enforcing.
+  Until 2026-09-26 the report-only data was all noise: Next never nonced its
+  scripts because the proxy's enforced header hid the nonce (fixed; see the
+  project-knowledge changelog). Reports since then are real. Before enforcing,
+  decide how statically prerendered pages (`/privacy`, `/terms`) get their
+  scripts allowed, since they cannot carry a per-request nonce.

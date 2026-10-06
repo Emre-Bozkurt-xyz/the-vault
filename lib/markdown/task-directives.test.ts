@@ -6,20 +6,20 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { describe, expect, it } from "vitest";
 
-import { calcRemarkPlugins, remarkCalc } from "@/lib/markdown/calc-directive";
+import { directiveRemarkPlugins, remarkInlineDirectives } from "@/lib/markdown/directives";
 import { rehypeSanitizeContent, safeHtmlSchema } from "@/lib/markdown/sanitize";
 import { formatTaskDateAbsolute, remarkTasks } from "@/lib/markdown/task-directives";
 
 /**
- * Mirrors the plugin list in `MarkdownDocument.tsx` (tasks before calc), so the
+ * Mirrors the plugin list in `MarkdownDocument.tsx` (tasks before extension directives), so the
  * task elements are proven to survive both sanitizer passes.
  */
 function render(markdown: string): string {
   return unified()
     .use(remarkParse)
-    .use(calcRemarkPlugins)
+    .use(directiveRemarkPlugins)
     .use(remarkTasks)
-    .use(remarkCalc, { keyPrefix: "0" })
+    .use(remarkInlineDirectives, { names: new Set(["calc"]), keyPrefix: "0" })
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeRaw)
     .use(rehypeSanitize, safeHtmlSchema)
@@ -62,7 +62,7 @@ describe("remarkTasks", () => {
 
   it("still restores unrelated directives and renders calc", () => {
     const html = render("- [ ] cost :calc[2 + 2] :note[x]");
-    expect(html).toContain("<vault-calc");
+    expect(html).toContain("<vault-extension-inline");
     expect(html).toContain(":note[x]");
   });
 

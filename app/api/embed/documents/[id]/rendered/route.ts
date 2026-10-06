@@ -30,11 +30,12 @@ import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 // This is a *read*-mode render, not Live mode (docs/DEN_EMBED_BRIDGE.md §B,
 // "Keep this a read render"): no CodeMirror, no collab, no interactivity.
 //
-// Known limitation (see docs/DEN_EMBED_BRIDGE.md Status): calendar blocks and
-// sticker overlays are intentionally omitted rather than forked into a second
-// render path — they depend on client-side fetch/hydration that a static HTML
-// snapshot never gets. `:::calendar{...}` anchors render as plain fenced
-// content; sticker overlays don't render at all.
+// Known limitation (see docs/DEN_EMBED_BRIDGE.md Status): extension blocks
+// (e.g. calendars) and sticker overlays are intentionally omitted rather than
+// forked into a second render path — their components load lazily in the
+// browser, which a static HTML snapshot never gets. `renderToStaticMarkup`
+// does not wait for them, so a block renders as its empty placeholder; sticker
+// overlays don't render at all.
 export const runtime = "nodejs";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
@@ -95,7 +96,6 @@ export async function GET(request: Request, context: RouteContext) {
       markdown: document.markdown,
       wikiLinks,
       assetLinks,
-      documentId: document.id,
     }),
   );
 

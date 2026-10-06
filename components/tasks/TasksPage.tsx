@@ -25,7 +25,7 @@ import {
   getMonthMatrix,
   todayDayKey,
   type CalendarMonth,
-} from "@/lib/calendar";
+} from "@/lib/tasks/dates";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { buildFolderPaths, type FolderPathNode } from "@/lib/folder-paths";
 import { addDaysToDayKey, formatDueLabel } from "@/lib/tasks/dates";
@@ -52,7 +52,7 @@ import {
 import type { PageTask, TaskDetail } from "@/server/tasks-data";
 
 /**
- * The full Tasks page (docs/23_TASKS_AND_AGENDA_PLAN.md §6.2, slice 5): Agenda,
+ * The full Tasks page (docs/24_TASKS_AND_AGENDA_PLAN.md §6.2, slice 5): Agenda,
  * Week, Month and Backlog views over every open task in the viewer's own
  * documents, with filters, keyboard control and a detail panel on the right.
  * All grouping lives in `lib/tasks/views.ts`; this file is presentation and

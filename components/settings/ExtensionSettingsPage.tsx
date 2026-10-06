@@ -21,7 +21,7 @@ import {
 type ExtensionSettingsPageProps = {
   extensionId: string;
   version: number;
-  sections: ExtensionSettingsSection[];
+  sections: readonly ExtensionSettingsSection[];
   /** Defaults merged with what the user has stored. */
   values: Record<string, unknown>;
   defaults: Record<string, unknown>;
@@ -31,7 +31,7 @@ type ExtensionSettingsPageProps = {
 
 /**
  * One extension's settings, rendered generically from what the extension
- * declares in `lib/extensions/catalog.ts`.
+ * declares in its `extensions/<name>/manifest.ts`.
  *
  * Deliberately quieter than the app's own settings pages — no card, no icons,
  * rows divided by hairlines — so an extension's options read as secondary to the

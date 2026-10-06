@@ -1,5 +1,5 @@
 /**
- * Quick capture (docs/23_TASKS_AND_AGENDA_PLAN.md §6.3): turns what was typed
+ * Quick capture (docs/24_TASKS_AND_AGENDA_PLAN.md §6.3): turns what was typed
  * after `/task` or into the panel's "Add task…" box into one task line.
  *
  * A date is only taken from the END of the text, and only when it is

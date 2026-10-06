@@ -5,13 +5,13 @@
  * the same line keeps their edit when the change merges through Yjs.
  *
  * Pure and framework-free: the server applies the edits to a Y.Text, and tests
- * apply them to a string. See docs/23_TASKS_AND_AGENDA_PLAN.md §5.
+ * apply them to a string. See docs/24_TASKS_AND_AGENDA_PLAN.md §5.
  */
 
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
-import { isValidDayKey } from "@/lib/calendar";
+import { isValidDayKey } from "@/lib/tasks/dates";
 import {
   TASK_MARKER_BY_STATUS,
   TASK_MARKER_PATTERN,

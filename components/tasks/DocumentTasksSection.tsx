@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ListChecks } from "lucide-react";
 
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
-import { todayDayKey } from "@/lib/calendar";
+import { todayDayKey } from "@/lib/tasks/dates";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { formatDueLabel } from "@/lib/tasks/dates";
 import { plainTaskText } from "@/lib/tasks/query";

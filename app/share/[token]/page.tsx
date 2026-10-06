@@ -6,8 +6,7 @@ import { auth } from "@/auth";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { getFxRateTable } from "@/server/fx-rates";
-import { parseCalcSettings } from "@/lib/calc/settings";
+import { resolveDocumentExtensions } from "@/server/extension-runtime";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -100,7 +99,7 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
     redirect(`/docs/${document.id}?share=${token}`);
   }
 
-  const [publicWikiLinks, guideWikiLinks, assetLinks] = await Promise.all([
+  const [publicWikiLinks, guideWikiLinks, assetLinks, documentExtensions] = await Promise.all([
     listPublicWikiLinkResolutions(),
     listOfficialDocWikiLinkResolutions(),
     listAssetResolutionsForDocument(
@@ -108,6 +107,14 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
       session?.user?.id ?? null,
       document.markdown,
     ),
+    // Resolved as an anonymous reader, like a public page: a share link reads
+    // the same for everyone it is sent to (editors were redirected above).
+    resolveDocumentExtensions({
+      surface: "share",
+      document: { id: document.id, markdown: document.markdown },
+      canEdit: false,
+      userId: null,
+    }),
   ]);
   const wikiLinks = {
     ...publicWikiLinks,
@@ -118,15 +125,6 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
     getViewerStylingPreference(session?.user?.id ?? null),
     getCspNonce(),
   ]);
-
-  // Daily FX rates for `:calc` conversions. Never blocks on the provider when
-  // anything is cached, and returns null rather than throwing when it is not —
-  // conversions then report `missing-rate` and the document still renders.
-  // `calc_rate_date` pins the report to a day, so its totals stay the same
-  // on every reading instead of drifting with the market.
-  const fxTable = await getFxRateTable({
-    date: parseCalcSettings(document.markdown).rateDate ?? undefined,
-  });
 
   const snippetCss = applyStyling
     ? await getActiveSnippetCssForDocument(document.id)
@@ -192,7 +190,7 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
                   markdown={document.markdown}
                   wikiLinks={wikiLinks}
                   assetLinks={assetLinks}
-                  fxTable={fxTable}
+                  extensions={documentExtensions}
                 />
               </DocumentStyling>
             </DocumentReadingFrame>

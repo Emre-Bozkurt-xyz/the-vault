@@ -1,6 +1,6 @@
 /**
  * The small date grammar behind the editor's `@` menu and quick capture
- * (docs/23_TASKS_AND_AGENDA_PLAN.md §7). Everything is relative to a supplied
+ * (docs/24_TASKS_AND_AGENDA_PLAN.md §7). Everything is relative to a supplied
  * `today` day key, never the host clock, and deliberately small: no numeric
  * `10/2` forms, which mean different days in different locales.
  *
@@ -10,7 +10,7 @@
  * optional time ("3pm", "3:30pm", "15:00", "at 9am").
  */
 
-import { isValidDayKey } from "@/lib/calendar";
+import { isValidDayKey } from "@/lib/tasks/dates";
 import { addDaysToDayKey, formatDueLabel, nextWeekStart } from "@/lib/tasks/dates";
 
 export type NaturalDate = { day: string; time: string | null };

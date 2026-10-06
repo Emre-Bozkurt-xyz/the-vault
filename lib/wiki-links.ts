@@ -60,10 +60,13 @@ export type WikiLinkAnchor =
     };
 
 export type WikiLinkResolutionMap = Record<string, WikiLinkResolution>;
-/** What the renderer needs to draw one definition's hover card. */
-export type WikiLinkDefinition = {
+/** What a renderer knows about one resolved wiki link target, by href. */
+export type WikiLinkTarget = {
   label: string;
-  preview: string;
+  href: string;
+  isDefinition: boolean;
+  /** Bounded Markdown for hover previews (definitions only, today). */
+  preview: string | null;
 };
 export type WikiDocumentEmbedBlock =
   | {
@@ -94,10 +97,10 @@ type WikiLinkParts = {
 };
 
 const wikiLinkPattern = /(!?)\[\[([^\]\n]+)\]\]/g;
-const emptyDefinitions: Map<string, WikiLinkDefinition> = new Map();
-const definitionsByHrefCache = new WeakMap<
+const emptyTargets: Map<string, WikiLinkTarget> = new Map();
+const targetsByHrefCache = new WeakMap<
   WikiLinkResolutionMap,
-  Map<string, WikiLinkDefinition>
+  Map<string, WikiLinkTarget>
 >();
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -524,49 +527,59 @@ export function parseWikiLinkParts(bang: string, body: string): WikiLinkParts {
 }
 
 /**
- * `href -> definition` index for the renderer's anchor override.
+ * `href -> target` index for the renderer's anchor override.
  *
  * `transformWikiLinks` turns a resolved link into a plain Markdown link, and a
  * Markdown link cannot carry attributes — so the renderer recovers which links
- * are definitions by looking their href back up here. That is deliberately
- * cheaper than emitting raw HTML with a `data-` attribute, which would mean
- * widening the sanitizer on every surface that renders a document.
- *
- * Only definitions with something to show are included: a card with an empty
- * body is worse than no card.
+ * were wiki links, and what they point at, by looking their href back up here.
+ * That is deliberately cheaper than emitting raw HTML with a `data-` attribute,
+ * which would mean widening the sanitizer on every surface that renders a
+ * document. Extensions' link previews (e.g. definition cards) decide from this
+ * whether a link gets a card.
  *
  * Derivations are cached against the resolution map's own identity, because the
  * renderer asks once per Markdown segment and one document can have many
  * segments while the map (passed down from the page) stays the same object.
  */
-export function buildDefinitionsByHref(
+export function buildWikiLinkTargetsByHref(
   resolutions: WikiLinkResolutionMap | undefined,
-): Map<string, WikiLinkDefinition> {
+): Map<string, WikiLinkTarget> {
   if (!resolutions) {
-    return emptyDefinitions;
+    return emptyTargets;
   }
 
-  const cached = definitionsByHrefCache.get(resolutions);
+  const cached = targetsByHrefCache.get(resolutions);
 
   if (cached) {
     return cached;
   }
 
-  const definitions = new Map<string, WikiLinkDefinition>();
+  const targets = new Map<string, WikiLinkTarget>();
 
   for (const resolution of Object.values(resolutions)) {
-    if (!resolution.isDefinition || !resolution.href || !resolution.preview) {
+    if (!resolution.href) {
       continue;
     }
 
-    definitions.set(hrefWithoutFragment(resolution.href), {
+    const href = hrefWithoutFragment(resolution.href);
+    const existing = targets.get(href);
+    // Several keys (title, alias, id) resolve to the same document; keep the
+    // entry that carries the most, so a definition is never shadowed by a
+    // plain alias key.
+    if (existing && (existing.isDefinition || !resolution.isDefinition)) {
+      continue;
+    }
+
+    targets.set(href, {
       label: resolution.label ?? resolution.href,
-      preview: resolution.preview,
+      href: resolution.href,
+      isDefinition: Boolean(resolution.isDefinition),
+      preview: resolution.preview ?? null,
     });
   }
 
-  definitionsByHrefCache.set(resolutions, definitions);
-  return definitions;
+  targetsByHrefCache.set(resolutions, targets);
+  return targets;
 }
 
 /**

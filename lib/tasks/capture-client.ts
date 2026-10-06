@@ -4,7 +4,7 @@
 // the command palette's `/task …`: runs the action, then announces the result
 // with an Undo, and tells any open task surface to refetch.
 
-import { todayDayKey } from "@/lib/calendar";
+import { todayDayKey } from "@/lib/tasks/dates";
 import { formatDueLabel } from "@/lib/tasks/dates";
 import { dispatchTasksChanged, showWorkspaceToast } from "@/lib/workspace-toast";
 import {

@@ -1,9 +1,12 @@
+import { ExtensionHostProvider } from "@/components/extensions/ExtensionHostProvider";
 import { KeybindingsProvider } from "@/components/shortcuts/KeybindingsProvider";
 import { WorkspaceChrome } from "@/components/workspace/WorkspaceChrome";
 import { WorkspaceHistoryRestore } from "@/components/workspace/WorkspaceHistoryRestore";
 import { buildPreferences } from "@/lib/settings/preferences";
 import { resolveKeybindings } from "@/lib/shortcuts/resolve";
 import { WorkspaceSettingsModalMount } from "@/components/settings/WorkspaceSettingsModalMount";
+import { getCspNonce } from "@/lib/security/nonce";
+import { resolveViewerExtensions } from "@/server/extension-runtime";
 import { listUserSettings } from "@/server/user-settings";
 import { getWorkspaceData } from "@/server/workspace";
 import type { ReactNode } from "react";
@@ -32,13 +35,19 @@ export default async function WorkspaceLayout({
   children: ReactNode;
 }) {
   const workspace = await getWorkspaceData();
-  const userSettings = await listUserSettings({ userId: workspace.profile.id });
+  const [userSettings, viewerExtensions] = await Promise.all([
+    listUserSettings({ userId: workspace.profile.id }),
+    resolveViewerExtensions(workspace.profile.id),
+  ]);
   const preferences = buildPreferences(userSettings);
+  // The theme script runs before hydration, so it needs the request's CSP nonce.
+  const nonce = await getCspNonce();
 
   return (
     <>
       <WorkspaceHistoryRestore />
       <script
+        nonce={nonce}
         dangerouslySetInnerHTML={{
           __html: workspaceThemeScript(preferences.appearance.themeId),
         }}
@@ -48,8 +57,13 @@ export default async function WorkspaceLayout({
         bindings={resolveKeybindings(preferences.hotkeys.keybindings)}
         editorShortcutsEnabled={preferences.hotkeys.editorShortcutsEnabled}
       >
-        <WorkspaceChrome workspace={workspace}>{children}</WorkspaceChrome>
-        <WorkspaceSettingsModalMount profile={workspace.profile} />
+        <ExtensionHostProvider
+          enabledIds={viewerExtensions.enabledIds}
+          settings={viewerExtensions.settings}
+        >
+          <WorkspaceChrome workspace={workspace}>{children}</WorkspaceChrome>
+          <WorkspaceSettingsModalMount profile={workspace.profile} />
+        </ExtensionHostProvider>
       </KeybindingsProvider>
     </>
   );

@@ -1,5 +1,5 @@
 /**
- * Live-mode task authoring (docs/23_TASKS_AND_AGENDA_PLAN.md §7, slice 3):
+ * Live-mode task authoring (docs/24_TASKS_AND_AGENDA_PLAN.md §7, slice 3):
  *
  * - `TaskCheckboxWidget`: the rendered `[ ]`/`[/]`/`[x]`/`[-]` box. Clicking it
  *   toggles the task as one undo step, never moving the cursor into the line.
@@ -18,7 +18,7 @@ import { isolateHistory } from "@codemirror/commands";
 import { Facet, Transaction, type Range, type Text } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 
-import { todayDayKey } from "@/lib/calendar";
+import { todayDayKey } from "@/lib/tasks/dates";
 import { isValidTaskDateValue } from "@/lib/markdown/task-directives";
 import { daysBetween, formatDueLabel } from "@/lib/tasks/dates";
 import { planTaskEdit } from "@/lib/tasks/edit";

@@ -4,7 +4,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 
-import { localExtensionRegistry } from "@/lib/extensions/catalog";
+import { getSlashCommandContributions } from "@/lib/extension-host/manifests";
 
 import {
   createDirectiveCompletionSource,
@@ -312,7 +312,7 @@ describe("extension slash commands", () => {
 
 describe("registry slash contributions", () => {
   it("exposes the calendar contribution tagged with its source extension", () => {
-    const contributions = localExtensionRegistry.getSlashCommandContributions();
+    const contributions = getSlashCommandContributions();
     const calendar = contributions.find(
       (contribution) => contribution.id === "vault.calendar.slash",
     );
@@ -320,16 +320,16 @@ describe("registry slash contributions", () => {
     expect(calendar).toBeDefined();
     expect(calendar?.sourceExtensionId).toBe("vault.calendar");
     expect(calendar?.label).toBe("calendar");
-    expect(typeof calendar?.insert?.markdown).toBe("function");
+    // Runs the calendar editor module's command, which mints a fresh id; the
+    // manifest stays plain data.
+    expect(calendar?.run).toEqual({ command: "vault.calendar.insert" });
   });
 
   it("declares a directive on the two contributions that open one", () => {
     // The `:::` menu is built from this field alone, so a missing declaration is
     // an item silently absent from a menu rather than a type error.
     const byId = new Map(
-      localExtensionRegistry
-        .getSlashCommandContributions()
-        .map((contribution) => [contribution.id, contribution]),
+      getSlashCommandContributions().map((contribution) => [contribution.id, contribution]),
     );
 
     expect(byId.get("vault.calc.slash-block")?.directive).toBe("calc");
@@ -470,7 +470,7 @@ describe("directive completion source", () => {
  * the step the other tests skip.
  */
 describe("registry contributions reaching the menu", () => {
-  const contributions = localExtensionRegistry.getSlashCommandContributions();
+  const contributions = getSlashCommandContributions();
 
   it("carries a run contribution through the mapping intact", () => {
     const commands = toExtensionSlashCommands(contributions, ["vault.dictionary"]);
@@ -483,12 +483,22 @@ describe("registry contributions reaching the menu", () => {
   });
 
   it("carries an insert contribution through unchanged", () => {
+    const commands = toExtensionSlashCommands(contributions, ["vault.calc"]);
+    const block = commands.find(
+      (command) => command.id === "vault.calc.slash-block",
+    );
+
+    expect(block?.insert).toEqual({ markdown: ":::calc\n\n:::", cursorOffset: 8 });
+    expect(block?.directive).toBe("calc");
+  });
+
+  it("carries an extension command contribution with its directive", () => {
     const commands = toExtensionSlashCommands(contributions, ["vault.calendar"]);
     const calendar = commands.find(
       (command) => command.id === "vault.calendar.slash",
     );
 
-    expect(typeof calendar?.insert?.markdown).toBe("function");
+    expect(calendar?.run).toEqual({ command: "vault.calendar.insert" });
     expect(calendar?.directive).toBe("calendar");
   });
 

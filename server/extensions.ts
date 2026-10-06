@@ -2,12 +2,13 @@ import "server-only";
 
 import { z } from "zod";
 
+import type { ExtensionManifest } from "@/lib/extension-api";
 import {
-  getLocalExtensionIds,
-  localBuiltInExtensions,
-  localExtensionRegistry,
-} from "@/lib/extensions/catalog";
-import type { AgentActionEntry } from "@/lib/extensions/registry";
+  findAgentAction,
+  listAgentActions,
+  serverExtensionEntries,
+  type AgentActionEntry,
+} from "@/lib/extension-host/server";
 import type {
   ExtensionAgentActionContext,
   ExtensionAgentActionResult,
@@ -15,7 +16,6 @@ import type {
   ExtensionAgentWorkspaceContext,
   ExtensionPermission,
   ExtensionStateValue,
-  VaultExtension,
   VaultExtensionAgentAction,
 } from "@/lib/extensions/types";
 import { getDocumentAccess } from "@/lib/permissions";
@@ -27,9 +27,10 @@ import {
 import { withLiveDocumentText } from "@/lib/collab-write";
 import { getAssetForUser } from "@/server/assets";
 import {
-  createDefinitionForUser,
-  listDefinitionsForUser,
-} from "@/server/definitions-data";
+  createDocumentForUser,
+  findOwnedDocumentByTitleForUser,
+  listDocumentsByTagForUser,
+} from "@/server/extension-documents";
 import {
   getDocumentForUser,
 } from "@/server/documents-data";
@@ -41,7 +42,7 @@ import {
   listOwnedDocumentExtensionStates,
   upsertDocumentExtensionStateForUser,
 } from "@/server/document-extensions";
-import { listUserExtensionSettings } from "@/server/user-settings";
+import { resolveViewerExtensions } from "@/server/extension-runtime";
 
 /**
  * Permissions for which {@link buildDocumentContext} can currently supply a
@@ -57,25 +58,19 @@ const supportedActionPermissions = new Set<ExtensionPermission>([
 ]);
 
 /**
- * Resolves the set of extension ids enabled for a user: every `core` extension
- * always, plus built-ins the user has turned on (or that default to enabled and
- * have no explicit row yet). Mirrors the settings UI's notion of "enabled".
+ * The installed extensions enabled for a user: those they turned on, or that
+ * default to enabled and have no explicit row yet. Mirrors the settings UI's
+ * notion of "enabled".
  */
 export async function resolveEnabledExtensionsForUser(
   userId: string,
-): Promise<VaultExtension[]> {
-  const allowedExtensionIds = getLocalExtensionIds();
-  const rows = await listUserExtensionSettings({ userId, allowedExtensionIds });
-  const explicit = new Map(rows.map((row) => [row.extensionId, row.enabled]));
+): Promise<ExtensionManifest[]> {
+  const { enabledIds } = await resolveViewerExtensions(userId);
+  const enabled = new Set(enabledIds);
 
-  const enabledIds = localBuiltInExtensions
-    .filter((extension) => {
-      const setting = explicit.get(extension.id);
-      return setting ?? extension.defaultEnabled ?? false;
-    })
-    .map((extension) => extension.id);
-
-  return localExtensionRegistry.getEnabledExtensions(enabledIds);
+  return serverExtensionEntries
+    .filter(({ manifest }) => enabled.has(manifest.id))
+    .map(({ manifest }) => manifest);
 }
 
 export type AgentActionDescriptor = {
@@ -141,9 +136,10 @@ export async function listAgentActionsForUser(
   const enabled = await resolveEnabledExtensionsForUser(userId);
   const enabledIds = new Set(enabled.map((extension) => extension.id));
 
-  const entries = localExtensionRegistry
-    .getAgentActions()
-    .filter((entry) => enabledIds.has(entry.extension.id));
+  const entries = listAgentActions().filter(
+      (entry) =>
+        enabledIds.has(entry.extension.id) && entry.action.agent !== false,
+    );
 
   if (!documentId) {
     const actions = entries.map(describeAction);
@@ -192,6 +188,12 @@ export type RunAgentActionInput = {
   actionId: string;
   documentId?: string;
   input: unknown;
+  /**
+   * Who is calling. `agent` (MCP, the default) may not run actions marked
+   * `agent: false`; `extension` is an extension's own UI, through
+   * `runExtensionActionAction`. Every other check is identical.
+   */
+  caller?: "agent" | "extension";
 };
 
 /**
@@ -381,10 +383,12 @@ export async function runAgentActionForUser({
   actionId,
   documentId,
   input,
+  caller = "agent",
 }: RunAgentActionInput): Promise<ExtensionAgentActionResult> {
-  const entry = localExtensionRegistry.getAgentAction(actionId);
+  const entry = findAgentAction(actionId);
 
-  if (!entry) {
+  // A UI-only action is reported to agents exactly like one that does not exist.
+  if (!entry || (caller === "agent" && entry.action.agent === false)) {
     throw new Error(`Unknown agent action: ${actionId}`);
   }
 
@@ -408,8 +412,10 @@ export async function runAgentActionForUser({
   let fxTable: Awaited<ReturnType<typeof getFxRateTable>> | undefined;
 
   const actionPermissions = new Set(entry.action.permissions ?? []);
+  const viewer = await resolveViewerExtensions(userId);
   const context: ExtensionAgentActionContext = {
     user: { id: userId },
+    settings: viewer.settings[entry.extension.id] ?? {},
     fx: {
       // Memoized per call so an action reading rates twice makes one request.
       getTable: async () => {
@@ -419,35 +425,16 @@ export async function runAgentActionForUser({
     },
   };
 
-  // The dictionary surface. Gated like every other capability: reading needs
-  // `document:read`, and creating a definition is a document write.
+  // Document services. Gated like every other capability: listing needs
+  // `document:read`; finding your own documents to reuse and creating new ones
+  // are document writes.
   if (actionPermissions.has("document:read")) {
-    context.definitions = {
-      list: () => listDefinitionsForUser(userId),
+    context.documents = {
+      listByTag: (tagSlug) => listDocumentsByTagForUser(userId, tagSlug),
       ...(actionPermissions.has("document:write")
         ? {
-            create: async ({
-              term,
-              summary,
-            }: {
-              term: string;
-              summary?: string;
-            }) => {
-              const result = await createDefinitionForUser(userId, {
-                term,
-                summary,
-              });
-
-              if (!result.ok) {
-                throw new Error(result.message);
-              }
-
-              return {
-                documentId: result.documentId,
-                term: result.title,
-                created: result.created,
-              };
-            },
+            findOwnedByTitle: (title) => findOwnedDocumentByTitleForUser(userId, title),
+            create: (documentInput) => createDocumentForUser(userId, documentInput),
           }
         : {}),
     };

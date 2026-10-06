@@ -15,7 +15,7 @@ import { createDocumentForUser } from "@/server/documents-data";
 import { getUserExtensionSetting, upsertUserExtensionSettings } from "@/server/user-settings";
 
 /**
- * The task index behind every agenda surface (docs/23_TASKS_AND_AGENDA_PLAN.md
+ * The task index behind every agenda surface (docs/24_TASKS_AND_AGENDA_PLAN.md
  * §4). Tasks are Markdown lines; `document_tasks` is a disposable projection of
  * them, refreshed lazily on read rather than on save — saves mostly happen in
  * `scripts/collab-server.mjs`, a plain-JS process that could only index with a
