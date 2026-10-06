@@ -43,6 +43,7 @@ import {
   upsertDocumentExtensionStateForUser,
 } from "@/server/document-extensions";
 import { resolveViewerExtensions } from "@/server/extension-runtime";
+import { addTaskToDocument, applyTaskChange, captureTask, getAgentTask, listAgentTasks, TaskMovedError } from "@/server/tasks-data";
 
 /**
  * Permissions for which {@link buildDocumentContext} can currently supply a
@@ -437,6 +438,28 @@ export async function runAgentActionForUser({
             create: (documentInput) => createDocumentForUser(userId, documentInput),
           }
         : {}),
+    };
+    context.tasks = {
+      list: (options) => listAgentTasks(userId, options),
+      ...(actionPermissions.has("document:write") ? {
+        add: async ({ text, today, documentTitle }) => {
+          const target = documentTitle
+            ? await findOwnedDocumentByTitleForUser(userId, documentTitle)
+            : null;
+          if (documentTitle && !target) throw new Error(`No owned document titled "${documentTitle}" was found.`);
+          const captured = target
+            ? await addTaskToDocument(userId, target.documentId, { text, today })
+            : await captureTask(userId, { text, today });
+          if (!captured) throw new Error("Task text is empty.");
+          return { documentId: captured.documentId, line: captured.lineIndex,
+            rawLine: captured.line, text: captured.text, dueDay: captured.due?.day ?? null };
+        },
+        change: async ({ documentId, ordinal, today, change }) => {
+          const task = await getAgentTask(userId, documentId, ordinal);
+          if (!task) throw new TaskMovedError();
+          await applyTaskChange(userId, { documentId, line: task.line, rawLine: task.rawLine, change, today });
+        },
+      } : {}),
     };
   }
 

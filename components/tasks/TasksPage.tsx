@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   CalendarDays,
   CalendarRange,
@@ -50,6 +51,7 @@ import {
   type TaskPageResult,
 } from "@/server/tasks";
 import type { PageTask, TaskDetail } from "@/server/tasks-data";
+import type { WorkspaceAgendaEvent } from "@/lib/extension-api/server";
 
 /**
  * The full Tasks page (docs/24_TASKS_AND_AGENDA_PLAN.md §6.2, slice 5): Agenda,
@@ -484,6 +486,7 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
           ) : view === "agenda" ? (
             <AgendaView
               groups={groupAgenda(visible, today, data.inboxDocumentId, focusDay)}
+              events={data.events}
               {...rowProps}
             />
           ) : view === "week" ? (
@@ -647,9 +650,27 @@ function shortWeekday(dayKey: string): string {
 
 function AgendaView({
   groups,
+  events,
   ...rowProps
-}: RowProps & { groups: ReturnType<typeof groupAgenda<PageTask>> }) {
-  if (groups.length === 0) {
+}: RowProps & { groups: ReturnType<typeof groupAgenda<PageTask>>; events: WorkspaceAgendaEvent[] }) {
+  const byDay = new Map<string, WorkspaceAgendaEvent[]>();
+  for (const event of events) {
+    const list = byDay.get(event.day) ?? [];
+    list.push(event);
+    byDay.set(event.day, list);
+  }
+  const present = new Set(groups.filter((group) => group.dayKey).map((group) => group.dayKey));
+  const eventGroups = [...byDay.keys()].filter((day) => !present.has(day)).map((day) => ({
+    id: day, kind: "day" as const, dayKey: day, tasks: [] as PageTask[],
+  }));
+  const allGroups = [...groups, ...eventGroups].sort((a, b) => {
+    if (a.kind === "overdue") return -1;
+    if (b.kind === "overdue") return 1;
+    if (a.kind === "inbox") return 1;
+    if (b.kind === "inbox") return -1;
+    return (a.dayKey ?? "").localeCompare(b.dayKey ?? "");
+  });
+  if (allGroups.length === 0) {
     return (
       <p className="px-2 py-6 text-sm text-muted-foreground">
         Nothing scheduled. Give a task a date with <code>@</code> in any document, or capture one with{" "}
@@ -660,7 +681,7 @@ function AgendaView({
 
   return (
     <div role="listbox" aria-label="Agenda" className="grid gap-5">
-      {groups.map((group) => (
+      {allGroups.map((group) => (
         <section
           key={group.id}
           id={group.dayKey ? `agenda-day-${group.dayKey}` : `agenda-${group.id}`}
@@ -677,13 +698,23 @@ function AgendaView({
             />
           )}
           <div className="mt-1 grid gap-0.5">
-            {group.tasks.length === 0 ? (
+            {group.tasks.length === 0 && (byDay.get(group.dayKey ?? "") ?? []).length === 0 ? (
               <p className="px-2 py-1.5 text-sm text-muted-foreground">Nothing due.</p>
             ) : (
               group.tasks.map((task) => (
                 <TaskItem key={taskKey(task)} task={task} showDue={group.kind === "overdue"} {...rowProps} />
               ))
             )}
+            {(byDay.get(group.dayKey ?? "") ?? []).map((event) => (
+              <Link key={event.id} href={`/docs/${event.documentId}`}
+                className="flex items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
+                <CalendarDays className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{event.text || "Untitled event"}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{event.documentTitle}{event.time ? ` · ${event.time}` : ""}</span>
+                </span>
+              </Link>
+            ))}
           </div>
         </section>
       ))}

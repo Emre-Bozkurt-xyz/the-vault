@@ -22,6 +22,8 @@ import {
   type TaskPageData,
 } from "@/server/tasks-data";
 import { getUserExtensionSetting } from "@/server/user-settings";
+import { listWorkspaceAgendaEvents } from "@/server/extension-agenda";
+import type { WorkspaceAgendaEvent } from "@/lib/extension-api/server";
 
 /** How far ahead the sidebar agenda looks, counting today. */
 const agendaHorizonDays = 7;
@@ -52,7 +54,7 @@ const updateTaskInputSchema = z.object({
 });
 
 export type TaskAgendaResult =
-  | ({ ok: true; today: string; through: string; inboxDocumentId: string | null } & TaskAgenda)
+  | ({ ok: true; today: string; through: string; inboxDocumentId: string | null; events: WorkspaceAgendaEvent[] } & TaskAgenda)
   | { ok: false; error: string; code?: "moved" };
 
 const captureInputSchema = z.object({
@@ -90,8 +92,11 @@ async function loadAgenda(userId: string, today: string): Promise<TaskAgendaResu
   const through = addDaysToDayKey(today, agendaHorizonDays);
   await ensureTaskIndexFresh(userId);
   const inboxDocumentId = await getInboxDocumentId(userId);
-  const agenda = await listAgendaTasks(userId, today, through, inboxDocumentId);
-  return { ok: true, today, through, inboxDocumentId, ...agenda };
+  const [agenda, events] = await Promise.all([
+    listAgendaTasks(userId, today, through, inboxDocumentId),
+    listWorkspaceAgendaEvents(userId, today, through),
+  ]);
+  return { ok: true, today, through, inboxDocumentId, events, ...agenda };
 }
 
 const disabledResult: TaskAgendaResult = {
@@ -237,7 +242,7 @@ export async function undoCaptureAction(input: unknown): Promise<TaskAgendaResul
 }
 
 export type TaskPageResult =
-  | ({ ok: true; today: string; inboxDocumentId: string | null } & TaskPageData)
+  | ({ ok: true; today: string; inboxDocumentId: string | null; events: WorkspaceAgendaEvent[] } & TaskPageData)
   | { ok: false; error: string };
 
 /** Everything the Tasks page shows; it filters and groups client-side. */
@@ -255,11 +260,12 @@ export async function getTaskPageAction(input: unknown): Promise<TaskPageResult>
 
   try {
     await ensureTaskIndexFresh(user.id);
-    const [data, inboxDocumentId] = await Promise.all([
+    const [data, inboxDocumentId, events] = await Promise.all([
       listTaskPageData(user.id, parsed.data.today),
       getInboxDocumentId(user.id),
+      listWorkspaceAgendaEvents(user.id, parsed.data.today, addDaysToDayKey(parsed.data.today, 30)),
     ]);
-    return { ok: true, today: parsed.data.today, inboxDocumentId, ...data };
+    return { ok: true, today: parsed.data.today, inboxDocumentId, events, ...data };
   } catch (error) {
     console.error("Failed to load the tasks page", error);
     return { ok: false, error: "Could not load tasks." };

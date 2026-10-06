@@ -15,6 +15,7 @@ import calcServer from "./calc/server";
 import calendarServer from "./calendar/server";
 import dictionaryServer from "./dictionary/server";
 import stickersServer from "./stickers/server";
+import tasksServer from "./tasks/server";
 
 export type ServerExtensionEntry = {
   manifest: ExtensionManifest;
@@ -26,5 +27,5 @@ export const serverExtensions: readonly ServerExtensionEntry[] = [
   { manifest: calendarManifest, server: calendarServer },
   { manifest: dictionaryManifest, server: dictionaryServer },
   { manifest: stickersManifest, server: stickersServer },
-  { manifest: tasksManifest, server: null },
+  { manifest: tasksManifest, server: tasksServer },
 ];

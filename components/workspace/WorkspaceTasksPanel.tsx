@@ -268,7 +268,7 @@ export function WorkspaceTasksPanel() {
           <p className="px-2 py-3 text-xs text-muted-foreground">Loading tasks…</p>
         ) : !result.ok ? (
           <p className="px-2 py-3 text-xs text-muted-foreground">{result.error}</p>
-        ) : result.tasks.length === 0 ? (
+        ) : result.tasks.length === 0 && result.events.length === 0 ? (
           <EmptyAgenda today={result.today} laterCount={result.laterCount} />
         ) : (
           <>
@@ -301,6 +301,23 @@ export function WorkspaceTasksPanel() {
                 </section>
               ) : null,
             )}
+            {result.events.length > 0 ? (
+              <section className="mb-3" aria-label="Calendar events">
+                <h3 className="px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Calendar events</h3>
+                <div className="grid gap-0.5">
+                  {result.events.map((event) => (
+                    <Link key={event.id} href={`/docs/${event.documentId}`}
+                      className="flex items-start gap-2 rounded-[5px] px-2 py-1.5 text-sm hover:bg-sidebar-accent">
+                      <CalendarClock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{event.text || "Untitled event"}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{event.documentTitle} · {formatDueLabel(event.day, result.today)}{event.time ? ` ${event.time}` : ""}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {result.laterCount > 0 ? (
               <p className="px-2 py-1 text-xs text-muted-foreground">
                 {result.laterCount} more due later.

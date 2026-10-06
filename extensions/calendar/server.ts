@@ -118,10 +118,12 @@ const listUpcomingTasksInputSchema = z.object({
 });
 
 const upcomingTaskSchema = z.object({
+  source: z.enum(["calendar", "markdown"]),
   documentId: z.string(),
   documentTitle: z.string(),
-  calendarId: z.string(),
-  entryId: z.string(),
+  calendarId: z.string().optional(),
+  entryId: z.string().optional(),
+  ordinal: z.number().optional(),
   day: z.string(),
   text: z.string(),
   done: z.boolean(),
@@ -133,6 +135,26 @@ const listUpcomingTasksOutputSchema = z.object({
 
 export default defineServer(manifest, {
   state: [{ version: 1, schema: calendarStateSchema }],
+  loadWorkspaceAgendaEvents({ rows, from, to }) {
+    const events = [];
+    for (const row of rows) {
+      if (!row.stateKey.startsWith("calendar:")) continue;
+      const parsed = calendarStateSchema.safeParse(row.state);
+      if (!parsed.success) continue;
+      for (const [entryId, entry] of Object.entries(parsed.data.entries)) {
+        if (entry.type !== "event" || entry.day < from || entry.day > to) continue;
+        events.push({
+          id: `${row.documentId}:${row.stateKey}:${entryId}`,
+          documentId: row.documentId,
+          documentTitle: row.documentTitle,
+          day: entry.day,
+          time: entry.time ?? null,
+          text: entry.text,
+        });
+      }
+    }
+    return events;
+  },
   actions: [
     {
       id: "vault.calendar.listEntries",
@@ -349,9 +371,9 @@ export default defineServer(manifest, {
     },
     {
       id: "vault.calendar.listUpcomingTasks",
-      title: "List upcoming calendar tasks",
+      title: "List upcoming tasks",
       description:
-        "Across all your documents, list calendar tasks — optionally within a day range and excluding completed ones. Useful for a daily digest of what's due.",
+        "Across your owned documents, list calendar and Markdown tasks — optionally within a day range and excluding completed ones. Useful for a daily digest of what's due.",
       scope: "workspace",
       mutates: false,
       permissions: ["document:read"],
@@ -384,6 +406,7 @@ export default defineServer(manifest, {
             if (to && entry.day > to) continue;
 
             tasks.push({
+              source: "calendar",
               documentId: row.documentId,
               documentTitle: row.documentTitle,
               calendarId,
@@ -391,6 +414,18 @@ export default defineServer(manifest, {
               day: entry.day,
               text: entry.text,
               done,
+            });
+          }
+        }
+
+        if (context.tasks) {
+          const markdownTasks = await context.tasks.list({ from, to, includeDone, limit: 500 });
+          for (const task of markdownTasks) {
+            if (!task.dueDay) continue;
+            tasks.push({
+              source: "markdown", documentId: task.documentId,
+              documentTitle: task.documentTitle, ordinal: task.ordinal,
+              day: task.dueDay, text: task.text, done: task.status === "done",
             });
           }
         }

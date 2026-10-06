@@ -164,6 +164,23 @@ export type ExtensionAgentWorkspaceContext = {
   state?: ExtensionAgentWorkspaceStateApi;
 };
 
+/** Owner-scoped Markdown tasks, backed by the disposable task index and live write path. */
+export type ExtensionAgentTasksApi = {
+  list: (input: { from?: string; to?: string; includeDone?: boolean; limit?: number }) => Promise<Array<{
+    documentId: string; documentTitle: string; ordinal: number; line: number; rawLine: string;
+    status: "open" | "in_progress" | "done" | "cancelled"; text: string;
+    dueDay: string | null; dueTime: string | null; doneDay: string | null;
+  }>>;
+  add?: (input: { text: string; today: string; documentTitle?: string }) => Promise<{
+    documentId: string; line: number; rawLine: string; text: string; dueDay: string | null;
+  }>;
+  change?: (input: {
+    documentId: string; ordinal: number; today: string;
+    change: { type: "status"; status: "open" | "in_progress" | "done" | "cancelled" }
+      | { type: "due"; day: string | null; time?: string | null };
+  }) => Promise<void>;
+};
+
 /**
  * The sandbox a {@link VaultExtensionAgentAction} handler runs against. The
  * server constructs it per call after resolving the acting user, the target
@@ -187,6 +204,8 @@ export type ExtensionAgentActionContext = {
    * `fx`, except this one *is* permission-gated.
    */
   documents?: ExtensionAgentDocumentsApi;
+  /** Present with document:read; mutators require document:write. */
+  tasks?: ExtensionAgentTasksApi;
   /**
    * The acting user's settings for this extension (schema defaults when they
    * have none stored).

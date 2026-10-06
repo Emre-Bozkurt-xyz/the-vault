@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { z } from "zod";
 
@@ -398,6 +398,69 @@ export async function captureTask(
 
   await reindexAfterWrite(documentId, markdown);
   return { ...captured, documentId, lineIndex };
+}
+
+/** Append a captured task to a specific owned document using the same live write path as Inbox capture. */
+export async function addTaskToDocument(
+  userId: string,
+  documentId: string,
+  input: { text: string; today: string },
+): Promise<CaptureResult | null> {
+  const captured = parseCapture(input.text, input.today);
+  if (!captured) return null;
+  const access = await getDocumentAccess(userId, documentId);
+  if (!access.canEdit) throw new Error("Document not found or you cannot edit it.");
+  let lineIndex = 0;
+  const { markdown } = await withLiveDocumentText(userId, documentId, (ytext) => {
+    const current = ytext.toString();
+    const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+    lineIndex = current.length === 0 ? 0 : current.split("\n").length - (separator ? 0 : 1);
+    ytext.insert(current.length, `${separator}${captured.line}\n`);
+  }, { origin: "tasks", restorePoint: false });
+  await reindexAfterWrite(documentId, markdown);
+  return { ...captured, documentId, lineIndex };
+}
+
+/** Owner-scoped indexed tasks for agent discovery. Refresh before querying. */
+export async function listAgentTasks(userId: string, input: {
+  from?: string;
+  to?: string;
+  includeDone?: boolean;
+  limit?: number;
+}) {
+  await ensureTaskIndexFresh(userId);
+  const conditions = [eq(documents.ownerId, userId), isNull(documents.deletedAt)];
+  conditions.push(inArray(documentTasks.status, input.includeDone ? ["open", "in_progress", "done"] : ["open", "in_progress"]));
+  if (input.from) conditions.push(gte(documentTasks.dueDay, input.from));
+  if (input.to) conditions.push(lte(documentTasks.dueDay, input.to));
+  return db.select({
+    documentId: documentTasks.documentId,
+    documentTitle: documents.title,
+    ordinal: documentTasks.ordinal,
+    line: documentTasks.line,
+    rawLine: documentTasks.rawLine,
+    status: documentTasks.status,
+    text: documentTasks.text,
+    dueDay: documentTasks.dueDay,
+    dueTime: documentTasks.dueTime,
+    doneDay: documentTasks.doneDay,
+  }).from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(and(...conditions))
+    .orderBy(sql`${documentTasks.dueDay} asc nulls last`, asc(documents.title), asc(documentTasks.ordinal))
+    .limit(input.limit ?? 200);
+}
+
+/** Resolve a stable task handle without paging through unrelated tasks. */
+export async function getAgentTask(userId: string, documentId: string, ordinal: number) {
+  await ensureTaskIndexFresh(userId);
+  const [task] = await db.select({ line: documentTasks.line, rawLine: documentTasks.rawLine })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(and(eq(documents.ownerId, userId), isNull(documents.deletedAt),
+      eq(documentTasks.documentId, documentId), eq(documentTasks.ordinal, ordinal)))
+    .limit(1);
+  return task ?? null;
 }
 
 /** Undo for a capture: removes that line, if it is still exactly there. */

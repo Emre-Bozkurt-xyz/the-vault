@@ -1,8 +1,9 @@
 # Tasks, Agenda, and Inbox
 
-Status as of 2026-09-30: **slices 1-6 are implemented and verified** (index and
+Status as of 2026-10-06: **slices 1-6 are implemented and verified** (index and
 sidebar agenda, write-back, authoring in the editor, Inbox and capture, the
-Tasks page, home/side-panel/query blocks/progress); slice 7 is not started.
+Tasks page, home/side-panel/query blocks/progress); slice 7 code is implemented,
+with browser regression still pending.
 Query-block rows are read-only lists (tick in the document or the agenda), and
 the editor's own Read mode does not expand them, matching calendars, since it
 renders without a document id. Deviation: the Inbox cannot yet be re-pointed from
@@ -14,6 +15,14 @@ Settings (ยง6.3), because settings have no document-picker field. Decisions in ย
 Core owns task-list syntax and the workspace views; the SDK still has no
 workspace-panel contribution. The earlier browser checks preceded this merge,
 so a browser regression pass remains.
+
+2026-10-06 slice 7: `extensions/tasks/server.ts` declares four agent actions over
+the owner-scoped index. `context.tasks` is a permission-gated SDK service: reads
+refresh the index and mutations use the same live collaboration write path as
+the UI. Calendar's upcoming-task action includes dated Markdown tasks. Server
+modules may contribute `loadWorkspaceAgendaEvents`; the host gathers only
+enabled extensions' owner-scoped state, and Calendar contributes events to
+the sidebar and Tasks-page Agenda. Calendar events remain in extension state.
 
 ## 1. Product direction
 

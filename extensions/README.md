@@ -207,6 +207,11 @@ export default defineServer(manifest, {
 Actions are what MCP agents call, and what your own UI calls through
 `useExtensionAction`: one permission-checked dispatcher for both.
 
+An extension with `document:read` may also define `loadWorkspaceAgendaEvents`
+in `server.ts`. The host passes only that extension's state rows from documents
+the viewer owns, plus a day range. Return dated, read-only items for the Tasks
+agenda; Calendar's implementation is the example.
+
 ## Testing
 
 - **Unit tests** live next to the code. `runCommand(editor, commandId, "text|")`
