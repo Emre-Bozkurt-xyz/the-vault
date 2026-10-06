@@ -14,9 +14,11 @@
  * overdue colouring) are Live mode's job.
  */
 
+import { parseRecurrence } from "@/lib/tasks/recurrence";
 import { isValidDayKey } from "@/lib/tasks/dates";
 import { isTaskPriority, TASK_TIME_PATTERN } from "@/lib/tasks/parse";
 
+export const TASK_REPEAT_ELEMENT_NAME = "vault-task-repeat";
 export const TASK_PRIORITY_ELEMENT_NAME = "vault-task-priority";
 export const TASK_DATE_ELEMENT_NAME = "vault-task-date";
 export const TASK_PROGRESS_ELEMENT_NAME = "vault-task-progress";
@@ -91,15 +93,15 @@ export function remarkTasks() {
         if (
           childInTask &&
           child.type === "textDirective" &&
-          (child.name === "due" || child.name === "done" || child.name === "priority")
+          (child.name === "due" || child.name === "done" || child.name === "priority" || child.name === "repeat")
         ) {
           const value = readValue(source, child);
 
-          if (child.name === "priority" ? isTaskPriority(value) : isValidTaskDateValue(child.name, value)) {
+          if (child.name === "repeat" ? Boolean(parseRecurrence(value)) : child.name === "priority" ? isTaskPriority(value) : isValidTaskDateValue(child.name, value)) {
             // Claimed by `hName`; the calc plugin's restore step skips it.
             child.data = {
               ...child.data,
-              hName: child.name === "priority" ? TASK_PRIORITY_ELEMENT_NAME : TASK_DATE_ELEMENT_NAME,
+              hName: child.name === "repeat" ? TASK_REPEAT_ELEMENT_NAME : child.name === "priority" ? TASK_PRIORITY_ELEMENT_NAME : TASK_DATE_ELEMENT_NAME,
               hProperties: { "data-kind": child.name, "data-value": value },
             };
             child.children = [];

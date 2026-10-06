@@ -89,3 +89,10 @@ it("renders valid task priorities through both sanitizers and leaves other occur
     expect(render(source)).not.toContain("<vault-task-priority");
   }
 });
+
+
+it("renders recurrence through sanitizers only for valid task rules", () => {
+  expect(render("- [ ] A :repeat[every 2 weeks]")).toContain('<vault-task-repeat data-value="every 2 weeks"></vault-task-repeat>');
+  expect(render("- [ ] A :repeat[never]")).toContain(":repeat[never]");
+  expect(render("prose :repeat[daily]")).toContain(":repeat[daily]");
+});

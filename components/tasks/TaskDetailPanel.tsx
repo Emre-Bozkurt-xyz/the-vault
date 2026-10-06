@@ -1,6 +1,7 @@
 "use client";
 
 import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
 import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { ArrowUpRight, CalendarX2, Keyboard } from "lucide-react";
 
@@ -139,9 +140,9 @@ export function TaskDetailPanel({
       </section>
 
       <section className="flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">Priority</span>
-        <TaskPriorityBadge priority={task.priority} />
-        {!task.priority ? <span className="text-sm">None</span> : null}
+        <span className="text-sm text-muted-foreground">Priority / repeat</span>
+        <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} />
+        {!task.priority && !task.repeat ? <span className="text-sm">None</span> : null}
         <TaskActionsMenu task={task} today={today} onChange={(change) => onChange(task, change)} />
       </section>
 

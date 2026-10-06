@@ -130,3 +130,5 @@ export function defineServer<const M extends ExtensionManifest>(
     loadWorkspaceAgendaEvents: server.loadWorkspaceAgendaEvents ?? null,
   };
 }
+
+export { parseRecurrence } from "@/lib/tasks/recurrence";

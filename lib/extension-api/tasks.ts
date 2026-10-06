@@ -14,3 +14,4 @@ export { navigateWorkspace } from "@/lib/workspace-navigation";
 export { subscribeToTasksChanged } from "@/lib/workspace-toast";
 export { getTaskPageAction, type TaskPageResult } from "@/server/tasks";
 export { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
+export { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";

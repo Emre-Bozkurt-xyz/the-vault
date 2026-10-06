@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
 import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -31,7 +32,7 @@ import {
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { buildFolderPaths, type FolderPathNode } from "@/lib/folder-paths";
 import { addDaysToDayKey, formatDueLabel } from "@/lib/tasks/dates";
-import type { TaskChange } from "@/lib/tasks/edit";
+import { readTaskRepeat, type TaskChange } from "@/lib/tasks/edit";
 import {
   dayCounts,
   filterTasks,
@@ -117,6 +118,7 @@ function patchTask(task: PageTask, change: TaskChange, today: string): PageTask 
       doneDay: change.status === "done" ? (task.doneDay ?? today) : null,
     };
   }
+  if (change.type === "repeat") return { ...task, repeat: change.repeat };
   if (change.type === "priority") return { ...task, priority: change.priority };
   return { ...task, dueDay: change.day, dueTime: change.day ? (change.time ?? null) : null };
 }
@@ -139,6 +141,7 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
   const serverDataRef = useRef<OkPage | null>(null);
   const pendingWritesRef = useRef(0);
   const queuesRef = useRef(new Map<string, Promise<void>>());
+  const recurrenceVersionsRef = useRef(new Map<string, number>());
 
   const folderPaths = useMemo(() => buildFolderPaths(folders), [folders]);
 
@@ -187,6 +190,7 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
   const changeTask = useCallback(
     (ref: TaskRef, change: TaskChange) => {
       const key = taskKey(ref);
+      const version = recurrenceVersionsRef.current.get(ref.documentId) ?? 0;
       setNotice(null);
       setData((current) => {
         if (!current?.ok) return current;
@@ -202,8 +206,14 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
       const queues = queuesRef.current;
       const previous = queues.get(ref.documentId) ?? Promise.resolve();
       const run = previous.then(async () => {
+        if ((recurrenceVersionsRef.current.get(ref.documentId) ?? 0) !== version) {
+          pendingWritesRef.current -= 1;
+          setNotice("Task structure may have changed. Refresh before changing another task.");
+          dispatchTasksChanged();
+          return;
+        }
         const latest =
-          serverDataRef.current?.tasks.find((task) => taskKey(task) === key) ?? ref;
+          version > 0 ? ref : serverDataRef.current?.tasks.find((task) => taskKey(task) === key) ?? ref;
         const result = await updateTaskAction({
           today: todayDayKey(),
           documentId: latest.documentId,
@@ -213,6 +223,7 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
         }).catch(() => ({ ok: false as const, error: "Could not change the task." }));
 
         pendingWritesRef.current -= 1;
+        if (result.ok && change.type === "status" && change.status === "done" && readTaskRepeat(latest.rawLine)) recurrenceVersionsRef.current.set(ref.documentId, version + 1);
         if (!result.ok) setNotice(result.error);
         // Refreshes this page and the sidebar agenda alike.
         dispatchTasksChanged();
@@ -596,7 +607,7 @@ function TaskItem({
           )}
         </span>
         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-          <TaskPriorityBadge priority={task.priority} /> {where}
+          <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} /> {where}
           {compact && task.dueTime ? ` · ${task.dueTime}` : ""}
         </span>
       </span>

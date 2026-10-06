@@ -4,6 +4,7 @@ import {
   applyTextEdits,
   locateTaskLine,
   planTaskEdit,
+  readTaskRepeat,
   type TaskChange,
 } from "@/lib/tasks/edit";
 import { parseTasks } from "@/lib/tasks/parse";
@@ -123,4 +124,19 @@ describe("priority source edits", () => {
     expect(change("- [ ] Ship", { type: "priority", priority: "medium" })).toBe("- [ ] Ship :priority[medium]");
     expect(change("- [ ] Ship", { type: "priority", priority: null })).toBe("- [ ] Ship");
   });
+});
+
+
+it("sets, replaces and clears only real recurrence directives", () => {
+  const source = "- [ ] A :repeat[daily] `:repeat[weekly]` :repeat[monthly] :priority[high]";
+  const result = change(source, { type: "repeat", repeat: "every 2 weeks" });
+  expect(result).toBe("- [ ] A :repeat[every 2 weeks] `:repeat[weekly]` :priority[high]");
+  expect(change(result!, { type: "repeat", repeat: null })).toBe("- [ ] A `:repeat[weekly]` :priority[high]");
+  expect(change(source, { type: "repeat", repeat: "sometimes" })).toBeNull();
+});
+
+
+it("reads a valid recurrence precondition on nested and quoted source lines", () => {
+  expect(readTaskRepeat(">   - [ ] A :repeat[never] :repeat[weekly] `:repeat[daily]`")).toBe("weekly");
+  expect(readTaskRepeat("    - [ ] A `:repeat[daily]`")).toBeNull();
 });

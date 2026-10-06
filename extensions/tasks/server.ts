@@ -1,7 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
-import { defineServer } from "@/lib/extension-api/server";
+import { defineServer, parseRecurrence } from "@/lib/extension-api/server";
 import manifest from "./manifest";
 
 const day = z.string().refine((value) => {
@@ -72,6 +72,18 @@ export default defineServer(manifest, {
         const args = input as { documentId: string; ordinal: number; today: string; priority: "high" | "medium" | "low" | null };
         await context.tasks.change({ ...args, change: { type: "priority", priority: args.priority } });
         return { message: "Task priority updated." };
+      },
+    },
+    {
+      id: "vault.tasks.setTaskRepeat", title: "Set task recurrence",
+      description: "Set daily, weekly, monthly, yearly, every N days/weeks/months/years (fixed schedule), or after N days/weeks/months/years (from completion). Month/year anchors (on 31 or on 02-29) are retained automatically. Null clears recurrence.",
+      scope: "workspace", mutates: true, permissions: ["document:read", "document:write"],
+      input: z.object({ ...taskRef, repeat: z.string().max(40).refine((value) => Boolean(parseRecurrence(value))).nullable() }),
+      async handler(input, context) {
+        if (!context.tasks?.change) throw new Error("Task write access is required.");
+        const args = input as { documentId: string; ordinal: number; today: string; repeat: string | null };
+        await context.tasks.change({ ...args, change: { type: "repeat", repeat: args.repeat } });
+        return { message: "Task recurrence updated." };
       },
     },
   ],

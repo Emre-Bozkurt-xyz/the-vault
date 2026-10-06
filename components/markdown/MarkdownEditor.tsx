@@ -137,6 +137,7 @@ import {
   addTaskDateDecorations,
   subtaskProgress,
   taskAuthoringEnabled,
+  recurringTaskCompletion,
   taskDateCompletionSource,
 } from "@/components/markdown/live-tasks";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
@@ -851,6 +852,38 @@ export function MarkdownEditor({
     };
   }, [collabSession, editorMode, isCollaborative]);
 
+  useEffect(() => {
+    markdownValueRef.current = markdownValue;
+  }, [markdownValue]);
+
+  const toggleReadTask = useCallback(async (
+    task: { line: number; rawLine: string },
+    checked: boolean,
+  ) => {
+    setReadTaskPending(true);
+    setReadTaskError(null);
+    try {
+      const result = await toggleReadCheckboxAction({
+        documentId,
+        line: task.line,
+        rawLine: task.rawLine,
+        checked,
+        today: todayDayKey(),
+      });
+      if (!result.ok) {
+        setReadTaskError(result.error);
+      } else if (!isCollaborative) {
+        setMarkdownValue(result.markdown);
+        setEditorMountMarkdown(result.markdown);
+      }
+    } catch {
+      setReadTaskError("Could not change the task.");
+    } finally {
+      setReadTaskPending(false);
+    }
+  }, [documentId, isCollaborative]);
+
+
   const extensions = useMemo(
     () => {
       // Host capabilities a `run` slash contribution can name
@@ -877,6 +910,9 @@ export function MarkdownEditor({
       // Gates the `@` date menu and the `:done[…]` stamp on a checkbox click
       // (`live-tasks.ts`); rendering and plain toggling work regardless.
       taskAuthoringEnabled.of(tasksEnabled),
+      recurringTaskCompletion.of(embedSessionToken ? null : (task) => {
+        void toggleReadTask(task, true);
+      }),
       markdownLanguage({
         codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({
@@ -1302,6 +1338,7 @@ export function MarkdownEditor({
       extensionSlashCommands,
       slashMenuEnabled,
       tasksEnabled,
+      toggleReadTask,
       liveContributions,
     ],
   );
@@ -1608,33 +1645,6 @@ export function MarkdownEditor({
     [collabSession, editorMode, isCollaborative],
   );
 
-  const toggleReadTask = useCallback(async (
-    task: { line: number; rawLine: string },
-    checked: boolean,
-  ) => {
-    setReadTaskPending(true);
-    setReadTaskError(null);
-    try {
-      const result = await toggleReadCheckboxAction({
-        documentId,
-        line: task.line,
-        rawLine: task.rawLine,
-        checked,
-        today: todayDayKey(),
-      });
-      if (!result.ok) {
-        setReadTaskError(result.error);
-      } else if (!isCollaborative) {
-        markdownValueRef.current = result.markdown;
-        setMarkdownValue(result.markdown);
-        setEditorMountMarkdown(result.markdown);
-      }
-    } catch {
-      setReadTaskError("Could not change the task.");
-    } finally {
-      setReadTaskPending(false);
-    }
-  }, [documentId, isCollaborative]);
 
   // Jumps to a line, e.g. from the task agenda (`lib/editor-jump-events.ts`).
   // A retained jump waits for the view that will stay: with collaboration, the
@@ -1912,12 +1922,13 @@ export function MarkdownEditor({
                     extensions={documentExtensions}
                   />
                 </DocumentCanvas>
-                {readTaskError ? <p role="alert" className="mt-3 text-sm text-destructive">{readTaskError}</p> : null}
               </div>
             ) : null}
           </div>
         </div>
         </DocumentOverlayHost>
+        {readTaskPending && editorMode === "live" ? <p role="status" className="mt-3 text-sm text-muted-foreground">Updating repeating task?</p> : null}
+        {readTaskError ? <p role="alert" className="mt-3 text-sm text-destructive">{readTaskError}</p> : null}
         {dialogRequest ? (
           <ExtensionDialog
             key={dialogRequest.key}

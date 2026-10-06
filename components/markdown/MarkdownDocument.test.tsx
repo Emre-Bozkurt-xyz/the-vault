@@ -71,3 +71,11 @@ it("renders priority badges in the real Read pipeline with Tasks disabled", () =
   expect(html).toContain("High priority");
   expect(html).not.toContain(":priority[");
 });
+
+
+it("renders recurrence in Read mode when the Tasks extension is disabled", () => {
+  const html = renderToStaticMarkup(<MarkdownDocument markdown="- [ ] A :repeat[weekly]" />);
+  expect(html).toContain("vault-md-task-repeat");
+  expect(html).toContain("weekly");
+  expect(html).not.toContain(":repeat[");
+});

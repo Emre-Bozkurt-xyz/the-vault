@@ -796,6 +796,7 @@ export const documentTasks = pgTable(
     dueTime: text("due_time"),
     doneDay: date("done_day", { mode: "string" }),
     priority: text("priority").$type<"high" | "medium" | "low">(),
+    repeat: text("repeat"),
   },
   (table) => [
     uniqueIndex("document_tasks_document_ordinal_idx").on(

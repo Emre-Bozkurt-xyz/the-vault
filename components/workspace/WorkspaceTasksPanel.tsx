@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
 import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -18,7 +19,7 @@ import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/work
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { captureTaskFromClient } from "@/lib/tasks/capture-client";
 import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
-import type { TaskChange } from "@/lib/tasks/edit";
+import { readTaskRepeat, type TaskChange } from "@/lib/tasks/edit";
 import { priorityRank } from "@/lib/tasks/views";
 import { cn } from "@/lib/utils";
 import { subscribeToTasksChanged } from "@/lib/workspace-toast";
@@ -36,8 +37,8 @@ import type { AgendaTask } from "@/server/tasks-data";
  * task's text opens the document at its line.
  *
  * Changes are optimistic. Writes to one document run one at a time, and each
- * looks up its task's *current* line and text when it runs (tasks are keyed by
- * document + ordinal, which a status or date edit never changes), so a second
+ * looks up its task's *current* line and text when it runs (task fields keep ordinals stable; a recurring completion invalidates later
+ * queued writes because inserting an occurrence changes ordinals), so a second
  * click on a row still finds the line the first click rewrote.
  */
 
@@ -86,6 +87,8 @@ function applyLocally(agenda: OkAgenda, key: string, change: TaskChange): OkAgen
       ];
     }
 
+    if (change.type === "repeat") return [{ ...task, repeat: change.repeat }];
+
     if (change.type === "priority") return [{ ...task, priority: change.priority }];
 
     // An undated Inbox task still belongs in the Inbox section.
@@ -114,6 +117,7 @@ export function WorkspaceTasksPanel() {
   /** Writes in flight; while any are, server responses must not overwrite optimistic rows. */
   const pendingWritesRef = useRef(0);
   const documentQueuesRef = useRef(new Map<string, Promise<void>>());
+  const recurrenceVersionsRef = useRef(new Map<string, number>());
 
   const acceptServerResult = useCallback((next: TaskAgendaResult) => {
     if (next.ok) serverAgendaRef.current = next;
@@ -166,6 +170,7 @@ export function WorkspaceTasksPanel() {
   const changeTask = useCallback(
     (task: AgendaTask, change: TaskChange) => {
       const key = taskKey(task);
+      const version = recurrenceVersionsRef.current.get(task.documentId) ?? 0;
 
       setNotice(null);
       setResult((current) => (current?.ok ? applyLocally(current, key, change) : current));
@@ -174,8 +179,14 @@ export function WorkspaceTasksPanel() {
       const queues = documentQueuesRef.current;
       const previous = queues.get(task.documentId) ?? Promise.resolve();
       const run = previous.then(async () => {
+        if ((recurrenceVersionsRef.current.get(task.documentId) ?? 0) !== version) {
+          pendingWritesRef.current -= 1;
+          setNotice("Task structure may have changed. Refresh before changing another task.");
+          if (pendingWritesRef.current === 0) void load();
+          return;
+        }
         const latest =
-          serverAgendaRef.current?.tasks.find((candidate) => taskKey(candidate) === key) ?? task;
+          version > 0 ? task : serverAgendaRef.current?.tasks.find((candidate) => taskKey(candidate) === key) ?? task;
         let next: TaskAgendaResult;
 
         try {
@@ -193,6 +204,7 @@ export function WorkspaceTasksPanel() {
         pendingWritesRef.current -= 1;
 
         if (next.ok) {
+          if (change.type === "status" && change.status === "done" && readTaskRepeat(latest.rawLine)) recurrenceVersionsRef.current.set(task.documentId, version + 1);
           acceptServerResult(next);
         } else {
           // Drop optimistic state and show what the documents really say.
@@ -393,7 +405,7 @@ function TaskRow({
           )}
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <TaskPriorityBadge priority={task.priority} />
+          <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} />
           <span className="min-w-0 truncate">{context}</span>
           {(showDue && task.dueDay) || task.dueTime ? (
             <span

@@ -5,6 +5,7 @@ import { ListChecks } from "lucide-react";
 
 import {
   TaskPriorityBadge,
+  TaskRepeatBadge,
   todayDayKey,
   requestEditorJump,
   formatDueLabel,
@@ -41,6 +42,7 @@ type Row = {
   dueDay: string | null;
   dueTime: string | null;
   priority: "high" | "medium" | "low" | null;
+  repeat: string | null;
 };
 
 const maxRows = 50;
@@ -130,6 +132,7 @@ function DocumentTasks({
         dueDay: task.dueDay,
         dueTime: task.dueTime,
         priority: task.priority,
+        repeat: task.repeat,
       }));
   }, [markdown, query, today, documentId]);
 
@@ -177,6 +180,7 @@ function PersonalTasks({ query, today }: { query: TaskQuery; today: string | nul
         dueDay: task.dueDay,
         dueTime: task.dueTime,
         priority: task.priority,
+        repeat: task.repeat,
       }));
   }, [result, query, today]);
 
@@ -228,7 +232,7 @@ function Rows({ rows, today, linkable }: { rows: Row[]; today: string | null; li
                 {plainTaskText(row.text) || "Untitled task"}
               </span>
               <span className={cn("vault-task-query-meta", overdue && "vault-task-query-meta--overdue")}>
-                <TaskPriorityBadge priority={row.priority} />
+                <TaskPriorityBadge priority={row.priority} /> <TaskRepeatBadge repeat={row.repeat} />
                 {row.documentTitle ? <span>{row.documentTitle}</span> : null}
                 {row.dueDay ? (
                   <span>

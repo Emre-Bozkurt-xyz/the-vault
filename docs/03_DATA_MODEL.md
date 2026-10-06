@@ -436,7 +436,9 @@ projections; per-document advisory locks serialize replacement.
 
 Migration `0026_free_lester.sql` adds nullable text `priority` (`high`, `medium`,
 `low`, null for none) and clears index stamps so unchanged documents are
-reparsed. Both migrations are applied locally; production must run
+reparsed. Migration `0027_wonderful_microchip.sql` adds nullable text `repeat`
+(the validated portable recurrence rule, including optional month/year anchors)
+and invalidates index stamps again. These migrations are applied locally; production must run
 `npm run db:migrate` before the updated app starts. Markdown remains canonical.
 
 ## 5. Document Extension State

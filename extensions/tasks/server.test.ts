@@ -43,3 +43,33 @@ describe("setTaskPriority", () => {
     ).rejects.toThrow("Task write access");
   });
 });
+
+it("validates recurrence rules and requires write access", async () => {
+  const recurring = server.actions.find(
+    (candidate) => candidate.id === "vault.tasks.setTaskRepeat",
+  )!;
+  expect(
+    recurring.input.safeParse({ ...ref, repeat: "sometimes" }).success,
+  ).toBe(false);
+  const change = vi.fn().mockResolvedValue(undefined);
+  const context: ExtensionAgentActionContext = {
+    user: { id: "owner" },
+    settings: {},
+    tasks: { list: async () => [], change },
+  };
+  await recurring.handler(
+    recurring.input.parse({ ...ref, repeat: "after 2 weeks" }),
+    context,
+  );
+  expect(change).toHaveBeenCalledWith({
+    ...ref,
+    repeat: "after 2 weeks",
+    change: { type: "repeat", repeat: "after 2 weeks" },
+  });
+  await expect(
+    recurring.handler(
+      { ...ref, repeat: null },
+      { user: { id: "reader" }, settings: {} },
+    ),
+  ).rejects.toThrow("Task write access");
+});

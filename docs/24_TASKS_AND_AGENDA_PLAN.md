@@ -118,6 +118,8 @@ over prose.
 | `:due[YYYY-MM-DD]` or `:due[YYYY-MM-DD HH:MM]` | Due day, optional start time | The `@` date menu, capture, reschedule actions |
 | `:done[YYYY-MM-DD]` | Completion day | Ticking a task through any Vault surface |
 | `:priority[high]`, `:priority[medium]`, `:priority[low]` | Optional priority; absent means none | Source text, task action menu, agent action |
+| `:repeat[daily]`, `:repeat[weekly]`, `:repeat[monthly]`, `:repeat[yearly]` | Fixed recurrence | Task menu, source, agent action |
+| `:repeat[every N days/weeks/months/years]` or `:repeat[after N days/weeks/months/years]` | Interval 1?365; `after` measures from completion | Source, agent action |
 
 - Day keys are timezone-naive `YYYY-MM-DD` strings, validated with
   `isValidDayKey` from `lib/tasks/dates.ts`, the same convention the Calendar
@@ -128,7 +130,7 @@ over prose.
 - A document read by something that does not understand these directives shows
   the literal source. `restoreDirectiveText` in `lib/markdown/calc-directive.ts`
   already restores unclaimed directives verbatim, so nothing silently disappears.
-  The tasks render plugin must claim `due`/`done`/`priority` before that restore step runs.
+  The tasks render plugin must claim `due`/`done`/`priority`/`repeat` before that restore step runs.
 - Ticking a box by typing `x` in Source mode does not add `:done[…]`. Such a task
   is done with an unknown completion day.
 
@@ -137,8 +139,45 @@ priority on the task line wins; unknown values stay visible as literal text.
 Priority chips render in Live and Read modes even with Tasks disabled.
 Date/time order is retained; tied tasks sort high, medium, low, then none.
 
-v1 has no start date, recurrence, or tags on the task itself; filtering
+v1 has no start date or tags on the task itself; filtering
 uses the document's existing frontmatter tags and folder. See §10.
+
+### 3.3 Recurrence (implemented 2026-10-06)
+
+- Completing through Tasks-enabled Live/Read checkboxes, workspace controls or
+  agents marks the occurrence done, stamps its completion day and inserts one
+  next occurrence after the entire task item. Typing `x` in Source does not
+  generate an occurrence; disabled Tasks checkboxes only change their marker.
+- Fixed schedules advance from the due date to the first slot after the caller's
+  local day, skipping missed slots. Early completion advances one interval from
+  the original due date. Undated rules start from today. `after N ...` always
+  advances from the completion day. Times and priority carry forward.
+- Monthly/yearly rules clamp missing days and retain their anchor in source:
+  `:repeat[monthly on 31]` or `:repeat[yearly on 02-29]`. Custom fixed intervals
+  also accept those anchors. The next occurrence writes an anchor automatically
+  when one is absent; `after` rules use each completion date instead.
+- Notes and the entire nested checklist carry forward. Completed subtasks reset
+  to open in the new copy; cancelled ones remain cancelled. Unfinished old
+  subtasks become cancelled (skipped), retaining their text while their new
+  copies stay open. Child dates shift by the parent's date delta.
+- The outer recurring checklist controls the cadence: a child under a recurring
+  ancestor completes normally and waits for the parent to repeat. Child rules
+  are preserved in the new checklist but do not create nested history.
+- Valid repeat fields are removed from the archived block. Reopening and
+  re-completing that history cannot generate a second successor. Invalid rules
+  remain visible and do not generate anything.
+- `lib/tasks/document-edit.ts` plans source edits; task server writes use
+  `withDocumentWriteLock` (a separate four-connection Postgres lock pool) before
+  the existing permission-checked live collaboration write. Live recurring
+  completions delegate to that server path. Embed/playground editors without
+  this workspace handler perform ordinary checkbox toggles only.
+- An inserted occurrence shifts ordinals. Page/sidebar queues invalidate later
+  writes from the old document generation and refresh, rather than selecting a
+  different task by its shifted ordinal. Later writes use source preconditions.
+  Agent callers should list tasks again after recurring completion.
+- Migration `0027_wonderful_microchip.sql` adds nullable indexed `repeat` text
+  and invalidates index stamps. Applied locally. Authenticated browser
+  verification remains.
 
 ## 4. Index
 
@@ -165,6 +204,7 @@ lands.
 | `due_time` | text null | `HH:MM` |
 | `done_day` | date (`mode: "string"`) null | |
 | `priority` | text null | `high`, `medium`, `low`; added by `0026_free_lester.sql` |
+| `repeat` | text null | Valid recurrence rule; added by `0027_wonderful_microchip.sql` |
 
 Migration `0026_free_lester.sql` also clears the disposable index stamps so
 unchanged documents are reparsed on their next task read. Markdown is preserved.
@@ -389,7 +429,7 @@ mode plus a full page.
 
 - `listTasks` (workspace, read)
 - `addTask` (to the Inbox or a named document)
-- `setTaskStatus`, `setTaskDue`, `setTaskPriority` (mutating)
+- `setTaskStatus`, `setTaskDue`, `setTaskPriority`, `setTaskRepeat` (mutating)
 
 The Calendar extension's `listUpcomingTasks` grows to include Markdown tasks, so
 "what is due this week?" covers both.
@@ -432,7 +472,8 @@ and `npm test`.
 - **Assignment and shared documents.** `@person` in the same `@` menu, limited to
   friends; the agenda then adds "assigned to me" tasks from shared documents,
   with a toggle to show all of them.
-- **Recurrence, start dates and ranges, reminders** (PWA push).
+- **Start dates and ranges, reminders** (PWA push).
+- **Recurrence:** implemented 2026-10-06; authenticated browser verification remains (see ?3.3).
 - **Priority:** implemented 2026-10-06; signed-in browser verification pending.
 - **Daily notes** as an alternative capture target: implemented 2026-10-06;
   authenticated browser verification remains.

@@ -170,3 +170,9 @@ describe("task priority", () => {
     expect(parseTasks("- [ ] `:priority[high]`\n- ordinary :priority[low]")[0].priority).toBeNull();
   });
 });
+
+
+it("reads the first valid repeat rule on the task line, keeping unknown rules and inline code", () => {
+  const [task] = parseTasks("- [ ] A :repeat[never] :repeat[every 2 weeks] :repeat[daily] `:repeat[weekly]`\n  note :repeat[monthly]");
+  expect(task).toMatchObject({ repeat: "every 2 weeks", text: "A :repeat[never] `:repeat[weekly]`", note: "note :repeat[monthly]" });
+});

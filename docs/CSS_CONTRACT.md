@@ -60,6 +60,8 @@ match inside one document's rendered body.
 
 Task priority badges use `.vault-md-task-priority` with `data-priority` equal to `high`, `medium`, or `low`.
 
+Recurrence badges use `.vault-md-task-repeat`.
+
 ## Tables & definition lists
 
 `.vault-md-table-wrap`, `.vault-md-table`, `.vault-md-th`, `.vault-md-td`,

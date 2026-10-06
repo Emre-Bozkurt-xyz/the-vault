@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { parseRecurrence } from "@/lib/tasks/recurrence";
 import { addDaysToDayKey, isValidDayKey } from "@/lib/tasks/dates";
 import { TASK_PRIORITIES, TASK_TIME_PATTERN } from "@/lib/tasks/parse";
 import { requireActiveUser } from "@/server/authz";
@@ -51,7 +52,9 @@ const updateTaskInputSchema = z.object({
       time: z.string().regex(TASK_TIME_PATTERN).nullable().optional(),
     }),
     z.object({ type: z.literal("priority"), priority: z.enum(TASK_PRIORITIES).nullable() }),
+    z.object({ type: z.literal("repeat"), repeat: z.string().max(40).refine((value) => Boolean(parseRecurrence(value))).nullable() }),
     z.object({ type: z.literal("priority"), priority: z.enum(TASK_PRIORITIES).nullable() }),
+    z.object({ type: z.literal("repeat"), repeat: z.string().max(40).refine((value) => Boolean(parseRecurrence(value))).nullable() }),
   ]),
 });
 

@@ -11,6 +11,7 @@
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
+import { parseRecurrence } from "@/lib/tasks/recurrence";
 import { isValidDayKey } from "@/lib/tasks/dates";
 import {
   TASK_MARKER_BY_STATUS,
@@ -25,7 +26,8 @@ import {
 export type TaskChange =
   | { type: "status"; status: TaskStatus }
   | { type: "due"; day: string | null; time?: string | null }
-  | { type: "priority"; priority: TaskPriority | null };
+  | { type: "priority"; priority: TaskPriority | null }
+  | { type: "repeat"; repeat: string | null };
 
 /** Offsets are relative to the start of whatever text the edit is applied to. */
 export type TextEdit = { from: number; to: number; insert: string };
@@ -37,7 +39,7 @@ type MdastNode = {
   position?: { start?: { offset?: number }; end?: { offset?: number } };
 };
 
-type LineField = { name: "due" | "done" | "priority"; from: number; to: number };
+type LineField = { name: "due" | "done" | "priority" | "repeat"; from: number; to: number };
 
 /** Blockquote markers and indentation ahead of a list marker. */
 const linePrefixPattern = /^(?:[ \t]*>[ \t]?)*[ \t]*/;
@@ -68,7 +70,7 @@ export function readTaskLine(lineText: string): TaskLine | null {
   const fields: LineField[] = [];
 
   const visit = (node: MdastNode) => {
-    if (node.type === "textDirective" && (node.name === "due" || node.name === "done" || node.name === "priority")) {
+    if (node.type === "textDirective" && (node.name === "due" || node.name === "done" || node.name === "priority" || node.name === "repeat")) {
       const from = node.position?.start?.offset;
       const to = node.position?.end?.offset;
 
@@ -88,6 +90,16 @@ export function readTaskLine(lineText: string): TaskLine | null {
     marker: marker[1],
     fields: fields.sort((a, b) => a.from - b.from),
   };
+}
+
+/** A valid recurrence on this source line, including nested/quoted tasks. */
+export function readTaskRepeat(lineText: string): string | null {
+  for (const field of readTaskLine(lineText)?.fields ?? []) {
+    if (field.name !== "repeat") continue;
+    const value = /^:repeat\[([^\]\n]*)\]/.exec(lineText.slice(field.from, field.to))?.[1].trim();
+    if (value && parseRecurrence(value)) return value;
+  }
+  return null;
 }
 
 /** Removes a directive together with one space before it, if there is one. */
@@ -141,6 +153,19 @@ export function planTaskEdit(
       if (doneFields.length === 0) edits.push(append(lineText, `:done[${today}]`));
     } else {
       for (const field of doneFields) edits.push(removal(lineText, field));
+    }
+  } else if (change.type === "repeat") {
+    if (change.repeat !== null && !parseRecurrence(change.repeat)) return null;
+    const fields = task.fields.filter((field) => field.name === "repeat");
+    if (change.repeat === null) {
+      for (const field of fields) edits.push(removal(lineText, field));
+    } else {
+      const directive = `:repeat[${change.repeat}]`;
+      const [first, ...duplicates] = fields;
+      if (first) {
+        edits.push({ from: first.from, to: first.to, insert: directive });
+        for (const field of duplicates) edits.push(removal(lineText, field));
+      } else edits.push(append(lineText, directive));
     }
   } else if (change.type === "priority") {
     if (change.priority !== null && !isTaskPriority(change.priority)) return null;

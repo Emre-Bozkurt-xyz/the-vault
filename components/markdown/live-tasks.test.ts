@@ -44,3 +44,8 @@ it("decorates priority fields, skipping inline code and marking invalid prioriti
     { name: "priority", value: "urgent", valid: false },
   ]);
 });
+
+
+it("recognizes recurrence chips without claiming inline code", () => {
+  expect(findTaskFields("- [ ] A :repeat[after 2 weeks] `:repeat[daily]`").map(({ name, valid }) => ({ name, valid }))).toEqual([{ name: "repeat", valid: true }]);
+});

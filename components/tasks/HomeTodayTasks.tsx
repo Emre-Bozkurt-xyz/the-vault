@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
 import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -122,7 +123,7 @@ export function HomeTodayTasks() {
               >
                 {plainTaskText(task.text) || "Untitled task"}
               </Link>
-              <TaskPriorityBadge priority={task.priority} />
+              <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} />
               <span className={cn("shrink-0 text-xs text-muted-foreground", overdue && "text-destructive")}>
                 {task.documentTitle}
                 {overdue && task.dueDay ? ` · ${formatDueLabel(task.dueDay, result.today)}` : ""}

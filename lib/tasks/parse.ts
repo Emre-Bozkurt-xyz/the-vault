@@ -24,6 +24,7 @@ import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
+import { parseRecurrence } from "@/lib/tasks/recurrence";
 import { isValidDayKey } from "@/lib/tasks/dates";
 
 export const TASK_PRIORITIES = ["high", "medium", "low"] as const;
@@ -40,6 +41,8 @@ export type ParsedTask = {
   ordinal: number;
   /** 0-based source line of the task's marker. */
   line: number;
+  /** Last source line belonging to this item, including notes and subtasks. */
+  endLine: number;
   /** The exact source line, the precondition for writing back to it. */
   rawLine: string;
   /** Ordinal of the enclosing task, for subtasks. */
@@ -59,6 +62,7 @@ export type ParsedTask = {
   dueInvalid: boolean;
   doneDay: string | null;
   priority: TaskPriority | null;
+  repeat: string | null;
 };
 
 /** Per-document ceiling; later tasks are skipped rather than failing the index. */
@@ -67,7 +71,7 @@ export const MAX_TASKS_PER_DOCUMENT = 2000;
 export const MAX_TASK_TEXT_LENGTH = 500;
 const MAX_TASK_NOTE_LENGTH = 2000;
 
-export const TASK_DIRECTIVE_NAMES = ["due", "done", "priority"] as const;
+export const TASK_DIRECTIVE_NAMES = ["due", "done", "priority", "repeat"] as const;
 
 /** A list marker plus task box at the start of a string; group 1 is the box character. */
 export const TASK_MARKER_PATTERN = /^(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX/-])\](?=[ \t]|$)/;
@@ -246,6 +250,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
     let dueInvalid = false;
     let doneDay: string | null = null;
     let priority: TaskPriority | null = null;
+    let repeat: string | null = null;
 
     const paragraph = (item.children ?? []).find(
       (child) => child.type === "paragraph",
@@ -254,7 +259,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
     const collect = (node: MdastNode) => {
       if (
         node.type === "textDirective" &&
-        (node.name === "due" || node.name === "done" || node.name === "priority")
+        (node.name === "due" || node.name === "done" || node.name === "priority" || node.name === "repeat")
       ) {
         const start = node.position?.start?.offset;
         const end = node.position?.end?.offset;
@@ -274,6 +279,9 @@ export function parseTasks(markdown: string): ParsedTask[] {
             } else if (!parsed) {
               dueInvalid = true;
             }
+          } else if (node.name === "repeat") {
+            if (!parseRecurrence(value)) return;
+            repeat ??= value;
           } else if (node.name === "priority") {
             if (!isTaskPriority(value)) return; // Keep invalid values visible in task text.
             priority ??= value;
@@ -323,6 +331,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
     return {
       ordinal: tasks.length,
       line: lineIndex,
+      endLine: (item.position?.end?.line ?? lineNumber) - 1,
       rawLine: originalLines[lineIndex] ?? sourceLine,
       parentOrdinal,
       status,
@@ -334,6 +343,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
       dueInvalid: dueInvalid && !resolvedDue,
       doneDay,
       priority,
+      repeat,
     };
   };
 

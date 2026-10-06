@@ -9,6 +9,7 @@ import {
   CircleDashed,
   MoreHorizontal,
   Flag,
+  Repeat,
   Sun,
   Sunrise,
 } from "lucide-react";
@@ -50,6 +51,7 @@ export function TaskActionsMenu({
 }: {
   task: {
     priority: TaskPriority | null;
+    repeat: string | null;
     status: TaskStatus;
     dueDay: string | null;
     dueTime: string | null;
@@ -108,6 +110,41 @@ export function TaskActionsMenu({
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Repeat /> Repeat
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuGroup>
+                <DropdownMenuRadioGroup
+                  value={task.repeat?.split(" on ")[0] ?? "none"}
+                  onValueChange={(value) =>
+                    onChange({
+                      type: "repeat",
+                      repeat: value === "none" ? null : value,
+                    })
+                  }
+                >
+                  {[
+                    "daily",
+                    "weekly",
+                    "monthly",
+                    "yearly",
+                    "every 2 weeks",
+                    "after 1 day",
+                    "after 1 week",
+                  ].map((rule) => (
+                    <DropdownMenuRadioItem key={rule} value={rule}>
+                      {rule[0].toUpperCase() + rule.slice(1)}
+                    </DropdownMenuRadioItem>
+                  ))}
+                  <DropdownMenuRadioItem value="none">
+                    Does not repeat
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <Flag /> Priority

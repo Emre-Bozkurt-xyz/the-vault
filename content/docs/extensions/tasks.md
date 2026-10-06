@@ -50,6 +50,34 @@ Priority appears as a chip in the editor and reading view, and as a badge in
 workspace task lists. Tasks with the same due date and time sort high, medium,
 low, then tasks without priority. A priority does not give an undated task a date.
 
+### Repeating tasks
+
+Choose **? ? Repeat** for daily, weekly, monthly, yearly or every two weeks.
+You can also write a custom interval in Source, with a number from 1 to 365:
+
+```md
+- [ ] Weekly review :due[2026-10-06] :repeat[weekly]
+- [ ] Water plants :repeat[after 3 days]
+- [ ] Review finances :due[2026-10-31] :repeat[every 2 months]
+```
+
+With Tasks enabled, completing through a checkbox or a task control keeps the
+completed occurrence and creates one new task after it. Fixed schedules use the
+old due date and skip missed dates; **after** intervals use the day you complete
+it. Undated recurrences start from the completion day. Monthly/yearly rules
+remember the intended day and use a month's last day when needed. Vault records
+that intent as `monthly on 31` or `yearly on 02-29` in the next occurrence.
+
+Notes and subtasks carry forward. Completed subtasks reset in the new checklist;
+unfinished work moves forward, with its old copies cancelled so it does not
+appear twice. Already-cancelled subtasks stay cancelled. A recurring parent
+controls its whole checklist's cadence, including children with repeat rules.
+
+Choose **Does not repeat** on the active occurrence to stop the series. Archived
+occurrences have their repeat fields removed, so ticking history again does
+not create extra tasks. Typing `x` in Source, or ticking with Tasks disabled,
+only changes the checkbox; it does not create a new occurrence.
+
 ### Four states
 
 | Box | Meaning |

@@ -48,6 +48,7 @@ export const safeHtmlSchema: Schema = {
     // component re-validates; an authored copy can only display a date.
     "vault-task-date",
     "vault-task-priority",
+    "vault-task-repeat",
     // `remarkTasks`: done/total over a task's direct subtasks. Two numbers.
     "vault-task-progress",
     // Emitted by `remarkInlineDirectives` for each claimed inline directive
@@ -114,6 +115,7 @@ export const safeHtmlSchema: Schema = {
     // authored element carry it. Worst case for authored raw HTML is
     // re-displaying an occurrence already in the *same* document — the lookup
     // is built per render, so it reaches no private or cross-document data.
+    "vault-task-repeat": ["data-value", "dataValue"],
     "vault-task-priority": ["data-value", "dataValue"],
     "vault-task-date": ["data-kind", "dataKind", "data-value", "dataValue"],
     "vault-task-progress": ["data-done", "dataDone", "data-total", "dataTotal"],

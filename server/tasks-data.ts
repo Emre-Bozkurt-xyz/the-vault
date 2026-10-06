@@ -6,11 +6,13 @@ import { z } from "zod";
 
 import { db } from "@/db";
 import { documentPermissions, documentTags, documentTaskIndex, documentTasks, documents, tags, users } from "@/db/schema";
+import { withDocumentWriteLock } from "@/lib/document-write-lock";
 import { withLiveDocumentText } from "@/lib/collab-write";
 import { getDocumentAccess } from "@/lib/permissions";
 import { parseCapture, parseDailyCapture, type CapturedTask } from "@/lib/tasks/capture";
 import { isValidDayKey } from "@/lib/tasks/dates";
-import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
+import { locateTaskLine, type TaskChange } from "@/lib/tasks/edit";
+import { planTaskDocumentEdit } from "@/lib/tasks/document-edit";
 import { parseTasks, type TaskPriority, type TaskStatus } from "@/lib/tasks/parse";
 import { createDocumentForUser } from "@/server/documents-data";
 import { getUserExtensionSetting, upsertUserExtensionSettings } from "@/server/user-settings";
@@ -133,7 +135,7 @@ async function writeTaskRows(
     return;
   }
 
-  // 14 columns per row keeps a full 2,000-task document well under Postgres's
+  // 15 columns per row keeps a full 2,000-task document well under Postgres's
   // 65,535 bind-parameter limit in one statement.
   await executor.insert(documentTasks).values(
     tasks.map((task) => ({
@@ -150,6 +152,7 @@ async function writeTaskRows(
       dueTime: task.dueTime,
       doneDay: task.doneDay,
       priority: task.priority,
+      repeat: task.repeat,
     })),
   );
 }
@@ -169,6 +172,7 @@ export type AgendaTask = {
   dueTime: string | null;
   doneDay: string | null;
   priority: TaskPriority | null;
+  repeat: string | null;
 };
 
 export type TaskAgenda = {
@@ -230,6 +234,7 @@ export async function listAgendaTasks(
         dueTime: documentTasks.dueTime,
         doneDay: documentTasks.doneDay,
         priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
       })
       .from(documentTasks)
       .innerJoin(documents, eq(documents.id, documentTasks.documentId))
@@ -284,31 +289,23 @@ export async function applyTaskChange(
     stampDone?: boolean;
   },
 ): Promise<string> {
-  const { markdown } = await withLiveDocumentText(
+  const { markdown } = await withDocumentWriteLock(input.documentId, () => withLiveDocumentText(
     userId,
     input.documentId,
     (ytext) => {
       const text = ytext.toString();
-      const located = locateTaskLine(text, input.line, input.rawLine);
-
-      if (!located) throw new TaskMovedError();
-
-      const lineText = (text.slice(located.offset).split("\n")[0] ?? "").replace(/\r$/, "");
-      const edits = planTaskEdit(lineText, input.change, input.today, {
-        stampDone: input.stampDone,
-      });
-
+      const edits = planTaskDocumentEdit(text, input.line, input.rawLine, input.change, input.today, { stampDone: input.stampDone });
       if (!edits) throw new TaskMovedError();
 
       // Edits arrive last-first, so earlier offsets stay valid as each applies.
       for (const edit of edits) {
-        const at = located.offset + edit.from;
+        const at = edit.from;
         if (edit.to > edit.from) ytext.delete(at, edit.to - edit.from);
         if (edit.insert) ytext.insert(at, edit.insert);
       }
     },
     { origin: "tasks", restorePoint: false },
-  );
+  ));
 
   await reindexAfterWrite(input.documentId, markdown);
   return markdown;
@@ -489,6 +486,7 @@ export async function listAgentTasks(userId: string, input: {
     dueTime: documentTasks.dueTime,
     doneDay: documentTasks.doneDay,
     priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
   }).from(documentTasks)
     .innerJoin(documents, eq(documents.id, documentTasks.documentId))
     .where(and(...conditions))
@@ -589,6 +587,7 @@ export async function listTaskPageData(userId: string, today: string): Promise<T
       dueTime: documentTasks.dueTime,
       doneDay: documentTasks.doneDay,
       priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
     })
     .from(documentTasks)
     .innerJoin(documents, eq(documents.id, documentTasks.documentId))
@@ -688,6 +687,7 @@ export async function getTaskDetail(
       dueTime: documentTasks.dueTime,
       doneDay: documentTasks.doneDay,
       priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
     })
     .from(documentTasks)
     .innerJoin(documents, eq(documents.id, documentTasks.documentId))
@@ -722,6 +722,7 @@ export async function getTaskDetail(
 
 export type DocumentTaskSummary = {
   priority: TaskPriority | null;
+  repeat: string | null;
   line: number;
   rawLine: string;
   status: TaskStatus;
@@ -758,6 +759,7 @@ export async function listDocumentTasks(
     rawLine: task.rawLine,
     status: task.status,
     priority: task.priority,
+    repeat: task.repeat,
     text: task.text,
     dueDay: task.dueDay,
     dueTime: task.dueTime,

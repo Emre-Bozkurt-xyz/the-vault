@@ -23,7 +23,12 @@ import { isValidTaskDateValue } from "@/lib/markdown/task-directives";
 import { daysBetween, formatDueLabel } from "@/lib/tasks/dates";
 import { planTaskEdit } from "@/lib/tasks/edit";
 import { formatDueDirective, suggestDates } from "@/lib/tasks/natural-date";
+import { parseRecurrence } from "@/lib/tasks/recurrence";
 import { isTaskPriority, TASK_MARKER_PATTERN, taskStatusFromMarker } from "@/lib/tasks/parse";
+
+export const recurringTaskCompletion = Facet.define<((task: { line: number; rawLine: string }) => void) | null, ((task: { line: number; rawLine: string }) => void) | null>({
+  combine: (values) => values[0] ?? null,
+});
 
 /** True when the viewer has the Tasks extension on. */
 export const taskAuthoringEnabled = Facet.define<boolean, boolean>({
@@ -31,7 +36,7 @@ export const taskAuthoringEnabled = Facet.define<boolean, boolean>({
 });
 
 export type TaskDateField = {
-  name: "due" | "done" | "priority";
+  name: "due" | "done" | "priority" | "repeat";
   /** Offsets within the line. */
   from: number;
   to: number;
@@ -53,7 +58,7 @@ export function findTaskFields(lineText: string): TaskDateField[] {
 
   const fields: TaskDateField[] = [];
 
-  for (const match of lineText.matchAll(/:(due|done|priority)\[([^\]\n]*)\]/g)) {
+  for (const match of lineText.matchAll(/:(due|done|priority|repeat)\[([^\]\n]*)\]/g)) {
     const from = match.index;
     const to = from + match[0].length;
     const before = from > 0 ? lineText[from - 1] : " ";
@@ -64,14 +69,14 @@ export function findTaskFields(lineText: string): TaskDateField[] {
 
     const name = match[1] as TaskDateField["name"];
     const value = match[2].trim();
-    fields.push({ name, from, to, value, valid: name === "priority" ? isTaskPriority(value) : isValidTaskDateValue(name, value) });
+    fields.push({ name, from, to, value, valid: name === "repeat" ? Boolean(parseRecurrence(value)) : name === "priority" ? isTaskPriority(value) : isValidTaskDateValue(name, value) });
   }
 
   return fields;
 }
 
 export function findTaskDateFields(lineText: string): TaskDateField[] {
-  return findTaskFields(lineText).filter((field) => field.name !== "priority");
+  return findTaskFields(lineText).filter((field) => field.name === "due" || field.name === "done");
 }
 
 function nextStatusOnClick(marker: string) {
@@ -88,6 +93,13 @@ function toggleTaskAt(view: EditorView, pos: number) {
   const marker = TASK_MARKER_PATTERN.exec(line.text.slice(prefix.length));
   if (!marker) return;
 
+  if (nextStatusOnClick(marker[1]) === "done" && view.state.facet(taskAuthoringEnabled) && findTaskFields(line.text).some((field) => field.name === "repeat" && field.valid)) {
+    const complete = view.state.facet(recurringTaskCompletion);
+    if (complete) {
+      complete({ line: line.number - 1, rawLine: line.text });
+      return;
+    }
+  }
   const edits = planTaskEdit(
     line.text,
     { type: "status", status: nextStatusOnClick(marker[1]) },
@@ -164,7 +176,7 @@ export class TaskDateWidget extends WidgetType {
 
   private state(): ChipState {
     if (!this.field.valid) return "invalid";
-    if (this.field.name === "priority") return "upcoming";
+    if (this.field.name === "priority" || this.field.name === "repeat") return "upcoming";
     if (this.field.name === "done") return "done";
     if (this.taskDone) return "met";
     const offset = daysBetween(this.today, this.field.value.slice(0, 10));
@@ -174,6 +186,7 @@ export class TaskDateWidget extends WidgetType {
   private label(state: ChipState): string {
     if (state === "invalid") return `${this.field.name}: ${this.field.value || "?"}`;
 
+    if (this.field.name === "repeat") return `Repeat: ${this.field.value}`;
     if (this.field.name === "priority") return `${this.field.value[0].toUpperCase()}${this.field.value.slice(1)} priority`;
 
     const [day, time] = this.field.value.split(/\s+/);
@@ -192,7 +205,7 @@ export class TaskDateWidget extends WidgetType {
     if (this.field.name === "priority") chip.dataset.priority = this.field.value;
     chip.dataset.state = state;
     chip.textContent = this.label(state);
-    chip.title = this.field.name === "priority" ? `Priority: ${this.field.value}` : `${this.field.name === "done" ? "Completed" : "Due"} ${this.field.value}`;
+    chip.title = this.field.name === "repeat" ? `Repeats ${this.field.value}` : this.field.name === "priority" ? `Priority: ${this.field.value}` : `${this.field.name === "done" ? "Completed" : "Due"} ${this.field.value}`;
 
     if (this.field.name !== "due" || !this.field.valid) {
       return chip;
