@@ -840,7 +840,7 @@ Important files:
 | `app/docs/[docId]/page.tsx` | Protected editor/viewer route |
 | `components/markdown/MarkdownEditor.tsx` | Editable Markdown document component |
 | `components/markdown/MarkdownToolbar.tsx` | Markdown syntax toolbar |
-| `components/markdown/MarkdownDocument.tsx` | Read-only renderer for viewer/public pages |
+| `components/markdown/MarkdownDocument.tsx` | Markdown renderer; the editor's Read preview can supply a task-toggle callback, while viewer/public renders remain read-only |
 | `lib/markdown.ts` | Shared Markdown limits |
 | `lib/wiki-links.ts` | Obsidian-style wiki-link parsing/rendering helpers |
 
@@ -862,6 +862,8 @@ Supported editor features:
 | Obsidian-style callouts | Yes |
 | Read-only mode | Yes |
 | Save status | Saved/saving/unsaved/error status |
+
+In the editor's Read preview, a task checkbox with a unique exact source line is clickable. `toggleReadCheckboxAction` in `server/tasks.ts` authenticates and sends the line through `applyTaskChange`/`withLiveDocumentText`, which checks edit access and rejects a changed line. The Tasks setting controls whether completing it stamps `:done[today]`; ordinary Markdown checkboxes still toggle when Tasks is off. Repeated identical task lines and source lines altered by render preprocessing remain disabled to avoid changing the wrong task. Viewer/public/share/embedded previews have no toggle callback.
 | Autosave | Yes |
 | Read/Live/Source modes | Yes |
 
@@ -1488,7 +1490,8 @@ slices 1-6 are implemented and slice 7 code is complete: four MCP actions, Markd
 tasks in Calendar's upcoming-task action, and Calendar events in the agenda.
 Next: browser regression after the extension SDK merge, then deferred features
 (assignment/shared documents, recurrence and scheduling fields, daily notes,
-Calendar-event migration, and Read-mode checkbox editing).
+and Calendar-event migration). Read-mode checkbox editing is implemented for
+uniquely identifiable source lines; authenticated browser verification remains.
 
 ```txt
 1. Click through folder default tags in a running app: set tags in the Folder settings dialog, confirm the locked chips appear in a descendant document's Properties panel, and confirm a folder move, a document drag between folders, and a folder delete each leave `document_tags` correct (the resolution and re-sync helpers are verified against real Postgres; the four server actions wrapping them are not).
@@ -1738,3 +1741,4 @@ Use this as a compact implementation log.
 | 2026-10-04 | Made calc autocomplete offer only what the grammar accepts at the cursor | `extensions/calc/completions.ts` now tokenizes the statement left of the word being typed and reads the expectation off the last complete token: an operand (start, `=`, operator, `(`, `,`) offers bound names + functions; a bare amount or `in`/`to` offers currencies; a finished operand (name, unit, `)`, `%`) offers only `in`/`to`, and stays shut until a word is started or Ctrl+Space. Previously names were offered after `1200 CAD ` or `rent `, and an uppercase word offered currencies where they cannot parse (`5 * CA`). New `vault-calc-keyword` icon (`→`) in `app/styles/components.css`; design note `docs/19_CALC_EXTENSION_PLAN.md` §9e revised; 41 completion tests. |
 | 2026-10-06 | Integrated extension SDK and Tasks slices 1-6 | Merged the six local Tasks commits with the remote SDK/CSP/calc line. `vault.tasks` now claims `:::tasks` in its manifest and renders through the lazy SDK block host; the host passes containing Markdown to query blocks in Read and Live modes, while core still owns portable task syntax and workspace views. The SDK directive renderer preserves task date claims, Tasks date imports no longer depend on the calendar extension, and the Tasks slash item is declared in the manifest. Kept the remote calc, dictionary, calendar, stickers and CSP changes. TypeScript and production build pass; 795 tests passed in the full run and two SDK contract tests timed out under parallel load but passed alone (60/60). Lint remains at the remote baseline (26 problems). Browser regression after the merge remains. The production workflow now includes `extensions/**` in its push paths so extension-only changes deploy. |
 | 2026-10-06 | Added Tasks agent actions and Calendar events to agenda | `extensions/tasks/server.ts` adds `listTasks`, `addTask`, `setTaskStatus` and `setTaskDue` through a permission-gated `context.tasks` service (`server/extensions.ts`, `server/tasks-data.ts`): reads refresh the owner-scoped Markdown index, writes use the live collaboration path and reject moved task lines. Calendar `listUpcomingTasks` now includes dated Markdown tasks. The server SDK gained `loadWorkspaceAgendaEvents`; `server/extension-agenda.ts` passes only enabled extensions their owner-scoped state, and Calendar events appear in the sidebar and Tasks-page Agenda. TypeScript, changed-file lint and focused tests pass; full lint remains at its 26-issue baseline. Playground browser checks passed for Calendar and Tasks query fixtures; the signed-in agenda browser pass remains. Tasks settings gained a generic owned-document selector (`buildSettingsPages`, `ExtensionSettingsPage`) with ownership validated again on save; clearing the pointer makes the next capture create a fresh Inbox. |
+| 2026-10-06 | Made editor Read-mode task checkboxes clickable | `MarkdownDocument` accepts a toggle callback only from the editable document preview; it resolves exact task source lines and disables ambiguous duplicates, including rendered lines whose source changed in preprocessing. `toggleReadCheckboxAction` validates input and uses the permission-checked live write path, rejects moved lines, and stamps `:done` only when Tasks is enabled. The editor updates its local text when collaboration is unavailable; viewer/public/share/embed renders stay disabled. Focused task tests and typecheck passed; authenticated browser verification remains. |

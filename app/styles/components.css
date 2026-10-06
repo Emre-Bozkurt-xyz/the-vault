@@ -225,6 +225,10 @@
       var(--primary);
   }
 
+  .vault-md-checkbox:not(:disabled) {
+    cursor: pointer;
+  }
+
   .vault-md-checkbox:checked::after,
   .vault-cm-task-checkbox[data-checked="true"]::after {
     position: absolute;

@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { todayDayKey } from "@/lib/tasks/dates";
+import { toggleReadCheckboxAction } from "@/server/tasks";
 import {
   acceptCompletion,
   autocompletion,
@@ -473,6 +475,8 @@ export function MarkdownEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [readTaskError, setReadTaskError] = useState<string | null>(null);
+  const [readTaskPending, setReadTaskPending] = useState(false);
   const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
   const [uploadingAsset, setUploadingAsset] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -1604,6 +1608,34 @@ export function MarkdownEditor({
     [collabSession, editorMode, isCollaborative],
   );
 
+  const toggleReadTask = useCallback(async (
+    task: { line: number; rawLine: string },
+    checked: boolean,
+  ) => {
+    setReadTaskPending(true);
+    setReadTaskError(null);
+    try {
+      const result = await toggleReadCheckboxAction({
+        documentId,
+        line: task.line,
+        rawLine: task.rawLine,
+        checked,
+        today: todayDayKey(),
+      });
+      if (!result.ok) {
+        setReadTaskError(result.error);
+      } else if (!isCollaborative) {
+        markdownValueRef.current = result.markdown;
+        setMarkdownValue(result.markdown);
+        setEditorMountMarkdown(result.markdown);
+      }
+    } catch {
+      setReadTaskError("Could not change the task.");
+    } finally {
+      setReadTaskPending(false);
+    }
+  }, [documentId, isCollaborative]);
+
   // Jumps to a line, e.g. from the task agenda (`lib/editor-jump-events.ts`).
   // A retained jump waits for the view that will stay: with collaboration, the
   // local view mounted first is replaced once the room syncs and its lines may
@@ -1873,12 +1905,14 @@ export function MarkdownEditor({
                 >
                   <MarkdownDocument
                     markdown={markdownValue}
+                    onTaskToggle={!embedSessionToken && !readTaskPending ? toggleReadTask : undefined}
                     wikiLinks={wikiLinkMap}
                     assetLinks={assetLinkMap}
                     contained={false}
                     extensions={documentExtensions}
                   />
                 </DocumentCanvas>
+                {readTaskError ? <p role="alert" className="mt-3 text-sm text-destructive">{readTaskError}</p> : null}
               </div>
             ) : null}
           </div>

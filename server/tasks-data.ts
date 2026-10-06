@@ -276,8 +276,9 @@ export async function applyTaskChange(
     rawLine: string;
     change: TaskChange;
     today: string;
+    stampDone?: boolean;
   },
-): Promise<void> {
+): Promise<string> {
   const { markdown } = await withLiveDocumentText(
     userId,
     input.documentId,
@@ -288,7 +289,9 @@ export async function applyTaskChange(
       if (!located) throw new TaskMovedError();
 
       const lineText = (text.slice(located.offset).split("\n")[0] ?? "").replace(/\r$/, "");
-      const edits = planTaskEdit(lineText, input.change, input.today);
+      const edits = planTaskEdit(lineText, input.change, input.today, {
+        stampDone: input.stampDone,
+      });
 
       if (!edits) throw new TaskMovedError();
 
@@ -303,6 +306,7 @@ export async function applyTaskChange(
   );
 
   await reindexAfterWrite(input.documentId, markdown);
+  return markdown;
 }
 
 /**

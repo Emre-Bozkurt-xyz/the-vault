@@ -169,6 +169,39 @@ export async function updateTaskAction(input: unknown): Promise<TaskAgendaResult
   }
 }
 
+const readCheckboxInputSchema = z.object({
+  documentId: z.string().uuid(),
+  line: z.number().int().min(0),
+  rawLine: z.string().max(20_000),
+  checked: z.boolean(),
+  today: dayKeySchema,
+});
+
+/** Read-mode checkbox writes use the live document and its edit permission. */
+export async function toggleReadCheckboxAction(input: unknown): Promise<
+  | { ok: true; markdown: string }
+  | { ok: false; error: string }
+> {
+  const user = await requireActiveUser();
+  const parsed = readCheckboxInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid checkbox change." };
+
+  try {
+    const markdown = await applyTaskChange(user.id, {
+      ...parsed.data,
+      change: { type: "status", status: parsed.data.checked ? "done" : "open" },
+      stampDone: await requireTasksEnabled(user.id),
+    });
+    return { ok: true, markdown };
+  } catch (error) {
+    if (error instanceof TaskMovedError) {
+      return { ok: false, error: "That task changed. Refresh the document and try again." };
+    }
+    console.error("Failed to toggle a Read-mode task", error);
+    return { ok: false, error: collabError(error, "Could not change the task.") };
+  }
+}
+
 function collabError(error: unknown, fallback: string): string {
   return error instanceof Error && /collaboration/i.test(error.message)
     ? "Could not reach the collaboration server, so nothing was saved."

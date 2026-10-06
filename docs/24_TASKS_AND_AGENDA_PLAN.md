@@ -6,7 +6,8 @@ Tasks page, home/side-panel/query blocks/progress); slice 7 code is implemented,
 with browser regression still pending.
 Query-block rows are read-only lists (tick in the document or the agenda), and
 the editor's own Read mode does not expand them, matching calendars, since it
-renders without a document id. The Inbox can be re-pointed from Settings (§6.3)
+renders without a document id. Editors can tick uniquely identifiable task lines
+in Read mode; duplicate identical lines stay disabled. The Inbox can be re-pointed from Settings (§6.3)
 using a generic owned-document field. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 26 in `docs/01_PROGRESS_TRACKER.md`.
 
@@ -418,4 +419,4 @@ and `npm test`.
 - **Recurrence, priority, start dates and ranges, reminders** (PWA push).
 - **Daily notes** as an alternative capture target.
 - **Moving Calendar events into Markdown.**
-- **Clickable Read-mode checkboxes** for editors.
+- **Clickable Read-mode checkboxes** for editors: implemented for uniquely identifiable task lines on 2026-10-06. Identical duplicate source lines and task lines changed by render preprocessing remain disabled until source positions can be carried through the render split; authenticated browser verification remains.

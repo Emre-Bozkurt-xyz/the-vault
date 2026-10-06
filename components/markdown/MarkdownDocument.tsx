@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   Children,
+  type ChangeEvent,
   cloneElement,
   isValidElement,
   type CSSProperties,
@@ -83,6 +84,9 @@ import {
   formatTaskDateAbsolute,
   remarkTasks,
 } from "@/lib/markdown/task-directives";
+import { parseTasks, type ParsedTask } from "@/lib/tasks/parse";
+
+type ReadTaskToggle = (task: Pick<ParsedTask, "line" | "rawLine">, checked: boolean) => void;
 
 type MarkdownDocumentProps = {
   markdown: string;
@@ -107,6 +111,8 @@ type MarkdownDocumentProps = {
    * document's state.
    */
   extensions?: DocumentExtensions | null;
+  /** Only the authenticated editor's Read preview supplies this. */
+  onTaskToggle?: ReadTaskToggle;
 };
 
 const maxWikiEmbedDepth = 2;
@@ -341,7 +347,11 @@ function createMarkdownComponents(
    */
   linkOccurrences: Map<string, number>,
   extensions: DocumentExtensions | null,
+  segmentMarkdown: string,
+  readTasks: Map<string, ParsedTask | null> | null,
+  onTaskToggle?: ReadTaskToggle,
 ): Components {
+  const sourceLines = onTaskToggle ? segmentMarkdown.split("\n") : [];
   const headingProps = (
     children: ReactNode,
     baseClassName: string,
@@ -500,14 +510,19 @@ function createMarkdownComponents(
   ol({ children, className, style }) {
     return <ol {...styledProps("vault-md-ol", className, style)}>{children}</ol>;
   },
-  li({ children, className, style, ...rest }) {
+  li({ children, className, style, node, ...rest }) {
     const status = (rest as { "data-task-status"?: string })["data-task-status"];
+    const rawLine = sourceLines[(node?.position?.start.line ?? 0) - 1]?.replace(/\r$/, "");
+    const task = rawLine ? readTasks?.get(rawLine) : null;
+    const taskChildren = task && onTaskToggle
+      ? enableReadTaskCheckbox(children, (checked) => onTaskToggle(task, checked))
+      : children;
     return (
       <li
         {...styledProps("vault-md-li", className, style)}
         data-task-status={status === "in_progress" || status === "cancelled" ? status : undefined}
       >
-        {groupTaskItemChildren(children)}
+        {groupTaskItemChildren(taskChildren)}
       </li>
     );
   },
@@ -615,7 +630,7 @@ function createMarkdownComponents(
     return plainLink;
   },
   input(props) {
-    return <input {...props} className="vault-md-checkbox" disabled />;
+    return <input {...props} className="vault-md-checkbox" disabled={props.disabled !== false} />;
   },
   [TASK_DATE_ELEMENT_NAME]: (props: { "data-kind"?: string; "data-value"?: string }) => {
     const value = props["data-value"] ?? "";
@@ -656,6 +671,27 @@ const taskItemBlockTags = new Set([
   "ul", "ol", "p", "div", "blockquote", "pre", "table", "hr",
   "h1", "h2", "h3", "h4", "h5", "h6",
 ]);
+
+function enableReadTaskCheckbox(children: ReactNode, onChange: (checked: boolean) => void): ReactNode {
+  return Children.map(children, (child) => {
+    if (!isValidElement(child)) return child;
+    if ((child.props as { type?: unknown }).type === "checkbox") {
+      return cloneElement(child as ReactElement<{ disabled?: boolean; onChange?: (event: ChangeEvent<HTMLInputElement>) => void }>, {
+        disabled: false,
+        onChange: (event) => onChange(event.target.checked),
+      });
+    }
+    // Loose task lists put the box inside a paragraph. Do not descend into a
+    // nested list, whose checkboxes belong to their own list items.
+    if ((child.props as { node?: { tagName?: unknown } }).node?.tagName === "p") {
+      const paragraph = child as ReactElement<{ children?: ReactNode }>;
+      return cloneElement(paragraph, {
+        children: enableReadTaskCheckbox(paragraph.props.children, onChange),
+      });
+    }
+    return child;
+  });
+}
 
 function groupTaskItemChildren(children: ReactNode): ReactNode {
   const items = Children.toArray(children);
@@ -1005,6 +1041,7 @@ export function MarkdownDocument({
   embedDepth = 0,
   embedTrail = [],
   extensions,
+  onTaskToggle,
 }: MarkdownDocumentProps) {
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
@@ -1019,6 +1056,14 @@ export function MarkdownDocument({
   // a link's occurrence has to count across every Markdown segment of the
   // document, not restart in each one.
   const linkOccurrences = new Map<string, number>();
+  // Duplicate source lines cannot be addressed safely after the renderer has
+  // split a document around embeds and extension blocks. Leave those disabled.
+  const readTasks = onTaskToggle ? new Map<string, ParsedTask | null>() : null;
+  if (readTasks) {
+    for (const task of parseTasks(markdown || "")) {
+      readTasks.set(task.rawLine, readTasks.has(task.rawLine) ? null : task);
+    }
+  }
 
   // Extension directives are planned once, here, before anything renders: an
   // extension's `analyze` (calc binding names top to bottom) needs every
@@ -1053,6 +1098,8 @@ export function MarkdownDocument({
             linkOccurrences={linkOccurrences}
             extensions={extensions ?? null}
             documentMarkdown={markdown || ""}
+            readTasks={readTasks}
+            onTaskToggle={onTaskToggle}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1181,6 +1228,8 @@ function MarkdownBlock({
   linkOccurrences,
   extensions,
   documentMarkdown,
+  readTasks,
+  onTaskToggle,
 }: {
   parts: DirectivePart[];
   disableLinks: boolean;
@@ -1190,6 +1239,8 @@ function MarkdownBlock({
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   documentMarkdown: string;
+  readTasks: Map<string, ParsedTask | null> | null;
+  onTaskToggle?: ReadTaskToggle;
 }) {
   return (
     <>
@@ -1230,6 +1281,8 @@ function MarkdownBlock({
             linkOccurrences={linkOccurrences}
             extensions={extensions}
             keyPrefix={String(part.pieceIndex)}
+            readTasks={readTasks}
+            onTaskToggle={onTaskToggle}
           />
         );
       })}
@@ -1246,6 +1299,8 @@ function MarkdownSegment({
   linkOccurrences,
   extensions,
   keyPrefix,
+  readTasks,
+  onTaskToggle,
 }: {
   markdown: string;
   disableLinks: boolean;
@@ -1255,6 +1310,8 @@ function MarkdownSegment({
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   keyPrefix: string;
+  readTasks: Map<string, ParsedTask | null> | null;
+  onTaskToggle?: ReadTaskToggle;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1291,6 +1348,9 @@ function MarkdownSegment({
         linkTargets,
         linkOccurrences,
         extensions,
+        markdown,
+        readTasks,
+        onTaskToggle,
       )}
     >
       {renderedMarkdown}
