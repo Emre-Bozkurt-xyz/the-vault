@@ -6,8 +6,8 @@ Tasks page, home/side-panel/query blocks/progress); slice 7 code is implemented,
 with browser regression still pending.
 Query-block rows are read-only lists (tick in the document or the agenda), and
 the editor's own Read mode does not expand them, matching calendars, since it
-renders without a document id. Editors can tick uniquely identifiable task lines
-in Read mode; duplicate identical lines stay disabled. The Inbox can be re-pointed from Settings (§6.3)
+renders without a document id. Editors can tick task lines in Read mode,
+including duplicate lines and same-document regions. The Inbox can be re-pointed from Settings (§6.3)
 using a generic owned-document field. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 26 in `docs/01_PROGRESS_TRACKER.md`.
 
@@ -367,10 +367,10 @@ mode plus a full page.
   on Enter) widen to `[ xX/-]`. `TaskCheckboxWidget` gains the in-progress and
   cancelled states. Read mode claims `[/]` and `[-]` list items so they render
   as checkboxes rather than literal text.
-- **Clickable checkboxes.** Today the Live widget is decorative (`aria-hidden`) and
-  the Read-mode input is `disabled`. In Live mode, clicking a box for an editor
-  toggles it, as one undo step, and stamps or clears `:done[…]`. Read mode stays
-  non-interactive for now.
+- **Clickable checkboxes.** Live boxes toggle as one undo step and stamp or clear
+  `:done[…]` when Tasks is on. Editors can also tick Read-mode boxes through the
+  permission-checked live write path. Source handles survive wiki/directive
+  splits, duplicate lines, regions and asset transforms; readers remain read-only.
 
 ## 8. Agent actions
 
@@ -426,4 +426,4 @@ and `npm test`.
 - **Daily notes** as an alternative capture target: implemented 2026-10-06;
   authenticated browser verification remains.
 - **Moving Calendar events into Markdown.**
-- **Clickable Read-mode checkboxes** for editors: implemented for uniquely identifiable task lines on 2026-10-06. Identical duplicate source lines and task lines changed by render preprocessing remain disabled until source positions can be carried through the render split; authenticated browser verification remains.
+- **Clickable Read-mode checkboxes** for editors: implemented 2026-10-06, including duplicate lines and same-document regions; authenticated browser verification remains.

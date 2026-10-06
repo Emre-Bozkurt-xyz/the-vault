@@ -48,9 +48,8 @@ clear it with the date picker's own clear button.
 
 Click a box in the editor to tick it or untick it. With Tasks on, ticking also
 records the day you finished it, as `:done[…]`.
-In **Read** mode, editors can tick a box when its source line is unique in the
-document. A repeated identical line stays read-only so Vault cannot change the
-wrong task. Readers without edit access cannot tick boxes.
+In **Read** mode, editors can also tick boxes, including nested tasks and tasks
+inside a region. Readers without edit access cannot tick boxes.
 
 ## The agenda
 

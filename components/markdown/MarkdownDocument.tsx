@@ -84,7 +84,8 @@ import {
   formatTaskDateAbsolute,
   remarkTasks,
 } from "@/lib/markdown/task-directives";
-import { parseTasks, type ParsedTask } from "@/lib/tasks/parse";
+import type { ParsedTask } from "@/lib/tasks/parse";
+import { mapReadTaskSources } from "@/lib/tasks/read-source";
 
 type ReadTaskToggle = (task: Pick<ParsedTask, "line" | "rawLine">, checked: boolean) => void;
 
@@ -113,6 +114,8 @@ type MarkdownDocumentProps = {
   extensions?: DocumentExtensions | null;
   /** Only the authenticated editor's Read preview supplies this. */
   onTaskToggle?: ReadTaskToggle;
+  /** Internal source handles for a region of the same editable document. */
+  taskSource?: { tasks: Map<number, ParsedTask>; offset: number };
 };
 
 const maxWikiEmbedDepth = 2;
@@ -347,11 +350,10 @@ function createMarkdownComponents(
    */
   linkOccurrences: Map<string, number>,
   extensions: DocumentExtensions | null,
-  segmentMarkdown: string,
-  readTasks: Map<string, ParsedTask | null> | null,
+  startLine: number,
+  readTasks: Map<number, ParsedTask> | null,
   onTaskToggle?: ReadTaskToggle,
 ): Components {
-  const sourceLines = onTaskToggle ? segmentMarkdown.split("\n") : [];
   const headingProps = (
     children: ReactNode,
     baseClassName: string,
@@ -512,8 +514,8 @@ function createMarkdownComponents(
   },
   li({ children, className, style, node, ...rest }) {
     const status = (rest as { "data-task-status"?: string })["data-task-status"];
-    const rawLine = sourceLines[(node?.position?.start.line ?? 0) - 1]?.replace(/\r$/, "");
-    const task = rawLine ? readTasks?.get(rawLine) : null;
+    const localLine = node?.position?.start.line;
+    const task = localLine ? readTasks?.get(startLine + localLine - 1) : null;
     const taskChildren = task && onTaskToggle
       ? enableReadTaskCheckbox(children, (checked) => onTaskToggle(task, checked))
       : children;
@@ -1042,6 +1044,7 @@ export function MarkdownDocument({
   embedTrail = [],
   extensions,
   onTaskToggle,
+  taskSource,
 }: MarkdownDocumentProps) {
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
@@ -1056,14 +1059,14 @@ export function MarkdownDocument({
   // a link's occurrence has to count across every Markdown segment of the
   // document, not restart in each one.
   const linkOccurrences = new Map<string, number>();
-  // Duplicate source lines cannot be addressed safely after the renderer has
-  // split a document around embeds and extension blocks. Leave those disabled.
-  const readTasks = onTaskToggle ? new Map<string, ParsedTask | null>() : null;
-  if (readTasks) {
-    for (const task of parseTasks(markdown || "")) {
-      readTasks.set(task.rawLine, readTasks.has(task.rawLine) ? null : task);
-    }
-  }
+  const readTasks = onTaskToggle
+    ? taskSource?.tasks ?? mapReadTaskSources(markdown || "", sourceMarkdown,
+        (line) => transformAssetEmbeds(normalizeSelfClosingIframes(line), assetLinks))
+    : null;
+  const strippedLineCount = taskSource
+    ? (markdown.slice(0, markdown.length - stripDocumentFrontmatter(markdown).length).match(/\n/g)?.length ?? 0)
+    : 0;
+  const sourceOffset = (taskSource?.offset ?? 0) + strippedLineCount;
 
   // Extension directives are planned once, here, before anything renders: an
   // extension's `analyze` (calc binding names top to bottom) needs every
@@ -1100,6 +1103,7 @@ export function MarkdownDocument({
             documentMarkdown={markdown || ""}
             readTasks={readTasks}
             onTaskToggle={onTaskToggle}
+            startLine={sourceOffset + block.startLine}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1110,6 +1114,8 @@ export function MarkdownDocument({
             assetLinks={assetLinks}
             embedDepth={embedDepth}
             embedTrail={embedTrail}
+            onTaskToggle={onTaskToggle}
+            taskSource={readTasks ? { tasks: readTasks, offset: sourceOffset + block.startLine } : undefined}
           />
         ) : (
           <WikiDocumentEmbed
@@ -1170,6 +1176,8 @@ function VaultRegion({
   assetLinks,
   embedDepth,
   embedTrail,
+  onTaskToggle,
+  taskSource,
 }: {
   block: Extract<WikiDocumentEmbedBlock, { type: "region" }>;
   disableLinks: boolean;
@@ -1177,6 +1185,8 @@ function VaultRegion({
   assetLinks?: AssetEmbedResolutionMap;
   embedDepth: number;
   embedTrail: string[];
+  onTaskToggle?: ReadTaskToggle;
+  taskSource?: { tasks: Map<number, ParsedTask>; offset: number };
 }) {
   const body = block.markdown ? (
     <MarkdownDocument
@@ -1188,6 +1198,8 @@ function VaultRegion({
       embedTrail={embedTrail}
       contained={false}
       className="vault-md-region-body"
+      onTaskToggle={onTaskToggle}
+      taskSource={taskSource}
     />
   ) : null;
 
@@ -1230,6 +1242,7 @@ function MarkdownBlock({
   documentMarkdown,
   readTasks,
   onTaskToggle,
+  startLine,
 }: {
   parts: DirectivePart[];
   disableLinks: boolean;
@@ -1239,8 +1252,9 @@ function MarkdownBlock({
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   documentMarkdown: string;
-  readTasks: Map<string, ParsedTask | null> | null;
+  readTasks: Map<number, ParsedTask> | null;
   onTaskToggle?: ReadTaskToggle;
+  startLine: number;
 }) {
   return (
     <>
@@ -1283,6 +1297,7 @@ function MarkdownBlock({
             keyPrefix={String(part.pieceIndex)}
             readTasks={readTasks}
             onTaskToggle={onTaskToggle}
+            startLine={startLine + part.startLine}
           />
         );
       })}
@@ -1301,6 +1316,7 @@ function MarkdownSegment({
   keyPrefix,
   readTasks,
   onTaskToggle,
+  startLine,
 }: {
   markdown: string;
   disableLinks: boolean;
@@ -1310,8 +1326,9 @@ function MarkdownSegment({
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   keyPrefix: string;
-  readTasks: Map<string, ParsedTask | null> | null;
+  readTasks: Map<number, ParsedTask> | null;
   onTaskToggle?: ReadTaskToggle;
+  startLine: number;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1348,7 +1365,7 @@ function MarkdownSegment({
         linkTargets,
         linkOccurrences,
         extensions,
-        markdown,
+        startLine,
         readTasks,
         onTaskToggle,
       )}

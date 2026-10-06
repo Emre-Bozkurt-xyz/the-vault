@@ -53,7 +53,7 @@ const ASSET_EMBED_SOURCE_PATTERN =
   /^!\[\[asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|([^\]\n]+))?\]\](?:\{([^}\n]*)\})?$/i;
 
 const ASSET_GROUP_PATTERN =
-  /^:::assets(?:\s*\{([^}\n]*)\})?\s*\n([\s\S]*?)\n:::\s*$/gim;
+  /^:::assets(?:[ \t]*\{([^}\n]*)\})?[ \t]*\r?\n([\s\S]*?)\r?\n:::[ \t]*\r?$/gim;
 
 const defaultAssetEmbedAttributes: AssetEmbedAttributes = {
   layout: "block",
