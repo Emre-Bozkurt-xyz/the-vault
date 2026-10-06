@@ -3509,6 +3509,9 @@
   .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-calc-function::after {
     content: "ƒ";
   }
+  .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionIcon-vault-calc-keyword::after {
+    content: "→";
+  }
 
   .vault-markdown-editor .cm-tooltip-autocomplete .cm-completionLabel {
     font-family: var(--font-mono);

@@ -12,7 +12,10 @@ const source = createCalcCompletionSource();
  * Runs the source against a document where `‸` marks the cursor. Forces a full
  * markdown parse so the `syntaxTree`-based code exclusion is stable headless.
  */
-function completeAt(withCursor: string): CompletionResult | null {
+function completeAt(
+  withCursor: string,
+  { explicit = false }: { explicit?: boolean } = {},
+): CompletionResult | null {
   const pos = withCursor.indexOf("‸");
 
   if (pos < 0) {
@@ -23,7 +26,7 @@ function completeAt(withCursor: string): CompletionResult | null {
   const state = EditorState.create({ doc, extensions: [markdown()] });
   ensureSyntaxTree(state, doc.length, 5000);
 
-  return source(new CompletionContext(state, pos, false)) as CompletionResult | null;
+  return source(new CompletionContext(state, pos, explicit)) as CompletionResult | null;
 }
 
 const labels = (result: CompletionResult | null) =>
@@ -155,53 +158,128 @@ describe("names in scope", () => {
 });
 
 /**
- * Which options exist is decided by position, using the calc grammar's own rule
- * that an uppercase token is money and a lowercase one is an identifier. A menu
- * that offered all 160-odd ISO codes at every cursor would be noise, and most of
- * those options would not parse where they were offered.
+ * Which options exist is decided by the grammar at the cursor: the source
+ * tokenizes the statement to the left and offers only what the parser would
+ * accept next. A menu that offered every name and all 160-odd ISO codes at every
+ * cursor would mostly suggest expressions that do not parse.
  */
-describe("currencies are offered only where one can go", () => {
-  const inBlock = (statement: string) =>
-    completeAt([":::calc", "rent = 1200 CAD", statement, ":::"].join("\n"));
-
-  it("offers currencies alone after `in`", () => {
-    const result = inBlock("total = rent in ‸");
-    expect(labels(result)).toContain("USD");
-    // The parser requires a code here; a name would not parse.
-    expect(labels(result)).not.toContain("rent");
-  });
-
-  it("offers currencies alone after `to`", () => {
-    expect(labels(inBlock("total = rent to ‸"))).toContain("EUR");
-  });
-
-  it("offers currencies alone after a bare amount", () => {
-    const result = inBlock("fee = 1200 ‸");
-    expect(labels(result)).toContain("CAD");
-    expect(labels(result)).not.toContain("rent");
-  });
-
-  it("does not read a trailing digit in an identifier as an amount", () => {
-    // `rent2 ` is a name, not `1200 ` — the boundary matters or every name
-    // ending in a digit would flip the menu to currencies.
-    const result = inBlock("total = rent2 ‸");
-    expect(labels(result)).not.toContain("CAD");
-  });
-
-  it("withholds currencies from a lowercase token, which means a variable", () => {
-    const result = inBlock("total = re‸");
-    expect(labels(result)).toContain("rent");
-    expect(labels(result)).not.toContain("CAD");
-  });
-
-  it("offers currencies once the token is uppercase", () => {
-    expect(labels(inBlock("fee = 5 * CA‸"))).toContain("CAD");
-  });
-
-  it("names each currency, so a code is recognisable before it is known", () => {
-    expect(detailFor(inBlock("total = rent in ‸"), "CAD")).toBe(
-      "Canadian Dollar",
+describe("only what the grammar accepts at the cursor", () => {
+  const inBlock = (statement: string, options?: { explicit?: boolean }) =>
+    completeAt(
+      [":::calc", "rent = 1200 CAD", statement, ":::"].join("\n"),
+      options,
     );
+
+  describe("where an operand goes", () => {
+    it.each([
+      ["after `=`", "total = ‸"],
+      ["after an operator", "total = rent + ‸"],
+      ["after `(`", "total = (‸"],
+      ["inside a call, after `,`", "total = sum(rent, ‸"],
+      ["after a unary minus", "total = -‸"],
+    ])("offers names and functions %s", (_where, statement) => {
+      const result = inBlock(statement);
+      expect(labels(result)).toEqual(expect.arrayContaining(["rent", "sum"]));
+    });
+
+    it("offers no currencies, even for an uppercase word", () => {
+      // `5 * CAD` does not parse — a code needs an amount in front of it.
+      expect(labels(inBlock("fee = 5 * CA‸"))).not.toContain("CAD");
+      expect(labels(inBlock("total = ‸"))).not.toContain("CAD");
+    });
+  });
+
+  describe("where a unit goes", () => {
+    it("offers currencies alone after a bare amount", () => {
+      const result = inBlock("fee = 1200 ‸");
+      expect(labels(result)).toContain("CAD");
+      expect(labels(result)).not.toContain("rent");
+      expect(labels(result)).not.toContain("sum");
+    });
+
+    it("offers them for the word being typed right after the amount", () => {
+      expect(labels(inBlock("fee = 1200 CA‸"))).toContain("CAD");
+    });
+
+    it("names each currency, so a code is recognisable before it is known", () => {
+      expect(detailFor(inBlock("total = rent in ‸"), "CAD")).toBe(
+        "Canadian Dollar",
+      );
+    });
+  });
+
+  describe("where a conversion target goes", () => {
+    it("offers currencies alone after `in`", () => {
+      const result = inBlock("total = rent in ‸");
+      expect(labels(result)).toContain("USD");
+      expect(labels(result)).not.toContain("rent");
+      expect(labels(result)).not.toContain("sum");
+    });
+
+    it("offers currencies alone after `to`", () => {
+      expect(labels(inBlock("total = rent to ‸"))).toContain("EUR");
+    });
+  });
+
+  /**
+   * After a finished operand only an operator or a conversion can follow, so a
+   * name, function or currency there would never parse (`rent CAD`,
+   * `1200 CAD rent`).
+   */
+  describe("where an operator goes", () => {
+    it.each([
+      ["a name", "total = rent ‸"],
+      ["a name ending in a digit", "total = rent2 ‸"],
+      ["an amount with its unit", "fee = 1200 CAD ‸"],
+      ["a conversion target", "total = rent in USD ‸"],
+      ["a closing parenthesis", "total = (rent) ‸"],
+      ["a percentage", "rate = 20% ‸"],
+    ])("stays shut after %s until a word is started", (_after, statement) => {
+      expect(inBlock(statement)).toBeNull();
+    });
+
+    it("offers only `in` and `to` when asked for", () => {
+      expect(labels(inBlock("total = rent ‸", { explicit: true }))).toEqual([
+        "in",
+        "to",
+      ]);
+      expect(labels(inBlock("fee = 1200 CAD ‸", { explicit: true }))).toEqual([
+        "in",
+        "to",
+      ]);
+    });
+
+    it("offers the keyword for the word being typed", () => {
+      const result = inBlock("total = rent i‸");
+      expect(labels(result)).toContain("in");
+      expect(labels(result)).not.toContain("rent");
+      expect(labels(result)).not.toContain("CAD");
+    });
+
+    it("inserts the space a conversion target needs", () => {
+      const result = inBlock("total = rent i‸");
+      expect(result?.options.find((option) => option.label === "in")?.apply).toBe(
+        "in ",
+      );
+    });
+
+    it("applies inline as well as in a block", () => {
+      const inline = [
+        ":::calc",
+        "rent = 1200 CAD",
+        ":::",
+        "",
+        "Three months is :calc[rent ‸]",
+      ].join("\n");
+
+      expect(completeAt(inline)).toBeNull();
+      expect(labels(completeAt(inline, { explicit: true }))).toEqual(["in", "to"]);
+    });
+  });
+
+  it("stays shut after a character the tokenizer rejects", () => {
+    // The statement is already broken there; no option would make it parse.
+    expect(inBlock("total = rent $ ‸", { explicit: true })).toBeNull();
   });
 });
 
@@ -219,41 +297,22 @@ describe("functions", () => {
       result()?.options.find((option) => option.label === "sum")?.apply,
     ).toBe("sum(");
   });
-
-  it("does not offer functions where only a currency can go", () => {
-    expect(
-      labels(completeAt([":::calc", "fee = 1 CAD in ‸", ":::"].join("\n"))),
-    ).not.toContain("sum");
-  });
 });
 
 describe("re-filtering as the token grows", () => {
-  const inBlock = (statement: string) =>
-    completeAt([":::calc", "rent = 1200 CAD", statement, ":::"].join("\n"));
-
-  it("keeps the open menu alive while the token stays the same kind", () => {
-    const validFor = inBlock("total = re‸")?.validFor as (t: string) => boolean;
-    expect(validFor("rent")).toBe(true);
-    expect(validFor("rent ")).toBe(false);
-  });
-
   /**
-   * The case boundary changes which options *exist*, not just which match: an
-   * empty token carries no currencies, so `C` has to re-query rather than filter
-   * a list that never had CAD in it.
+   * Which options exist depends only on the tokens left of the word, so the
+   * list stays valid while the same word grows, whatever its case, and must be
+   * re-queried once the word ends.
    */
-  it("re-queries when the token crosses into uppercase", () => {
-    const validFor = inBlock("total = ‸")?.validFor as (t: string) => boolean;
-    expect(validFor("re")).toBe(true);
-    expect(validFor("CA")).toBe(false);
-  });
+  it("keeps the open menu alive while the word grows, and not past it", () => {
+    const validFor = completeAt(
+      [":::calc", "rent = 1200 CAD", "total = re‸", ":::"].join("\n"),
+    )?.validFor as RegExp;
 
-  it("does not re-query on case when only currencies were ever offered", () => {
-    const validFor = inBlock("total = rent in ‸")?.validFor as (
-      t: string,
-    ) => boolean;
-    expect(validFor("CA")).toBe(true);
-    expect(validFor("ca")).toBe(true);
+    expect(validFor.test("rent")).toBe(true);
+    expect(validFor.test("RENT")).toBe(true);
+    expect(validFor.test("rent ")).toBe(false);
   });
 });
 

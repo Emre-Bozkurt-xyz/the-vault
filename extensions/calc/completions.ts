@@ -13,6 +13,7 @@ import { formatMoney } from "./lib/currency";
 import { evaluateDocument } from "./lib/evaluate";
 import { createRateResolver } from "./lib/fx";
 import { findCalcBlockBody } from "./lib/scan";
+import { tokenize, type Token } from "./lib/tokenizer";
 import { locateCalcOccurrences } from "./live";
 
 /**
@@ -25,25 +26,25 @@ import { locateCalcOccurrences } from "./live";
  *
  * ## What may be completed is decided by where the cursor is
  *
- * A naive menu would offer all 160-odd ISO codes alongside every bound name at
- * every position, which is noise at best and misleading at worst — most of those
- * options would not parse where they were offered. The calc grammar is small
- * enough to do better, and its own disambiguation rule does most of the work:
+ * The menu offers only what the parser would accept at the cursor. It runs the
+ * calc tokenizer over the statement to the left of the word being typed and
+ * reads the grammar's expectation off the last complete token:
  *
- *   > Codes must be written uppercase. That is the whole disambiguation rule
- *   > between a unit and an identifier: `CAD` is money, `cad` is a variable.
- *   > (`lib/calc/currency.ts`)
+ * | Last token | Expects | Offered |
+ * |---|---|---|
+ * | none, `=`, an operator, `(`, `,` | an operand | names and functions |
+ * | a bare number, e.g. `1200 ` | its unit | currencies |
+ * | `in` / `to` | a conversion target | currencies |
+ * | a name, a unit, `)`, `%` | an operator | `in` / `to` |
  *
- * So the menu reads the text to the left of the token being typed:
+ * So a currency is never offered where it would be read as a stray code
+ * (`5 * CAD` does not parse — a code needs an amount), and nothing that starts
+ * a new operand is offered after a finished one (`rent CAD`, `1200 CAD rent`).
+ * Operators themselves are single characters with nothing to complete.
  *
- * | Left of the cursor | Offered |
- * |---|---|
- * | `… in` / `… to` | currencies only — the parser *requires* a code here |
- * | a bare number, e.g. `1200 ` | currencies only — an identifier cannot follow |
- * | anything else | names and functions; currencies once the token is uppercase |
- *
- * That last row is why `re` offers `rent` and never `Real`, while `CA` offers
- * `CAD`. It is the language's rule, not a heuristic layered on top of it.
+ * After a finished operand with no word started, the menu stays shut unless
+ * asked for (Ctrl+Space): typing a space after `rent` is how every `rent + …`
+ * begins, and popping `in`/`to` open there would be noise.
  *
  * ## Scope is positional, like the evaluator's
  *
@@ -57,15 +58,14 @@ export type CalcCompletionOptions = {
   fxTable?: FxRateTable | null;
 };
 
-/** The parser demands a currency code after these; nothing else is valid. */
-const AFTER_CONVERSION_KEYWORD = /\b(?:in|to)\s*$/;
+/** What the grammar accepts next, judged from the text left of the cursor. */
+type Expectation = "operand" | "currency" | "operator";
 
-/**
- * A bare number immediately before the token, i.e. an amount awaiting its unit.
- * The leading boundary keeps `rent2 ` from reading as a number — only a literal
- * that is not part of a longer identifier counts.
- */
-const AFTER_NUMBER = /(?:^|[^\w.])\d[\d_,]*(?:\.\d+)?\s*$/;
+/** The conversion keywords, offered where an operator could go. */
+const CONVERSION_KEYWORDS: Array<{ label: string; detail: string }> = [
+  { label: "in", detail: "convert to a currency" },
+  { label: "to", detail: "convert to a currency" },
+];
 
 /** Identifier being typed at the cursor, if any. */
 const TRAILING_IDENTIFIER = /[A-Za-z_][A-Za-z0-9_]*$/;
@@ -161,7 +161,44 @@ function bindingsInScope(
   ).bindings;
 }
 
-const startsUppercase = (text: string) => /^[A-Z]/.test(text);
+/**
+ * Reads the grammar's expectation off the last complete token of `before`.
+ * Returns null when the text does not tokenize (a stray character): the
+ * statement is already broken there, and no option would make it parse.
+ */
+function expectationAfter(before: string): Expectation | null {
+  const tokens = tokenize(before);
+
+  if (!tokens.ok) {
+    return null;
+  }
+
+  // The tokenizer always closes with an `end` token; the one before it is the
+  // last thing the author finished writing.
+  const last: Token | undefined = tokens.value[tokens.value.length - 2];
+
+  switch (last?.kind) {
+    case undefined:
+    case "assign":
+    case "operator":
+    case "lparen":
+    case "comma":
+      return "operand";
+    case "number":
+      // `1200 ` still takes a unit. An operator is equally valid, but it is a
+      // single character with nothing to complete.
+      return "currency";
+    case "keyword":
+      return "currency";
+    case "identifier":
+    case "currency":
+    case "rparen":
+    case "percent":
+      return "operator";
+    default:
+      return null;
+  }
+}
 
 export function createCalcCompletionSource(
   options: CalcCompletionOptions = {},
@@ -175,12 +212,18 @@ export function createCalcCompletionSource(
       return null;
     }
 
-    const currencyOnly =
-      AFTER_CONVERSION_KEYWORD.test(cursor.before) ||
-      AFTER_NUMBER.test(cursor.before);
+    const expected = expectationAfter(cursor.before);
+
+    if (
+      expected === null ||
+      (expected === "operator" && cursor.token === "" && !context.explicit)
+    ) {
+      return null;
+    }
+
     const completions: Completion[] = [];
 
-    if (!currencyOnly) {
+    if (expected === "operand") {
       for (const [name, value] of bindingsInScope(
         context.state,
         cursor.statementFrom,
@@ -194,9 +237,9 @@ export function createCalcCompletionSource(
           // half-typed name is asking.
           detail: formatMoney(value.amount, value.currency),
           type: "vault-calc-name",
-          // Ahead of currencies and functions: a document's own names are what
-          // an author reaches for, and they are the only options that cannot be
-          // recalled from memory.
+          // Ahead of functions: a document's own names are what an author
+          // reaches for, and they are the only options that cannot be recalled
+          // from memory.
           boost: 1,
         });
       }
@@ -212,12 +255,24 @@ export function createCalcCompletionSource(
       }
     }
 
-    if (currencyOnly || startsUppercase(cursor.token)) {
+    if (expected === "currency") {
       for (const currency of listCurrencies()) {
         completions.push({
           label: currency.code,
           detail: currency.name,
           type: "vault-calc-currency",
+        });
+      }
+    }
+
+    if (expected === "operator") {
+      for (const keyword of CONVERSION_KEYWORDS) {
+        completions.push({
+          label: keyword.label,
+          detail: keyword.detail,
+          type: "vault-calc-keyword",
+          // The space is part of the keyword: a target always follows.
+          apply: `${keyword.label} `,
         });
       }
     }
@@ -230,13 +285,9 @@ export function createCalcCompletionSource(
       from: cursor.from,
       to: context.pos,
       options: completions,
-      // Re-filters as the token grows, but only while it stays the same *kind*
-      // of token. Crossing the case boundary changes which options exist at all
-      // — an empty token offers no currencies, and `C` must offer them — so that
-      // transition has to re-query rather than filter a stale list.
-      validFor: (text: string) =>
-        /^[A-Za-z0-9_]*$/.test(text) &&
-        (currencyOnly || startsUppercase(text) === startsUppercase(cursor.token)),
+      // Which options exist depends only on the tokens left of the word, so
+      // the list stays valid for as long as the same word keeps growing.
+      validFor: /^[A-Za-z0-9_]*$/,
     };
   };
 }

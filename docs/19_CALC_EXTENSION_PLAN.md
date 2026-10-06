@@ -614,34 +614,40 @@ owner, so gating it would be theatre.
 
 ## 9e. Slice 7 Implementation Notes — operand autocomplete
 
-`components/markdown/calc-completions.ts`, registered as one more source in the
+`components/markdown/calc-completions.ts` (now `extensions/calc/completions.ts`),
+registered as one more source in the
 editor's single `autocompletion({ override })` list. It therefore reuses the
 wiki-link/asset/slash tooltip wholesale: keyboard navigation, fuzzy filtering,
 match highlighting, and styling all come free, and there is no second popup to
 keep in visual sync.
 
-### Position decides what may be completed
+### The grammar decides what may be completed
 
-A menu that offered all 160-odd ISO codes beside every bound name at every
-cursor would be noise, and most of those options would not *parse* where they
-were offered. The grammar is small enough to do better, and its own
-disambiguation rule (`lib/calc/currency.ts`) does most of the work: an uppercase
-token is money, a lowercase one is an identifier.
+Revised 2026-10-04. The first version read the text left of the token with
+regexes and used the case rule (uppercase is money) to add currencies. That
+still offered options that do not parse: names right after a finished operand
+(`1200 CAD ‸`, `rent ‸`) and currencies where only an operand can go
+(`5 * CA‸`, since a code needs an amount).
 
-| Left of the token | Offered |
-|---|---|
-| `… in` / `… to` | currencies only — the parser *requires* a code there |
-| a bare amount, e.g. `1200 ` | currencies only — an identifier cannot follow a number |
-| anything else | bound names + functions; currencies once the token is uppercase |
+The source now runs the calc tokenizer over the statement left of the word being
+typed and reads the parser's expectation off the last complete token:
 
-So `re` offers `rent` and never `Real`; `CA` offers `CAD`. The bare-amount test
-carries a leading boundary so `rent2 ` reads as a name, not an amount —
-without it every name ending in a digit would flip the menu to currencies.
+| Last token | Expects | Offered |
+|---|---|---|
+| none, `=`, an operator, `(`, `,` | an operand | bound names + functions |
+| a bare number, e.g. `1200 ` | its unit | currencies |
+| `in` / `to` | a conversion target | currencies |
+| a name, a unit, `)`, `%` | an operator | `in` / `to` (inserted with a trailing space) |
 
-`validFor` re-filters as the token grows, but **re-queries when the token
-crosses the case boundary**: an empty token carries no currencies, so `C` has to
-re-ask rather than filter a list that never contained `CAD`. That is a change in
-which options *exist*, not merely which ones match.
+Operators are single characters with nothing to complete. After a finished
+operand with no word started the menu stays shut unless asked for (Ctrl+Space),
+since a space after `rent` is how every `rent + …` begins. Text that does not
+tokenize (a stray character) opens nothing. Using the real tokenizer means
+`rent2 ` is a name, not an amount, with no separate boundary rule.
+
+Because the option set depends only on the tokens left of the word, never on the
+word's case, `validFor` is just `/^[A-Za-z0-9_]*$/`: the list stays valid while
+the word grows and is re-queried once it ends.
 
 ### Scope is positional, like the evaluator's
 
