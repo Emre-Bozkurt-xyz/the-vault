@@ -19,7 +19,10 @@ import {
   formatAssetEmbedSource,
   type AssetEmbedAttributes,
 } from "@/lib/asset-embeds";
+import { revalidatePath } from "next/cache";
+
 import { maxMarkdownLength } from "@/lib/markdown";
+import { resolveFolderRef } from "@/lib/folder-paths";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import { withLiveDocumentText } from "@/lib/mcp/collab-write";
 import {
@@ -29,26 +32,32 @@ import {
   insertBlockAfterText,
   replaceYTextMinimal,
 } from "@/lib/mcp/document-edits";
+import { failure, json, runTool } from "@/lib/mcp/tool-result";
+import { documentPath } from "@/lib/mcp/workspace-index";
+import {
+  createFolderForUser,
+  listAccessibleFoldersForUser,
+  moveDocumentToFolderForUser,
+  type AccessibleFolder,
+} from "@/server/folders-data";
 
-type ToolResult = {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-};
+/** Resolves a folder id-or-path, throwing a readable error when it is unknown. */
+async function resolveFolderForUser(
+  userId: string,
+  ref: string,
+): Promise<AccessibleFolder> {
+  const resolved = resolveFolderRef(await listAccessibleFoldersForUser(userId), ref);
 
-function json(value: unknown): ToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
-}
-
-function failure(message: string): ToolResult {
-  return { content: [{ type: "text", text: message }], isError: true };
-}
-
-async function runTool(body: () => Promise<ToolResult>): Promise<ToolResult> {
-  try {
-    return await body();
-  } catch (error) {
-    return failure(error instanceof Error ? error.message : "Unexpected error.");
+  if (!resolved.ok) {
+    throw new Error(resolved.error);
   }
+
+  return resolved.folder;
+}
+
+/** The folder tree lives in the workspace layout; refresh it after structure changes. */
+function revalidateWorkspace() {
+  revalidatePath("/", "layout");
 }
 
 /**
@@ -63,7 +72,7 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
     {
       title: "Create a document",
       description:
-        "Create a new document owned by the current user and return its id. Optionally provide a title and initial markdown body (markdown may include YAML frontmatter for tags/aliases/summary). Use edit_document/append_to_document afterwards to keep editing it.",
+        "Create a new document owned by the current user and return its id and path. Optionally provide a title, an initial markdown body (may include YAML frontmatter for tags/aliases/summary), and a folder to create it in (id or path from list_folders; you need to own the folder or have editor access to it). Without a folder it is created at the vault root. Use edit_document/append_to_document afterwards to keep editing it.",
       inputSchema: {
         title: z
           .string()
@@ -77,14 +86,129 @@ export function registerVaultDocumentWriteTools(server: McpServer): void {
           .max(maxMarkdownLength)
           .optional()
           .describe("Initial markdown body."),
+        folder: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Folder to create the document in, by id or path (e.g. 'Courses/CS101')."),
       },
     },
-    async ({ title, markdown }, extra) =>
+    async ({ title, markdown, folder }, extra) =>
       runTool(async () => {
         const userId = resolveMcpUserId(extra);
-        const { id } = await createDocumentForUser(userId, { title, markdown });
+        const target = folder ? await resolveFolderForUser(userId, folder) : null;
 
-        return json({ ok: true, id });
+        if (target && target.access === "viewer") {
+          return failure(
+            `You can view "${target.path}" but not add documents to it.`,
+          );
+        }
+
+        const { id, title: createdTitle } = await createDocumentForUser(userId, {
+          title,
+          markdown,
+          folderId: target?.id ?? null,
+        });
+
+        if (target) {
+          revalidateWorkspace();
+        }
+
+        return json({
+          ok: true,
+          id,
+          path: documentPath(target?.path ?? null, createdTitle),
+        });
+      }),
+  );
+
+  server.registerTool(
+    "move_document",
+    {
+      title: "Move a document",
+      description:
+        "Move a document into a folder (by id or path from list_folders), or to the vault root by passing folder: null. Requires edit access to the document and owner/editor access to the target folder. Folder default tags are re-applied for the new location.",
+      inputSchema: {
+        documentId: z.string().uuid().describe("The document id."),
+        folder: z
+          .string()
+          .min(1)
+          .nullable()
+          .describe("Target folder id or path, or null for the vault root."),
+      },
+    },
+    async ({ documentId, folder }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const target = folder ? await resolveFolderForUser(userId, folder) : null;
+        const moved = await moveDocumentToFolderForUser(
+          userId,
+          documentId,
+          target?.id ?? null,
+        );
+
+        if (!moved) {
+          return failure(
+            target
+              ? `Document not found or not editable by you, or you cannot add documents to "${target.path}".`
+              : "Document not found or you cannot edit it.",
+          );
+        }
+
+        revalidateWorkspace();
+
+        return json({ ok: true, folderPath: target?.path ?? null });
+      }),
+  );
+
+  server.registerTool(
+    "create_folder",
+    {
+      title: "Create a folder",
+      description:
+        "Create a folder owned by the current user, at the root or inside one of their own folders (by id or path). Returns the new folder's id and path, ready for create_document/move_document.",
+      inputSchema: {
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(120)
+          .refine((name) => !name.includes("/"), "Folder names cannot contain '/'.")
+          .describe("Folder name (no slashes)."),
+        parent: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Parent folder id or path; omit for the root. Must be a folder you own."),
+      },
+    },
+    async ({ name, parent }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const parentFolder = parent ? await resolveFolderForUser(userId, parent) : null;
+
+        if (parentFolder && parentFolder.access !== "owner") {
+          return failure(
+            `Only the owner can add subfolders to "${parentFolder.path}".`,
+          );
+        }
+
+        const created = await createFolderForUser(userId, {
+          name,
+          parentId: parentFolder?.id ?? null,
+        });
+
+        if (!created) {
+          return failure("Parent folder not found or not owned by you.");
+        }
+
+        revalidateWorkspace();
+
+        return json({
+          ok: true,
+          id: created.id,
+          path: parentFolder ? `${parentFolder.path}/${name}` : name,
+        });
       }),
   );
 

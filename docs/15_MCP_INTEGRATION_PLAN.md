@@ -108,6 +108,28 @@ edits elsewhere in the doc.
 | `append_to_document` | **new** collab-client write path | anchorless insert at end |
 | `insert_at_heading` | **new** collab-client write path | anchorless insert relative to a heading |
 
+**As built (2026-10-06, "workspace context" pass).** Plans above were the
+starting point; the live catalog is in `lib/mcp/*-tools.ts`. Read tools load one
+`loadWorkspaceSnapshot` (`lib/mcp/workspace-context.ts`): owned + shared +
+collaborator documents filed in the user's folders, each with `folderPath` and
+`path` (`Folder/Sub/Title`), so same-named documents in different folders are
+distinguishable. Folder arguments everywhere accept an id or a path
+(`resolveFolderRef`, case-insensitive, ambiguity refused).
+
+| Tool | Notes |
+|---|---|
+| `list_folders` | Visible folder tree as paths, access, document counts; `includeDocuments` gives the whole tree |
+| `list_documents` | Flat list with path/folder/source/role/tags; `folder` (+`recursive`), `scope`, `tags`, `sort`, `limit`/`offset` |
+| `search_documents` | Multi-term AND over title + folder path + body (quoted phrases), ranked, returns 1-based hit lines; `folder` filter; pure ranking in `lib/mcp/workspace-index.ts` (in-memory, not `listPublicDocuments`) |
+| `get_outline` / `read_document` | Add path, tags, `lineCount`, heading line numbers, and the returned slice's `lines` range |
+| `list_deleted_documents` | Bin listing to pair with `restore_document` |
+| `create_document` | Optional `folder` (needs folder edit rights; inherited tags synced) |
+| `move_document` / `create_folder` | Filing and folder creation via `server/folders-data.ts` (`moveDocumentToFolderForUser`, `createFolderForUser`), shared with the sidebar actions |
+| `list_extension_actions` | Also returns `disabledExtensions` (installed, off, with their action ids) so an agent can ask the user to enable one |
+
+The server also sends MCP `instructions` (`lib/mcp/instructions.ts`) describing
+the find → read → edit workflow and when to use extension actions.
+
 ### Efficient editing contract (Copilot/Claude-style)
 
 The agent must **never resend the whole document**. We use anchored

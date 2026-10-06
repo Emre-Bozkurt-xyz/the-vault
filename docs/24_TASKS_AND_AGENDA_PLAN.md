@@ -357,6 +357,22 @@ mode plus a full page.
 The Calendar extension's `listUpcomingTasks` grows to include Markdown tasks, so
 "what is due this week?" covers both.
 
+**As built (2026-10-06).** Extension server code may not touch the database, so
+the actions sit on a new generic **task host service** in the SDK
+(`server/task-services.ts`, types in `lib/extensions/types.ts`):
+`ctx.workspace.tasks.list` (index-backed, owned documents, folder filter by id or
+path) and `ctx.document.tasks` (`list` parsed from the document's text, so shared
+documents work; `setStatus`/`setDue`/`add` with `document:write`).
+`extensions/tasks/server.ts` exposes `listTasks` (workspace) and
+`listDocumentTasks`, `setTaskStatus`, `setTaskDue`, `addTask` (document-scoped,
+so the dispatcher enforces edit access). Lines are **1-based** in the API.
+Writes use the §5.1 locator (`lib/tasks/write.ts`), minimal in-line Y.Text
+edits, origin `"tasks"`, no restore point (`withLiveDocumentText` gained
+`origin`/`snapshot` options), and reindex from the returned text (§5.3).
+`addTask` needs a document; the Inbox fallback waits for slice 4. Calendar's
+`listUpcomingTasks` still covers only calendar entries (its description now says
+so).
+
 ## 9. Slices
 
 Each slice leaves the app runnable and is verified with

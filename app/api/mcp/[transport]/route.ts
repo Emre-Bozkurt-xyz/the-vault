@@ -4,6 +4,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { registerVaultDocumentTools } from "@/lib/mcp/document-tools";
 import { registerVaultDocumentWriteTools } from "@/lib/mcp/document-write-tools";
 import { registerVaultExtensionTools } from "@/lib/mcp/extension-tools";
+import { vaultMcpInstructions } from "@/lib/mcp/instructions";
 import { resolveAccessToken } from "@/lib/mcp/oauth";
 
 // Streamable HTTP MCP endpoint. With this file at `app/api/mcp/[transport]/`
@@ -16,7 +17,8 @@ const baseHandler = createMcpHandler(
     registerVaultExtensionTools(server);
   },
   {
-    serverInfo: { name: "vault", version: "0.1.0" },
+    serverInfo: { name: "vault", version: "0.2.0" },
+    instructions: vaultMcpInstructions,
   },
   {
     basePath: "/api/mcp",

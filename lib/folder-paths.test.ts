@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocumentFolderPaths,
   buildFolderPaths,
+  collectFolderSubtreeIds,
   resolveFolderAncestry,
+  resolveFolderRef,
 } from "@/lib/folder-paths";
 
 describe("buildFolderPaths", () => {
@@ -126,5 +128,62 @@ describe("buildDocumentFolderPaths", () => {
     ]);
 
     expect(paths.size).toBe(0);
+  });
+});
+
+describe("resolveFolderRef", () => {
+  const folders = [
+    { id: "courses", name: "Courses", parentId: null },
+    { id: "cs101", name: "CS101", parentId: "courses" },
+    { id: "ma201", name: "MA201", parentId: "courses" },
+    { id: "work", name: "Work", parentId: null },
+    { id: "work-twin", name: "Work", parentId: null },
+  ];
+
+  it("accepts an id or a case-insensitive path with stray slashes", () => {
+    expect(resolveFolderRef(folders, "cs101")).toMatchObject({ ok: true, folder: { id: "cs101" } });
+    expect(resolveFolderRef(folders, "/courses//CS101/")).toMatchObject({
+      ok: true,
+      folder: { id: "cs101" },
+    });
+  });
+
+  it("refuses an ambiguous path instead of guessing", () => {
+    const result = resolveFolderRef(folders, "Work");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toMatch(/matches 2 folders/);
+  });
+
+  it("suggests close paths for an unknown one", () => {
+    const result = resolveFolderRef(folders, "Classes/CS101");
+    expect(!result.ok && result.error).toMatch(/Courses\/CS101/);
+  });
+});
+
+describe("collectFolderSubtreeIds", () => {
+  it("returns the folder and every descendant, root first", () => {
+    expect(
+      collectFolderSubtreeIds(
+        [
+          { id: "a", name: "A", parentId: null },
+          { id: "b", name: "B", parentId: "a" },
+          { id: "c", name: "C", parentId: "b" },
+          { id: "d", name: "D", parentId: null },
+        ],
+        "a",
+      ),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not loop on a cycle", () => {
+    expect(
+      collectFolderSubtreeIds(
+        [
+          { id: "a", name: "A", parentId: "b" },
+          { id: "b", name: "B", parentId: "a" },
+        ],
+        "a",
+      ),
+    ).toEqual(["a", "b"]);
   });
 });

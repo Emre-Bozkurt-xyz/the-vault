@@ -16,16 +16,25 @@ export function sliceMarkdownByLineRange(
   return lines.slice(start, Math.max(start, end)).join("\n");
 }
 
+export type MarkdownSection = {
+  markdown: string;
+  /** 1-based line of the heading. */
+  startLine: number;
+  /** 1-based last line of the section, inclusive. */
+  endLine: number;
+};
+
 /**
  * Returns the section of a markdown document beginning at the heading whose text
  * or slug matches `target`, up to (but excluding) the next heading of the same or
- * higher level. Returns `null` when no heading matches. Fenced code blocks are
- * skipped so a `#` inside a fence is never treated as a heading.
+ * higher level, with its line range. Returns `null` when no heading matches.
+ * Fenced code blocks are skipped so a `#` inside a fence is never treated as a
+ * heading.
  */
 export function sliceMarkdownByHeading(
   markdown: string,
   target: string,
-): string | null {
+): MarkdownSection | null {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const normalized = target.trim().toLowerCase();
   const targetSlug = slugify(target);
@@ -33,6 +42,12 @@ export function sliceMarkdownByHeading(
   let startIndex = -1;
   let startLevel = 0;
   let inFence = false;
+
+  const section = (endIndex: number): MarkdownSection => ({
+    markdown: lines.slice(startIndex, endIndex).join("\n"),
+    startLine: startIndex + 1,
+    endLine: endIndex,
+  });
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
@@ -64,7 +79,7 @@ export function sliceMarkdownByHeading(
     }
 
     if (level <= startLevel) {
-      return lines.slice(startIndex, index).join("\n");
+      return section(index);
     }
   }
 
@@ -72,5 +87,5 @@ export function sliceMarkdownByHeading(
     return null;
   }
 
-  return lines.slice(startIndex).join("\n");
+  return section(lines.length);
 }

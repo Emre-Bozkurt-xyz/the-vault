@@ -46,7 +46,8 @@ These are enforced: ESLint for imports, the contract test
 you when you break one.
 
 1. **Import only your own folder (relative paths), `@/lib/extension-api` (and
-   its subpaths: `/react`, `/server`, `/testing`, `/fx`, `/markdown`, `/codemirror`),
+   its subpaths: `/react`, `/server`, `/testing`, `/fx`, `/dates`, `/markdown`,
+   `/codemirror`),
    `@/components/ui/*` and `@/lib/utils`**, plus packages. If you need something
    from Vault that the SDK does not offer, the answer is to add it to the SDK,
    not to reach around it.
@@ -55,8 +56,8 @@ you when you break one.
    server page can reach into that page's entry chunk, so one static import puts
    your extension on every page of the site.
 3. **Never touch the database.** Server code gets everything through the
-   context the host hands it: state, documents, assets, FX rates. Each is
-   gated by the permissions your manifest declares.
+   context the host hands it: state, documents, tasks, assets, FX rates. Each
+   is gated by the permissions your manifest declares.
 4. **Namespace everything** under your id: commands, slash items, actions
    (`vault.calendar.insert`). A mismatch is a type error.
 5. **Settings defaults come from the schema.** `defaults`, if you write it,
@@ -206,6 +207,14 @@ export default defineServer(manifest, {
 
 Actions are what MCP agents call, and what your own UI calls through
 `useExtensionAction`: one permission-checked dispatcher for both.
+
+A handler gets its capabilities from `context`, only those its `permissions`
+allow: `document.state` and `document.markdown` (read with `document:read`,
+write with `document:write`), `documents` (list by tag, find, create),
+`document.tasks` and `workspace.tasks` (Markdown task lines: list, set status,
+set due, add; `extensions/tasks/server.ts` is the example), `assets`, and `fx`.
+Task lines are 1-based and addressed by `line` + `rawLine`, so a write to a
+line that changed since it was listed is refused rather than misapplied.
 
 ## Testing
 

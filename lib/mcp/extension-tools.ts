@@ -1,32 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { json, runTool } from "@/lib/mcp/tool-result";
 import { resolveMcpUserId } from "@/lib/mcp/user";
 import {
   listAgentActionsForUser,
   runAgentActionForUser,
 } from "@/server/extensions";
-
-type ToolResult = {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-};
-
-function json(value: unknown): ToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
-}
-
-function failure(message: string): ToolResult {
-  return { content: [{ type: "text", text: message }], isError: true };
-}
-
-async function runTool(body: () => Promise<ToolResult>): Promise<ToolResult> {
-  try {
-    return await body();
-  } catch (error) {
-    return failure(error instanceof Error ? error.message : "Unexpected error.");
-  }
-}
 
 /**
  * Registers the generic extension-action dispatcher tools. Rather than a tool per
@@ -42,7 +22,7 @@ export function registerVaultExtensionTools(server: McpServer): void {
     {
       title: "List extension actions",
       description:
-        "List the agent actions exposed by the extensions the current user has enabled. Each entry includes the action id, what it does, its scope ('document' actions need a documentId, 'workspace' actions don't), whether it mutates data, the JSON Schema of its input, and (when declared) of its output. Pass a documentId to also learn, per document-scoped action, how many of that extension's instances exist in the document and whether the action is runnable given your access. ALWAYS call this first to discover available actions and their exact input shape before calling run_extension_action.",
+        "List the agent actions exposed by the extensions the current user has enabled. Each entry includes the action id, what it does, its scope ('document' actions need a documentId, 'workspace' actions don't), whether it mutates data, the JSON Schema of its input, and (when declared) of its output. `disabledExtensions` lists installed extensions the user has turned off, with the actions they would add — if one fits the request, ask the user to enable it in Settings → Extensions rather than working around it. Pass a documentId to also learn, per document-scoped action, how many of that extension's instances exist in the document and whether the action is runnable given your access. ALWAYS call this first to discover available actions and their exact input shape before calling run_extension_action.",
       inputSchema: {
         documentId: z
           .string()

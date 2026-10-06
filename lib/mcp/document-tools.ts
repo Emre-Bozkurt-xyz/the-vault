@@ -1,16 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { extractMarkdownHeadingOptions } from "@/lib/wiki-links";
-import {
-  listTagsForDocumentIds,
-} from "@/server/documents";
+import { listTagsForDocumentIds } from "@/server/documents";
 import {
   getDocumentForUser,
   getDocumentVersionForUser,
+  listArchivedDocumentsForUser,
   listDocumentVersionsForUser,
-  listDocumentsForUser,
-  listSharedDocumentsForUser,
 } from "@/server/documents-data";
 import { listAssetsForUser } from "@/server/assets";
 import { normalizeTagList } from "@/lib/content-metadata";
@@ -19,81 +15,235 @@ import {
   sliceMarkdownByHeading,
   sliceMarkdownByLineRange,
 } from "@/lib/mcp/markdown-slice";
+import { failure, json, runTool } from "@/lib/mcp/tool-result";
+import {
+  describeDocumentLocation,
+  loadWorkspaceSnapshot,
+  resolveFolderScope,
+  type WorkspaceDocument,
+} from "@/lib/mcp/workspace-context";
+import {
+  countLines,
+  documentPreview,
+  outlineWithLines,
+  parseSearchTerms,
+  scoreDocument,
+} from "@/lib/mcp/workspace-index";
 
-type ToolResult = {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-};
+const folderInput = z
+  .string()
+  .min(1)
+  .optional()
+  .describe(
+    "Limit to one folder, by id or by path as shown in list_folders (e.g. 'Courses/CS101'; case-insensitive).",
+  );
 
-function text(value: string): ToolResult {
-  return { content: [{ type: "text", text: value }] };
+const recursiveInput = z
+  .boolean()
+  .default(true)
+  .describe("With `folder`: include its subfolders (default true).");
+
+const scopeInput = z
+  .enum(["owned", "shared", "all"])
+  .default("all")
+  .describe(
+    "owned = documents you own; shared = documents others own that you can open (shared with you, or filed into your folders); all = both.",
+  );
+
+const tagsInput = z
+  .array(z.string())
+  .optional()
+  .describe(
+    "Require all of these tags. Normalized to lowercase slugs (spaces and dashes become underscores, e.g. 'mcp-test' -> 'mcp_test'). Includes tags inherited from folders.",
+  );
+
+/** Narrows a snapshot by scope and folder, the filters every listing shares. */
+function filterDocuments(
+  documents: WorkspaceDocument[],
+  options: {
+    scope: "owned" | "shared" | "all";
+    folderIds?: Set<string>;
+  },
+): WorkspaceDocument[] {
+  return documents.filter((document) => {
+    if (options.scope === "owned" && document.source !== "owned") return false;
+    if (options.scope === "shared" && document.source === "owned") return false;
+    if (
+      options.folderIds &&
+      !(document.folderId && options.folderIds.has(document.folderId))
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
-function json(value: unknown): ToolResult {
-  return text(JSON.stringify(value, null, 2));
-}
-
-function failure(message: string): ToolResult {
-  return { content: [{ type: "text", text: message }], isError: true };
+/** The fields every listing returns for a document. */
+function documentSummary(document: WorkspaceDocument, tags: string[]) {
+  return {
+    id: document.id,
+    title: document.title,
+    path: document.path,
+    folderId: document.folderId,
+    folderPath: document.folderPath,
+    source: document.source,
+    role: document.role,
+    ...(document.ownerUsername ? { ownerUsername: document.ownerUsername } : {}),
+    visibility: document.visibility,
+    tags,
+    updatedAt: document.updatedAt,
+  };
 }
 
 /**
- * Wraps a tool body so unauthenticated/expected errors surface as MCP tool
- * errors (`isError`) rather than crashing the transport.
- */
-async function runTool(body: () => Promise<ToolResult>): Promise<ToolResult> {
-  try {
-    return await body();
-  } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Unexpected error.",
-    );
-  }
-}
-
-function snippet(markdown: string, length = 200): string {
-  const collapsed = markdown.replace(/\s+/g, " ").trim();
-  return collapsed.length > length
-    ? `${collapsed.slice(0, length)}…`
-    : collapsed;
-}
-
-/**
- * Registers the Phase 1 (read-only) Vault document tools on an MCP server.
- * Every tool resolves the acting user via {@link resolveMcpUserId} and delegates
- * to the existing permission-checked functions in `server/documents.ts`.
+ * Registers the read-only Vault document tools on an MCP server. Every tool
+ * resolves the acting user via {@link resolveMcpUserId} and reads only through
+ * permission-checked functions, so a tool can never surface a document or
+ * folder the user could not open in the app.
  */
 export function registerVaultDocumentTools(server: McpServer): void {
+  server.registerTool(
+    "list_folders",
+    {
+      title: "List folders",
+      description:
+        "Show the folder tree the current user can see — their own folders and folders shared with them — as paths like 'Courses/CS101/Week 3', with ids, access, and how many documents each holds. Call this first when a request is about a place ('the CS101 todo', 'my work notes') so you can tell same-named documents in different folders apart. Pass includeDocuments to also list each folder's documents (titles and ids), i.e. the whole tree.",
+      inputSchema: {
+        folder: folderInput.describe(
+          "Show only this folder's subtree, by id or path.",
+        ),
+        includeDocuments: z
+          .boolean()
+          .default(false)
+          .describe("Also list the documents inside each folder (and, without `folder`, at the root)."),
+      },
+    },
+    async ({ folder, includeDocuments }, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const snapshot = await loadWorkspaceSnapshot(userId);
+        const scope = folder
+          ? resolveFolderScope(snapshot.folders, folder, true).folderIds
+          : null;
+        const byFolder = new Map<string, WorkspaceDocument[]>();
+        const rootDocuments: WorkspaceDocument[] = [];
+
+        for (const document of snapshot.documents) {
+          // A document whose folder the user cannot see shows at the root,
+          // matching how its path is reported everywhere else.
+          if (document.folderId && document.folderPath !== null) {
+            const list = byFolder.get(document.folderId) ?? [];
+            list.push(document);
+            byFolder.set(document.folderId, list);
+          } else {
+            rootDocuments.push(document);
+          }
+        }
+
+        const folders = snapshot.folders
+          .filter((entry) => !scope || scope.has(entry.id))
+          .map((entry) => {
+            const documents = byFolder.get(entry.id) ?? [];
+            return {
+              id: entry.id,
+              path: entry.path,
+              parentId: entry.parentId,
+              access: entry.access,
+              ...(entry.ownerUsername ? { ownerUsername: entry.ownerUsername } : {}),
+              documentCount: documents.length,
+              ...(includeDocuments
+                ? {
+                    documents: documents
+                      .map((document) => ({ id: document.id, title: document.title }))
+                      .sort((a, b) => a.title.localeCompare(b.title)),
+                  }
+                : {}),
+            };
+          });
+
+        return json({
+          count: folders.length,
+          folders,
+          ...(scope
+            ? {}
+            : {
+                rootDocumentCount: rootDocuments.length,
+                ...(includeDocuments
+                  ? {
+                      rootDocuments: rootDocuments
+                        .map((document) => ({ id: document.id, title: document.title }))
+                        .sort((a, b) => a.title.localeCompare(b.title)),
+                    }
+                  : {}),
+              }),
+        });
+      }),
+  );
+
   server.registerTool(
     "list_documents",
     {
       title: "List documents",
       description:
-        "List the documents the current user can access — both owned and shared with them. Returns ids, titles, visibility, and last-updated times. Use search_documents to find by text, get_outline/read_document to read one.",
-      inputSchema: {},
+        "List documents the current user can open, newest first (or by path). Each entry has its id, title, full `path` (folder path + title, e.g. 'Courses/CS101/Todo'), folder, whether it is owned or shared, your role, tags, and last update. Filter by folder (with or without subfolders), scope, and tags; page with limit/offset. Use search_documents to find by text.",
+      inputSchema: {
+        folder: folderInput,
+        recursive: recursiveInput,
+        scope: scopeInput,
+        tags: tagsInput,
+        sort: z
+          .enum(["updated", "path"])
+          .default("updated")
+          .describe("updated = most recently changed first; path = alphabetical by path."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe("Maximum results to return (default 100)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Skip this many results, for paging (default 0)."),
+      },
     },
-    async (_args, extra) =>
+    async ({ folder, recursive, scope, tags, sort, limit, offset }, extra) =>
       runTool(async () => {
         const userId = resolveMcpUserId(extra);
-        const [owned, shared] = await Promise.all([
-          listDocumentsForUser(userId),
-          listSharedDocumentsForUser(userId),
-        ]);
+        const snapshot = await loadWorkspaceSnapshot(userId);
+        const folderIds = folder
+          ? resolveFolderScope(snapshot.folders, folder, recursive).folderIds
+          : undefined;
+        let documents = filterDocuments(snapshot.documents, { scope, folderIds });
+        const tagMap = await listTagsForDocumentIds(
+          documents.map((document) => document.id),
+        );
+        const requiredTags = tags ? normalizeTagList(tags) : [];
+
+        if (requiredTags.length > 0) {
+          documents = documents.filter((document) => {
+            const documentTags = new Set(tagMap.get(document.id) ?? []);
+            return requiredTags.every((tag) => documentTags.has(tag));
+          });
+        }
+
+        if (sort === "path") {
+          documents = [...documents].sort((a, b) => a.path.localeCompare(b.path));
+        }
+
+        const start = offset ?? 0;
+        const page = documents.slice(start, start + (limit ?? 100));
 
         return json({
-          owned: owned.map((document) => ({
-            id: document.id,
-            title: document.title,
-            visibility: document.visibility,
-            updatedAt: document.updatedAt,
-          })),
-          shared: shared.map((document) => ({
-            id: document.id,
-            title: document.title,
-            role: document.role,
-            ownerUsername: document.ownerUsername,
-            updatedAt: document.updatedAt,
-          })),
+          total: documents.length,
+          offset: start,
+          count: page.length,
+          documents: page.map((document) =>
+            documentSummary(document, tagMap.get(document.id) ?? []),
+          ),
         });
       }),
   );
@@ -103,22 +253,16 @@ export function registerVaultDocumentTools(server: McpServer): void {
     {
       title: "Search documents",
       description:
-        "Find documents the current user can access. Filter by free text (matched in title/body), by tags (a document must have all given tags), and/or by scope (owned vs shared). Provide at least a query or tags. Returns ids, titles, tags, and a short snippet.",
+        "Find documents the current user can open. The query is split into words (use \"double quotes\" for a phrase); a document matches when every word appears in its title, its folder path, or its body — so 'cs101 todo' finds the Todo note inside a CS101 folder. Results are ranked (title and folder hits first) and each includes its full path, tags, and the matching body lines with 1-based line numbers, ready for read_document's startLine/endLine. Filter by tags, folder (with subfolders by default), and scope. Provide at least a query, tags, or folder.",
       inputSchema: {
         query: z
           .string()
           .optional()
-          .describe("Text to match in titles and bodies."),
-        tags: z
-          .array(z.string())
-          .optional()
-          .describe(
-            "Require all of these tags. Normalized to lowercase slugs (spaces and dashes become underscores, e.g. 'mcp-test' -> 'mcp_test').",
-          ),
-        scope: z
-          .enum(["owned", "shared", "all"])
-          .default("all")
-          .describe("Limit to owned, shared, or all accessible documents."),
+          .describe("Words to match in titles, folder paths, and bodies."),
+        tags: tagsInput,
+        folder: folderInput,
+        recursive: recursiveInput,
+        scope: scopeInput,
         limit: z
           .number()
           .int()
@@ -128,76 +272,51 @@ export function registerVaultDocumentTools(server: McpServer): void {
           .describe("Maximum results to return (default 20)."),
       },
     },
-    async ({ query, tags, scope, limit }, extra) =>
+    async ({ query, tags, folder, recursive, scope, limit }, extra) =>
       runTool(async () => {
         const userId = resolveMcpUserId(extra);
-        const needle = query?.trim().toLowerCase() ?? "";
+        const terms = parseSearchTerms(query ?? "");
         const requiredTags = tags ? normalizeTagList(tags) : [];
 
-        if (!needle && requiredTags.length === 0) {
-          return failure("Provide a query and/or tags to search.");
+        if (terms.length === 0 && requiredTags.length === 0 && !folder) {
+          return failure("Provide a query, tags, and/or a folder to search.");
         }
 
-        const [owned, shared] = await Promise.all([
-          listDocumentsForUser(userId),
-          listSharedDocumentsForUser(userId),
-        ]);
-
-        const candidates = [
-          ...(scope !== "shared"
-            ? owned.map((document) => ({
-                id: document.id,
-                title: document.title,
-                markdown: document.markdown,
-                source: "owned" as const,
-              }))
-            : []),
-          ...(scope !== "owned"
-            ? shared.map((document) => ({
-                id: document.id,
-                title: document.title,
-                markdown: document.markdown,
-                source: "shared" as const,
-              }))
-            : []),
-        ];
-
+        const snapshot = await loadWorkspaceSnapshot(userId);
+        const folderIds = folder
+          ? resolveFolderScope(snapshot.folders, folder, recursive).folderIds
+          : undefined;
+        const candidates = filterDocuments(snapshot.documents, { scope, folderIds });
         const tagMap = await listTagsForDocumentIds(
           candidates.map((document) => document.id),
         );
 
-        const matches = candidates
-          .filter((document) => {
-            if (
-              needle &&
-              !document.title.toLowerCase().includes(needle) &&
-              !document.markdown.toLowerCase().includes(needle)
-            ) {
-              return false;
-            }
-
+        const ranked = candidates
+          .flatMap((document) => {
             if (requiredTags.length > 0) {
               const documentTags = new Set(tagMap.get(document.id) ?? []);
-              if (!requiredTags.every((tag) => documentTags.has(tag))) {
-                return false;
-              }
+              if (!requiredTags.every((tag) => documentTags.has(tag))) return [];
             }
 
-            return true;
+            const scored = scoreDocument(document, terms);
+            return scored ? [{ document, ...scored }] : [];
           })
-          .slice(0, limit ?? 20)
-          .map((document) => ({
-            id: document.id,
-            title: document.title,
-            source: document.source,
-            tags: tagMap.get(document.id) ?? [],
-            snippet: snippet(document.markdown),
-          }));
+          // Stable sort keeps the snapshot's newest-first order among ties.
+          .sort((a, b) => b.score - a.score);
+
+        const matches = ranked.slice(0, limit ?? 20).map((match) => ({
+          ...documentSummary(match.document, tagMap.get(match.document.id) ?? []),
+          ...(match.hits.length > 0
+            ? { hits: match.hits }
+            : { preview: documentPreview(match.document.markdown) }),
+        }));
 
         return json({
           query: query ?? null,
           tags: requiredTags,
+          folder: folder ?? null,
           scope,
+          total: ranked.length,
           count: matches.length,
           matches,
         });
@@ -209,7 +328,7 @@ export function registerVaultDocumentTools(server: McpServer): void {
     {
       title: "Get document outline",
       description:
-        "Return the heading outline (levels, text, slugs) of a document without its full body. Use this to navigate a large document cheaply before pulling a section with read_document.",
+        "Return a document's location (path, folder), tags, line count, and heading outline (level, text, slug, 1-based line) without its body. Use this to navigate a large document cheaply before reading a section with read_document (by heading, or by startLine/endLine from the outline).",
       inputSchema: {
         documentId: z.string().uuid().describe("The document id."),
       },
@@ -223,11 +342,20 @@ export function registerVaultDocumentTools(server: McpServer): void {
           return failure("Document not found or you do not have access.");
         }
 
+        const [location, tagMap] = await Promise.all([
+          describeDocumentLocation(userId, document),
+          listTagsForDocumentIds([document.id]),
+        ]);
+
         return json({
           id: document.id,
           title: document.title,
-          updatedAt: document.updatedAt,
-          headings: extractMarkdownHeadingOptions(document.markdown),
+          ...location,
+          tags: tagMap.get(document.id) ?? [],
+          canEdit: document.access.canEdit,
+          version: document.updatedAt,
+          lineCount: countLines(document.markdown),
+          headings: outlineWithLines(document.markdown),
         });
       }),
   );
@@ -237,7 +365,7 @@ export function registerVaultDocumentTools(server: McpServer): void {
     {
       title: "Read a document",
       description:
-        "Read a document's markdown. By default returns the whole body; pass a line range or a heading to read only part of it (cheaper for large docs). The returned `version` (updatedAt) lets you detect concurrent changes.",
+        "Read a document's markdown, with its path (folder + title), tags, and total line count. By default returns the whole body; pass startLine/endLine (1-based, inclusive) or a heading to read only part of it (cheaper for large docs) — the response says which lines were returned. The returned `version` (updatedAt) lets you detect concurrent changes.",
       inputSchema: {
         documentId: z.string().uuid().describe("The document id."),
         startLine: z
@@ -269,31 +397,66 @@ export function registerVaultDocumentTools(server: McpServer): void {
           return failure("Document not found or you do not have access.");
         }
 
+        const lineCount = countLines(document.markdown);
         let body = document.markdown;
-        let slice: string | undefined;
+        let lines: { startLine: number; endLine: number } | undefined;
 
         if (heading) {
           const section = sliceMarkdownByHeading(body, heading);
 
           if (section === null) {
-            return failure(`No heading matching "${heading}" was found.`);
+            return failure(
+              `No heading matching "${heading}" was found. Use get_outline to list headings.`,
+            );
           }
 
-          body = section;
-          slice = `heading:${heading}`;
+          body = section.markdown;
+          lines = { startLine: section.startLine, endLine: section.endLine };
         } else if (startLine) {
+          if (endLine !== undefined && endLine < startLine) {
+            return failure("endLine must be greater than or equal to startLine.");
+          }
+
           body = sliceMarkdownByLineRange(body, startLine, endLine);
-          slice = `lines:${startLine}-${endLine ?? "end"}`;
+          lines = {
+            startLine,
+            endLine: Math.min(endLine ?? lineCount, lineCount),
+          };
         }
+
+        const [location, tagMap] = await Promise.all([
+          describeDocumentLocation(userId, document),
+          listTagsForDocumentIds([document.id]),
+        ]);
 
         return json({
           id: document.id,
           title: document.title,
+          ...location,
+          tags: tagMap.get(document.id) ?? [],
           version: document.updatedAt,
-          slice,
           canEdit: document.access.canEdit,
+          lineCount,
+          ...(lines ? { lines } : {}),
           markdown: body,
         });
+      }),
+  );
+
+  server.registerTool(
+    "list_deleted_documents",
+    {
+      title: "List deleted documents",
+      description:
+        "List documents the current user owns that are in the Bin (soft-deleted), newest deletion first, with ids to pass to restore_document.",
+      inputSchema: {},
+    },
+    async (_args, extra) =>
+      runTool(async () => {
+        const userId = resolveMcpUserId(extra);
+        const deleted = await listArchivedDocumentsForUser(userId);
+
+        return json({ count: deleted.length, documents: deleted });
       }),
   );
 
@@ -349,7 +512,7 @@ export function registerVaultDocumentTools(server: McpServer): void {
     {
       title: "Search assets",
       description:
-        "Find the current user's uploaded assets (images, PDFs) to embed in documents. Filter by free text (matched in name/description/alt text), tags, and kind. Returns each asset's id, name, kind, tags, and size. Pass an id to embed_asset to place it in a document with styling.",
+        "Find the current user's uploaded assets (images, PDFs) to embed in documents. Filter by free text (matched in name/description/alt text), tags, and kind. Returns each asset's id, name, kind, description, alt text, tags, and size. Pass an id to embed_asset to place it in a document with styling.",
       inputSchema: {
         query: z
           .string()
@@ -378,7 +541,7 @@ export function registerVaultDocumentTools(server: McpServer): void {
       runTool(async () => {
         const userId = resolveMcpUserId(extra);
         const assets = await listAssetsForUser(userId);
-        const needle = query?.trim().toLowerCase() ?? "";
+        const terms = parseSearchTerms(query ?? "");
         const requiredTags = tags ? normalizeTagList(tags) : [];
 
         const matches = assets
@@ -387,10 +550,10 @@ export function registerVaultDocumentTools(server: McpServer): void {
               return false;
             }
 
-            if (needle) {
+            if (terms.length > 0) {
               const haystack =
                 `${asset.displayName} ${asset.description ?? ""} ${asset.altText ?? ""}`.toLowerCase();
-              if (!haystack.includes(needle)) {
+              if (!terms.every((term) => haystack.includes(term))) {
                 return false;
               }
             }
@@ -409,6 +572,8 @@ export function registerVaultDocumentTools(server: McpServer): void {
             id: asset.id,
             name: asset.displayName,
             kind: asset.kind,
+            description: asset.description ?? null,
+            altText: asset.altText ?? null,
             tags: asset.tags,
             mimeType: asset.mimeType,
             sizeBytes: asset.sizeBytes,

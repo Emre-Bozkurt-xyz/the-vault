@@ -29,6 +29,12 @@ export type {
   ExtensionAgentActionScope,
   ExtensionAgentDocumentsApi,
   ExtensionAgentDocumentSummary,
+  ExtensionAgentDocumentTasksApi,
+  ExtensionAgentTask,
+  ExtensionAgentTaskQuery,
+  ExtensionAgentTaskRef,
+  ExtensionAgentTaskStatus,
+  ExtensionAgentWorkspaceTasksApi,
 } from "@/lib/extensions/types";
 
 // Core document data an extension may read or write through the documents

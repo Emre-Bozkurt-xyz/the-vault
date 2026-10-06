@@ -18,20 +18,28 @@ const flushTimeoutMs = 10_000;
 /**
  * Opens the document's live Yjs session (exactly like a browser editor), runs
  * `mutate` against the shared `markdown` Y.Text inside one transaction tagged
- * `"mcp"`, waits for the change to flush to the collaboration server, and returns
- * the resulting markdown.
+ * `options.origin` (default `"mcp"`), waits for the change to flush to the
+ * collaboration server, and returns the resulting markdown.
  *
  * Writing through the collaboration layer — rather than the `documents.markdown`
  * column directly — is what makes AI edits conflict-free with anyone editing
  * live: the edit is a CRDT delta merged into the authoritative Y.Doc, and the
  * collab server's existing `onStoreDocument` pipeline performs all persistence
  * (markdown column, version snapshot, asset reconcile, metadata sync).
+ *
+ * `options.snapshot` (default true) records the pre-edit state as an
+ * `assistant` restore point. Small structured edits — ticking a task, moving a
+ * due date — pass false: a restore point per checkbox would bury the useful
+ * ones, and the collab server's threshold versioning still applies
+ * (`docs/24_TASKS_AND_AGENDA_PLAN.md` §5.2).
  */
 export async function withLiveDocumentText(
   userId: string,
   documentId: string,
   mutate: (ytext: Y.Text, ydoc: Y.Doc) => void,
+  options: { origin?: string; snapshot?: boolean } = {},
 ): Promise<{ markdown: string }> {
+  const { origin = "mcp", snapshot = true } = options;
   const access = await getDocumentAccess(userId, documentId);
 
   if (!access.canEdit) {
@@ -93,14 +101,14 @@ export async function withLiveDocumentText(
     const ytext = ydoc.getText("markdown");
     const priorMarkdown = ytext.toString();
 
-    ydoc.transact(() => mutate(ytext, ydoc), "mcp");
+    ydoc.transact(() => mutate(ytext, ydoc), origin);
 
     const nextMarkdown = ytext.toString();
 
     // Snapshot the pre-edit state so each agent operation is its own restore
     // point (the collab server's own versioning is threshold-gated and would
     // miss small, rapid edits). Skipped when the edit was a no-op.
-    if (nextMarkdown !== priorMarkdown) {
+    if (snapshot && nextMarkdown !== priorMarkdown) {
       await db.insert(documentVersions).values({
         documentId,
         createdBy: userId,

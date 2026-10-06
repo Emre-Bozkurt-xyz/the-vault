@@ -43,6 +43,10 @@ import {
   upsertDocumentExtensionStateForUser,
 } from "@/server/document-extensions";
 import { resolveViewerExtensions } from "@/server/extension-runtime";
+import {
+  buildDocumentTasksApi,
+  buildWorkspaceTasksApi,
+} from "@/server/task-services";
 
 /**
  * Permissions for which {@link buildDocumentContext} can currently supply a
@@ -96,12 +100,47 @@ export type AgentActionDescriptor = {
   runnableInDocument?: boolean;
 };
 
+/**
+ * An installed extension that contributes agent actions but is turned off for
+ * the user. Listed so an agent asked for, say, task management can tell the
+ * user which extension to enable instead of concluding the capability is
+ * missing. Its actions' schemas are withheld until it is enabled.
+ */
+export type DisabledExtensionSummary = {
+  id: string;
+  name: string;
+  description: string;
+  actions: Array<{ id: string; title: string }>;
+};
+
 export type AgentActionDiscovery = {
   /** Access summary when scoped to a document, so the model knows what it can do. */
   document?: { id: string; canRead: boolean; canEdit: boolean };
   count: number;
   actions: AgentActionDescriptor[];
+  disabledExtensions: DisabledExtensionSummary[];
 };
+
+function summarizeDisabledExtensions(
+  enabledIds: Set<string>,
+): DisabledExtensionSummary[] {
+  const byExtension = new Map<string, DisabledExtensionSummary>();
+
+  for (const { action, extension } of listAgentActions()) {
+    if (enabledIds.has(extension.id) || action.agent === false) continue;
+
+    const summary = byExtension.get(extension.id) ?? {
+      id: extension.id,
+      name: extension.name,
+      description: extension.description,
+      actions: [],
+    };
+    summary.actions.push({ id: action.id, title: action.title });
+    byExtension.set(extension.id, summary);
+  }
+
+  return [...byExtension.values()];
+}
 
 function describeAction(entry: AgentActionEntry): AgentActionDescriptor {
   const { action, extension } = entry;
@@ -141,9 +180,11 @@ export async function listAgentActionsForUser(
         enabledIds.has(entry.extension.id) && entry.action.agent !== false,
     );
 
+  const disabledExtensions = summarizeDisabledExtensions(enabledIds);
+
   if (!documentId) {
     const actions = entries.map(describeAction);
-    return { count: actions.length, actions };
+    return { count: actions.length, actions, disabledExtensions };
   }
 
   const access = await getDocumentAccess(userId, documentId);
@@ -180,6 +221,7 @@ export async function listAgentActionsForUser(
     },
     count: actions.length,
     actions,
+    disabledExtensions,
   };
 }
 
@@ -316,6 +358,9 @@ async function buildDocumentContext(
     }
 
     context.markdown = markdown;
+    context.tasks = buildDocumentTasksApi(userId, documentId, {
+      write: permissions.has("document:write"),
+    });
   }
 
   if (permissions.has("asset:read")) {
@@ -343,7 +388,8 @@ async function buildDocumentContext(
 
 /**
  * Builds the workspace surface for a `scope: "workspace"` action: a cross-document,
- * owner-scoped, extension-bound state reader. Present only with `document:read`.
+ * owner-scoped, extension-bound state reader plus the task listing. Present only
+ * with `document:read`.
  */
 function buildWorkspaceContext(
   entry: AgentActionEntry,
@@ -369,6 +415,7 @@ function buildWorkspaceContext(
         }));
       },
     };
+    context.tasks = buildWorkspaceTasksApi(userId);
   }
 
   return context;
@@ -389,13 +436,15 @@ export async function runAgentActionForUser({
 
   // A UI-only action is reported to agents exactly like one that does not exist.
   if (!entry || (caller === "agent" && entry.action.agent === false)) {
-    throw new Error(`Unknown agent action: ${actionId}`);
+    throw new Error(
+      `Unknown agent action: ${actionId}. Call list_extension_actions for the available ids.`,
+    );
   }
 
   const enabled = await resolveEnabledExtensionsForUser(userId);
   if (!enabled.some((extension) => extension.id === entry.extension.id)) {
     throw new Error(
-      `The "${entry.extension.name}" extension is not enabled for your account.`,
+      `The "${entry.extension.name}" extension is not enabled for your account. Ask the user to turn it on in Settings → Extensions.`,
     );
   }
 
@@ -407,7 +456,17 @@ export async function runAgentActionForUser({
     }
   }
 
-  const parsedInput = entry.action.input.parse(input ?? {});
+  const parsedResult = entry.action.input.safeParse(input ?? {});
+
+  if (!parsedResult.success) {
+    // A readable, path-qualified message the model can act on, rather than a
+    // raw issue array.
+    throw new Error(
+      `Invalid input for ${actionId}:\n${z.prettifyError(parsedResult.error)}`,
+    );
+  }
+
+  const parsedInput = parsedResult.data;
 
   let fxTable: Awaited<ReturnType<typeof getFxRateTable>> | undefined;
 

@@ -434,7 +434,8 @@ Reference plan: `docs/15_MCP_INTEGRATION_PLAN.md`
 | [x] | Document lifecycle tools | `create_document` (owner-permissioned, optional title/markdown, metadata synced) and `delete_document` (owner-only soft-delete with `before_archive` snapshot), via `createDocumentForUser`/`archiveDocumentForUser` |
 | [x] | Metadata, versioning, and tag-search tools | `update_document` (title→DB, frontmatter→collab via `replaceYTextMinimal`+`updateDocumentMetadataFrontmatter`); `list_versions`/`read_version`/`restore_version`; `restore_document` (un-archive); tag/scope filtering in `search_documents` |
 | [x] | Asset discovery + embedding tools | `search_assets` (text/tags/kind) and `embed_asset` (styled `![[asset:…]]{…}` embed via `formatAssetEmbedSource`, collab-safe placement + explicit `document_assets` link). 16 MCP tools total |
-| [~] | Phase 4 — hardening | Done: per-op `assistant` version snapshots (granular undo), "via assistant" badge in history UI, retention cap (newest 30/doc via `pruneAssistantVersions`). Remaining: per-token rate limits, consent polish, observability, list_documents pagination/filters |
+| [~] | Phase 4 — hardening | Done: per-op `assistant` version snapshots (granular undo), "via assistant" badge in history UI, retention cap (newest 30/doc via `pruneAssistantVersions`). Remaining: per-token rate limits, consent polish, observability. (list_documents pagination/filters done 2026-10-06) |
+| [x] | Workspace-context tooling pass | 2026-10-06. Folder paths on every document result, `list_folders`, folder-scoped + multi-term ranked `search_documents` with hit lines, outline/read line numbers, `list_deleted_documents`, folder-aware `create_document`, `move_document`, `create_folder`, `disabledExtensions` in discovery, readable action input errors, MCP server `instructions`. Unit-tested; **not yet run against real Postgres/collab** |
 
 Exit criteria:
 
@@ -675,7 +676,7 @@ Plan: `docs/24_TASKS_AND_AGENDA_PLAN.md` (2026-09-28). Slice 1 implemented 2026-
 | [ ] | Slice 4 - Inbox and capture | Inbox pointer, `/task` palette command, panel input, Undo toast, user guide |
 | [ ] | Slice 5 - Tasks page | Agenda/Week/Month/Backlog, filters, keyboard, task detail panel |
 | [ ] | Slice 6 - Everywhere else | Home Today section, document side-panel section, `:::tasks{…}` query blocks, subtask progress |
-| [ ] | Slice 7 - Agents and Calendar | MCP task actions, Calendar events in the agenda |
+| [~] | Slice 7 - Agents and Calendar | 2026-10-06: task host service (`server/task-services.ts`) + `vault.tasks` actions `listTasks`/`listDocumentTasks`/`setTaskStatus`/`setTaskDue`/`addTask` (also delivers slice 2's locator and `withLiveDocumentText` origin/snapshot options for the agent path). Unit-tested; **not yet run against real Postgres/collab**. Remaining: Calendar events in the agenda, `listUpcomingTasks` covering Markdown tasks, Inbox fallback for `addTask` |
 
 ---
 

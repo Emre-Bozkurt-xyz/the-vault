@@ -94,3 +94,113 @@ export function buildDocumentFolderPaths(
 
   return paths;
 }
+
+/**
+ * Canonical form of a folder path typed by a person or an agent: segments
+ * trimmed, empty segments (doubled, leading, or trailing slashes) dropped, and
+ * compared case-insensitively. `"/Courses//CS101/"` and `"courses/cs101"` are
+ * the same folder.
+ */
+export function normalizeFolderPath(path: string): string {
+  return path
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join("/")
+    .toLowerCase();
+}
+
+export type FolderRefResolution<TFolder> =
+  | { ok: true; folder: TFolder }
+  | { ok: false; error: string };
+
+/**
+ * Resolves a folder reference that may be either a folder id or a display path
+ * ("Courses/CS101") against folders the caller can already see. A path that
+ * matches two visible folders (an owned and a shared folder with the same
+ * name) is refused as ambiguous rather than guessed, and the error names the
+ * closest paths so the caller can retry.
+ */
+export function resolveFolderRef<TFolder extends FolderPathNode>(
+  folders: TFolder[],
+  ref: string,
+): FolderRefResolution<TFolder> {
+  const trimmed = ref.trim();
+  const byId = folders.find((folder) => folder.id === trimmed);
+
+  if (byId) {
+    return { ok: true, folder: byId };
+  }
+
+  const wanted = normalizeFolderPath(trimmed);
+
+  if (!wanted) {
+    return { ok: false, error: "Folder reference is empty." };
+  }
+
+  const paths = buildFolderPaths(folders);
+  const matches = folders.filter(
+    (folder) => normalizeFolderPath(paths.get(folder.id) ?? folder.name) === wanted,
+  );
+
+  if (matches.length === 1) {
+    return { ok: true, folder: matches[0]! };
+  }
+
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      error: `Folder path "${trimmed}" matches ${matches.length} folders; pass a folder id instead (${matches
+        .map((folder) => folder.id)
+        .join(", ")}).`,
+    };
+  }
+
+  const leaf = wanted.split("/").pop() ?? wanted;
+  const suggestions = folders
+    .map((folder) => paths.get(folder.id) ?? folder.name)
+    .filter((path) => normalizeFolderPath(path).includes(leaf))
+    .sort()
+    .slice(0, 5);
+
+  return {
+    ok: false,
+    error: suggestions.length
+      ? `No folder at "${trimmed}". Did you mean: ${suggestions.join(", ")}?`
+      : `No folder at "${trimmed}". Use list_folders to see the folder tree.`,
+  };
+}
+
+/**
+ * The ids of `rootId` and every folder beneath it, walking only folders the
+ * caller can see (root first). A cycle cannot loop: each id is visited once.
+ */
+export function collectFolderSubtreeIds(
+  folders: FolderPathNode[],
+  rootId: string,
+): string[] {
+  const children = new Map<string, string[]>();
+
+  for (const folder of folders) {
+    if (folder.parentId) {
+      const siblings = children.get(folder.parentId) ?? [];
+      siblings.push(folder.id);
+      children.set(folder.parentId, siblings);
+    }
+  }
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+  const queue = [rootId];
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+    queue.push(...(children.get(id) ?? []));
+  }
+
+  return result;
+}

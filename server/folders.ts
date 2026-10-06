@@ -17,15 +17,16 @@ import { documents, folderPermissions, folders, users } from "@/db/schema";
 import { normalizeTagList } from "@/lib/content-metadata";
 import { buildFolderPaths } from "@/lib/folder-paths";
 import { resolveInheritedTagsForFolder } from "@/lib/folder-tags";
-import { canEditDocument, canEditFolderContents } from "@/lib/permissions";
 import { requireActiveUser } from "@/server/authz";
-import { syncDocumentMetadata } from "@/server/content-metadata";
 import {
   listFriendsForUser,
 } from "@/server/friends-data";
 import {
+  createFolderForUser,
   listFoldersForUser,
   listSharedFoldersForUser,
+  moveDocumentToFolderForUser,
+  resyncDocumentTags,
 } from "@/server/folders-data";
 
 const folderIdSchema = z.string().uuid();
@@ -114,15 +115,9 @@ export async function createFolderAction(formData: FormData) {
   const name = folderNameSchema.parse(formData.get("name"));
   const parentId = optionalFolderIdSchema.parse(formData.get("parentId"));
 
-  if (parentId) {
-    await requireOwnedFolder(user.id, parentId);
+  if (!(await createFolderForUser(user.id, { name, parentId }))) {
+    notFound();
   }
-
-  await db.insert(folders).values({
-    ownerId: user.id,
-    parentId,
-    name,
-  });
 
   revalidateWorkspace();
 }
@@ -218,22 +213,11 @@ export async function moveDocumentToFolderAction(formData: FormData) {
   const documentId = folderIdSchema.parse(formData.get("documentId"));
   const folderId = optionalFolderIdSchema.parse(formData.get("folderId"));
 
-  if (!(await canEditDocument(user.id, documentId))) {
-    notFound();
-  }
-
   // Filing into a folder requires edit rights on that folder (owner or folder
   // editor). Unfiling (folderId null) only needs document edit rights.
-  if (folderId && !(await canEditFolderContents(user.id, folderId))) {
+  if (!(await moveDocumentToFolderForUser(user.id, documentId, folderId))) {
     notFound();
   }
-
-  await db
-    .update(documents)
-    .set({ folderId, updatedAt: sql`now()` })
-    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
-
-  await resyncDocumentTags([documentId]);
 
   revalidateWorkspace();
 }
@@ -438,34 +422,6 @@ async function listDocumentIdsUnderFolders(folderIds: string[]) {
     );
 
   return rows.map((row) => row.id);
-}
-
-/**
- * Re-materializes `document_tags` for documents whose folder ancestry just
- * changed. Inherited tags are resolved at sync time rather than stored on the
- * document, so any mutation that moves a document between folders — or changes
- * what a folder contributes — has to replay the sync for everything affected.
- *
- * Sequential on purpose: these run inside a server action after the structural
- * write has already committed, and a folder subtree is small enough that the
- * ordering costs nothing worth a connection storm.
- */
-async function resyncDocumentTags(documentIds: string[]) {
-  if (documentIds.length === 0) {
-    return;
-  }
-
-  const rows = await db
-    .select({ id: documents.id, markdown: documents.markdown })
-    .from(documents)
-    .where(inArray(documents.id, documentIds));
-
-  for (const row of rows) {
-    await syncDocumentMetadata({
-      documentId: row.id,
-      markdown: row.markdown,
-    });
-  }
 }
 
 /**

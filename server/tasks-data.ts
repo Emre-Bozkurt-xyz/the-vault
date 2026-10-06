@@ -1,6 +1,21 @@
 import "server-only";
 
-import { and, asc, count, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gt,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "@/db";
 import { documentTaskIndex, documentTasks, documents } from "@/db/schema";
@@ -220,4 +235,128 @@ export async function listAgendaTasks(
     tasks: rows.map((row) => ({ ...row, dueDay: row.dueDay as string })),
     laterCount: later?.value ?? 0,
   };
+}
+
+export type TaskQuery = {
+  statuses: TaskStatus[];
+  /** Inclusive due-day bounds; either excludes undated tasks. */
+  dueFrom?: string;
+  dueThrough?: string;
+  /** `dated`/`undated` keep only tasks with/without a due day. */
+  dated?: "any" | "dated" | "undated";
+  /** Only tasks in documents filed directly in one of these folders. */
+  folderIds?: string[];
+  documentId?: string;
+  /** Case-insensitive substring of the task text. */
+  text?: string;
+  limit: number;
+};
+
+export type IndexedTask = {
+  documentId: string;
+  documentTitle: string;
+  folderId: string | null;
+  ordinal: number;
+  /** 0-based, as indexed. */
+  line: number;
+  rawLine: string;
+  parentOrdinal: number | null;
+  status: TaskStatus;
+  text: string;
+  note: string | null;
+  heading: string | null;
+  dueDay: string | null;
+  dueTime: string | null;
+  doneDay: string | null;
+};
+
+/**
+ * A filtered slice of the user's task index (owned, non-deleted documents),
+ * soonest due first with undated tasks last. Call {@link ensureTaskIndexFresh}
+ * first. Returns the page and the total matching count.
+ */
+export async function queryTasksForUser(
+  userId: string,
+  query: TaskQuery,
+): Promise<{ tasks: IndexedTask[]; total: number }> {
+  if (query.statuses.length === 0 || query.folderIds?.length === 0) {
+    return { tasks: [], total: 0 };
+  }
+
+  const conditions = [
+    eq(documents.ownerId, userId),
+    isNull(documents.deletedAt),
+    inArray(documentTasks.status, query.statuses),
+  ];
+
+  if (query.dueFrom) conditions.push(gte(documentTasks.dueDay, query.dueFrom));
+  if (query.dueThrough) conditions.push(lte(documentTasks.dueDay, query.dueThrough));
+  if (query.dated === "dated") conditions.push(isNotNull(documentTasks.dueDay));
+  if (query.dated === "undated") conditions.push(isNull(documentTasks.dueDay));
+  if (query.folderIds) conditions.push(inArray(documents.folderId, query.folderIds));
+  if (query.documentId) conditions.push(eq(documentTasks.documentId, query.documentId));
+  if (query.text?.trim()) {
+    conditions.push(
+      ilike(documentTasks.text, `%${query.text.trim().replace(/[%_\\]/g, "\\$&")}%`),
+    );
+  }
+
+  const where = and(...conditions);
+
+  const [rows, [total]] = await Promise.all([
+    db
+      .select({
+        documentId: documentTasks.documentId,
+        documentTitle: documents.title,
+        folderId: documents.folderId,
+        ordinal: documentTasks.ordinal,
+        line: documentTasks.line,
+        rawLine: documentTasks.rawLine,
+        parentOrdinal: documentTasks.parentOrdinal,
+        status: documentTasks.status,
+        text: documentTasks.text,
+        note: documentTasks.note,
+        heading: documentTasks.heading,
+        dueDay: documentTasks.dueDay,
+        dueTime: documentTasks.dueTime,
+        doneDay: documentTasks.doneDay,
+      })
+      .from(documentTasks)
+      .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+      .where(where)
+      .orderBy(
+        sql`${documentTasks.dueDay} asc nulls last`,
+        sql`${documentTasks.dueTime} asc nulls last`,
+        asc(documents.title),
+        asc(documentTasks.ordinal),
+      )
+      .limit(query.limit),
+    db
+      .select({ value: count() })
+      .from(documentTasks)
+      .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+      .where(where),
+  ]);
+
+  return { tasks: rows, total: total?.value ?? 0 };
+}
+
+/**
+ * Reindexes one document from text just written through the collab session
+ * (§5.3), stamped with its current `updated_at`: a list right after the write
+ * sees the change without waiting for the debounced store, and that store's
+ * newer stamp reindexes once more, from identical text.
+ */
+export async function reindexDocumentTasksFromText(
+  documentId: string,
+  markdown: string,
+): Promise<void> {
+  const [row] = await db
+    .select({ updatedAt: sql<string>`${documents.updatedAt}::text` })
+    .from(documents)
+    .where(eq(documents.id, documentId));
+
+  if (row) {
+    await reindexDocumentTasks({ documentId, markdown, sourceUpdatedAt: row.updatedAt });
+  }
 }

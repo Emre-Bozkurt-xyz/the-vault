@@ -351,7 +351,7 @@ export default defineServer(manifest, {
       id: "vault.calendar.listUpcomingTasks",
       title: "List upcoming calendar tasks",
       description:
-        "Across all your documents, list calendar tasks — optionally within a day range and excluding completed ones. Useful for a daily digest of what's due.",
+        "Across all your documents, list the tasks stored in calendar blocks (entries added with addEntry) — optionally within a day range and excluding completed ones. Markdown checklist lines (- [ ] … :due[…]) are not calendar entries; list those with vault.tasks.listTasks.",
       scope: "workspace",
       mutates: false,
       permissions: ["document:read"],

@@ -38,6 +38,7 @@ import {
 import {
   canDeleteDocument,
   canEditDocument,
+  canEditFolderContents,
   canShareDocument,
   type DocumentAccess,
   getDocumentAccess,
@@ -51,18 +52,24 @@ import { syncDocumentMetadata } from "@/server/content-metadata";
 
 export async function createDocumentForUser(
   userId: string,
-  input: { title?: string; markdown?: string } = {},
-): Promise<{ id: string }> {
+  input: { title?: string; markdown?: string; folderId?: string | null } = {},
+): Promise<{ id: string; title: string }> {
   const title = (input.title?.trim() || "Untitled document").slice(0, 200);
   // The title is stored/rendered separately, so a seeded "# Untitled document /
   // Start writing..." body just duplicates the title (and mismatches when a title
   // was given). Start agent-created docs with an empty body instead.
   const markdown = input.markdown ?? "";
+  const folderId = input.folderId ?? null;
+
+  // Filing into a folder needs the same right as moving a document into it.
+  if (folderId && !(await canEditFolderContents(userId, folderId))) {
+    throw new Error("You cannot add documents to that folder.");
+  }
 
   const [document] = await db.transaction(async (tx) => {
     const [createdDocument] = await tx
       .insert(documents)
-      .values({ ownerId: userId, title, markdown })
+      .values({ ownerId: userId, title, markdown, folderId })
       .returning({ id: documents.id });
 
     await tx.insert(documentPermissions).values({
@@ -76,10 +83,14 @@ export async function createDocumentForUser(
 
   if (input.markdown !== undefined) {
     await reconcileDocumentAssetLinks({ documentId: document.id, markdown });
+  }
+
+  // A folder contributes inherited tags even to an empty body.
+  if (input.markdown !== undefined || folderId) {
     await syncDocumentMetadata({ documentId: document.id, markdown });
   }
 
-  return { id: document.id };
+  return { id: document.id, title };
 }
 
 export async function archiveDocumentForUser(
@@ -394,6 +405,38 @@ export async function listDocumentsInOwnedFoldersFromOthers(userId: string) {
     })
     .from(documents)
     .innerJoin(folders, eq(documents.folderId, folders.id))
+    .where(
+      and(
+        eq(folders.ownerId, userId),
+        ne(documents.ownerId, userId),
+        isNull(documents.deletedAt),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .orderBy(desc(documents.updatedAt));
+}
+
+/**
+ * {@link listDocumentsInOwnedFoldersFromOthers} with the body and owner, for
+ * callers that search content (the MCP tools). A folder owner can read what
+ * collaborators file into their folders, so these belong in every listing.
+ */
+export async function listDocumentsInOwnedFoldersFromOthersWithBody(
+  userId: string,
+) {
+  return db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      markdown: documents.markdown,
+      visibility: documents.visibility,
+      folderId: documents.folderId,
+      updatedAt: documents.updatedAt,
+      ownerUsername: users.username,
+    })
+    .from(documents)
+    .innerJoin(folders, eq(documents.folderId, folders.id))
+    .innerJoin(users, eq(documents.ownerId, users.id))
     .where(
       and(
         eq(folders.ownerId, userId),
