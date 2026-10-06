@@ -418,4 +418,12 @@ export type ExtensionSettingsField =
       description?: string;
       /** Label for the "no folder chosen" option, e.g. "Same folder as the document". */
       emptyLabel: string;
+    }
+  /** An owned, non-deleted document id, checked again by the host on save. */
+  | {
+      type: "document";
+      key: string;
+      label: string;
+      description?: string;
+      emptyLabel: string;
     };

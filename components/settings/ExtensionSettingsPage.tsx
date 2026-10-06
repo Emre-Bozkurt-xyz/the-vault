@@ -27,6 +27,7 @@ type ExtensionSettingsPageProps = {
   defaults: Record<string, unknown>;
   /** The user's own folders, for `folder` fields. Empty when none are declared. */
   folderOptions: Array<{ id: string; path: string }>;
+  documentOptions: Array<{ id: string; title: string }>;
 };
 
 /**
@@ -46,6 +47,7 @@ export function ExtensionSettingsPage({
   values: initialValues,
   defaults,
   folderOptions,
+  documentOptions,
 }: ExtensionSettingsPageProps) {
   const [values, setValues] = useState(initialValues);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +107,7 @@ export function ExtensionSettingsPage({
                   field={field}
                   value={values[field.key]}
                   folderOptions={folderOptions}
+                  documentOptions={documentOptions}
                   onChange={(value) => save({ ...values, [field.key]: value })}
                 />
               </FieldRow>
@@ -157,11 +160,13 @@ function FieldControl({
   field,
   value,
   folderOptions,
+  documentOptions,
   onChange,
 }: {
   field: ExtensionSettingsField;
   value: unknown;
   folderOptions: Array<{ id: string; path: string }>;
+  documentOptions: Array<{ id: string; title: string }>;
   onChange: (value: unknown) => void;
 }) {
   switch (field.type) {
@@ -210,6 +215,21 @@ function FieldControl({
             ...folderOptions.map(
               (option) => [option.id, option.path] as [string, string],
             ),
+          ]}
+          onChange={(next) => onChange(next || null)}
+        />
+      );
+    }
+    case "document": {
+      const selected = typeof value === "string" ? value : "";
+      const missing = selected && !documentOptions.some((option) => option.id === selected);
+      return (
+        <SelectControl
+          value={selected}
+          options={[
+            ["", field.emptyLabel],
+            ...(missing ? ([[selected, "Unavailable document"]] as [string, string][]) : []),
+            ...documentOptions.map((option) => [option.id, option.title] as [string, string]),
           ]}
           onChange={(next) => onChange(next || null)}
         />

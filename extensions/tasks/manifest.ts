@@ -1,4 +1,9 @@
 import { defineManifest } from "@/lib/extension-api";
+import { z } from "zod";
+
+const tasksSettingsSchema = z.object({
+  inboxDocumentId: z.string().uuid().nullable().default(null),
+});
 
 /**
  * Task *syntax* (`[/]`, `:due[…]`) is core Markdown and renders for every
@@ -17,6 +22,18 @@ export default defineManifest({
     "An agenda of the task lines in your documents: what is overdue, due today and coming up, gathered from every note you own.",
   defaultEnabled: false,
   permissions: ["document:read", "document:write", "workspace:panel"],
+  settings: {
+    schema: tasksSettingsSchema,
+    defaults: { inboxDocumentId: null },
+    sections: [{
+      id: "capture", label: "Capture",
+      fields: [{
+        type: "document", key: "inboxDocumentId", label: "Inbox document",
+        description: "Quick capture adds tasks to this document. Choose one you own, or let Vault create an Inbox when you next capture.",
+        emptyLabel: "Create an Inbox automatically",
+      }],
+    }],
+  },
   syntax: { blocks: ["tasks"], documentSourceBlocks: ["tasks"] },
   slashCommands: [
     {

@@ -6,8 +6,8 @@ Tasks page, home/side-panel/query blocks/progress); slice 7 code is implemented,
 with browser regression still pending.
 Query-block rows are read-only lists (tick in the document or the agenda), and
 the editor's own Read mode does not expand them, matching calendars, since it
-renders without a document id. Deviation: the Inbox cannot yet be re-pointed from
-Settings (§6.3), because settings have no document-picker field. Decisions in §2 were confirmed with the user in conversation on
+renders without a document id. The Inbox can be re-pointed from Settings (§6.3)
+using a generic owned-document field. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 26 in `docs/01_PROGRESS_TRACKER.md`.
 
 2026-10-06 integration: `:::tasks` is an SDK leaf block declared by
@@ -306,6 +306,9 @@ mode plus a full page.
   (`user_extension_settings`) as `inboxDocumentId`. It is re-validated on every
   capture: if the document is missing, deleted, or no longer owned by the user,
   a new document titled "Inbox" is created at the root and the pointer updated.
+  Settings offers a generic document selector with active owned documents; the
+  server validates ownership on save. Clearing it creates a fresh Inbox on the
+  next capture.
 - **Capture paths.** `/task <text>` in the Ctrl+K command mode (the palette already
   switches to commands on `/`), and the panel's Add task input. A trailing date
   phrase is parsed with the §7 grammar: `/task send invoice fri` appends

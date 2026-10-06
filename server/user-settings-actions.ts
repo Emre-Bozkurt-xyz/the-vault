@@ -10,6 +10,7 @@ import {
 import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
 import { isShortcutId } from "@/lib/shortcuts/registry";
 import { requireActiveUser } from "@/server/authz";
+import { isOwnedDocumentForUser } from "@/server/extension-documents";
 import {
   upsertUserSetting,
   getUserExtensionSetting,
@@ -281,6 +282,16 @@ export async function upsertUserExtensionSettingsAction(input: unknown) {
     parsed.extensionId,
     parsed.settings,
   );
+  for (const section of extension.settings?.sections ?? []) {
+    for (const field of section.fields) {
+      if (field.type !== "document") continue;
+      const documentId = (settings as Record<string, unknown>)[field.key];
+      if (documentId !== null && documentId !== undefined &&
+          (typeof documentId !== "string" || !(await isOwnedDocumentForUser(user.id, documentId)))) {
+        throw new Error("Select a document you own.");
+      }
+    }
+  }
 
   const saved = await upsertUserExtensionSettings({
     userId: user.id,

@@ -119,3 +119,7 @@ explicit. A confirmation appears with an **Undo** button.
 The Inbox is an ordinary document, created the first time you capture
 something. Rename it or move it into a folder as you like; if you delete it, the
 next capture starts a new one.
+
+To capture into a different document you own, open **Settings → Tasks** and
+choose it under **Inbox document**. Choosing **Create an Inbox automatically**
+clears the pointer; the next capture creates a fresh Inbox document.
