@@ -121,7 +121,7 @@ describe("planExtensionParts", () => {
     const fenced = "```md\n:::widget{id=1}\n:::sum\n```";
 
     expect(planExtensionParts(fenced, state, owners)).toEqual([
-      { kind: "markdown", markdown: fenced, pieceIndex: 0 },
+      { kind: "markdown", markdown: fenced, pieceIndex: 0, startLine: 0 },
     ]);
     expect(planExtensionParts(":::sum\na = 1\nb = 2", state, owners)).toMatchObject([
       { kind: "container", body: "a = 1\nb = 2" },

@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -18,6 +19,7 @@ import { requestEditorJump } from "@/lib/editor-jump-events";
 import { captureTaskFromClient } from "@/lib/tasks/capture-client";
 import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
 import type { TaskChange } from "@/lib/tasks/edit";
+import { priorityRank } from "@/lib/tasks/views";
 import { cn } from "@/lib/utils";
 import { subscribeToTasksChanged } from "@/lib/workspace-toast";
 import {
@@ -60,6 +62,7 @@ function compareTasks(a: AgendaTask, b: AgendaTask) {
   return (
     dayOrder ||
     (a.dueTime ?? "99:99").localeCompare(b.dueTime ?? "99:99") ||
+    priorityRank(a.priority) - priorityRank(b.priority) ||
     a.documentTitle.localeCompare(b.documentTitle) ||
     a.ordinal - b.ordinal
   );
@@ -82,6 +85,8 @@ function applyLocally(agenda: OkAgenda, key: string, change: TaskChange): OkAgen
         },
       ];
     }
+
+    if (change.type === "priority") return [{ ...task, priority: change.priority }];
 
     // An undated Inbox task still belongs in the Inbox section.
     if (change.day === null) {
@@ -388,6 +393,7 @@ function TaskRow({
           )}
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <TaskPriorityBadge priority={task.priority} />
           <span className="min-w-0 truncate">{context}</span>
           {(showDue && task.dueDay) || task.dueTime ? (
             <span

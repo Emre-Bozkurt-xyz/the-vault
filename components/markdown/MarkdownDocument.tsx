@@ -1,3 +1,4 @@
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import {
   AlertTriangle,
   Bug,
@@ -80,6 +81,7 @@ import {
 } from "@/lib/wiki-links";
 import {
   TASK_DATE_ELEMENT_NAME,
+  TASK_PRIORITY_ELEMENT_NAME,
   TASK_PROGRESS_ELEMENT_NAME,
   formatTaskDateAbsolute,
   remarkTasks,
@@ -634,6 +636,7 @@ function createMarkdownComponents(
   input(props) {
     return <input {...props} className="vault-md-checkbox" disabled={props.disabled !== false} />;
   },
+  [TASK_PRIORITY_ELEMENT_NAME]: (props: { "data-value"?: string }) => <TaskPriorityBadge priority={props["data-value"]} />,
   [TASK_DATE_ELEMENT_NAME]: (props: { "data-kind"?: string; "data-value"?: string }) => {
     const value = props["data-value"] ?? "";
     const kind = props["data-kind"] === "done" ? "done" : "due";

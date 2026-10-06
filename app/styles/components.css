@@ -321,6 +321,11 @@
     color: var(--foreground);
   }
 
+  .vault-cm-task-date[data-priority="high"] {
+    border-color: var(--destructive);
+    color: var(--destructive);
+  }
+
   .vault-cm-task-date[data-state="overdue"] {
     border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
     color: var(--destructive);

@@ -58,6 +58,8 @@ match inside one document's rendered body.
 `.vault-md-small`, `.vault-md-sub`, `.vault-md-sup`, `.vault-md-kbd`,
 `.vault-md-abbr`.
 
+Task priority badges use `.vault-md-task-priority` with `data-priority` equal to `high`, `medium`, or `low`.
+
 ## Tables & definition lists
 
 `.vault-md-table-wrap`, `.vault-md-table`, `.vault-md-th`, `.vault-md-td`,

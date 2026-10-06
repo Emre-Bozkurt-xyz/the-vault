@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -116,6 +117,7 @@ function patchTask(task: PageTask, change: TaskChange, today: string): PageTask 
       doneDay: change.status === "done" ? (task.doneDay ?? today) : null,
     };
   }
+  if (change.type === "priority") return { ...task, priority: change.priority };
   return { ...task, dueDay: change.day, dueTime: change.day ? (change.time ?? null) : null };
 }
 
@@ -361,6 +363,7 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
   const rightPanel = (
     <TaskDetailPanel
       detail={detail}
+      today={today}
       loading={detailLoading}
       folderPath={
         (detail?.task.folderId ?? selectedTask?.folderId)
@@ -593,7 +596,7 @@ function TaskItem({
           )}
         </span>
         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-          {where}
+          <TaskPriorityBadge priority={task.priority} /> {where}
           {compact && task.dueTime ? ` · ${task.dueTime}` : ""}
         </span>
       </span>

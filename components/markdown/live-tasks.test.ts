@@ -1,7 +1,7 @@
 import { Text } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 
-import { findTaskDateFields, subtaskProgress } from "@/components/markdown/live-tasks";
+import { findTaskFields, findTaskDateFields, subtaskProgress } from "@/components/markdown/live-tasks";
 
 describe("subtaskProgress", () => {
   const doc = Text.of([
@@ -34,4 +34,13 @@ describe("findTaskDateFields", () => {
       ["done", "2026-09-30", true],
     ]);
   });
+});
+
+
+it("decorates priority fields, skipping inline code and marking invalid priorities", () => {
+  const fields = findTaskFields("- [ ] Ship :priority[high] `:priority[low]` :priority[urgent]");
+  expect(fields.map(({ name, value, valid }) => ({ name, value, valid }))).toEqual([
+    { name: "priority", value: "high", valid: true },
+    { name: "priority", value: "urgent", valid: false },
+  ]);
 });

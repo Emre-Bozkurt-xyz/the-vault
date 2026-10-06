@@ -26,6 +26,13 @@ import { unified } from "unified";
 
 import { isValidDayKey } from "@/lib/tasks/dates";
 
+export const TASK_PRIORITIES = ["high", "medium", "low"] as const;
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
+export function isTaskPriority(value: unknown): value is TaskPriority {
+  return TASK_PRIORITIES.some((priority) => priority === value);
+}
+
 export type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
 
 export type ParsedTask = {
@@ -51,6 +58,7 @@ export type ParsedTask = {
   /** True when a `:due[…]` was written but its value is not a real date. */
   dueInvalid: boolean;
   doneDay: string | null;
+  priority: TaskPriority | null;
 };
 
 /** Per-document ceiling; later tasks are skipped rather than failing the index. */
@@ -59,7 +67,7 @@ export const MAX_TASKS_PER_DOCUMENT = 2000;
 export const MAX_TASK_TEXT_LENGTH = 500;
 const MAX_TASK_NOTE_LENGTH = 2000;
 
-export const TASK_DIRECTIVE_NAMES = ["due", "done"] as const;
+export const TASK_DIRECTIVE_NAMES = ["due", "done", "priority"] as const;
 
 /** A list marker plus task box at the start of a string; group 1 is the box character. */
 export const TASK_MARKER_PATTERN = /^(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX/-])\](?=[ \t]|$)/;
@@ -237,6 +245,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
     let due: { dueDay: string | null; dueTime: string | null } | null = null;
     let dueInvalid = false;
     let doneDay: string | null = null;
+    let priority: TaskPriority | null = null;
 
     const paragraph = (item.children ?? []).find(
       (child) => child.type === "paragraph",
@@ -245,7 +254,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
     const collect = (node: MdastNode) => {
       if (
         node.type === "textDirective" &&
-        (node.name === "due" || node.name === "done")
+        (node.name === "due" || node.name === "done" || node.name === "priority")
       ) {
         const start = node.position?.start?.offset;
         const end = node.position?.end?.offset;
@@ -265,6 +274,9 @@ export function parseTasks(markdown: string): ParsedTask[] {
             } else if (!parsed) {
               dueInvalid = true;
             }
+          } else if (node.name === "priority") {
+            if (!isTaskPriority(value)) return; // Keep invalid values visible in task text.
+            priority ??= value;
           } else if (value && isValidDayKey(value) && !doneDay) {
             doneDay = value;
           }
@@ -321,6 +333,7 @@ export function parseTasks(markdown: string): ParsedTask[] {
       dueTime: resolvedDue?.dueTime ?? null,
       dueInvalid: dueInvalid && !resolvedDue,
       doneDay,
+      priority,
     };
   };
 

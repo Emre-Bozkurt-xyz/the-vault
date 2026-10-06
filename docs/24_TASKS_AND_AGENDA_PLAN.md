@@ -117,9 +117,10 @@ over prose.
 |---|---|---|
 | `:due[YYYY-MM-DD]` or `:due[YYYY-MM-DD HH:MM]` | Due day, optional start time | The `@` date menu, capture, reschedule actions |
 | `:done[YYYY-MM-DD]` | Completion day | Ticking a task through any Vault surface |
+| `:priority[high]`, `:priority[medium]`, `:priority[low]` | Optional priority; absent means none | Source text, task action menu, agent action |
 
 - Day keys are timezone-naive `YYYY-MM-DD` strings, validated with
-  `isValidDayKey` from `lib/calendar.ts`, the same convention the Calendar
+  `isValidDayKey` from `lib/tasks/dates.ts`, the same convention the Calendar
   extension uses. An invalid value leaves the task undated and renders as an
   error-styled chip.
 - A directive only counts on a task line. `:due[…]` in ordinary prose is left
@@ -127,11 +128,16 @@ over prose.
 - A document read by something that does not understand these directives shows
   the literal source. `restoreDirectiveText` in `lib/markdown/calc-directive.ts`
   already restores unclaimed directives verbatim, so nothing silently disappears.
-  The tasks render plugin must claim `due`/`done` before that restore step runs.
+  The tasks render plugin must claim `due`/`done`/`priority` before that restore step runs.
 - Ticking a box by typing `x` in Source mode does not add `:done[…]`. Such a task
   is done with an unknown completion day.
 
-v1 has no priority, start date, recurrence, or tags on the task itself; filtering
+Priority was added as a deferred follow-up on 2026-10-06. The first valid
+priority on the task line wins; unknown values stay visible as literal text.
+Priority chips render in Live and Read modes even with Tasks disabled.
+Date/time order is retained; tied tasks sort high, medium, low, then none.
+
+v1 has no start date, recurrence, or tags on the task itself; filtering
 uses the document's existing frontmatter tags and folder. See §10.
 
 ## 4. Index
@@ -158,6 +164,10 @@ lands.
 | `due_day` | date (`mode: "string"`) null | |
 | `due_time` | text null | `HH:MM` |
 | `done_day` | date (`mode: "string"`) null | |
+| `priority` | text null | `high`, `medium`, `low`; added by `0026_free_lester.sql` |
+
+Migration `0026_free_lester.sql` also clears the disposable index stamps so
+unchanged documents are reparsed on their next task read. Markdown is preserved.
 
 Unique `(document_id, ordinal)`. Index `(due_day)` filtered to
 `status in ('open','in_progress')`.
@@ -379,7 +389,7 @@ mode plus a full page.
 
 - `listTasks` (workspace, read)
 - `addTask` (to the Inbox or a named document)
-- `setTaskStatus`, `setTaskDue` (mutating)
+- `setTaskStatus`, `setTaskDue`, `setTaskPriority` (mutating)
 
 The Calendar extension's `listUpcomingTasks` grows to include Markdown tasks, so
 "what is due this week?" covers both.
@@ -422,7 +432,8 @@ and `npm test`.
 - **Assignment and shared documents.** `@person` in the same `@` menu, limited to
   friends; the agenda then adds "assigned to me" tasks from shared documents,
   with a toggle to show all of them.
-- **Recurrence, priority, start dates and ranges, reminders** (PWA push).
+- **Recurrence, start dates and ranges, reminders** (PWA push).
+- **Priority:** implemented 2026-10-06; signed-in browser verification pending.
 - **Daily notes** as an alternative capture target: implemented 2026-10-06;
   authenticated browser verification remains.
 - **Moving Calendar events into Markdown.**

@@ -23,7 +23,7 @@ import { isValidTaskDateValue } from "@/lib/markdown/task-directives";
 import { daysBetween, formatDueLabel } from "@/lib/tasks/dates";
 import { planTaskEdit } from "@/lib/tasks/edit";
 import { formatDueDirective, suggestDates } from "@/lib/tasks/natural-date";
-import { TASK_MARKER_PATTERN, taskStatusFromMarker } from "@/lib/tasks/parse";
+import { isTaskPriority, TASK_MARKER_PATTERN, taskStatusFromMarker } from "@/lib/tasks/parse";
 
 /** True when the viewer has the Tasks extension on. */
 export const taskAuthoringEnabled = Facet.define<boolean, boolean>({
@@ -31,7 +31,7 @@ export const taskAuthoringEnabled = Facet.define<boolean, boolean>({
 });
 
 export type TaskDateField = {
-  name: "due" | "done";
+  name: "due" | "done" | "priority";
   /** Offsets within the line. */
   from: number;
   to: number;
@@ -44,7 +44,7 @@ export type TaskDateField = {
  * rather than a Markdown parse because decorations rebuild on every change;
  * the parser in `lib/tasks/parse.ts` stays the authority for the index.
  */
-export function findTaskDateFields(lineText: string): TaskDateField[] {
+export function findTaskFields(lineText: string): TaskDateField[] {
   const code: Array<[number, number]> = [];
 
   for (const match of lineText.matchAll(/(`+)[^`]*?\1/g)) {
@@ -53,7 +53,7 @@ export function findTaskDateFields(lineText: string): TaskDateField[] {
 
   const fields: TaskDateField[] = [];
 
-  for (const match of lineText.matchAll(/:(due|done)\[([^\]\n]*)\]/g)) {
+  for (const match of lineText.matchAll(/:(due|done|priority)\[([^\]\n]*)\]/g)) {
     const from = match.index;
     const to = from + match[0].length;
     const before = from > 0 ? lineText[from - 1] : " ";
@@ -62,12 +62,16 @@ export function findTaskDateFields(lineText: string): TaskDateField[] {
     if (/[\w:]/.test(before)) continue;
     if (code.some(([start, end]) => from >= start && to <= end)) continue;
 
-    const name = match[1] as "due" | "done";
+    const name = match[1] as TaskDateField["name"];
     const value = match[2].trim();
-    fields.push({ name, from, to, value, valid: isValidTaskDateValue(name, value) });
+    fields.push({ name, from, to, value, valid: name === "priority" ? isTaskPriority(value) : isValidTaskDateValue(name, value) });
   }
 
   return fields;
+}
+
+export function findTaskDateFields(lineText: string): TaskDateField[] {
+  return findTaskFields(lineText).filter((field) => field.name !== "priority");
 }
 
 function nextStatusOnClick(marker: string) {
@@ -160,6 +164,7 @@ export class TaskDateWidget extends WidgetType {
 
   private state(): ChipState {
     if (!this.field.valid) return "invalid";
+    if (this.field.name === "priority") return "upcoming";
     if (this.field.name === "done") return "done";
     if (this.taskDone) return "met";
     const offset = daysBetween(this.today, this.field.value.slice(0, 10));
@@ -168,6 +173,8 @@ export class TaskDateWidget extends WidgetType {
 
   private label(state: ChipState): string {
     if (state === "invalid") return `${this.field.name}: ${this.field.value || "?"}`;
+
+    if (this.field.name === "priority") return `${this.field.value[0].toUpperCase()}${this.field.value.slice(1)} priority`;
 
     const [day, time] = this.field.value.split(/\s+/);
     const relative = formatDueLabel(day, this.today);
@@ -182,9 +189,10 @@ export class TaskDateWidget extends WidgetType {
     const chip = document.createElement("span");
     chip.className = "vault-cm-task-date";
     chip.dataset.kind = this.field.name;
+    if (this.field.name === "priority") chip.dataset.priority = this.field.value;
     chip.dataset.state = state;
     chip.textContent = this.label(state);
-    chip.title = `${this.field.name === "done" ? "Completed" : "Due"} ${this.field.value}`;
+    chip.title = this.field.name === "priority" ? `Priority: ${this.field.value}` : `${this.field.name === "done" ? "Completed" : "Due"} ${this.field.value}`;
 
     if (this.field.name !== "due" || !this.field.valid) {
       return chip;
@@ -253,7 +261,7 @@ export function addTaskDateDecorations(
 ) {
   const today = todayDayKey();
 
-  for (const field of findTaskDateFields(lineText)) {
+  for (const field of findTaskFields(lineText)) {
     const from = lineFrom + field.from;
     const to = lineFrom + field.to;
 

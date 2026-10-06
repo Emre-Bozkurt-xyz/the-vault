@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compareViewTasks,
   dayCounts,
   filterTasks,
   groupAgenda,
@@ -109,4 +110,10 @@ describe("groupBacklog", () => {
       },
     ]);
   });
+});
+
+
+it("orders priorities within equal dates/times, keeping earlier appointments first", () => {
+  const rows = [task({ text: "none", dueDay: today }), task({ text: "low", priority: "low", dueDay: today }), task({ text: "high", priority: "high", dueDay: today }), task({ text: "medium", priority: "medium", dueDay: today }), task({ text: "appointment", priority: "low", dueDay: today, dueTime: "09:00" })];
+  expect(rows.sort(compareViewTasks).map((row) => row.text)).toEqual(["appointment", "high", "medium", "low", "none"]);
 });

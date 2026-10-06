@@ -37,6 +37,19 @@ That `:due[…]` text is what the chip stands for, and it is what you would see
 in the Markdown source or an export. Click a chip to pick a different date, or
 clear it with the date picker's own clear button.
 
+### Priority
+
+Use a task's **? ? Priority** menu to choose **High**, **Medium**, **Low**,
+or **No priority**. You can also write it directly:
+
+```md
+- [ ] Send the invoice :priority[high] :due[2026-10-02]
+```
+
+Priority appears as a chip in the editor and reading view, and as a badge in
+workspace task lists. Tasks with the same due date and time sort high, medium,
+low, then tasks without priority. A priority does not give an undated task a date.
+
 ### Four states
 
 | Box | Meaning |
@@ -62,7 +75,7 @@ The **Tasks** sidebar lists:
 
 Click a task to open its document at that line. Tick its box to complete it, or
 use the **⋯** menu to move it to today, tomorrow or next week, pick a date,
-clear the date, mark it in progress, or cancel it. Every change is written back
+clear the date, set a priority, mark it in progress, or cancel it. Every change is written back
 into the document itself, so collaborators see it straight away.
 
 Undated tasks in your other documents stay out of the agenda on purpose;

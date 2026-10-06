@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { addDaysToDayKey, isValidDayKey } from "@/lib/tasks/dates";
-import { TASK_TIME_PATTERN } from "@/lib/tasks/parse";
+import { TASK_PRIORITIES, TASK_TIME_PATTERN } from "@/lib/tasks/parse";
 import { requireActiveUser } from "@/server/authz";
 import {
   TaskMovedError,
@@ -50,6 +50,8 @@ const updateTaskInputSchema = z.object({
       day: dayKeySchema.nullable(),
       time: z.string().regex(TASK_TIME_PATTERN).nullable().optional(),
     }),
+    z.object({ type: z.literal("priority"), priority: z.enum(TASK_PRIORITIES).nullable() }),
+    z.object({ type: z.literal("priority"), priority: z.enum(TASK_PRIORITIES).nullable() }),
   ]),
 });
 

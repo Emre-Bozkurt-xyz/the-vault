@@ -183,6 +183,13 @@
       "when": 1790640196462,
       "tag": "0025_romantic_firelord",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791297060174,
+      "tag": "0026_free_lester",
+      "breakpoints": true
     }
   ]
 }

@@ -110,3 +110,17 @@ describe("locateTaskLine", () => {
     expect(locateTaskLine(text, 4, "- [ ] dup")?.lineIndex).toBe(4);
   });
 });
+
+
+describe("priority source edits", () => {
+  it("changes only the directive, removes duplicates, and preserves code and other fields", () => {
+    const source = "> - [/] **Ship** :priority[low] :due[2026-10-10 09:30] :priority[medium] `:priority[low]`";
+    const result = change(source, { type: "priority", priority: "high" });
+    expect(result).toBe("> - [/] **Ship** :priority[high] :due[2026-10-10 09:30] `:priority[low]`");
+    expect(change(result!, { type: "priority", priority: null })).toBe("> - [/] **Ship** :due[2026-10-10 09:30] `:priority[low]`");
+  });
+  it("appends when absent, and clearing an absent field does nothing", () => {
+    expect(change("- [ ] Ship", { type: "priority", priority: "medium" })).toBe("- [ ] Ship :priority[medium]");
+    expect(change("- [ ] Ship", { type: "priority", priority: null })).toBe("- [ ] Ship");
+  });
+});

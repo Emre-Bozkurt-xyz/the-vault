@@ -62,5 +62,17 @@ export default defineServer(manifest, {
         return { message: "Task due date updated." };
       },
     },
+    {
+      id: "vault.tasks.setTaskPriority", title: "Prioritize a Markdown task",
+      description: "Set high, medium, or low priority, or clear it with null, for a task returned by listTasks.",
+      scope: "workspace", mutates: true, permissions: ["document:read", "document:write"],
+      input: z.object({ ...taskRef, priority: z.enum(["high", "medium", "low"]).nullable() }),
+      async handler(input, context) {
+        if (!context.tasks?.change) throw new Error("Task write access is required.");
+        const args = input as { documentId: string; ordinal: number; today: string; priority: "high" | "medium" | "low" | null };
+        await context.tasks.change({ ...args, change: { type: "priority", priority: args.priority } });
+        return { message: "Task priority updated." };
+      },
+    },
   ],
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { ArrowUpRight, CalendarX2, Keyboard } from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
@@ -24,12 +26,14 @@ const statuses: Array<{ value: TaskStatus; label: string }> = [
  */
 export function TaskDetailPanel({
   detail,
+  today,
   loading,
   folderPath,
   onChange,
   onOpen,
 }: {
   detail: TaskDetail | null;
+  today: string;
   loading: boolean;
   folderPath: string | null;
   onChange: (task: TaskRef, change: TaskChange) => void;
@@ -132,6 +136,13 @@ export function TaskDetailPanel({
             </button>
           ) : null}
         </div>
+      </section>
+
+      <section className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Priority</span>
+        <TaskPriorityBadge priority={task.priority} />
+        {!task.priority ? <span className="text-sm">None</span> : null}
+        <TaskActionsMenu task={task} today={today} onChange={(change) => onChange(task, change)} />
       </section>
 
       <section>

@@ -62,3 +62,12 @@ describe("Read-mode checkboxes", () => {
     expect(inputs[1]).toContain("disabled");
   });
 });
+
+
+it("renders priority badges in the real Read pipeline with Tasks disabled", () => {
+  const html = renderToStaticMarkup(<MarkdownDocument markdown="- [ ] Ship :priority[high]\n- [ ] Later :priority[low]" />);
+  expect(html).toContain('data-priority="high"');
+  expect(html).toContain('data-priority="low"');
+  expect(html).toContain("High priority");
+  expect(html).not.toContain(":priority[");
+});

@@ -170,6 +170,7 @@ export type ExtensionAgentTasksApi = {
     documentId: string; documentTitle: string; ordinal: number; line: number; rawLine: string;
     status: "open" | "in_progress" | "done" | "cancelled"; text: string;
     dueDay: string | null; dueTime: string | null; doneDay: string | null;
+    priority: "high" | "medium" | "low" | null;
   }>>;
   add?: (input: { text: string; today: string; documentTitle?: string }) => Promise<{
     documentId: string; line: number; rawLine: string; text: string; dueDay: string | null;
@@ -177,7 +178,8 @@ export type ExtensionAgentTasksApi = {
   change?: (input: {
     documentId: string; ordinal: number; today: string;
     change: { type: "status"; status: "open" | "in_progress" | "done" | "cancelled" }
-      | { type: "due"; day: string | null; time?: string | null };
+      | { type: "due"; day: string | null; time?: string | null }
+      | { type: "priority"; priority: "high" | "medium" | "low" | null };
   }) => Promise<void>;
 };
 

@@ -1,7 +1,7 @@
 /**
  * Plans the smallest text edits that apply a task change to its source line:
  * one marker character for a status, one directive inserted, replaced or removed
- * for a date. Never a whole-line rewrite, so a collaborator typing elsewhere on
+ * for a date or priority. Never a whole-line rewrite, so a collaborator typing elsewhere on
  * the same line keeps their edit when the change merges through Yjs.
  *
  * Pure and framework-free: the server applies the edits to a Y.Text, and tests
@@ -18,11 +18,14 @@ import {
   TASK_REMARK_PLUGINS,
   TASK_TIME_PATTERN,
   type TaskStatus,
+  type TaskPriority,
+  isTaskPriority,
 } from "@/lib/tasks/parse";
 
 export type TaskChange =
   | { type: "status"; status: TaskStatus }
-  | { type: "due"; day: string | null; time?: string | null };
+  | { type: "due"; day: string | null; time?: string | null }
+  | { type: "priority"; priority: TaskPriority | null };
 
 /** Offsets are relative to the start of whatever text the edit is applied to. */
 export type TextEdit = { from: number; to: number; insert: string };
@@ -34,7 +37,7 @@ type MdastNode = {
   position?: { start?: { offset?: number }; end?: { offset?: number } };
 };
 
-type LineField = { name: "due" | "done"; from: number; to: number };
+type LineField = { name: "due" | "done" | "priority"; from: number; to: number };
 
 /** Blockquote markers and indentation ahead of a list marker. */
 const linePrefixPattern = /^(?:[ \t]*>[ \t]?)*[ \t]*/;
@@ -47,7 +50,7 @@ type TaskLine = {
 };
 
 /**
- * Reads a task line's marker and `:due`/`:done` directive ranges. The line is
+ * Reads a task line's marker and task directive ranges. The line is
  * parsed without its quote/indent prefix: alone, four spaces of nesting would
  * turn a subtask into an indented code block. Null when it is not a task line.
  */
@@ -65,7 +68,7 @@ export function readTaskLine(lineText: string): TaskLine | null {
   const fields: LineField[] = [];
 
   const visit = (node: MdastNode) => {
-    if (node.type === "textDirective" && (node.name === "due" || node.name === "done")) {
+    if (node.type === "textDirective" && (node.name === "due" || node.name === "done" || node.name === "priority")) {
       const from = node.position?.start?.offset;
       const to = node.position?.end?.offset;
 
@@ -138,6 +141,19 @@ export function planTaskEdit(
       if (doneFields.length === 0) edits.push(append(lineText, `:done[${today}]`));
     } else {
       for (const field of doneFields) edits.push(removal(lineText, field));
+    }
+  } else if (change.type === "priority") {
+    if (change.priority !== null && !isTaskPriority(change.priority)) return null;
+    const fields = task.fields.filter((field) => field.name === "priority");
+    if (change.priority === null) {
+      for (const field of fields) edits.push(removal(lineText, field));
+    } else {
+      const directive = `:priority[${change.priority}]`;
+      const [first, ...duplicates] = fields;
+      if (first) {
+        edits.push({ from: first.from, to: first.to, insert: directive });
+        for (const field of duplicates) edits.push(removal(lineText, field));
+      } else edits.push(append(lineText, directive));
     }
   } else if (change.day === null) {
     for (const field of dueFields) edits.push(removal(lineText, field));

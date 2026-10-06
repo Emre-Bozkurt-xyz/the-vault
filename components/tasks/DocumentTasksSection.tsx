@@ -7,6 +7,7 @@ import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/work
 import { todayDayKey } from "@/lib/tasks/dates";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { formatDueLabel } from "@/lib/tasks/dates";
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { plainTaskText } from "@/lib/tasks/query";
 import { cn } from "@/lib/utils";
 import { dispatchTasksChanged, subscribeToTasksChanged } from "@/lib/workspace-toast";
@@ -141,6 +142,7 @@ export function DocumentTasksSection({ documentId }: { documentId: string }) {
                   className="min-w-0 flex-1 text-left text-xs leading-5"
                 >
                   <span className="block truncate">{plainTaskText(task.text) || "Untitled task"}</span>
+                  <TaskPriorityBadge priority={task.priority} />
                   {task.dueDay || progress ? (
                     <span className={cn("block text-[0.7rem] text-muted-foreground", overdue && "text-destructive")}>
                       {task.dueDay ? formatDueLabel(task.dueDay, today) : ""}

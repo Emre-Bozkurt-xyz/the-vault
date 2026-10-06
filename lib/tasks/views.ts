@@ -5,7 +5,7 @@
  */
 
 import { addDaysToDayKey } from "@/lib/tasks/dates";
-import type { TaskStatus } from "@/lib/tasks/parse";
+import type { TaskPriority, TaskStatus } from "@/lib/tasks/parse";
 
 /** The fields these views need; `PageTask` from the server satisfies it. */
 export type ViewTask = {
@@ -14,6 +14,7 @@ export type ViewTask = {
   folderId: string | null;
   ordinal: number;
   status: TaskStatus;
+  priority?: TaskPriority | null;
   text: string;
   heading: string | null;
   dueDay: string | null;
@@ -73,6 +74,10 @@ export function filterTasks<T extends ViewTask>(
   });
 }
 
+export function priorityRank(priority: TaskPriority | null | undefined): number {
+  return priority === "high" ? 0 : priority === "medium" ? 1 : priority === "low" ? 2 : 3;
+}
+
 export function compareViewTasks(a: ViewTask, b: ViewTask): number {
   const day =
     a.dueDay === b.dueDay ? 0 : a.dueDay === null ? 1 : b.dueDay === null ? -1 : a.dueDay.localeCompare(b.dueDay);
@@ -80,6 +85,7 @@ export function compareViewTasks(a: ViewTask, b: ViewTask): number {
   return (
     day ||
     (a.dueTime ?? "99:99").localeCompare(b.dueTime ?? "99:99") ||
+    priorityRank(a.priority) - priorityRank(b.priority) ||
     a.documentTitle.localeCompare(b.documentTitle) ||
     a.ordinal - b.ordinal
   );
@@ -199,6 +205,6 @@ export function groupBacklog<T extends ViewTask>(
   }
 
   return [...groups.values()]
-    .map((group) => ({ ...group, tasks: group.tasks.sort((a, b) => a.ordinal - b.ordinal) }))
+    .map((group) => ({ ...group, tasks: group.tasks.sort(compareViewTasks) }))
     .sort((a, b) => a.documentTitle.localeCompare(b.documentTitle));
 }

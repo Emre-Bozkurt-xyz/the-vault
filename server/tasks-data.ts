@@ -11,7 +11,7 @@ import { getDocumentAccess } from "@/lib/permissions";
 import { parseCapture, parseDailyCapture, type CapturedTask } from "@/lib/tasks/capture";
 import { isValidDayKey } from "@/lib/tasks/dates";
 import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
-import { parseTasks, type TaskStatus } from "@/lib/tasks/parse";
+import { parseTasks, type TaskPriority, type TaskStatus } from "@/lib/tasks/parse";
 import { createDocumentForUser } from "@/server/documents-data";
 import { getUserExtensionSetting, upsertUserExtensionSettings } from "@/server/user-settings";
 
@@ -133,7 +133,7 @@ async function writeTaskRows(
     return;
   }
 
-  // 13 columns per row keeps a full 2,000-task document well under Postgres's
+  // 14 columns per row keeps a full 2,000-task document well under Postgres's
   // 65,535 bind-parameter limit in one statement.
   await executor.insert(documentTasks).values(
     tasks.map((task) => ({
@@ -149,6 +149,7 @@ async function writeTaskRows(
       dueDay: task.dueDay,
       dueTime: task.dueTime,
       doneDay: task.doneDay,
+      priority: task.priority,
     })),
   );
 }
@@ -167,6 +168,7 @@ export type AgendaTask = {
   dueDay: string | null;
   dueTime: string | null;
   doneDay: string | null;
+  priority: TaskPriority | null;
 };
 
 export type TaskAgenda = {
@@ -227,6 +229,7 @@ export async function listAgendaTasks(
         dueDay: documentTasks.dueDay,
         dueTime: documentTasks.dueTime,
         doneDay: documentTasks.doneDay,
+        priority: documentTasks.priority,
       })
       .from(documentTasks)
       .innerJoin(documents, eq(documents.id, documentTasks.documentId))
@@ -234,6 +237,7 @@ export async function listAgendaTasks(
       .orderBy(
         sql`${documentTasks.dueDay} asc nulls last`,
         sql`${documentTasks.dueTime} asc nulls last`,
+        sql`case ${documentTasks.priority} when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
         asc(documents.title),
         asc(documentTasks.ordinal),
       )
@@ -484,10 +488,16 @@ export async function listAgentTasks(userId: string, input: {
     dueDay: documentTasks.dueDay,
     dueTime: documentTasks.dueTime,
     doneDay: documentTasks.doneDay,
+    priority: documentTasks.priority,
   }).from(documentTasks)
     .innerJoin(documents, eq(documents.id, documentTasks.documentId))
     .where(and(...conditions))
-    .orderBy(sql`${documentTasks.dueDay} asc nulls last`, asc(documents.title), asc(documentTasks.ordinal))
+    .orderBy(
+      sql`${documentTasks.dueDay} asc nulls last`,
+      sql`${documentTasks.dueTime} asc nulls last`,
+      sql`case ${documentTasks.priority} when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
+      asc(documents.title), asc(documentTasks.ordinal),
+    )
     .limit(input.limit ?? 200);
 }
 
@@ -578,6 +588,7 @@ export async function listTaskPageData(userId: string, today: string): Promise<T
       dueDay: documentTasks.dueDay,
       dueTime: documentTasks.dueTime,
       doneDay: documentTasks.doneDay,
+      priority: documentTasks.priority,
     })
     .from(documentTasks)
     .innerJoin(documents, eq(documents.id, documentTasks.documentId))
@@ -593,6 +604,7 @@ export async function listTaskPageData(userId: string, today: string): Promise<T
     .orderBy(
       sql`${documentTasks.dueDay} asc nulls last`,
       sql`${documentTasks.dueTime} asc nulls last`,
+      sql`case ${documentTasks.priority} when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
       asc(documents.title),
       asc(documentTasks.ordinal),
     )
@@ -675,6 +687,7 @@ export async function getTaskDetail(
       dueDay: documentTasks.dueDay,
       dueTime: documentTasks.dueTime,
       doneDay: documentTasks.doneDay,
+      priority: documentTasks.priority,
     })
     .from(documentTasks)
     .innerJoin(documents, eq(documents.id, documentTasks.documentId))
@@ -708,6 +721,7 @@ export async function getTaskDetail(
 }
 
 export type DocumentTaskSummary = {
+  priority: TaskPriority | null;
   line: number;
   rawLine: string;
   status: TaskStatus;
@@ -743,6 +757,7 @@ export async function listDocumentTasks(
     line: task.line,
     rawLine: task.rawLine,
     status: task.status,
+    priority: task.priority,
     text: task.text,
     dueDay: task.dueDay,
     dueTime: task.dueTime,

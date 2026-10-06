@@ -80,3 +80,12 @@ describe("remarkTasks", () => {
     expect(formatTaskDateAbsolute("2026-10-02 14:30")).toBe("Fri 2 Oct 2026, 14:30");
   });
 });
+
+
+it("renders valid task priorities through both sanitizers and leaves other occurrences literal", () => {
+  expect(render("- [ ] Ship :priority[high]")).toContain('<vault-task-priority data-value="high"></vault-task-priority>');
+  for (const source of ["- [ ] Ship :priority[urgent]", "prose :priority[high]", "- [ ] `:priority[low]`"]) {
+    expect(render(source)).toContain(":priority[");
+    expect(render(source)).not.toContain("<vault-task-priority");
+  }
+});

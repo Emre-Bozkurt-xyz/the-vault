@@ -480,6 +480,8 @@ Current tables:
 | `user_settings` | Yes | Per-user workspace, editor, appearance, files/assets, hotkey, and advanced settings JSON |
 | `user_extension_settings` | Yes | Per-user trusted built-in extension enablement and settings JSON |
 | `document_versions` | Yes | Batched Markdown restore checkpoints |
+| `document_tasks` | Yes | Disposable Markdown task projection; nullable `priority` (`high`, `medium`, `low`) added by `0026_free_lester.sql`, applied locally |
+| `document_task_index` | Yes | Source/index timestamps for lazy task refresh; migration 0026 invalidates stamps for reparsing unchanged documents |
 | `friend_requests` | Yes | Friend request workflow |
 | `friendships` | Yes | Accepted friendships |
 | `official_docs` | Yes | Admin-authored public user documentation |
@@ -866,6 +868,8 @@ Supported editor features:
 | Read/Live/Source modes | Yes |
 
 In the editor's Read preview, task checkboxes are clickable, including duplicate lines, loose/nested lists, same-document regions, and task lines with asset embeds. `lib/tasks/read-source.ts` maps the original task sequence to the transformed render source; wiki and directive splits preserve starting line offsets, and regions inherit the containing document's handles. A transform that cannot be matched safely leaves ambiguous boxes disabled. `toggleReadCheckboxAction` in `server/tasks.ts` authenticates and sends the original line through `applyTaskChange`/`withLiveDocumentText`, which checks edit access and rejects a changed line. The Tasks setting controls whether completing it stamps `:done[today]`; ordinary Markdown checkboxes still toggle when Tasks is off. Viewer/public/share/embedded previews have no toggle callback.
+
+Task priority is portable Markdown: `:priority[high]`, `:priority[medium]`, or `:priority[low]`, absent for none. `parseTasks` reads the first valid field on the task line, preserves unknown values in text, and skips inline code. `planTaskEdit` sets/clears priority with minimal text edits and removes duplicates. The index stores priority; migration `0026_free_lester.sql` adds the nullable column and invalidates only index stamps. Task menus and detail controls write through existing permission-checked live actions. Priority badges appear in workspace lists, document panels and query blocks; Live and Read chips render with Tasks disabled. Equal dates/times sort high, medium, low, then none. `vault.tasks.setTaskPriority` uses the SDK task service, and `listTasks` includes priority. Authenticated browser verification remains.
 
 Quick capture uses the Tasks extension's `captureTarget` setting (`inbox` by default, or `daily-note`). Daily-note capture reuses an owned root document titled with the caller's local `YYYY-MM-DD` day, creating a private one with owner permission if absent. `resolveDailyNoteDocument` in `server/tasks-data.ts` locks the owner row in a transaction so simultaneous first captures converge on one document. `parseDailyCapture` gives an undated capture `:due[today]` for the agenda; an explicit due date takes precedence. The Inbox pointer is retained for switching back. Captures still use the live collaboration write path and immediate task reindex.
 
@@ -1489,12 +1493,12 @@ Contention is still unmeasured: every timing assumes the Minecraft server is
 stopped.
 
 For tasks and the agenda (`docs/24_TASKS_AND_AGENDA_PLAN.md`, tracker Phase 26),
-slices 1-6 are implemented and slice 7 code is complete: four MCP actions, Markdown
+slices 1-6 are implemented and slice 7 code is complete: five MCP actions, Markdown
 tasks in Calendar's upcoming-task action, and Calendar events in the agenda.
 Next: browser regression after the extension SDK merge, then deferred features
 (assignment/shared documents, recurrence and scheduling fields,
-and Calendar-event migration). Read-mode checkbox editing and Daily note capture are implemented. Authenticated
-browser verification remains for both.
+and Calendar-event migration). Read-mode checkbox editing, Daily note capture and priority are implemented.
+Authenticated browser verification remains for these follow-ups.
 
 ```txt
 1. Click through folder default tags in a running app: set tags in the Folder settings dialog, confirm the locked chips appear in a descendant document's Properties panel, and confirm a folder move, a document drag between folders, and a folder delete each leave `document_tags` correct (the resolution and re-sync helpers are verified against real Postgres; the four server actions wrapping them are not).
@@ -1747,3 +1751,4 @@ Use this as a compact implementation log.
 | 2026-10-06 | Made editor Read-mode task checkboxes clickable | `MarkdownDocument` accepts a toggle callback only from the editable document preview; it resolves exact task source lines and disables ambiguous duplicates, including rendered lines whose source changed in preprocessing. `toggleReadCheckboxAction` validates input and uses the permission-checked live write path, rejects moved lines, and stamps `:done` only when Tasks is enabled. The editor updates its local text when collaboration is unavailable; viewer/public/share/embed renders stay disabled. Focused task tests and typecheck passed; authenticated browser verification remains. |
 | 2026-10-06 | Added Daily note quick capture destination | Tasks settings gained `captureTarget` (`inbox` or `daily-note`). `captureTask` reuses or creates the owner's root `YYYY-MM-DD` document under a transaction lock, sends writes through collaboration, and adds `:due[today]` to undated daily captures so they appear in Today's agenda; explicit dates remain. The Inbox pointer persists for switching back. The toast names the destination, and the Tasks guide describes the setting. Typecheck, changed-file lint, extension contract and focused tests passed; authenticated browser verification remains. |
 | 2026-10-06 | Preserved task source positions through Read-mode render splits | `lib/tasks/read-source.ts` matches the original and transformed task sequences; wiki and directive splitters now retain starting line offsets, and regions inherit only their containing document handles. Duplicate tasks, loose/nested lists and inline asset cards can be ticked in the editor Read preview, while embedded documents stay read-only. Fixed the asset-group closing-fence regex consuming following blank lines and hiding subsequent checklists. Typecheck, changed-file lint, focused tests and production build passed; authenticated live-write browser verification remains. |
+| 2026-10-06 | Added Markdown task priority | `:priority[high]`, `:priority[medium]` and `:priority[low]` flow through the structural parser, minimal live source edits, nullable indexed priority (migration `0026_free_lester.sql`, applied locally), task menus/detail controls, workspace/query badges and Live/Read rendering. Date/time ties sort by priority; the SDK adds `setTaskPriority` and exposes priority in task reads. Migration invalidates only disposable index stamps. Updated the prior source-position test assertion. Production build/typecheck and changed-file lint pass; full lint remains at 26 issues. Full tests: 823 passed with one SDK import timeout; all 63 contract checks passed separately. Authenticated browser verification remains. |
