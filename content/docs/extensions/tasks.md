@@ -48,6 +48,9 @@ clear it with the date picker's own clear button.
 
 Click a box in the editor to tick it or untick it. With Tasks on, ticking also
 records the day you finished it, as `:done[…]`.
+In **Read** mode, editors can tick a box when its source line is unique in the
+document. A repeated identical line stays read-only so Vault cannot change the
+wrong task. Readers without edit access cannot tick boxes.
 
 ## The agenda
 
@@ -111,10 +114,16 @@ Type into **Add task…** at the top of the Tasks sidebar, or press
 /task pay rent @oct 1
 ```
 
-The task is added to your **Inbox** document, with the date taken from the end
+The task is added to your selected capture document, with the date taken from the end
 of what you typed. Only clear dates are picked up — "call Tom" stays "call Tom"
 rather than becoming a task for tomorrow; put `@` in front of a date to make it
 explicit. A confirmation appears with an **Undo** button.
+
+Under **Settings → Tasks → Quick capture destination**, choose **Inbox** or
+**Daily note**. Daily note capture reuses your root-level document titled with
+today's local date (such as `2026-10-06`), creating one if needed. An undated
+task captured there gets `:due[today]` so it appears in Today's agenda; an
+explicit date in the task stays as you entered it.
 
 The Inbox is an ordinary document, created the first time you capture
 something. Rename it or move it into a folder as you like; if you delete it, the

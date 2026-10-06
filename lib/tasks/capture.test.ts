@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseCapture } from "@/lib/tasks/capture";
+import { parseCapture, parseDailyCapture } from "@/lib/tasks/capture";
 import { parseTasks } from "@/lib/tasks/parse";
 
 const today = "2026-09-30"; // a Wednesday
@@ -38,5 +38,21 @@ describe("parseCapture", () => {
   it("produces a line the parser reads back", () => {
     const [task] = parseTasks(line("send invoice friday 3pm") ?? "");
     expect(task).toMatchObject({ text: "send invoice", dueDay: "2026-10-02", dueTime: "15:00" });
+  });
+});
+
+describe("parseDailyCapture", () => {
+  it("schedules undated captures for the note's day", () => {
+    const captured = parseDailyCapture("call Tom", today);
+    expect(captured).toMatchObject({
+      due: { day: today, time: null },
+      line: "- [ ] call Tom :due[2026-09-30]",
+    });
+    expect(parseTasks(captured?.line ?? "")[0]).toMatchObject({ dueDay: today, text: "call Tom" });
+  });
+
+  it("keeps an explicit date instead of moving it to today", () => {
+    expect(parseDailyCapture("send invoice friday", today)?.line)
+      .toBe("- [ ] send invoice :due[2026-10-02]");
   });
 });

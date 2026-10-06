@@ -63,3 +63,14 @@ export function parseCapture(input: string, today: string): CapturedTask | null 
     line: `- [ ] ${text}${due ? ` ${formatDueDirective(due)}` : ""}`,
   };
 }
+
+/** Daily-note capture keeps an undated task in today's agenda. Explicit dates win. */
+export function parseDailyCapture(input: string, today: string): CapturedTask | null {
+  const captured = parseCapture(input, today);
+  if (!captured || captured.due) return captured;
+  return {
+    ...captured,
+    due: { day: today, time: null },
+    line: `${captured.line} :due[${today}]`,
+  };
+}

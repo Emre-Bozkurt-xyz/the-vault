@@ -75,6 +75,7 @@ export type CaptureTaskResult =
       agenda: TaskAgendaResult;
       /** Where the task landed, for the confirmation and for Undo. */
       documentId: string;
+      destination: string;
       line: number;
       rawLine: string;
       text: string;
@@ -238,6 +239,7 @@ export async function captureTaskAction(input: unknown): Promise<CaptureTaskResu
       ok: true,
       agenda: await loadAgenda(user.id, today),
       documentId: captured.documentId,
+      destination: captured.destination,
       line: captured.lineIndex,
       rawLine: captured.line,
       text: captured.text,

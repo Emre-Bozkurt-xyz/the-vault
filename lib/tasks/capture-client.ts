@@ -35,7 +35,7 @@ export async function captureTaskFromClient(text: string): Promise<CaptureTaskRe
 
   dispatchTasksChanged();
   showWorkspaceToast({
-    message: `Added to Inbox${due}: ${result.text}`,
+    message: `Added to ${result.destination}${due}: ${result.text}`,
     action: {
       label: "Undo",
       run: async () => {

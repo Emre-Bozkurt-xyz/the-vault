@@ -414,7 +414,7 @@ function TaskRow({
 }
 
 /**
- * Quick capture into the Inbox: "send invoice friday" becomes
+ * Quick capture into the configured document: "send invoice friday" becomes
  * `- [ ] send invoice :due[<friday>]`. The confirmation (with Undo) is a
  * workspace toast, shared with `/task` in the command palette.
  */
@@ -444,8 +444,8 @@ function CaptureBox() {
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="Add task…"
-          title="Add to your Inbox. A date at the end is picked up: “call Sam friday”."
-          aria-label="Add a task to your Inbox"
+          title="Add to your capture document. A date at the end is picked up: “call Sam friday”."
+          aria-label="Add a task"
           disabled={saving}
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"

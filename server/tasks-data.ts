@@ -5,10 +5,11 @@ import { and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, 
 import { z } from "zod";
 
 import { db } from "@/db";
-import { documentTags, documentTaskIndex, documentTasks, documents, tags } from "@/db/schema";
+import { documentPermissions, documentTags, documentTaskIndex, documentTasks, documents, tags, users } from "@/db/schema";
 import { withLiveDocumentText } from "@/lib/collab-write";
 import { getDocumentAccess } from "@/lib/permissions";
-import { parseCapture, type CapturedTask } from "@/lib/tasks/capture";
+import { parseCapture, parseDailyCapture, type CapturedTask } from "@/lib/tasks/capture";
+import { isValidDayKey } from "@/lib/tasks/dates";
 import { locateTaskLine, planTaskEdit, type TaskChange } from "@/lib/tasks/edit";
 import { parseTasks, type TaskStatus } from "@/lib/tasks/parse";
 import { createDocumentForUser } from "@/server/documents-data";
@@ -310,11 +311,14 @@ export async function applyTaskChange(
 }
 
 /**
- * `vault.tasks` extension settings. Only the Inbox pointer for now; the jsonb
+ * `vault.tasks` extension settings. Capture destination and Inbox pointer; the jsonb
  * column may hold keys this build does not know, which are preserved.
  */
 const tasksSettingsSchema = z
-  .object({ inboxDocumentId: z.string().uuid().nullable().optional() })
+  .object({
+    inboxDocumentId: z.string().uuid().nullable().optional(),
+    captureTarget: z.enum(["inbox", "daily-note"]).optional(),
+  })
   .passthrough();
 
 async function readTasksSettings(userId: string) {
@@ -366,25 +370,57 @@ export async function resolveInboxDocument(userId: string): Promise<string> {
   return id;
 }
 
+/** Reuses an owned root note titled with the caller's local day. */
+async function resolveDailyNoteDocument(userId: string, day: string): Promise<string> {
+  return db.transaction(async (tx) => {
+    // Serialize concurrent captures for this owner so both cannot create a
+    // separate note when the first one has not committed yet.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    const [existing] = await tx.select({ id: documents.id }).from(documents)
+      .where(and(
+        eq(documents.ownerId, userId),
+        eq(documents.title, day),
+        isNull(documents.folderId),
+        isNull(documents.owningGroupId),
+        isNull(documents.deletedAt),
+      ))
+      .orderBy(asc(documents.createdAt), asc(documents.id))
+      .limit(1);
+    if (existing) return existing.id;
+    const [created] = await tx.insert(documents).values({ ownerId: userId, title: day })
+      .returning({ id: documents.id });
+    await tx.insert(documentPermissions).values({ documentId: created.id, userId, role: "owner" });
+    return created.id;
+  });
+}
+
 export type CaptureResult = CapturedTask & {
   documentId: string;
+  destination: string;
   /** 0-based line the task landed on; with `line`, what Undo needs. */
   lineIndex: number;
 };
 
 /**
- * Appends one task line to the Inbox through the collaboration layer (so it
- * merges with the Inbox if it is open), then reindexes from the returned text.
+ * Appends one task line to Inbox or today's note through collaboration, then
+ * reindexes from the returned text.
  * Null when the input holds no task text.
  */
 export async function captureTask(
   userId: string,
   input: { text: string; today: string },
 ): Promise<CaptureResult | null> {
-  const captured = parseCapture(input.text, input.today);
+  if (!isValidDayKey(input.today)) throw new Error("Invalid capture day.");
+  const settings = await readTasksSettings(userId);
+  const dailyNote = settings.captureTarget === "daily-note";
+  const captured = dailyNote
+    ? parseDailyCapture(input.text, input.today)
+    : parseCapture(input.text, input.today);
   if (!captured) return null;
 
-  const documentId = await resolveInboxDocument(userId);
+  const documentId = dailyNote
+    ? await resolveDailyNoteDocument(userId, input.today)
+    : await resolveInboxDocument(userId);
   let lineIndex = 0;
 
   const { markdown } = await withLiveDocumentText(
@@ -401,7 +437,7 @@ export async function captureTask(
   );
 
   await reindexAfterWrite(documentId, markdown);
-  return { ...captured, documentId, lineIndex };
+  return { ...captured, documentId, lineIndex, destination: dailyNote ? input.today : "Inbox" };
 }
 
 /** Append a captured task to a specific owned document using the same live write path as Inbox capture. */
@@ -422,7 +458,7 @@ export async function addTaskToDocument(
     ytext.insert(current.length, `${separator}${captured.line}\n`);
   }, { origin: "tasks", restorePoint: false });
   await reindexAfterWrite(documentId, markdown);
-  return { ...captured, documentId, lineIndex };
+  return { ...captured, documentId, lineIndex, destination: "document" };
 }
 
 /** Owner-scoped indexed tasks for agent discovery. Refresh before querying. */

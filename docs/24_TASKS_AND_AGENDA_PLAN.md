@@ -57,9 +57,10 @@ they neither export with the Markdown nor appear in search.
 - **The agenda is a singleton view, not a document.** It has no file in the
   file explorer, the same way Gallery and Search have none. A derived file would
   go stale, and edits to it would have to be written back somewhere else anyway.
-- **One Inbox document is the capture target.** It is an ordinary document the
-  user can rename, move, and edit. Vault remembers it by id; if it is deleted,
-  the next capture creates a new one. Daily notes are deferred.
+- **Inbox is the default capture target.** It is an ordinary document the user
+  can rename, move, and edit. Vault remembers it by id; if it is deleted,
+  the next Inbox capture creates a new one. The deferred Daily note option now
+  reuses or creates a root document titled with the viewer's local day.
 - **Personal scope.** The agenda shows tasks from documents the viewer **owns**.
   Tasks in documents shared with them do not appear. Assignment (`@person`) and
   shared-document scope come after the core works (§10).
@@ -315,6 +316,11 @@ mode plus a full page.
   phrase is parsed with the §7 grammar: `/task send invoice fri` appends
   `- [ ] send invoice :due[2026-10-02]` to the end of the Inbox. Capture never
   navigates. A toast confirms "Added to Inbox · Fri 2 Oct" with **Undo**.
+- **Daily note option.** `captureTarget` in Tasks settings switches quick capture
+  to a root-level `YYYY-MM-DD` document. A transaction serializes first captures
+  for the same owner so they reuse one note. Captures without an explicit date
+  receive `:due[today]` to stay visible in Today's agenda; explicit dates win.
+  Inbox selection is retained for switching back.
 
 ### 6.4 Elsewhere
 
@@ -417,6 +423,7 @@ and `npm test`.
   friends; the agenda then adds "assigned to me" tasks from shared documents,
   with a toggle to show all of them.
 - **Recurrence, priority, start dates and ranges, reminders** (PWA push).
-- **Daily notes** as an alternative capture target.
+- **Daily notes** as an alternative capture target: implemented 2026-10-06;
+  authenticated browser verification remains.
 - **Moving Calendar events into Markdown.**
 - **Clickable Read-mode checkboxes** for editors: implemented for uniquely identifiable task lines on 2026-10-06. Identical duplicate source lines and task lines changed by render preprocessing remain disabled until source positions can be carried through the render split; authenticated browser verification remains.
