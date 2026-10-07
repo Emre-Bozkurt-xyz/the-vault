@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { FilePlus2, FileText, Search } from "lucide-react";
 
+import { HomeTodayTasks } from "@/components/tasks/HomeTodayTasks";
 import { Button } from "@/components/ui/button";
 import { createDocumentAction } from "@/server/documents";
 import type { WorkspaceDocumentItem } from "@/components/workspace/workspace-types";
@@ -12,12 +13,15 @@ type WorkspaceNewTabProps = {
   recentDocuments: WorkspaceDocumentItem[];
   searchableDocuments: WorkspaceDocumentItem[];
   userLabel: string;
+  /** Shows the Today section; the Tasks extension's. */
+  tasksEnabled?: boolean;
 };
 
 export function WorkspaceNewTab({
   recentDocuments,
   searchableDocuments,
   userLabel,
+  tasksEnabled = false,
 }: WorkspaceNewTabProps) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
@@ -76,6 +80,8 @@ export function WorkspaceNewTab({
             </Button>
           </form>
         </div>
+
+        {tasksEnabled && !normalizedQuery ? <HomeTodayTasks /> : null}
 
         <div className="mt-9 sm:mt-12">
           <div className="flex items-center justify-between gap-3">

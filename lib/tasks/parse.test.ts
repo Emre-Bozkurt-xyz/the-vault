@@ -158,3 +158,21 @@ describe("parseTasks", () => {
     expect(parseTasks("# Title\n\nJust prose.")).toEqual([]);
   });
 });
+
+
+describe("task priority", () => {
+  it("reads the first valid priority on the task line and keeps unknown values visible", () => {
+    const [task] = parseTasks("- [ ] Ship :priority[urgent] :priority[high] :priority[low] `:priority[medium]`\n  note :priority[low]");
+    expect(task).toMatchObject({ priority: "high", text: "Ship :priority[urgent] `:priority[medium]`", note: "note :priority[low]" });
+    expect(parseTasks("- [ ] plain")[0].priority).toBeNull();
+  });
+  it("does not read priority from code or ordinary bullets", () => {
+    expect(parseTasks("- [ ] `:priority[high]`\n- ordinary :priority[low]")[0].priority).toBeNull();
+  });
+});
+
+
+it("reads the first valid repeat rule on the task line, keeping unknown rules and inline code", () => {
+  const [task] = parseTasks("- [ ] A :repeat[never] :repeat[every 2 weeks] :repeat[daily] `:repeat[weekly]`\n  note :repeat[monthly]");
+  expect(task).toMatchObject({ repeat: "every 2 weeks", text: "A :repeat[never] `:repeat[weekly]`", note: "note :repeat[monthly]" });
+});

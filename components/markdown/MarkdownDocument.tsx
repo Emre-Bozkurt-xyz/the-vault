@@ -1,3 +1,5 @@
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import {
   AlertTriangle,
   Bug,
@@ -16,6 +18,7 @@ import {
 } from "lucide-react";
 import {
   Children,
+  type ChangeEvent,
   cloneElement,
   isValidElement,
   type CSSProperties,
@@ -77,6 +80,18 @@ import {
   type WikiLinkTarget,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
+import {
+  TASK_DATE_ELEMENT_NAME,
+  TASK_PRIORITY_ELEMENT_NAME,
+  TASK_REPEAT_ELEMENT_NAME,
+  TASK_PROGRESS_ELEMENT_NAME,
+  formatTaskDateAbsolute,
+  remarkTasks,
+} from "@/lib/markdown/task-directives";
+import type { ParsedTask } from "@/lib/tasks/parse";
+import { mapReadTaskSources } from "@/lib/tasks/read-source";
+
+type ReadTaskToggle = (task: Pick<ParsedTask, "line" | "rawLine">, checked: boolean) => void;
 
 type MarkdownDocumentProps = {
   markdown: string;
@@ -101,6 +116,10 @@ type MarkdownDocumentProps = {
    * document's state.
    */
   extensions?: DocumentExtensions | null;
+  /** Only the authenticated editor's Read preview supplies this. */
+  onTaskToggle?: ReadTaskToggle;
+  /** Internal source handles for a region of the same editable document. */
+  taskSource?: { tasks: Map<number, ParsedTask>; offset: number };
 };
 
 const maxWikiEmbedDepth = 2;
@@ -335,6 +354,9 @@ function createMarkdownComponents(
    */
   linkOccurrences: Map<string, number>,
   extensions: DocumentExtensions | null,
+  startLine: number,
+  readTasks: Map<number, ParsedTask> | null,
+  onTaskToggle?: ReadTaskToggle,
 ): Components {
   const headingProps = (
     children: ReactNode,
@@ -494,8 +516,21 @@ function createMarkdownComponents(
   ol({ children, className, style }) {
     return <ol {...styledProps("vault-md-ol", className, style)}>{children}</ol>;
   },
-  li({ children, className, style }) {
-    return <li {...styledProps("vault-md-li", className, style)}>{children}</li>;
+  li({ children, className, style, node, ...rest }) {
+    const status = (rest as { "data-task-status"?: string })["data-task-status"];
+    const localLine = node?.position?.start.line;
+    const task = localLine ? readTasks?.get(startLine + localLine - 1) : null;
+    const taskChildren = task && onTaskToggle
+      ? enableReadTaskCheckbox(children, (checked) => onTaskToggle(task, checked))
+      : children;
+    return (
+      <li
+        {...styledProps("vault-md-li", className, style)}
+        data-task-status={status === "in_progress" || status === "cancelled" ? status : undefined}
+      >
+        {groupTaskItemChildren(taskChildren)}
+      </li>
+    );
   },
   blockquote({ children, className, style }) {
     const callout = parseCalloutChildren(children);
@@ -601,7 +636,34 @@ function createMarkdownComponents(
     return plainLink;
   },
   input(props) {
-    return <input {...props} className="vault-md-checkbox" disabled />;
+    return <input {...props} className="vault-md-checkbox" disabled={props.disabled !== false} />;
+  },
+  [TASK_REPEAT_ELEMENT_NAME]: (props: { "data-value"?: string }) => <TaskRepeatBadge repeat={props["data-value"]} />,
+  [TASK_PRIORITY_ELEMENT_NAME]: (props: { "data-value"?: string }) => <TaskPriorityBadge priority={props["data-value"]} />,
+  [TASK_DATE_ELEMENT_NAME]: (props: { "data-kind"?: string; "data-value"?: string }) => {
+    const value = props["data-value"] ?? "";
+    const kind = props["data-kind"] === "done" ? "done" : "due";
+    if (!/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(value)) return null;
+    return (
+      <time
+        className="vault-md-task-date"
+        data-kind={kind}
+        dateTime={value.replace(" ", "T")}
+        title={kind === "done" ? `Completed ${value}` : `Due ${value}`}
+      >
+        {kind === "done" ? "✓ " : ""}{formatTaskDateAbsolute(value)}
+      </time>
+    );
+  },
+  [TASK_PROGRESS_ELEMENT_NAME]: (props: { "data-done"?: string; "data-total"?: string }) => {
+    const done = Number(props["data-done"]);
+    const total = Number(props["data-total"]);
+    if (!Number.isInteger(done) || !Number.isInteger(total) || total <= 0 || done < 0 || done > total) return null;
+    return (
+      <span className="vault-md-task-progress" data-complete={String(done === total)} title={`${done} of ${total} subtasks done`}>
+        {done}/{total}
+      </span>
+    );
   },
   // `remarkInlineDirectives` emits this element, carrying only a key, for each
   // claimed inline directive (`:calc[…]`). The extension's component supplies
@@ -611,6 +673,61 @@ function createMarkdownComponents(
     <ExtensionInlineHost occurrenceKey={props[EXTENSION_INLINE_KEY_ATTRIBUTE]} />
   ),
   } as Components;
+}
+
+const taskItemBlockTags = new Set([
+  "ul", "ol", "p", "div", "blockquote", "pre", "table", "hr",
+  "h1", "h2", "h3", "h4", "h5", "h6",
+]);
+
+function enableReadTaskCheckbox(children: ReactNode, onChange: (checked: boolean) => void): ReactNode {
+  return Children.map(children, (child) => {
+    if (!isValidElement(child)) return child;
+    if ((child.props as { type?: unknown }).type === "checkbox") {
+      return cloneElement(child as ReactElement<{ disabled?: boolean; onChange?: (event: ChangeEvent<HTMLInputElement>) => void }>, {
+        disabled: false,
+        onChange: (event) => onChange(event.target.checked),
+      });
+    }
+    // Loose task lists put the box inside a paragraph. Do not descend into a
+    // nested list, whose checkboxes belong to their own list items.
+    if ((child.props as { node?: { tagName?: unknown } }).node?.tagName === "p") {
+      const paragraph = child as ReactElement<{ children?: ReactNode }>;
+      return cloneElement(paragraph, {
+        children: enableReadTaskCheckbox(paragraph.props.children, onChange),
+      });
+    }
+    return child;
+  });
+}
+
+function groupTaskItemChildren(children: ReactNode): ReactNode {
+  const items = Children.toArray(children);
+  const isCheckbox = (item: ReactNode) =>
+    isValidElement(item) && (item.props as { type?: unknown }).type === "checkbox";
+  if (!items.some(isCheckbox)) return children;
+
+  const isBlock = (item: ReactNode) => {
+    if (!isValidElement(item)) return false;
+    const tagName = (item.props as { node?: { tagName?: unknown } }).node?.tagName;
+    return typeof tagName === "string" && taskItemBlockTags.has(tagName);
+  };
+  const grouped: ReactNode[] = [];
+  let run: ReactNode[] = [];
+  const flush = () => {
+    if (run.some((item) => typeof item !== "string" || item.trim() !== "")) {
+      grouped.push(<span key={`task-text-${grouped.length}`} className="vault-md-task-text">{run}</span>);
+    }
+    run = [];
+  };
+  for (const item of items) {
+    if (isCheckbox(item) || isBlock(item)) {
+      flush();
+      grouped.push(item);
+    } else run.push(item);
+  }
+  flush();
+  return grouped;
 }
 
 function Callout({
@@ -932,6 +1049,8 @@ export function MarkdownDocument({
   embedDepth = 0,
   embedTrail = [],
   extensions,
+  onTaskToggle,
+  taskSource,
 }: MarkdownDocumentProps) {
   const bodyMarkdown = stripDocumentFrontmatter(markdown || "").trim()
     ? stripDocumentFrontmatter(markdown || "")
@@ -946,6 +1065,14 @@ export function MarkdownDocument({
   // a link's occurrence has to count across every Markdown segment of the
   // document, not restart in each one.
   const linkOccurrences = new Map<string, number>();
+  const readTasks = onTaskToggle
+    ? taskSource?.tasks ?? mapReadTaskSources(markdown || "", sourceMarkdown,
+        (line) => transformAssetEmbeds(normalizeSelfClosingIframes(line), assetLinks))
+    : null;
+  const strippedLineCount = taskSource
+    ? (markdown.slice(0, markdown.length - stripDocumentFrontmatter(markdown).length).match(/\n/g)?.length ?? 0)
+    : 0;
+  const sourceOffset = (taskSource?.offset ?? 0) + strippedLineCount;
 
   // Extension directives are planned once, here, before anything renders: an
   // extension's `analyze` (calc binding names top to bottom) needs every
@@ -979,6 +1106,10 @@ export function MarkdownDocument({
             headingIds={headingIds}
             linkOccurrences={linkOccurrences}
             extensions={extensions ?? null}
+            documentMarkdown={markdown || ""}
+            readTasks={readTasks}
+            onTaskToggle={onTaskToggle}
+            startLine={sourceOffset + block.startLine}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -989,6 +1120,8 @@ export function MarkdownDocument({
             assetLinks={assetLinks}
             embedDepth={embedDepth}
             embedTrail={embedTrail}
+            onTaskToggle={onTaskToggle}
+            taskSource={readTasks ? { tasks: readTasks, offset: sourceOffset + block.startLine } : undefined}
           />
         ) : (
           <WikiDocumentEmbed
@@ -1049,6 +1182,8 @@ function VaultRegion({
   assetLinks,
   embedDepth,
   embedTrail,
+  onTaskToggle,
+  taskSource,
 }: {
   block: Extract<WikiDocumentEmbedBlock, { type: "region" }>;
   disableLinks: boolean;
@@ -1056,6 +1191,8 @@ function VaultRegion({
   assetLinks?: AssetEmbedResolutionMap;
   embedDepth: number;
   embedTrail: string[];
+  onTaskToggle?: ReadTaskToggle;
+  taskSource?: { tasks: Map<number, ParsedTask>; offset: number };
 }) {
   const body = block.markdown ? (
     <MarkdownDocument
@@ -1067,6 +1204,8 @@ function VaultRegion({
       embedTrail={embedTrail}
       contained={false}
       className="vault-md-region-body"
+      onTaskToggle={onTaskToggle}
+      taskSource={taskSource}
     />
   ) : null;
 
@@ -1106,6 +1245,10 @@ function MarkdownBlock({
   headingIds,
   linkOccurrences,
   extensions,
+  documentMarkdown,
+  readTasks,
+  onTaskToggle,
+  startLine,
 }: {
   parts: DirectivePart[];
   disableLinks: boolean;
@@ -1114,6 +1257,10 @@ function MarkdownBlock({
   headingIds: Map<string, number>;
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
+  documentMarkdown: string;
+  readTasks: Map<number, ParsedTask> | null;
+  onTaskToggle?: ReadTaskToggle;
+  startLine: number;
 }) {
   return (
     <>
@@ -1134,6 +1281,7 @@ function MarkdownBlock({
               body={part.kind === "container" ? part.body : null}
               occurrenceKey={part.kind === "container" ? part.key : null}
               links={{ wikiLinks, assetLinks }}
+              documentMarkdown={documentMarkdown}
             />
           );
         }
@@ -1153,6 +1301,9 @@ function MarkdownBlock({
             linkOccurrences={linkOccurrences}
             extensions={extensions}
             keyPrefix={String(part.pieceIndex)}
+            readTasks={readTasks}
+            onTaskToggle={onTaskToggle}
+            startLine={startLine + part.startLine}
           />
         );
       })}
@@ -1169,6 +1320,9 @@ function MarkdownSegment({
   linkOccurrences,
   extensions,
   keyPrefix,
+  readTasks,
+  onTaskToggle,
+  startLine,
 }: {
   markdown: string;
   disableLinks: boolean;
@@ -1178,6 +1332,9 @@ function MarkdownSegment({
   linkOccurrences: Map<string, number>;
   extensions: DocumentExtensions | null;
   keyPrefix: string;
+  readTasks: Map<number, ParsedTask> | null;
+  onTaskToggle?: ReadTaskToggle;
+  startLine: number;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1195,6 +1352,7 @@ function MarkdownSegment({
       // would point at another occurrence.
       remarkPlugins={[
         ...directiveRemarkPlugins,
+        remarkTasks,
         [
           remarkInlineDirectives,
           { names: inlineDirectiveNames, keyPrefix },
@@ -1213,6 +1371,9 @@ function MarkdownSegment({
         linkTargets,
         linkOccurrences,
         extensions,
+        startLine,
+        readTasks,
+        onTaskToggle,
       )}
     >
       {renderedMarkdown}

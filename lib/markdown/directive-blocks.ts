@@ -138,7 +138,7 @@ export function scanDirectiveBlockLines(
 }
 
 export type DirectiveBlockSegment =
-  | { type: "markdown"; markdown: string }
+  | { type: "markdown"; markdown: string; startLine: number }
   | {
       type: "leaf";
       name: string;
@@ -167,7 +167,7 @@ export function splitDirectiveBlocks(
   const matches = scanDirectiveBlockLines(lines, claims);
 
   if (matches.length === 0) {
-    return [{ type: "markdown", markdown }];
+    return [{ type: "markdown", markdown, startLine: 0 }];
   }
 
   const segments: DirectiveBlockSegment[] = [];
@@ -175,7 +175,7 @@ export function splitDirectiveBlocks(
 
   const flush = (until: number) => {
     if (until > cursor) {
-      segments.push({ type: "markdown", markdown: lines.slice(cursor, until).join("\n") });
+      segments.push({ type: "markdown", markdown: lines.slice(cursor, until).join("\n"), startLine: cursor });
     }
   };
 

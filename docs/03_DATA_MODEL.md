@@ -421,6 +421,26 @@ Rules:
 
 ---
 
+### Markdown task projections
+
+`document_tasks` (migration `0025_romantic_firelord.sql`) is a disposable
+projection of task lines in `documents.markdown`: UUID id, document FK with
+cascade delete, ordinal, source line and raw line, parent ordinal, status,
+text, note, heading, due day/time, and completion day. `(document_id, ordinal)`
+is unique; an open-task partial index covers due day. Tasks are personal:
+workspace reads join active documents owned by the authenticated user.
+
+`document_task_index` stores the document FK primary key, source timestamp and
+index timestamp, including documents without tasks. Reads lazily refresh stale
+projections; per-document advisory locks serialize replacement.
+
+Migration `0026_free_lester.sql` adds nullable text `priority` (`high`, `medium`,
+`low`, null for none) and clears index stamps so unchanged documents are
+reparsed. Migration `0027_wonderful_microchip.sql` adds nullable text `repeat`
+(the validated portable recurrence rule, including optional month/year anchors)
+and invalidates index stamps again. These migrations are applied locally; production must run
+`npm run db:migrate` before the updated app starts. Markdown remains canonical.
+
 ## 5. Document Extension State
 
 ### document_extension_states

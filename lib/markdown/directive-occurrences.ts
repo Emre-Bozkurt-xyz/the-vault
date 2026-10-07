@@ -48,7 +48,7 @@ export type DirectiveOccurrence =
     };
 
 export type DirectivePart =
-  | { kind: "markdown"; markdown: string; pieceIndex: number }
+  | { kind: "markdown"; markdown: string; pieceIndex: number; startLine: number }
   | {
       kind: "leaf";
       owner: string;
@@ -147,7 +147,7 @@ export function planDirectiveParts(
         });
       },
     );
-    parts.push({ kind: "markdown", markdown: segment.markdown, pieceIndex });
+    parts.push({ kind: "markdown", markdown: segment.markdown, pieceIndex, startLine: segment.startLine });
   }
 
   return parts;

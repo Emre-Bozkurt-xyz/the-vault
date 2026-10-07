@@ -24,7 +24,7 @@ import { revalidatePath } from "next/cache";
 import { maxMarkdownLength } from "@/lib/markdown";
 import { resolveFolderRef } from "@/lib/folder-paths";
 import { resolveMcpUserId } from "@/lib/mcp/user";
-import { withLiveDocumentText } from "@/lib/mcp/collab-write";
+import { withLiveDocumentText } from "@/lib/collab-write";
 import {
   appendMarkdown,
   applyAnchoredEdits,

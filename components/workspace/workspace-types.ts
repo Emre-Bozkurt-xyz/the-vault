@@ -7,6 +7,7 @@ export type WorkspacePageType =
   | "guide"
   | "gallery"
   | "assets"
+  | "tasks"
   | "settings"
   | "admin";
 

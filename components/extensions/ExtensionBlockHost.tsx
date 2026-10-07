@@ -44,6 +44,7 @@ export function ExtensionBlockHost({
   name,
   attributes,
   source,
+  documentMarkdown,
   body = null,
   occurrenceKey = null,
   links,
@@ -52,6 +53,7 @@ export function ExtensionBlockHost({
   name: string;
   attributes: Record<string, string>;
   source: string;
+  documentMarkdown?: string;
   /** A container's body; omitted for a leaf. */
   body?: string | null;
   /** A container's occurrence key; omitted for a leaf. */
@@ -89,6 +91,7 @@ export function ExtensionBlockHost({
           name={name}
           attributes={attributes}
           source={source}
+          documentMarkdown={documentMarkdown}
           body={body}
           occurrenceKey={occurrenceKey}
           links={links}

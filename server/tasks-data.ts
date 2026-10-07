@@ -1,25 +1,21 @@
 import "server-only";
 
-import {
-  and,
-  asc,
-  count,
-  eq,
-  gt,
-  gte,
-  ilike,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+
+import { z } from "zod";
 
 import { db } from "@/db";
-import { documentTaskIndex, documentTasks, documents } from "@/db/schema";
-import { parseTasks, type TaskStatus } from "@/lib/tasks/parse";
+import { documentPermissions, documentTags, documentTaskIndex, documentTasks, documents, tags, users } from "@/db/schema";
+import { withDocumentWriteLock } from "@/lib/document-write-lock";
+import { withLiveDocumentText } from "@/lib/collab-write";
+import { getDocumentAccess } from "@/lib/permissions";
+import { parseCapture, parseDailyCapture, type CapturedTask } from "@/lib/tasks/capture";
+import { isValidDayKey } from "@/lib/tasks/dates";
+import { locateTaskLine, type TaskChange } from "@/lib/tasks/edit";
+import { planTaskDocumentEdit } from "@/lib/tasks/document-edit";
+import { parseTasks, type TaskPriority, type TaskStatus } from "@/lib/tasks/parse";
+import { createDocumentForUser } from "@/server/documents-data";
+import { getUserExtensionSetting, upsertUserExtensionSettings } from "@/server/user-settings";
 
 /**
  * The task index behind every agenda surface (docs/24_TASKS_AND_AGENDA_PLAN.md
@@ -139,7 +135,7 @@ async function writeTaskRows(
     return;
   }
 
-  // 13 columns per row keeps a full 2,000-task document well under Postgres's
+  // 15 columns per row keeps a full 2,000-task document well under Postgres's
   // 65,535 bind-parameter limit in one statement.
   await executor.insert(documentTasks).values(
     tasks.map((task) => ({
@@ -155,6 +151,8 @@ async function writeTaskRows(
       dueDay: task.dueDay,
       dueTime: task.dueTime,
       doneDay: task.doneDay,
+      priority: task.priority,
+      repeat: task.repeat,
     })),
   );
 }
@@ -169,12 +167,20 @@ export type AgendaTask = {
   status: TaskStatus;
   text: string;
   heading: string | null;
-  dueDay: string;
+  /** Null only for undated tasks in the Inbox document. */
+  dueDay: string | null;
   dueTime: string | null;
+  doneDay: string | null;
+  priority: TaskPriority | null;
+  repeat: string | null;
 };
 
 export type TaskAgenda = {
-  /** Open or in-progress dated tasks due on or before `through`, oldest first. */
+  /**
+   * Open or in-progress dated tasks due on or before `through`, oldest first,
+   * plus dated tasks completed `today`, so a tick does not make its row vanish,
+   * plus the Inbox's undated tasks (last).
+   */
   tasks: AgendaTask[];
   /** Open dated tasks due after `through`. */
   laterCount: number;
@@ -185,18 +191,32 @@ const agendaLimit = 300;
 
 /**
  * Open and in-progress tasks with a due day up to and including `through`,
- * from documents `userId` owns. Overdue tasks are included however old: the
- * caller buckets them against the viewer's own "today".
+ * from documents `userId` owns, plus dated tasks completed on `today`. Overdue
+ * tasks are included however old: the caller buckets them against the viewer's
+ * own "today".
  */
 export async function listAgendaTasks(
   userId: string,
+  today: string,
   through: string,
+  inboxDocumentId: string | null = null,
 ): Promise<TaskAgenda> {
-  const ownedOpen = and(
-    eq(documents.ownerId, userId),
-    isNull(documents.deletedAt),
-    inArray(documentTasks.status, ["open", "in_progress"]),
+  const owned = and(eq(documents.ownerId, userId), isNull(documents.deletedAt));
+  const ownedOpen = and(owned, inArray(documentTasks.status, ["open", "in_progress"]));
+  const doneToday = and(owned, eq(documentTasks.status, "done"), eq(documentTasks.doneDay, today));
+  const dated = or(
+    and(ownedOpen, lte(documentTasks.dueDay, through)),
+    and(doneToday, isNotNull(documentTasks.dueDay)),
   );
+  // Undated tasks only reach the agenda from the Inbox; anywhere else they
+  // are backlog (plan §2), or every old checklist would flood the list.
+  const inbox = inboxDocumentId
+    ? and(
+        eq(documentTasks.documentId, inboxDocumentId),
+        isNull(documentTasks.dueDay),
+        or(ownedOpen, doneToday),
+      )
+    : undefined;
 
   const [rows, [later]] = await Promise.all([
     db
@@ -212,13 +232,17 @@ export async function listAgendaTasks(
         heading: documentTasks.heading,
         dueDay: documentTasks.dueDay,
         dueTime: documentTasks.dueTime,
+        doneDay: documentTasks.doneDay,
+        priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
       })
       .from(documentTasks)
       .innerJoin(documents, eq(documents.id, documentTasks.documentId))
-      .where(and(ownedOpen, lte(documentTasks.dueDay, through)))
+      .where(inbox ? or(dated, inbox) : dated)
       .orderBy(
-        asc(documentTasks.dueDay),
+        sql`${documentTasks.dueDay} asc nulls last`,
         sql`${documentTasks.dueTime} asc nulls last`,
+        sql`case ${documentTasks.priority} when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
         asc(documents.title),
         asc(documentTasks.ordinal),
       )
@@ -230,127 +254,297 @@ export async function listAgendaTasks(
       .where(and(ownedOpen, gt(documentTasks.dueDay, through))),
   ]);
 
-  return {
-    // `lte` on the due day already excludes undated rows.
-    tasks: rows.map((row) => ({ ...row, dueDay: row.dueDay as string })),
-    laterCount: later?.value ?? 0,
-  };
+  return { tasks: rows, laterCount: later?.value ?? 0 };
 }
 
-export type TaskQuery = {
-  statuses: TaskStatus[];
-  /** Inclusive due-day bounds; either excludes undated tasks. */
-  dueFrom?: string;
-  dueThrough?: string;
-  /** `dated`/`undated` keep only tasks with/without a due day. */
-  dated?: "any" | "dated" | "undated";
-  /** Only tasks in documents filed directly in one of these folders. */
+/** The task's line is gone, changed, or ambiguous since the caller last read it. */
+export class TaskMovedError extends Error {
+  constructor() {
+    super("This task changed since the list was loaded.");
+    this.name = "TaskMovedError";
+  }
+}
+
+/**
+ * Applies one task change to the live document through the collaboration
+ * layer (so it merges with anyone editing), then reindexes the document from
+ * the text that write produced.
+ *
+ * The write records no restore point: a checkbox tick is not worth one, and the
+ * collab server's own threshold versioning still applies. Reindexing from the
+ * returned text matters because `documents.markdown` only catches up when the
+ * collab server's debounced store runs; a refetch before then would otherwise
+ * read the old line and revert the tick. The stamp stays at the document's
+ * current `updated_at`, so that store triggers one more reindex from the same
+ * text.
+ */
+export async function applyTaskChange(
+  userId: string,
+  input: {
+    documentId: string;
+    line: number;
+    rawLine: string;
+    change: TaskChange;
+    today: string;
+    stampDone?: boolean;
+  },
+): Promise<string> {
+  const { markdown } = await withDocumentWriteLock(input.documentId, () => withLiveDocumentText(
+    userId,
+    input.documentId,
+    (ytext) => {
+      const text = ytext.toString();
+      const edits = planTaskDocumentEdit(text, input.line, input.rawLine, input.change, input.today, { stampDone: input.stampDone });
+      if (!edits) throw new TaskMovedError();
+
+      // Edits arrive last-first, so earlier offsets stay valid as each applies.
+      for (const edit of edits) {
+        const at = edit.from;
+        if (edit.to > edit.from) ytext.delete(at, edit.to - edit.from);
+        if (edit.insert) ytext.insert(at, edit.insert);
+      }
+    },
+    { origin: "tasks", restorePoint: false },
+  ));
+
+  await reindexAfterWrite(input.documentId, markdown);
+  return markdown;
+}
+
+/**
+ * `vault.tasks` extension settings. Capture destination and Inbox pointer; the jsonb
+ * column may hold keys this build does not know, which are preserved.
+ */
+const tasksSettingsSchema = z
+  .object({
+    inboxDocumentId: z.string().uuid().nullable().optional(),
+    captureTarget: z.enum(["inbox", "daily-note"]).optional(),
+  })
+  .passthrough();
+
+async function readTasksSettings(userId: string) {
+  const row = await getUserExtensionSetting({ userId, extensionId: "vault.tasks" });
+  const parsed = tasksSettingsSchema.safeParse(row?.settings ?? {});
+  return parsed.success ? parsed.data : {};
+}
+
+async function isUsableInbox(userId: string, documentId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(eq(documents.id, documentId), eq(documents.ownerId, userId), isNull(documents.deletedAt)),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * The Inbox document's id when it still exists and is still the user's, else
+ * null. Never creates one: reading the agenda should not make documents.
+ */
+export async function getInboxDocumentId(userId: string): Promise<string | null> {
+  const { inboxDocumentId } = await readTasksSettings(userId);
+  return inboxDocumentId && (await isUsableInbox(userId, inboxDocumentId))
+    ? inboxDocumentId
+    : null;
+}
+
+/**
+ * The capture target. Remembered by id, so renaming or moving it is fine; if it
+ * was deleted (or is in the Bin, or changed owner) a fresh "Inbox" is created
+ * at the root and remembered instead (plan §6.3).
+ */
+export async function resolveInboxDocument(userId: string): Promise<string> {
+  const existing = await getInboxDocumentId(userId);
+  if (existing) return existing;
+
+  const { id } = await createDocumentForUser(userId, { title: "Inbox" });
+  const settings = await readTasksSettings(userId);
+
+  await upsertUserExtensionSettings({
+    userId,
+    extensionId: "vault.tasks",
+    settings: { ...settings, inboxDocumentId: id },
+  });
+
+  return id;
+}
+
+/** Reuses an owned root note titled with the caller's local day. */
+async function resolveDailyNoteDocument(userId: string, day: string): Promise<string> {
+  return db.transaction(async (tx) => {
+    // Serialize concurrent captures for this owner so both cannot create a
+    // separate note when the first one has not committed yet.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    const [existing] = await tx.select({ id: documents.id }).from(documents)
+      .where(and(
+        eq(documents.ownerId, userId),
+        eq(documents.title, day),
+        isNull(documents.folderId),
+        isNull(documents.owningGroupId),
+        isNull(documents.deletedAt),
+      ))
+      .orderBy(asc(documents.createdAt), asc(documents.id))
+      .limit(1);
+    if (existing) return existing.id;
+    const [created] = await tx.insert(documents).values({ ownerId: userId, title: day })
+      .returning({ id: documents.id });
+    await tx.insert(documentPermissions).values({ documentId: created.id, userId, role: "owner" });
+    return created.id;
+  });
+}
+
+export type CaptureResult = CapturedTask & {
+  documentId: string;
+  destination: string;
+  /** 0-based line the task landed on; with `line`, what Undo needs. */
+  lineIndex: number;
+};
+
+/**
+ * Appends one task line to Inbox or today's note through collaboration, then
+ * reindexes from the returned text.
+ * Null when the input holds no task text.
+ */
+export async function captureTask(
+  userId: string,
+  input: { text: string; today: string },
+): Promise<CaptureResult | null> {
+  if (!isValidDayKey(input.today)) throw new Error("Invalid capture day.");
+  const settings = await readTasksSettings(userId);
+  const dailyNote = settings.captureTarget === "daily-note";
+  const captured = dailyNote
+    ? parseDailyCapture(input.text, input.today)
+    : parseCapture(input.text, input.today);
+  if (!captured) return null;
+
+  const documentId = dailyNote
+    ? await resolveDailyNoteDocument(userId, input.today)
+    : await resolveInboxDocument(userId);
+  let lineIndex = 0;
+
+  const { markdown } = await withLiveDocumentText(
+    userId,
+    documentId,
+    (ytext) => {
+      const current = ytext.toString();
+      const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+      // Lines before the insertion point, counting the separator's new line.
+      lineIndex = current.length === 0 ? 0 : current.split("\n").length - (separator ? 0 : 1);
+      ytext.insert(current.length, `${separator}${captured.line}\n`);
+    },
+    { origin: "tasks", restorePoint: false },
+  );
+
+  await reindexAfterWrite(documentId, markdown);
+  return { ...captured, documentId, lineIndex, destination: dailyNote ? input.today : "Inbox" };
+}
+
+/** Append a captured task to a specific owned document using the same live write path as Inbox capture. */
+export async function addTaskToDocument(
+  userId: string,
+  documentId: string,
+  input: { text: string; today: string },
+): Promise<CaptureResult | null> {
+  const captured = parseCapture(input.text, input.today);
+  if (!captured) return null;
+  const access = await getDocumentAccess(userId, documentId);
+  if (!access.canEdit) throw new Error("Document not found or you cannot edit it.");
+  let lineIndex = 0;
+  const { markdown } = await withLiveDocumentText(userId, documentId, (ytext) => {
+    const current = ytext.toString();
+    const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+    lineIndex = current.length === 0 ? 0 : current.split("\n").length - (separator ? 0 : 1);
+    ytext.insert(current.length, `${separator}${captured.line}\n`);
+  }, { origin: "tasks", restorePoint: false });
+  await reindexAfterWrite(documentId, markdown);
+  return { ...captured, documentId, lineIndex, destination: "document" };
+}
+
+/** Owner-scoped indexed tasks for agent discovery. Refresh before querying. */
+export async function listAgentTasks(userId: string, input: {
+  from?: string;
+  to?: string;
+  includeDone?: boolean;
+  limit?: number;
+  /** Only documents filed directly in one of these folders. */
   folderIds?: string[];
-  documentId?: string;
   /** Case-insensitive substring of the task text. */
   text?: string;
-  limit: number;
-};
-
-export type IndexedTask = {
-  documentId: string;
-  documentTitle: string;
-  folderId: string | null;
-  ordinal: number;
-  /** 0-based, as indexed. */
-  line: number;
-  rawLine: string;
-  parentOrdinal: number | null;
-  status: TaskStatus;
-  text: string;
-  note: string | null;
-  heading: string | null;
-  dueDay: string | null;
-  dueTime: string | null;
-  doneDay: string | null;
-};
-
-/**
- * A filtered slice of the user's task index (owned, non-deleted documents),
- * soonest due first with undated tasks last. Call {@link ensureTaskIndexFresh}
- * first. Returns the page and the total matching count.
- */
-export async function queryTasksForUser(
-  userId: string,
-  query: TaskQuery,
-): Promise<{ tasks: IndexedTask[]; total: number }> {
-  if (query.statuses.length === 0 || query.folderIds?.length === 0) {
-    return { tasks: [], total: 0 };
+}) {
+  if (input.folderIds?.length === 0) return [];
+  await ensureTaskIndexFresh(userId);
+  const conditions = [eq(documents.ownerId, userId), isNull(documents.deletedAt)];
+  conditions.push(inArray(documentTasks.status, input.includeDone ? ["open", "in_progress", "done"] : ["open", "in_progress"]));
+  if (input.from) conditions.push(gte(documentTasks.dueDay, input.from));
+  if (input.to) conditions.push(lte(documentTasks.dueDay, input.to));
+  if (input.folderIds) conditions.push(inArray(documents.folderId, input.folderIds));
+  if (input.text?.trim()) {
+    conditions.push(ilike(documentTasks.text, `%${input.text.trim().replace(/[%_\\]/g, "\\$&")}%`));
   }
-
-  const conditions = [
-    eq(documents.ownerId, userId),
-    isNull(documents.deletedAt),
-    inArray(documentTasks.status, query.statuses),
-  ];
-
-  if (query.dueFrom) conditions.push(gte(documentTasks.dueDay, query.dueFrom));
-  if (query.dueThrough) conditions.push(lte(documentTasks.dueDay, query.dueThrough));
-  if (query.dated === "dated") conditions.push(isNotNull(documentTasks.dueDay));
-  if (query.dated === "undated") conditions.push(isNull(documentTasks.dueDay));
-  if (query.folderIds) conditions.push(inArray(documents.folderId, query.folderIds));
-  if (query.documentId) conditions.push(eq(documentTasks.documentId, query.documentId));
-  if (query.text?.trim()) {
-    conditions.push(
-      ilike(documentTasks.text, `%${query.text.trim().replace(/[%_\\]/g, "\\$&")}%`),
-    );
-  }
-
-  const where = and(...conditions);
-
-  const [rows, [total]] = await Promise.all([
-    db
-      .select({
-        documentId: documentTasks.documentId,
-        documentTitle: documents.title,
-        folderId: documents.folderId,
-        ordinal: documentTasks.ordinal,
-        line: documentTasks.line,
-        rawLine: documentTasks.rawLine,
-        parentOrdinal: documentTasks.parentOrdinal,
-        status: documentTasks.status,
-        text: documentTasks.text,
-        note: documentTasks.note,
-        heading: documentTasks.heading,
-        dueDay: documentTasks.dueDay,
-        dueTime: documentTasks.dueTime,
-        doneDay: documentTasks.doneDay,
-      })
-      .from(documentTasks)
-      .innerJoin(documents, eq(documents.id, documentTasks.documentId))
-      .where(where)
-      .orderBy(
-        sql`${documentTasks.dueDay} asc nulls last`,
-        sql`${documentTasks.dueTime} asc nulls last`,
-        asc(documents.title),
-        asc(documentTasks.ordinal),
-      )
-      .limit(query.limit),
-    db
-      .select({ value: count() })
-      .from(documentTasks)
-      .innerJoin(documents, eq(documents.id, documentTasks.documentId))
-      .where(where),
-  ]);
-
-  return { tasks: rows, total: total?.value ?? 0 };
+  return db.select({
+    documentId: documentTasks.documentId,
+    documentTitle: documents.title,
+    folderId: documents.folderId,
+    heading: documentTasks.heading,
+    ordinal: documentTasks.ordinal,
+    line: documentTasks.line,
+    rawLine: documentTasks.rawLine,
+    status: documentTasks.status,
+    text: documentTasks.text,
+    dueDay: documentTasks.dueDay,
+    dueTime: documentTasks.dueTime,
+    doneDay: documentTasks.doneDay,
+    priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
+  }).from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(and(...conditions))
+    .orderBy(
+      sql`${documentTasks.dueDay} asc nulls last`,
+      sql`${documentTasks.dueTime} asc nulls last`,
+      sql`case ${documentTasks.priority} when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
+      asc(documents.title), asc(documentTasks.ordinal),
+    )
+    .limit(input.limit ?? 200);
 }
 
-/**
- * Reindexes one document from text just written through the collab session
- * (§5.3), stamped with its current `updated_at`: a list right after the write
- * sees the change without waiting for the debounced store, and that store's
- * newer stamp reindexes once more, from identical text.
- */
-export async function reindexDocumentTasksFromText(
-  documentId: string,
-  markdown: string,
+/** Resolve a stable task handle without paging through unrelated tasks. */
+export async function getAgentTask(userId: string, documentId: string, ordinal: number) {
+  await ensureTaskIndexFresh(userId);
+  const [task] = await db.select({ line: documentTasks.line, rawLine: documentTasks.rawLine })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(and(eq(documents.ownerId, userId), isNull(documents.deletedAt),
+      eq(documentTasks.documentId, documentId), eq(documentTasks.ordinal, ordinal)))
+    .limit(1);
+  return task ?? null;
+}
+
+/** Undo for a capture: removes that line, if it is still exactly there. */
+export async function removeCapturedTask(
+  userId: string,
+  input: { documentId: string; line: number; rawLine: string },
 ): Promise<void> {
+  const { markdown } = await withLiveDocumentText(
+    userId,
+    input.documentId,
+    (ytext) => {
+      const text = ytext.toString();
+      const located = locateTaskLine(text, input.line, input.rawLine);
+      if (!located) throw new TaskMovedError();
+
+      const end = text.indexOf("\n", located.offset);
+      ytext.delete(located.offset, (end === -1 ? text.length : end + 1) - located.offset);
+    },
+    { origin: "tasks", restorePoint: false },
+  );
+
+  await reindexAfterWrite(input.documentId, markdown);
+}
+
+async function reindexAfterWrite(documentId: string, markdown: string) {
   const [row] = await db
     .select({ updatedAt: sql<string>`${documents.updatedAt}::text` })
     .from(documents)
@@ -359,4 +553,228 @@ export async function reindexDocumentTasksFromText(
   if (row) {
     await reindexDocumentTasks({ documentId, markdown, sourceUpdatedAt: row.updatedAt });
   }
+}
+
+export type PageTask = AgendaTask & {
+  folderId: string | null;
+  note: string | null;
+};
+
+export type TaskPageData = {
+  /** Every open or in-progress task (dated or not), plus tasks done today. */
+  tasks: PageTask[];
+  /** Tag slugs per document, for the tag filter. */
+  tagsByDocument: Record<string, string[]>;
+  tags: Array<{ slug: string; displayName: string }>;
+  /** True when the list hit its ceiling and some tasks are missing. */
+  truncated: boolean;
+};
+
+/** A page of this size stays responsive to filter client-side. */
+const pageTaskLimit = 2000;
+
+/**
+ * Everything the Tasks page (slice 5) filters and groups client-side: its
+ * Agenda, Week and Month views use the dated tasks, Backlog the undated ones.
+ * Personal scope, like the agenda.
+ */
+export async function listTaskPageData(userId: string, today: string): Promise<TaskPageData> {
+  const owned = and(eq(documents.ownerId, userId), isNull(documents.deletedAt));
+
+  const rows = await db
+    .select({
+      documentId: documentTasks.documentId,
+      documentTitle: documents.title,
+      folderId: documents.folderId,
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      parentOrdinal: documentTasks.parentOrdinal,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      note: documentTasks.note,
+      heading: documentTasks.heading,
+      dueDay: documentTasks.dueDay,
+      dueTime: documentTasks.dueTime,
+      doneDay: documentTasks.doneDay,
+      priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
+    })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(
+      and(
+        owned,
+        or(
+          inArray(documentTasks.status, ["open", "in_progress"]),
+          and(eq(documentTasks.status, "done"), eq(documentTasks.doneDay, today)),
+        ),
+      ),
+    )
+    .orderBy(
+      sql`${documentTasks.dueDay} asc nulls last`,
+      sql`${documentTasks.dueTime} asc nulls last`,
+      sql`case ${documentTasks.priority} when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
+      asc(documents.title),
+      asc(documentTasks.ordinal),
+    )
+    .limit(pageTaskLimit + 1);
+
+  const truncated = rows.length > pageTaskLimit;
+  const tasks = rows.slice(0, pageTaskLimit);
+  const documentIds = [...new Set(tasks.map((task) => task.documentId))];
+  const tagRows = documentIds.length
+    ? await db
+        .select({
+          documentId: documentTags.documentId,
+          slug: tags.slug,
+          displayName: tags.displayName,
+        })
+        .from(documentTags)
+        .innerJoin(tags, eq(tags.id, documentTags.tagId))
+        .where(inArray(documentTags.documentId, documentIds))
+    : [];
+
+  const tagsByDocument: Record<string, string[]> = {};
+  const tagNames = new Map<string, string>();
+
+  for (const row of tagRows) {
+    (tagsByDocument[row.documentId] ??= []).push(row.slug);
+    tagNames.set(row.slug, row.displayName);
+  }
+
+  return {
+    tasks,
+    tagsByDocument,
+    tags: [...tagNames]
+      .map(([slug, displayName]) => ({ slug, displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    truncated,
+  };
+}
+
+export type TaskDetail = {
+  task: PageTask;
+  /** Direct subtasks in any status, for the checklist and progress. */
+  subtasks: Array<{
+    ordinal: number;
+    line: number;
+    rawLine: string;
+    status: TaskStatus;
+    text: string;
+    dueDay: string | null;
+  }>;
+  /** A few source lines around the task, from the last saved text. */
+  context: { startLine: number; lines: string[] };
+};
+
+/** The right-panel detail for one task, or null when it is not the user's. */
+export async function getTaskDetail(
+  userId: string,
+  documentId: string,
+  ordinal: number,
+): Promise<TaskDetail | null> {
+  const owned = and(
+    eq(documents.id, documentId),
+    eq(documents.ownerId, userId),
+    isNull(documents.deletedAt),
+  );
+
+  const [row] = await db
+    .select({
+      documentId: documentTasks.documentId,
+      documentTitle: documents.title,
+      folderId: documents.folderId,
+      markdown: documents.markdown,
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      parentOrdinal: documentTasks.parentOrdinal,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      note: documentTasks.note,
+      heading: documentTasks.heading,
+      dueDay: documentTasks.dueDay,
+      dueTime: documentTasks.dueTime,
+      doneDay: documentTasks.doneDay,
+      priority: documentTasks.priority,
+        repeat: documentTasks.repeat,
+    })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(and(owned, eq(documentTasks.ordinal, ordinal)))
+    .limit(1);
+
+  if (!row) return null;
+
+  const subtasks = await db
+    .select({
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      dueDay: documentTasks.dueDay,
+    })
+    .from(documentTasks)
+    .where(and(eq(documentTasks.documentId, documentId), eq(documentTasks.parentOrdinal, ordinal)))
+    .orderBy(asc(documentTasks.ordinal));
+
+  const { markdown, ...task } = row;
+  const lines = markdown.split(/\r?\n/);
+  const startLine = Math.max(0, task.line - 2);
+
+  return {
+    task,
+    subtasks,
+    context: { startLine, lines: lines.slice(startLine, task.line + 4) },
+  };
+}
+
+export type DocumentTaskSummary = {
+  priority: TaskPriority | null;
+  repeat: string | null;
+  line: number;
+  rawLine: string;
+  status: TaskStatus;
+  text: string;
+  dueDay: string | null;
+  dueTime: string | null;
+  parentOrdinal: number | null;
+  ordinal: number;
+};
+
+/**
+ * One document's tasks, parsed from its saved text rather than read from the
+ * index: this serves the document's own side panel, for anyone who can read
+ * it (shared documents included), and the index only covers owned documents.
+ * Null when the viewer cannot read it.
+ */
+export async function listDocumentTasks(
+  userId: string,
+  documentId: string,
+): Promise<DocumentTaskSummary[] | null> {
+  const access = await getDocumentAccess(userId, documentId);
+  if (!access.canRead) return null;
+
+  const [row] = await db
+    .select({ markdown: documents.markdown })
+    .from(documents)
+    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+    .limit(1);
+
+  if (!row) return null;
+
+  return parseTasks(row.markdown).map((task) => ({
+    line: task.line,
+    rawLine: task.rawLine,
+    status: task.status,
+    priority: task.priority,
+    repeat: task.repeat,
+    text: task.text,
+    dueDay: task.dueDay,
+    dueTime: task.dueTime,
+    parentOrdinal: task.parentOrdinal,
+    ordinal: task.ordinal,
+  }));
 }

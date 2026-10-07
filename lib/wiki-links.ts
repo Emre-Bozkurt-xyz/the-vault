@@ -72,6 +72,8 @@ export type WikiDocumentEmbedBlock =
   | {
       type: "markdown";
       markdown: string;
+      /** Zero-based line in the input, before any render splits. */
+      startLine: number;
     }
   | {
       type: "region";
@@ -80,6 +82,7 @@ export type WikiDocumentEmbedBlock =
       foldable: boolean;
       collapsed: boolean;
       markdown: string;
+      startLine: number;
     }
   | {
       type: "embed";
@@ -411,12 +414,14 @@ export function splitWikiDocumentEmbeds(
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const blocks: WikiDocumentEmbedBlock[] = [];
   let currentMarkdown: string[] = [];
+  let currentMarkdownStartLine = 0;
   let currentRegion: {
     id: string;
     title: string;
     foldable: boolean;
     collapsed: boolean;
     markdown: string[];
+    startLine: number;
   } | null = null;
   let inFence = false;
 
@@ -428,6 +433,7 @@ export function splitWikiDocumentEmbeds(
     blocks.push({
       type: "markdown",
       markdown: currentMarkdown.join("\n"),
+      startLine: currentMarkdownStartLine,
     });
     currentMarkdown = [];
   };
@@ -437,18 +443,22 @@ export function splitWikiDocumentEmbeds(
       return;
     }
 
+    const regionMarkdown = currentRegion.markdown.join("\n");
+    const trimmedPrefix = regionMarkdown.slice(0, regionMarkdown.length - regionMarkdown.trimStart().length);
     blocks.push({
       type: "region",
       id: regionFragmentId(currentRegion.id),
       title: currentRegion.title,
       foldable: currentRegion.foldable,
       collapsed: currentRegion.collapsed,
-      markdown: currentRegion.markdown.join("\n").trim(),
+      markdown: regionMarkdown.trim(),
+      startLine: currentRegion.startLine + (trimmedPrefix.match(/\n/g)?.length ?? 0),
     });
     currentRegion = null;
   };
 
-  for (const line of lines) {
+  for (const [lineIndex, line] of lines.entries()) {
+    if (currentMarkdown.length === 0) currentMarkdownStartLine = lineIndex;
     if (line.trimStart().startsWith("```")) {
       inFence = !inFence;
       if (currentRegion) {
@@ -473,6 +483,7 @@ export function splitWikiDocumentEmbeds(
           currentRegion = {
             ...regionStart,
             markdown: [],
+            startLine: lineIndex + 1,
           };
           continue;
         }
@@ -497,7 +508,7 @@ export function splitWikiDocumentEmbeds(
   flushRegion();
   flushMarkdown();
 
-  return blocks.length > 0 ? blocks : [{ type: "markdown", markdown }];
+  return blocks.length > 0 ? blocks : [{ type: "markdown", markdown, startLine: 0 }];
 }
 
 export function getWikiDocumentEmbed(

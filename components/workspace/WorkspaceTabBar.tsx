@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Globe2, Home, ImageIcon, LayoutGrid, Settings, ShieldCheck, X, Plus } from "lucide-react";
+import { FileText, Globe2, Home, ImageIcon, LayoutGrid, ListChecks, Settings, ShieldCheck, X, Plus } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -46,6 +46,7 @@ const iconByType: Record<WorkspacePageType, typeof Home> = {
   guide: FileText,
   gallery: LayoutGrid,
   assets: ImageIcon,
+  tasks: ListChecks,
   settings: Settings,
   admin: ShieldCheck,
 };
@@ -390,6 +391,10 @@ function canonicalWorkspaceTabHref(href: string, type: WorkspacePageType) {
   }
 
   if (type === "assets" && pathname === "/assets") {
+    return pathname;
+  }
+
+  if (type === "tasks" && pathname === "/tasks") {
     return pathname;
   }
 

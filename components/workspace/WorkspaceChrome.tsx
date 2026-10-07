@@ -9,9 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { buildDocumentFolderPaths } from "@/lib/folder-paths";
+import { subscribeToWorkspaceNavigation } from "@/lib/workspace-navigation";
 import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
 import { WorkspaceFileBrowser } from "@/components/workspace/WorkspaceFileBrowser";
 import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPanel";
@@ -69,6 +70,7 @@ type WorkspaceChromeContextValue = {
   setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
   recentPages: WorkspacePageDescriptor[];
   isAdmin: boolean;
+  tasksEnabled: boolean;
 };
 
 const WorkspaceChromeContext =
@@ -87,6 +89,11 @@ export function useRecentWorkspacePages(): WorkspacePageDescriptor[] {
   return useContext(WorkspaceChromeContext)?.recentPages ?? [];
 }
 
+/** Whether the `vault.tasks` extension is on. Gates `/task` in the palette. */
+export function useWorkspaceTasksEnabled(): boolean {
+  return useContext(WorkspaceChromeContext)?.tasksEnabled ?? false;
+}
+
 /** Whether the signed-in user is an admin. Gates admin-only palette commands. */
 export function useWorkspaceIsAdmin(): boolean {
   return useContext(WorkspaceChromeContext)?.isAdmin ?? false;
@@ -100,7 +107,12 @@ export function WorkspaceChrome({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Navigation requested from outside the router's React tree (Live-mode
+  // block widgets); see `lib/workspace-navigation.ts`.
+  useEffect(() => subscribeToWorkspaceNavigation((href) => router.push(href)), [router]);
   const currentHref = useMemo(() => {
     const query = searchParams.toString();
     return query ? `${pathname}?${query}` : pathname;
@@ -196,8 +208,16 @@ export function WorkspaceChrome({
       setActiveDocument,
       recentPages,
       isAdmin,
+      tasksEnabled: workspaceState.tasksEnabled,
     }),
-    [handleSetActivePage, upsertDocument, activeDocument, recentPages, isAdmin],
+    [
+      handleSetActivePage,
+      upsertDocument,
+      activeDocument,
+      recentPages,
+      isAdmin,
+      workspaceState.tasksEnabled,
+    ],
   );
 
   return (
@@ -246,7 +266,7 @@ export function WorkspaceChrome({
         }
         assetsPanel={<WorkspaceUtilityPanel mode="assets" activeHref={currentHref} />}
         tasksEnabled={workspaceState.tasksEnabled}
-        tasksPanel={<WorkspaceTasksPanel activeHref={baseCurrentHref} />}
+        tasksPanel={<WorkspaceTasksPanel />}
         adminPanel={
           <WorkspaceUtilityPanel
             mode="admin"
@@ -502,6 +522,10 @@ function inferWorkspacePage(
 
   if (pathname === "/assets") {
     return { type: "assets", title: "Assets", href: pathname };
+  }
+
+  if (pathname === "/tasks") {
+    return { type: "tasks", title: "Tasks", href: pathname };
   }
 
   if (pathname === "/dashboard/settings") {

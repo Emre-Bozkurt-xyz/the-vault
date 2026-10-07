@@ -63,6 +63,8 @@ export {
 export type ExtensionSyntax = {
   /** Single-line `:::name{…}` block directives, rendered by the host (plan §6). */
   blocks?: readonly string[];
+  /** Leaf blocks that query the whole containing document in Live mode. */
+  documentSourceBlocks?: readonly string[];
   /**
    * `:::name{…}` … `:::` container directives with a body. The host renders
    * them in Read mode and leaves their source alone in Live mode (plan §6).
@@ -255,6 +257,8 @@ export type BlockProps<TSettings = Record<string, unknown>> = {
   attributes: Record<string, string>;
   /** The opening line's source text. */
   source: string;
+  /** Full source of the containing document for blocks that query its content. */
+  documentMarkdown?: string;
   /** A container's body as written; null for a leaf block. */
   body: string | null;
   /** A container's occurrence key in `analysis`; null for a leaf block. */

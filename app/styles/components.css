@@ -225,6 +225,10 @@
       var(--primary);
   }
 
+  .vault-md-checkbox:not(:disabled) {
+    cursor: pointer;
+  }
+
   .vault-md-checkbox:checked::after,
   .vault-cm-task-checkbox[data-checked="true"]::after {
     position: absolute;
@@ -236,6 +240,227 @@
     border-width: 0 0.12rem 0.12rem 0;
     content: "";
     transform: rotate(45deg);
+  }
+
+  /* Live checkboxes are clickable (`live-tasks.ts`). */
+  .vault-cm-task-checkbox {
+    display: inline-block;
+    cursor: pointer;
+  }
+
+  .vault-cm-task-checkbox:hover {
+    border-color: color-mix(in oklab, var(--primary) 70%, var(--foreground) 30%);
+  }
+
+  /* In progress `[/]`: a half-filled box. Cancelled `[-]`: a struck box, and
+     the item's text struck through, in both editor and read views. */
+  .vault-cm-task-checkbox[data-status="in_progress"]::after,
+  .vault-md-li[data-task-status="in_progress"] > .vault-md-checkbox::after,
+  .vault-md-li[data-task-status="in_progress"] > p > .vault-md-checkbox::after {
+    position: absolute;
+    inset: 0.2rem;
+    border-radius: 0.1rem;
+    background: linear-gradient(135deg, var(--primary) 50%, transparent 50%);
+    content: "";
+  }
+
+  .vault-cm-task-checkbox[data-status="cancelled"]::after,
+  .vault-md-li[data-task-status="cancelled"] > .vault-md-checkbox::after,
+  .vault-md-li[data-task-status="cancelled"] > p > .vault-md-checkbox::after {
+    position: absolute;
+    left: 0.18rem;
+    right: 0.18rem;
+    top: calc(50% - 0.06rem);
+    height: 0.12rem;
+    border-radius: 1px;
+    background: var(--muted-foreground);
+    content: "";
+  }
+
+  .vault-md-li[data-task-status="cancelled"] {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  /* `:due[…]` / `:done[…]` as chips: Live (relative, `.vault-cm-task-date`) and
+     Read (absolute, clock-free, `.vault-md-task-date`). */
+  .vault-cm-task-date,
+  .vault-md-task-date {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin: 0 0.1rem;
+    padding: 0 0.4rem;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+    color: var(--muted-foreground);
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-decoration: none;
+    /* Live list lines use a hanging indent (negative text-indent); inherited,
+       it pulls the label out of the chip to the left. */
+    text-indent: 0;
+    vertical-align: 0.08em;
+    white-space: nowrap;
+  }
+
+  .vault-cm-task-date[data-editable="true"] {
+    cursor: pointer;
+  }
+
+  .vault-cm-task-date[data-editable="true"]:hover {
+    border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-cm-task-date[data-state="today"] {
+    border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+    color: var(--foreground);
+  }
+
+  .vault-cm-task-date[data-priority="high"] {
+    border-color: var(--destructive);
+    color: var(--destructive);
+  }
+
+  .vault-cm-task-date[data-state="overdue"] {
+    border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+    color: var(--destructive);
+  }
+
+  .vault-cm-task-date[data-state="done"],
+  .vault-md-task-date[data-kind="done"] {
+    border-style: dashed;
+    opacity: 0.75;
+  }
+
+  .vault-cm-task-date[data-state="invalid"] {
+    border-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+    border-style: dashed;
+    color: var(--destructive);
+  }
+
+  /* The native picker behind a due chip: present for `showPicker()`, never seen. */
+  .vault-cm-task-date-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Subtask progress on a parent task: Live (`.vault-cm-`) and Read (`.vault-md-`). */
+  .vault-cm-task-progress,
+  .vault-md-task-progress {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    color: var(--muted-foreground);
+    font-size: 0.72em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
+    text-indent: 0;
+    vertical-align: 0.1em;
+  }
+
+  .vault-cm-task-progress[data-complete="true"],
+  .vault-md-task-progress[data-complete="true"] {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+    color: var(--foreground);
+  }
+
+  /* `:::tasks{…}` query blocks (`TaskQueryBlock`), in Read and Live mode. */
+  .vault-task-query {
+    margin: 0.75rem 0;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.6rem;
+    background: color-mix(in oklab, var(--card) 45%, transparent);
+    /* Live mode mounts this inside CodeMirror, whose content font may be mono. */
+    font-family: var(--font-sans);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    white-space: normal;
+  }
+
+  .vault-task-query-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.35rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .vault-task-query-title svg {
+    width: 0.85rem;
+    height: 0.85rem;
+  }
+
+  .vault-task-query-list {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .vault-task-query-item {
+    display: grid;
+    grid-template-columns: 0.95rem minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.55rem;
+    padding: 0.25rem 0.3rem;
+    border-radius: 0.35rem;
+    color: var(--foreground);
+    text-decoration: none;
+  }
+
+  a.vault-task-query-item:hover {
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  .vault-task-query-item .vault-task-box {
+    margin-top: 0.2rem;
+  }
+
+  .vault-task-query-text--closed {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  .vault-task-query-meta {
+    display: flex;
+    gap: 0.5rem;
+    padding-top: 0.1rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .vault-task-query-meta--overdue {
+    color: var(--destructive);
+  }
+
+  .vault-task-query-empty {
+    margin: 0.2rem 0.3rem;
+    color: var(--muted-foreground);
+    font-size: 0.85rem;
+  }
+
+  .vault-task-box[data-status="done"] + .vault-task-query-text,
+  .vault-task-box[data-status="cancelled"] + .vault-task-query-text {
+    color: var(--muted-foreground);
   }
 
   /* A line reached through an editor jump (the task agenda): one soft pulse. */
@@ -264,6 +489,37 @@
     border: 1px solid color-mix(in oklab, var(--muted-foreground) 70%, transparent);
     border-radius: 0.28rem;
     background: color-mix(in oklab, var(--background) 82%, var(--card) 18%);
+  }
+
+  button.vault-task-box {
+    padding: 0;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+
+  button.vault-task-box:hover {
+    border-color: color-mix(in oklab, var(--primary) 70%, var(--foreground) 30%);
+  }
+
+  button.vault-task-box:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 60%, transparent);
+    outline-offset: 2px;
+  }
+
+  .vault-task-box[data-status="done"] {
+    border-color: color-mix(in oklab, var(--primary) 86%, var(--foreground) 14%);
+    background: var(--primary);
+  }
+
+  .vault-task-box[data-status="done"]::after {
+    position: absolute;
+    left: 0.29rem;
+    top: 0.1rem;
+    width: 0.3rem;
+    height: 0.52rem;
+    border: solid var(--primary-foreground);
+    border-width: 0 0.12rem 0.12rem 0;
+    content: "";
+    transform: rotate(45deg);
   }
 
   .vault-task-box[data-status="in_progress"]::after {

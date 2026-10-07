@@ -18,6 +18,7 @@ import { DocumentShareDialog } from "@/components/document-share-dialog";
 import { DocumentRestorePoints } from "@/components/document-restore-points";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPanel";
+import { DocumentTasksSection } from "@/components/tasks/DocumentTasksSection";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
@@ -199,8 +200,9 @@ export default async function DocumentPage({
   const documentHref = shareLinkId
     ? `/docs/${document.id}?share=${encodeURIComponent(shareLinkId)}`
     : `/docs/${document.id}`;
+  const tasksEnabled = documentExtensions.enabledIds.includes("vault.tasks");
   const showRightPanel =
-    document.access.canShare || document.access.canEdit || document.access.canDelete;
+    document.access.canShare || document.access.canEdit || document.access.canDelete || tasksEnabled;
 
   return (
     <>
@@ -249,6 +251,7 @@ export default async function DocumentPage({
             versions={versions}
             privateEmbeddedAssets={privateEmbeddedAssets}
             snippetAttachments={snippetAttachments}
+            tasksEnabled={tasksEnabled}
           />
           ) : undefined
         }
@@ -339,6 +342,7 @@ type DocumentContextPanelProps = {
   snippetAttachments: Awaited<
     ReturnType<typeof listDocumentSnippetAttachmentsForOwner>
   >;
+  tasksEnabled: boolean;
 };
 
 function DocumentContextPanel({
@@ -357,6 +361,7 @@ function DocumentContextPanel({
   versions,
   privateEmbeddedAssets,
   snippetAttachments,
+  tasksEnabled,
 }: DocumentContextPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto px-3 py-3 text-sm">
@@ -373,6 +378,8 @@ function DocumentContextPanel({
           </span>
         </div>
       </div>
+
+      {tasksEnabled ? <DocumentTasksSection documentId={documentId} /> : null}
 
       {canShare ? (
         <section className="border-b border-border/70 py-3">

@@ -98,6 +98,9 @@ function visitDirectives(
       const child = children[position];
 
       if (DIRECTIVE_TYPES.has(child.type)) {
+        // Core Markdown transforms (for example task dates) may have already
+        // claimed a directive. Keep their rendered element intact.
+        if (typeof child.data?.hName === "string") continue;
         const isClaimed =
           child.type === "textDirective" &&
           child.name !== undefined &&

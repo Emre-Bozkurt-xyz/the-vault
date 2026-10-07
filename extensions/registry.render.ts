@@ -9,10 +9,12 @@ import calcRender from "./calc/render";
 import calendarRender from "./calendar/render";
 import dictionaryRender from "./dictionary/render";
 import stickersRender from "./stickers/render";
+import tasksRender from "./tasks/render";
 
 export const renderModules: readonly RenderModule[] = [
   calcRender,
   calendarRender,
   dictionaryRender,
   stickersRender,
+  tasksRender,
 ];

@@ -9,6 +9,7 @@ on:
       - "components/**"
       - "db/**"
       - "lib/**"
+      - "extensions/**"
       - "server/**"
       - "types/**"
       - "public/**"

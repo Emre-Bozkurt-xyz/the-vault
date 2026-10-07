@@ -1,11 +1,29 @@
 # Tasks, Agenda, and Inbox
 
-Status as of 2026-09-29: **slice 1 is implemented** (parser, index tables,
-lazy refresh, read-only sidebar agenda, editor jump-to-line), verified by
-`tsc`, lint and unit tests only — the migration has not been applied to a real
-database and the panel has not been exercised in a browser. Slices 2-7 are not
-started. Decisions in §2 were confirmed with the user in conversation on
+Status as of 2026-10-06: **slices 1-6 are implemented and verified** (index and
+sidebar agenda, write-back, authoring in the editor, Inbox and capture, the
+Tasks page, home/side-panel/query blocks/progress); slice 7 code is implemented,
+with browser regression still pending.
+Query-block rows are read-only lists (tick in the document or the agenda), and
+the editor's own Read mode does not expand them, matching calendars, since it
+renders without a document id. Editors can tick task lines in Read mode,
+including duplicate lines and same-document regions. The Inbox can be re-pointed from Settings (§6.3)
+using a generic owned-document field. Decisions in §2 were confirmed with the user in conversation on
 2026-09-28. Tracked as Phase 26 in `docs/01_PROGRESS_TRACKER.md`.
+
+2026-10-06 integration: `:::tasks` is an SDK leaf block declared by
+`extensions/tasks/manifest.ts` and rendered by `extensions/tasks/TaskQueryBlock.tsx`.
+Core owns task-list syntax and the workspace views; the SDK still has no
+workspace-panel contribution. The earlier browser checks preceded this merge,
+so a browser regression pass remains.
+
+2026-10-06 slice 7: `extensions/tasks/server.ts` declares four agent actions over
+the owner-scoped index. `context.tasks` is a permission-gated SDK service: reads
+refresh the index and mutations use the same live collaboration write path as
+the UI. Calendar's upcoming-task action includes dated Markdown tasks. Server
+modules may contribute `loadWorkspaceAgendaEvents`; the host gathers only
+enabled extensions' owner-scoped state, and Calendar contributes events to
+the sidebar and Tasks-page Agenda. Calendar events remain in extension state.
 
 ## 1. Product direction
 
@@ -39,9 +57,10 @@ they neither export with the Markdown nor appear in search.
 - **The agenda is a singleton view, not a document.** It has no file in the
   file explorer, the same way Gallery and Search have none. A derived file would
   go stale, and edits to it would have to be written back somewhere else anyway.
-- **One Inbox document is the capture target.** It is an ordinary document the
-  user can rename, move, and edit. Vault remembers it by id; if it is deleted,
-  the next capture creates a new one. Daily notes are deferred.
+- **Inbox is the default capture target.** It is an ordinary document the user
+  can rename, move, and edit. Vault remembers it by id; if it is deleted,
+  the next Inbox capture creates a new one. The deferred Daily note option now
+  reuses or creates a root document titled with the viewer's local day.
 - **Personal scope.** The agenda shows tasks from documents the viewer **owns**.
   Tasks in documents shared with them do not appear. Assignment (`@person`) and
   shared-document scope come after the core works (§10).
@@ -98,9 +117,12 @@ over prose.
 |---|---|---|
 | `:due[YYYY-MM-DD]` or `:due[YYYY-MM-DD HH:MM]` | Due day, optional start time | The `@` date menu, capture, reschedule actions |
 | `:done[YYYY-MM-DD]` | Completion day | Ticking a task through any Vault surface |
+| `:priority[high]`, `:priority[medium]`, `:priority[low]` | Optional priority; absent means none | Source text, task action menu, agent action |
+| `:repeat[daily]`, `:repeat[weekly]`, `:repeat[monthly]`, `:repeat[yearly]` | Fixed recurrence | Task menu, source, agent action |
+| `:repeat[every N days/weeks/months/years]` or `:repeat[after N days/weeks/months/years]` | Interval 1?365; `after` measures from completion | Source, agent action |
 
 - Day keys are timezone-naive `YYYY-MM-DD` strings, validated with
-  `isValidDayKey` from `lib/calendar.ts`, the same convention the Calendar
+  `isValidDayKey` from `lib/tasks/dates.ts`, the same convention the Calendar
   extension uses. An invalid value leaves the task undated and renders as an
   error-styled chip.
 - A directive only counts on a task line. `:due[…]` in ordinary prose is left
@@ -108,12 +130,54 @@ over prose.
 - A document read by something that does not understand these directives shows
   the literal source. `restoreDirectiveText` in `lib/markdown/calc-directive.ts`
   already restores unclaimed directives verbatim, so nothing silently disappears.
-  The tasks render plugin must claim `due`/`done` before that restore step runs.
+  The tasks render plugin must claim `due`/`done`/`priority`/`repeat` before that restore step runs.
 - Ticking a box by typing `x` in Source mode does not add `:done[…]`. Such a task
   is done with an unknown completion day.
 
-v1 has no priority, start date, recurrence, or tags on the task itself; filtering
+Priority was added as a deferred follow-up on 2026-10-06. The first valid
+priority on the task line wins; unknown values stay visible as literal text.
+Priority chips render in Live and Read modes even with Tasks disabled.
+Date/time order is retained; tied tasks sort high, medium, low, then none.
+
+v1 has no start date or tags on the task itself; filtering
 uses the document's existing frontmatter tags and folder. See §10.
+
+### 3.3 Recurrence (implemented 2026-10-06)
+
+- Completing through Tasks-enabled Live/Read checkboxes, workspace controls or
+  agents marks the occurrence done, stamps its completion day and inserts one
+  next occurrence after the entire task item. Typing `x` in Source does not
+  generate an occurrence; disabled Tasks checkboxes only change their marker.
+- Fixed schedules advance from the due date to the first slot after the caller's
+  local day, skipping missed slots. Early completion advances one interval from
+  the original due date. Undated rules start from today. `after N ...` always
+  advances from the completion day. Times and priority carry forward.
+- Monthly/yearly rules clamp missing days and retain their anchor in source:
+  `:repeat[monthly on 31]` or `:repeat[yearly on 02-29]`. Custom fixed intervals
+  also accept those anchors. The next occurrence writes an anchor automatically
+  when one is absent; `after` rules use each completion date instead.
+- Notes and the entire nested checklist carry forward. Completed subtasks reset
+  to open in the new copy; cancelled ones remain cancelled. Unfinished old
+  subtasks become cancelled (skipped), retaining their text while their new
+  copies stay open. Child dates shift by the parent's date delta.
+- The outer recurring checklist controls the cadence: a child under a recurring
+  ancestor completes normally and waits for the parent to repeat. Child rules
+  are preserved in the new checklist but do not create nested history.
+- Valid repeat fields are removed from the archived block. Reopening and
+  re-completing that history cannot generate a second successor. Invalid rules
+  remain visible and do not generate anything.
+- `lib/tasks/document-edit.ts` plans source edits; task server writes use
+  `withDocumentWriteLock` (a separate four-connection Postgres lock pool) before
+  the existing permission-checked live collaboration write. Live recurring
+  completions delegate to that server path. Embed/playground editors without
+  this workspace handler perform ordinary checkbox toggles only.
+- An inserted occurrence shifts ordinals. Page/sidebar queues invalidate later
+  writes from the old document generation and refresh, rather than selecting a
+  different task by its shifted ordinal. Later writes use source preconditions.
+  Agent callers should list tasks again after recurring completion.
+- Migration `0027_wonderful_microchip.sql` adds nullable indexed `repeat` text
+  and invalidates index stamps. Applied locally. Authenticated browser
+  verification remains.
 
 ## 4. Index
 
@@ -139,6 +203,11 @@ lands.
 | `due_day` | date (`mode: "string"`) null | |
 | `due_time` | text null | `HH:MM` |
 | `done_day` | date (`mode: "string"`) null | |
+| `priority` | text null | `high`, `medium`, `low`; added by `0026_free_lester.sql` |
+| `repeat` | text null | Valid recurrence rule; added by `0027_wonderful_microchip.sql` |
+
+Migration `0026_free_lester.sql` also clears the disposable index stamps so
+unchanged documents are reparsed on their next task read. Markdown is preserved.
 
 Unique `(document_id, ordinal)`. Index `(due_day)` filtered to
 `status in ('open','in_progress')`.
@@ -205,7 +274,7 @@ they stay on their indexed line numbers; that is the accepted cost.
 
 ### 5.2 Through the collaboration layer
 
-Writes go through `withLiveDocumentText` (`lib/mcp/collab-write.ts`). It opens the
+Writes go through `withLiveDocumentText` (`lib/collab-write.ts`, moved from `lib/mcp/` in slice 2). It opens the
 document's live Yjs session like a browser editor and lets the collab server's
 `onStoreDocument` do all persistence. Two changes are needed:
 
@@ -289,11 +358,19 @@ mode plus a full page.
   (`user_extension_settings`) as `inboxDocumentId`. It is re-validated on every
   capture: if the document is missing, deleted, or no longer owned by the user,
   a new document titled "Inbox" is created at the root and the pointer updated.
+  Settings offers a generic document selector with active owned documents; the
+  server validates ownership on save. Clearing it creates a fresh Inbox on the
+  next capture.
 - **Capture paths.** `/task <text>` in the Ctrl+K command mode (the palette already
   switches to commands on `/`), and the panel's Add task input. A trailing date
   phrase is parsed with the §7 grammar: `/task send invoice fri` appends
   `- [ ] send invoice :due[2026-10-02]` to the end of the Inbox. Capture never
   navigates. A toast confirms "Added to Inbox · Fri 2 Oct" with **Undo**.
+- **Daily note option.** `captureTarget` in Tasks settings switches quick capture
+  to a root-level `YYYY-MM-DD` document. A transaction serializes first captures
+  for the same owner so they reuse one note. Captures without an explicit date
+  receive `:due[today]` to stay visible in Today's agenda; explicit dates win.
+  Inbox selection is retained for switching back.
 
 ### 6.4 Elsewhere
 
@@ -340,10 +417,10 @@ mode plus a full page.
   on Enter) widen to `[ xX/-]`. `TaskCheckboxWidget` gains the in-progress and
   cancelled states. Read mode claims `[/]` and `[-]` list items so they render
   as checkboxes rather than literal text.
-- **Clickable checkboxes.** Today the Live widget is decorative (`aria-hidden`) and
-  the Read-mode input is `disabled`. In Live mode, clicking a box for an editor
-  toggles it, as one undo step, and stamps or clears `:done[…]`. Read mode stays
-  non-interactive for now.
+- **Clickable checkboxes.** Live boxes toggle as one undo step and stamp or clear
+  `:done[…]` when Tasks is on. Editors can also tick Read-mode boxes through the
+  permission-checked live write path. Source handles survive wiki/directive
+  splits, duplicate lines, regions and asset transforms; readers remain read-only.
 
 ## 8. Agent actions
 
@@ -352,26 +429,17 @@ mode plus a full page.
 
 - `listTasks` (workspace, read)
 - `addTask` (to the Inbox or a named document)
-- `setTaskStatus`, `setTaskDue` (mutating)
+- `setTaskStatus`, `setTaskDue`, `setTaskPriority`, `setTaskRepeat` (mutating)
 
 The Calendar extension's `listUpcomingTasks` grows to include Markdown tasks, so
 "what is due this week?" covers both.
 
-**As built (2026-10-06).** Extension server code may not touch the database, so
-the actions sit on a new generic **task host service** in the SDK
-(`server/task-services.ts`, types in `lib/extensions/types.ts`):
-`ctx.workspace.tasks.list` (index-backed, owned documents, folder filter by id or
-path) and `ctx.document.tasks` (`list` parsed from the document's text, so shared
-documents work; `setStatus`/`setDue`/`add` with `document:write`).
-`extensions/tasks/server.ts` exposes `listTasks` (workspace) and
-`listDocumentTasks`, `setTaskStatus`, `setTaskDue`, `addTask` (document-scoped,
-so the dispatcher enforces edit access). Lines are **1-based** in the API.
-Writes use the §5.1 locator (`lib/tasks/write.ts`), minimal in-line Y.Text
-edits, origin `"tasks"`, no restore point (`withLiveDocumentText` gained
-`origin`/`snapshot` options), and reindex from the returned text (§5.3).
-`addTask` needs a document; the Inbox fallback waits for slice 4. Calendar's
-`listUpcomingTasks` still covers only calendar entries (its description now says
-so).
+**Folder context (2026-10-06).** `listTasks` results carry the document's
+`folderPath`, `path` (`Courses/CS101/Todo`) and the task's `heading`, and the
+action filters by `folder` (id or path, subfolders by default) and `text`, so
+an agent can tell same-titled task documents in different folders apart.
+`addTask` also accepts a `documentId`, which wins over the ambiguous
+`documentTitle`.
 
 ## 9. Slices
 
@@ -411,7 +479,10 @@ and `npm test`.
 - **Assignment and shared documents.** `@person` in the same `@` menu, limited to
   friends; the agenda then adds "assigned to me" tasks from shared documents,
   with a toggle to show all of them.
-- **Recurrence, priority, start dates and ranges, reminders** (PWA push).
-- **Daily notes** as an alternative capture target.
+- **Start dates and ranges, reminders** (PWA push).
+- **Recurrence:** implemented 2026-10-06; authenticated browser verification remains (see ?3.3).
+- **Priority:** implemented 2026-10-06; signed-in browser verification pending.
+- **Daily notes** as an alternative capture target: implemented 2026-10-06;
+  authenticated browser verification remains.
 - **Moving Calendar events into Markdown.**
-- **Clickable Read-mode checkboxes** for editors.
+- **Clickable Read-mode checkboxes** for editors: implemented 2026-10-06, including duplicate lines and same-document regions; authenticated browser verification remains.

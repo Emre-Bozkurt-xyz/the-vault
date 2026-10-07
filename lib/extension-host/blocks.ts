@@ -36,7 +36,14 @@ export type ExtensionBlockDefinition = {
   name: string;
   /** `leaf`: `:::name{…}` alone. `container`: `:::name{…}` … `:::` with a body. */
   form: "leaf" | "container";
+  includeDocumentSource?: boolean;
 };
+
+const documentSourceBlocks = new Set(
+  extensionManifests.flatMap((manifest) =>
+    (manifest.syntax?.documentSourceBlocks ?? []).map((name) => `${manifest.id}:${name.toLowerCase()}`),
+  ),
+);
 
 /** Builds the owner maps from manifests; throws on a collision. */
 export function buildDirectiveOwners(
@@ -95,13 +102,13 @@ export const extensionBlocks: ReadonlyMap<string, ExtensionBlockDefinition> = ne
   ...[...extensionDirectiveOwners.leaf].map(
     ([name, extensionId]): [string, ExtensionBlockDefinition] => [
       name,
-      { extensionId, name, form: "leaf" },
+      { extensionId, name, form: "leaf", includeDocumentSource: documentSourceBlocks.has(`${extensionId}:${name}`) },
     ],
   ),
   ...[...extensionDirectiveOwners.container].map(
     ([name, extensionId]): [string, ExtensionBlockDefinition] => [
       name,
-      { extensionId, name, form: "container" },
+      { extensionId, name, form: "container", includeDocumentSource: false },
     ],
   ),
 ]);
@@ -123,6 +130,7 @@ export type ParsedExtensionBlock = {
   name: string;
   attributes: Record<string, string>;
   source: string;
+  includeDocumentSource: boolean;
 };
 
 /**
@@ -146,6 +154,7 @@ export function parseExtensionBlockLine(
     name: definition.name,
     attributes: parseDirectiveAttributes(match[2]),
     source: trimmed,
+    includeDocumentSource: Boolean(definition.includeDocumentSource),
   };
 }
 

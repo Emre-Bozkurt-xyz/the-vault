@@ -41,7 +41,7 @@ describe("shipped guides", () => {
   it("documents the extensions a reader can switch on", async () => {
     const slugs = (await listRepoDocs()).map((doc) => doc.slug);
 
-    for (const slug of ["extensions-and-settings", "dictionary", "calc", "calendar"]) {
+    for (const slug of ["extensions-and-settings", "dictionary", "calc", "calendar", "tasks"]) {
       expect(slugs, `missing guide: ${slug}`).toContain(slug);
     }
   });

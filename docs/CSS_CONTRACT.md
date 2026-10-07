@@ -58,6 +58,10 @@ match inside one document's rendered body.
 `.vault-md-small`, `.vault-md-sub`, `.vault-md-sup`, `.vault-md-kbd`,
 `.vault-md-abbr`.
 
+Task priority badges use `.vault-md-task-priority` with `data-priority` equal to `high`, `medium`, or `low`.
+
+Recurrence badges use `.vault-md-task-repeat`.
+
 ## Tables & definition lists
 
 `.vault-md-table-wrap`, `.vault-md-table`, `.vault-md-th`, `.vault-md-td`,
@@ -150,6 +154,25 @@ generally is forward-compatible, so new states never need new contract classes.
 Every one of these is applied by calc's `CalcValue`/`CalcBlock` (`extensions/calc/`) after the rehype
 pipeline, so none appear in `lib/html-class.ts` and authored raw HTML cannot
 mint them.
+
+## Tasks
+
+Task-list items and their dates. See `docs/24_TASKS_AND_AGENDA_PLAN.md`.
+
+| Class | Element |
+|---|---|
+| `.vault-md-checkbox` | a task item's checkbox (`<input type="checkbox">`) |
+| `.vault-md-task-text` | the inline content of a task item, after the checkbox |
+| `.vault-md-task-date` | a `:due[…]` / `:done[…]` chip (`<time datetime>`) |
+| `.vault-md-task-progress` | done/total over a task's direct subtasks (`data-complete="true"` when all done) |
+| `.vault-task-query` | a `:::tasks{…}` block (`data-scope="doc"` or `"all"`) |
+| `.vault-task-query-title` / `-list` / `-item` / `-text` / `-meta` / `-empty` | its header, rows and empty state |
+
+State is carried by data attributes: `.vault-md-li[data-task-status="<status>"]`
+for the two statuses GFM has no box for (`in_progress`, `cancelled`; open and
+done use the checkbox's `:checked`), and `.vault-md-task-date[data-kind="due"|"done"]`.
+Read-view chips show an absolute date and never a relative or overdue state,
+because they also render on the server and on public pages.
 
 ## Code blocks
 

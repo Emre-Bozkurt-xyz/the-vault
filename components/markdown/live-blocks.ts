@@ -113,6 +113,7 @@ export type LiveExtensionBlock = {
   startLine: number;
   endLine: number;
   source: string;
+  documentMarkdown?: string;
   extensionId: string;
   name: string;
   attributes: Record<string, string>;
@@ -807,6 +808,7 @@ class ExtensionBlockWidget extends WidgetType {
   eq(widget: ExtensionBlockWidget) {
     return (
       widget.block.source === this.block.source &&
+      widget.block.documentMarkdown === this.block.documentMarkdown &&
       widget.block.extensionId === this.block.extensionId &&
       widget.options.extensions === this.options.extensions &&
       widget.options.extensionStateStore === this.options.extensionStateStore &&
@@ -829,6 +831,7 @@ class ExtensionBlockWidget extends WidgetType {
         name: this.block.name,
         attributes: this.block.attributes,
         source: this.block.source,
+        documentMarkdown: this.block.documentMarkdown,
         links: {
           wikiLinks: this.options.wikiLinks,
           assetLinks: this.options.assetLinks,
@@ -1221,6 +1224,7 @@ function getLiveExtensionBlocks(
 ): LiveExtensionBlock[] {
   const blocks: LiveExtensionBlock[] = [];
   const doc = state.doc;
+  let documentMarkdown: string | null = null;
 
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
     const line = doc.line(lineNumber);
@@ -1237,6 +1241,9 @@ function getLiveExtensionBlocks(
 
     blocks.push({
       kind: "extensionBlock",
+      documentMarkdown: parsed.includeDocumentSource
+        ? (documentMarkdown ??= doc.toString())
+        : undefined,
       from: line.from,
       to: line.to,
       startLine: lineNumber,

@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { todayDayKey } from "@/lib/tasks/dates";
+import { toggleReadCheckboxAction } from "@/server/tasks";
 import {
   acceptCompletion,
   autocompletion,
@@ -125,7 +127,19 @@ import {
   consumeEditorJump,
   subscribeToEditorJumps,
 } from "@/lib/editor-jump-events";
-import { applyEditorJump } from "@/components/markdown/editor-jump";
+import {
+  applyEditorJump,
+  editorJumpHighlight,
+} from "@/components/markdown/editor-jump";
+import {
+  TaskCheckboxWidget,
+  TaskProgressWidget,
+  addTaskDateDecorations,
+  subtaskProgress,
+  taskAuthoringEnabled,
+  recurringTaskCompletion,
+  taskDateCompletionSource,
+} from "@/components/markdown/live-tasks";
 import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
 import { shortcutsByScope } from "@/lib/shortcuts/registry";
 import type { ResolvedKeybindings } from "@/lib/shortcuts/resolve";
@@ -462,6 +476,8 @@ export function MarkdownEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [readTaskError, setReadTaskError] = useState<string | null>(null);
+  const [readTaskPending, setReadTaskPending] = useState(false);
   const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
   const [uploadingAsset, setUploadingAsset] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -509,6 +525,7 @@ export function MarkdownEditor({
   // string (rebuilt inside) so a fresh `enabledExtensionIds` array reference
   // doesn't churn this memo — and, downstream, reconfigure the whole editor.
   const enabledExtensionKey = (enabledExtensionIds ?? []).join("|");
+  const tasksEnabled = (enabledExtensionIds ?? []).includes("vault.tasks");
   const extensionSlashCommands = useMemo<ExtensionSlashCommand[]>(
     () =>
       toExtensionSlashCommands(
@@ -835,6 +852,38 @@ export function MarkdownEditor({
     };
   }, [collabSession, editorMode, isCollaborative]);
 
+  useEffect(() => {
+    markdownValueRef.current = markdownValue;
+  }, [markdownValue]);
+
+  const toggleReadTask = useCallback(async (
+    task: { line: number; rawLine: string },
+    checked: boolean,
+  ) => {
+    setReadTaskPending(true);
+    setReadTaskError(null);
+    try {
+      const result = await toggleReadCheckboxAction({
+        documentId,
+        line: task.line,
+        rawLine: task.rawLine,
+        checked,
+        today: todayDayKey(),
+      });
+      if (!result.ok) {
+        setReadTaskError(result.error);
+      } else if (!isCollaborative) {
+        setMarkdownValue(result.markdown);
+        setEditorMountMarkdown(result.markdown);
+      }
+    } catch {
+      setReadTaskError("Could not change the task.");
+    } finally {
+      setReadTaskPending(false);
+    }
+  }, [documentId, isCollaborative]);
+
+
   const extensions = useMemo(
     () => {
       // Host capabilities a `run` slash contribution can name
@@ -852,10 +901,18 @@ export function MarkdownEditor({
         }
       }
       const baseExtensions = [
-      // An extension's `openLinkCompletion({ filter })` narrowing (e.g. the
-      // dictionary's `/term`). Registered for every mode, since the slash menu
-      // is not Live-only.
+      // An extension's `openLinkCompletion({ filter })` narrowing.
       linkCompletionScopeField,
+      // Jump-to-line highlight (`editor-jump.ts`). Registered here, not appended
+      // at jump time: the editor reconfigures whenever this memo recomputes,
+      // which would drop an appended field and cut the highlight short.
+      editorJumpHighlight,
+      // Gates the `@` date menu and the `:done[…]` stamp on a checkbox click
+      // (`live-tasks.ts`); rendering and plain toggling work regardless.
+      taskAuthoringEnabled.of(tasksEnabled),
+      recurringTaskCompletion.of(embedSessionToken ? null : (task) => {
+        void toggleReadTask(task, true);
+      }),
       markdownLanguage({
         codeLanguages: fencedCodeLanguage,
         htmlTagLanguage: html({
@@ -1171,6 +1228,8 @@ export function MarkdownEditor({
       baseExtensions.push(
         autocompletion({
           override: [
+            // `@` date menu on task lines; returns nothing unless Tasks is on.
+            taskDateCompletionSource,
             ...(slashMenuEnabled
               ? [
                   // The sources call these only on input, never during render;
@@ -1278,6 +1337,8 @@ export function MarkdownEditor({
       runEditorCommand,
       extensionSlashCommands,
       slashMenuEnabled,
+      tasksEnabled,
+      toggleReadTask,
       liveContributions,
     ],
   );
@@ -1584,6 +1645,7 @@ export function MarkdownEditor({
     [collabSession, editorMode, isCollaborative],
   );
 
+
   // Jumps to a line, e.g. from the task agenda (`lib/editor-jump-events.ts`).
   // A retained jump waits for the view that will stay: with collaboration, the
   // local view mounted first is replaced once the room syncs and its lines may
@@ -1853,6 +1915,7 @@ export function MarkdownEditor({
                 >
                   <MarkdownDocument
                     markdown={markdownValue}
+                    onTaskToggle={!embedSessionToken && !readTaskPending ? toggleReadTask : undefined}
                     wikiLinks={wikiLinkMap}
                     assetLinks={assetLinkMap}
                     contained={false}
@@ -1864,6 +1927,8 @@ export function MarkdownEditor({
           </div>
         </div>
         </DocumentOverlayHost>
+        {readTaskPending && editorMode === "live" ? <p role="status" className="mt-3 text-sm text-muted-foreground">Updating repeating task?</p> : null}
+        {readTaskError ? <p role="alert" className="mt-3 text-sm text-destructive">{readTaskError}</p> : null}
         {dialogRequest ? (
           <ExtensionDialog
             key={dialogRequest.key}
@@ -3180,25 +3245,6 @@ function formatAssetFileSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-class TaskCheckboxWidget extends WidgetType {
-  constructor(private readonly checked: boolean) {
-    super();
-  }
-
-  eq(widget: TaskCheckboxWidget) {
-    return widget.checked === this.checked;
-  }
-
-  toDOM() {
-    const checkbox = document.createElement("span");
-    checkbox.className = "vault-cm-task-checkbox";
-    checkbox.dataset.checked = String(this.checked);
-    checkbox.setAttribute("aria-hidden", "true");
-
-    return checkbox;
-  }
-}
-
 class ListMarkerWidget extends WidgetType {
   constructor(private readonly marker: string) {
     super();
@@ -3727,7 +3773,7 @@ function getActiveMarkdownBlockRange(
     };
   }
 
-  const listPrefix = startLine.text.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/);
+  const listPrefix = startLine.text.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/);
 
   if (listPrefix) {
     let from = fromLineNumber;
@@ -3955,12 +4001,12 @@ function decorateInactiveMarkdownLine(
     ranges.push(hiddenMarkdown.range(lineFrom, lineFrom + quote[0].length));
   }
 
-  const list = text.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/);
+  const list = text.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/);
 
   if (list) {
     ranges.push(previewList.range(lineFrom));
 
-    const task = text.match(/^(\s*)[-*+]\s+\[([ xX])]\s+/);
+    const task = text.match(/^(\s*)[-*+]\s+\[([ xX/-])]\s+/);
 
     if (task) {
       const markerFrom = lineFrom + task[1].length;
@@ -3968,8 +4014,24 @@ function decorateInactiveMarkdownLine(
       if (!hasActivePositionInRange(activePositions, markerFrom, markerTo)) {
         ranges.push(
           Decoration.replace({
-            widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x"),
+            widget: new TaskCheckboxWidget(task[2]),
           }).range(markerFrom, markerTo),
+        );
+      }
+
+      // `:due[…]` / `:done[…]` chips (`live-tasks.ts`); source shows while the
+      // cursor is inside one.
+      addTaskDateDecorations(ranges, lineFrom, text, /[xX]/.test(task[2]), (from, to) =>
+        hasActivePositionInRange(activePositions, from, to),
+      );
+
+      const progress = subtaskProgress(doc, lineNumber);
+      if (progress) {
+        ranges.push(
+          Decoration.widget({
+            widget: new TaskProgressWidget(progress.done, progress.total),
+            side: 1,
+          }).range(lineFrom + text.length),
         );
       }
     } else {
@@ -5425,7 +5487,7 @@ function trailingBlockAnchorMatch(text: string) {
 }
 
 function isListContinuation(text: string) {
-  return /^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+|\S)/.test(text);
+  return /^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+|\S)/.test(text);
 }
 
 function CollaborationPresence({ users }: { users: CollabPresenceUser[] }) {
@@ -6155,7 +6217,7 @@ function getRemovablePrefixLength(
   }
 
   if (format === "taskList") {
-    return lineText.match(/^(\s*)[-*+]\s+\[[ xX]]\s+/)?.[0].length ?? 0;
+    return lineText.match(/^(\s*)[-*+]\s+\[[ xX/-]]\s+/)?.[0].length ?? 0;
   }
 
   if (format === "heading1" || format === "heading2" || format === "heading3") {
@@ -6175,7 +6237,7 @@ function prefixToReplace(format: MarkdownFormat, lineText: string) {
   }
 
   if (format === "bulletList" || format === "orderedList" || format === "taskList") {
-    return lineText.match(/^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+\.\s+)/)?.[0] ?? null;
+    return lineText.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/)?.[0] ?? null;
   }
 
   if (format === "blockquote") {

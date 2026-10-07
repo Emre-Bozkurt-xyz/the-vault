@@ -29,12 +29,6 @@ export type {
   ExtensionAgentActionScope,
   ExtensionAgentDocumentsApi,
   ExtensionAgentDocumentSummary,
-  ExtensionAgentDocumentTasksApi,
-  ExtensionAgentTask,
-  ExtensionAgentTaskQuery,
-  ExtensionAgentTaskRef,
-  ExtensionAgentTaskStatus,
-  ExtensionAgentWorkspaceTasksApi,
 } from "@/lib/extensions/types";
 
 // Core document data an extension may read or write through the documents
@@ -92,11 +86,29 @@ export type LoadRenderData = (
   context: RenderDataContext,
 ) => Promise<JsonValue | null>;
 
+/** A dated, read-only workspace item supplied by an extension to agenda surfaces. */
+export type WorkspaceAgendaEvent = {
+  id: string;
+  documentId: string;
+  documentTitle: string;
+  day: string;
+  time: string | null;
+  text: string;
+};
+
+export type LoadWorkspaceAgendaEvents = (context: {
+  /** Only this extension's state in documents the acting user owns. */
+  rows: Array<{ documentId: string; documentTitle: string; stateKey: string; state: ExtensionStateValue }>;
+  from: string;
+  to: string;
+}) => WorkspaceAgendaEvent[];
+
 export type ExtensionServerModule = {
   manifestId: string;
   state: readonly ExtensionStateDeclaration[];
   actions: readonly VaultExtensionAgentAction[];
   loadRenderData: LoadRenderData | null;
+  loadWorkspaceAgendaEvents: LoadWorkspaceAgendaEvents | null;
 };
 
 export function defineServer<const M extends ExtensionManifest>(
@@ -105,6 +117,7 @@ export function defineServer<const M extends ExtensionManifest>(
     state?: readonly ExtensionStateDeclaration[];
     actions?: ReadonlyArray<ExtensionAction<M>>;
     loadRenderData?: LoadRenderData;
+    loadWorkspaceAgendaEvents?: LoadWorkspaceAgendaEvents;
   },
 ): ExtensionServerModule {
   return {
@@ -114,5 +127,8 @@ export function defineServer<const M extends ExtensionManifest>(
     // runtime it is exactly the registry's action shape.
     actions: (server.actions ?? []) as unknown as VaultExtensionAgentAction[],
     loadRenderData: server.loadRenderData ?? null,
+    loadWorkspaceAgendaEvents: server.loadWorkspaceAgendaEvents ?? null,
   };
 }
+
+export { parseRecurrence } from "@/lib/tasks/recurrence";

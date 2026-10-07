@@ -43,6 +43,14 @@ export const safeHtmlSchema: Schema = {
     "br",
     "img",
     "iframe",
+    // Emitted by `remarkTasks` for `:due[…]` / `:done[…]` on a task item and
+    // mapped to a date chip. Carries only its kind and a date value, which the
+    // component re-validates; an authored copy can only display a date.
+    "vault-task-date",
+    "vault-task-priority",
+    "vault-task-repeat",
+    // `remarkTasks`: done/total over a task's direct subtasks. Two numbers.
+    "vault-task-progress",
     // Emitted by `remarkInlineDirectives` for each claimed inline directive
     // (e.g. `:calc[…]`), and mapped to `ExtensionInlineHost` by react-markdown.
     // It must survive sanitization to reach that mapping, so it is allowed as a
@@ -107,6 +115,13 @@ export const safeHtmlSchema: Schema = {
     // authored element carry it. Worst case for authored raw HTML is
     // re-displaying an occurrence already in the *same* document — the lookup
     // is built per render, so it reaches no private or cross-document data.
+    "vault-task-repeat": ["data-value", "dataValue"],
+    "vault-task-priority": ["data-value", "dataValue"],
+    "vault-task-date": ["data-kind", "dataKind", "data-value", "dataValue"],
+    "vault-task-progress": ["data-done", "dataDone", "data-total", "dataTotal"],
+    // `[/]` and `[-]` task items (`remarkTasks`). Scoped to `li` for the same
+    // reason as the calc key: it styles a checkbox and means nothing elsewhere.
+    li: [...(defaultSchema.attributes?.li ?? []), "data-task-status", "dataTaskStatus"],
     "vault-extension-inline": ["data-extension-key", "dataExtensionKey"],
   },
   protocols: {

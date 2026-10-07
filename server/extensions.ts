@@ -24,7 +24,7 @@ import {
   applyAnchoredEdits,
   insertAtHeading,
 } from "@/lib/mcp/document-edits";
-import { withLiveDocumentText } from "@/lib/mcp/collab-write";
+import { withLiveDocumentText } from "@/lib/collab-write";
 import { getAssetForUser } from "@/server/assets";
 import {
   createDocumentForUser,
@@ -43,10 +43,9 @@ import {
   upsertDocumentExtensionStateForUser,
 } from "@/server/document-extensions";
 import { resolveViewerExtensions } from "@/server/extension-runtime";
-import {
-  buildDocumentTasksApi,
-  buildWorkspaceTasksApi,
-} from "@/server/task-services";
+import { listAccessibleFoldersForUser } from "@/server/folders-data";
+import { collectFolderSubtreeIds, resolveFolderRef } from "@/lib/folder-paths";
+import { addTaskToDocument, applyTaskChange, captureTask, getAgentTask, listAgentTasks, TaskMovedError } from "@/server/tasks-data";
 
 /**
  * Permissions for which {@link buildDocumentContext} can currently supply a
@@ -358,9 +357,6 @@ async function buildDocumentContext(
     }
 
     context.markdown = markdown;
-    context.tasks = buildDocumentTasksApi(userId, documentId, {
-      write: permissions.has("document:write"),
-    });
   }
 
   if (permissions.has("asset:read")) {
@@ -388,8 +384,7 @@ async function buildDocumentContext(
 
 /**
  * Builds the workspace surface for a `scope: "workspace"` action: a cross-document,
- * owner-scoped, extension-bound state reader plus the task listing. Present only
- * with `document:read`.
+ * owner-scoped, extension-bound state reader. Present only with `document:read`.
  */
 function buildWorkspaceContext(
   entry: AgentActionEntry,
@@ -415,7 +410,6 @@ function buildWorkspaceContext(
         }));
       },
     };
-    context.tasks = buildWorkspaceTasksApi(userId);
   }
 
   return context;
@@ -496,6 +490,53 @@ export async function runAgentActionForUser({
             create: (documentInput) => createDocumentForUser(userId, documentInput),
           }
         : {}),
+    };
+    context.tasks = {
+      list: async ({ folder, recursive, ...options }) => {
+        // Tasks carry their document's folder path so same-titled notes in
+        // different folders (two "Todo"s under different courses) stay apart.
+        const folders = await listAccessibleFoldersForUser(userId);
+        let folderIds: string[] | undefined;
+        if (folder) {
+          const resolved = resolveFolderRef(folders, folder);
+          if (!resolved.ok) throw new Error(resolved.error);
+          folderIds = recursive === false
+            ? [resolved.folder.id]
+            : collectFolderSubtreeIds(folders, resolved.folder.id);
+        }
+        const folderPaths = new Map(folders.map((entry) => [entry.id, entry.path]));
+        const rows = await listAgentTasks(userId, { ...options, folderIds });
+        return rows.map(({ folderId, ...row }) => {
+          const folderPath = folderId ? (folderPaths.get(folderId) ?? null) : null;
+          return { ...row, folderPath, path: folderPath ? `${folderPath}/${row.documentTitle}` : row.documentTitle };
+        });
+      },
+      ...(actionPermissions.has("document:write") ? {
+        add: async ({ text, today, documentId: targetId, documentTitle }) => {
+          // An id is unambiguous; a title may match several documents in
+          // different folders, in which case the first match wins.
+          const target = targetId
+            ? (await getDocumentAccess(userId, targetId)).role === "owner"
+              ? { documentId: targetId }
+              : null
+            : documentTitle
+              ? await findOwnedDocumentByTitleForUser(userId, documentTitle)
+              : null;
+          if (targetId && !target) throw new Error("That document was not found or is not yours.");
+          if (documentTitle && !target) throw new Error(`No owned document titled "${documentTitle}" was found.`);
+          const captured = target
+            ? await addTaskToDocument(userId, target.documentId, { text, today })
+            : await captureTask(userId, { text, today });
+          if (!captured) throw new Error("Task text is empty.");
+          return { documentId: captured.documentId, line: captured.lineIndex,
+            rawLine: captured.line, text: captured.text, dueDay: captured.due?.day ?? null };
+        },
+        change: async ({ documentId, ordinal, today, change }) => {
+          const task = await getAgentTask(userId, documentId, ordinal);
+          if (!task) throw new TaskMovedError();
+          await applyTaskChange(userId, { documentId, line: task.line, rawLine: task.rawLine, change, today });
+        },
+      } : {}),
     };
   }
 

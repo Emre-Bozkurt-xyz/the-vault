@@ -97,8 +97,7 @@ export type ExtensionAgentMarkdownApi = {
  * Document surface for a document-scoped agent action. Only the capabilities the
  * action's declared permissions allow are populated: `state` always (reads need
  * `document:read`, writes `document:write-extension-state`), `markdown.read` with
- * `document:read` and its mutators with `document:write`, `tasks` likewise, and
- * `assets` with `asset:read`.
+ * `document:read` and its mutators with `document:write`, `assets` with `asset:read`.
  */
 export type ExtensionAgentDocumentContext = {
   id: string;
@@ -106,8 +105,6 @@ export type ExtensionAgentDocumentContext = {
   state: ExtensionAgentStateApi;
   assets?: ExtensionAgentAssetApi;
   markdown?: ExtensionAgentMarkdownApi;
-  /** Present with `document:read` (mutators with `document:write`). */
-  tasks?: ExtensionAgentDocumentTasksApi;
 };
 
 export type ExtensionAgentWorkspaceStateEntry = {
@@ -162,98 +159,41 @@ export type ExtensionAgentDocumentsApi = {
   }) => Promise<{ documentId: string; title: string }>;
 };
 
-export type ExtensionAgentTaskStatus = "open" | "in_progress" | "done" | "cancelled";
-
-/**
- * One Markdown task line (`- [ ] … :due[…]`), as the task host service reports
- * it (`docs/24_TASKS_AND_AGENDA_PLAN.md`). `line` is **1-based**, matching the
- * MCP `read_document` tool; `line` + `rawLine` together address the task for a
- * write, and a write is refused if the line has since changed.
- */
-export type ExtensionAgentTask = {
-  documentId: string;
-  documentTitle: string;
-  /** Folder display path ("Courses/CS101"), or null at the root. */
-  folderPath: string | null;
-  /** `folderPath/documentTitle`. */
-  path: string;
-  line: number;
-  rawLine: string;
-  /** Nth task in its document, 0-based; `parentOrdinal` points at a parent task. */
-  ordinal: number;
-  parentOrdinal: number | null;
-  status: ExtensionAgentTaskStatus;
-  /** First line of the task, Markdown, without its `:due`/`:done` fields. */
-  text: string;
-  note: string | null;
-  /** Nearest heading above the task. */
-  heading: string | null;
-  dueDay: string | null;
-  dueTime: string | null;
-  doneDay: string | null;
-};
-
-export type ExtensionAgentTaskQuery = {
-  /** Defaults to open and in-progress. */
-  statuses?: ExtensionAgentTaskStatus[];
-  /** Inclusive `YYYY-MM-DD` bounds on the due day. */
-  dueFrom?: string;
-  dueThrough?: string;
-  dated?: "any" | "dated" | "undated";
-  /** Folder id or display path; includes subfolders unless `recursive` is false. */
-  folder?: string;
-  recursive?: boolean;
-  documentId?: string;
-  /** Case-insensitive substring of the task text. */
-  text?: string;
-  /** Defaults to 100, at most 500. */
-  limit?: number;
-};
-
-/**
- * Cross-document task listing for a `scope: "workspace"` action, over the
- * user's own documents (the task index's personal scope). Present with
- * `document:read`.
- */
-export type ExtensionAgentWorkspaceTasksApi = {
-  list: (
-    query: ExtensionAgentTaskQuery,
-  ) => Promise<{ tasks: ExtensionAgentTask[]; total: number }>;
-};
-
-/** Addresses one task for a write: its 1-based line and exact source line. */
-export type ExtensionAgentTaskRef = { line: number; rawLine: string };
-
-/**
- * Tasks in the targeted document, read from its current text (so it works for
- * documents shared with the user too). `list` needs `document:read`; the
- * mutators need `document:write`, edit only the task's own line through the
- * collab session, and return the task as it now reads.
- */
-export type ExtensionAgentDocumentTasksApi = {
-  list: () => Promise<ExtensionAgentTask[]>;
-  setStatus?: (
-    ref: ExtensionAgentTaskRef,
-    status: ExtensionAgentTaskStatus,
-    options: { today: string },
-  ) => Promise<ExtensionAgentTask>;
-  setDue?: (
-    ref: ExtensionAgentTaskRef,
-    due: { day: string; time?: string | null } | null,
-  ) => Promise<ExtensionAgentTask>;
-  add?: (input: {
-    text: string;
-    due?: { day: string; time?: string | null } | null;
-    /** Append to the end of this heading's section instead of the document. */
-    heading?: string;
-  }) => Promise<ExtensionAgentTask>;
-};
-
 export type ExtensionAgentWorkspaceContext = {
   /** Present with `document:read`. */
   state?: ExtensionAgentWorkspaceStateApi;
-  /** Present with `document:read`. */
-  tasks?: ExtensionAgentWorkspaceTasksApi;
+};
+
+/** Owner-scoped Markdown tasks, backed by the disposable task index and live write path. */
+export type ExtensionAgentTasksApi = {
+  list: (input: {
+    from?: string; to?: string; includeDone?: boolean; limit?: number;
+    /** Folder id or display path ("Courses/CS101"); subfolders included unless `recursive` is false. */
+    folder?: string; recursive?: boolean;
+    /** Case-insensitive substring of the task text. */
+    text?: string;
+  }) => Promise<Array<{
+    documentId: string; documentTitle: string;
+    /** Folder display path, or null at the root; `path` is `folderPath/documentTitle`. */
+    folderPath: string | null; path: string;
+    /** Nearest heading above the task. */
+    heading: string | null;
+    ordinal: number; line: number; rawLine: string;
+    status: "open" | "in_progress" | "done" | "cancelled"; text: string;
+    dueDay: string | null; dueTime: string | null; doneDay: string | null;
+    priority: "high" | "medium" | "low" | null;
+    repeat: string | null;
+  }>>;
+  add?: (input: { text: string; today: string; documentId?: string; documentTitle?: string }) => Promise<{
+    documentId: string; line: number; rawLine: string; text: string; dueDay: string | null;
+  }>;
+  change?: (input: {
+    documentId: string; ordinal: number; today: string;
+    change: { type: "status"; status: "open" | "in_progress" | "done" | "cancelled" }
+      | { type: "due"; day: string | null; time?: string | null }
+      | { type: "priority"; priority: "high" | "medium" | "low" | null }
+      | { type: "repeat"; repeat: string | null };
+  }) => Promise<void>;
 };
 
 /**
@@ -279,6 +219,8 @@ export type ExtensionAgentActionContext = {
    * `fx`, except this one *is* permission-gated.
    */
   documents?: ExtensionAgentDocumentsApi;
+  /** Present with document:read; mutators require document:write. */
+  tasks?: ExtensionAgentTasksApi;
   /**
    * The acting user's settings for this extension (schema defaults when they
    * have none stored).
@@ -491,5 +433,12 @@ export type ExtensionSettingsField =
       description?: string;
       /** Label for the "no folder chosen" option, e.g. "Same folder as the document". */
       emptyLabel: string;
+    }
+  /** An owned, non-deleted document id, checked again by the host on save. */
+  | {
+      type: "document";
+      key: string;
+      label: string;
+      description?: string;
+      emptyLabel: string;
     };
-

@@ -51,10 +51,57 @@ export function todayDayKey(now: Date = new Date()): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+export type CalendarMonth = { year: number; month: number };
+
+export function addMonths({ year, month }: CalendarMonth, delta: number): CalendarMonth {
+  const zeroBased = month - 1 + delta;
+  return {
+    year: year + Math.floor(zeroBased / 12),
+    month: ((zeroBased % 12) + 12) % 12 + 1,
+  };
+}
+
+const monthLabels = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+export function formatMonthLabel({ year, month }: CalendarMonth): string {
+  return `${monthLabels[month - 1]} ${year}`;
+}
+
+/** Six-row Monday-start grid for the Tasks month view. */
+export function getMonthMatrix(
+  { year, month }: CalendarMonth,
+  weekStartsOn: 0 | 1 = 0,
+  todayKey: string = todayDayKey(),
+): { dayKey: string; day: number; inMonth: boolean; isToday: boolean }[][] {
+  const leading = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() - weekStartsOn + 7) % 7;
+  const date = new Date(Date.UTC(year, month - 1, 1 - leading));
+  const cells = Array.from({ length: 42 }, () => {
+    const dayKey = fromUtcDate(date);
+    const cell = {
+      dayKey,
+      day: date.getUTCDate(),
+      inMonth: date.getUTCMonth() + 1 === month && date.getUTCFullYear() === year,
+      isToday: dayKey === todayKey,
+    };
+    date.setUTCDate(date.getUTCDate() + 1);
+    return cell;
+  });
+  return Array.from({ length: 6 }, (_, week) => cells.slice(week * 7, week * 7 + 7));
+}
+
 export function addDaysToDayKey(dayKey: string, days: number): string {
   const date = toUtcDate(dayKey);
   date.setUTCDate(date.getUTCDate() + days);
   return fromUtcDate(date);
+}
+
+/** The Monday after `dayKey` (a week ahead when `dayKey` is itself a Monday). */
+export function nextWeekStart(dayKey: string): string {
+  const weekday = toUtcDate(dayKey).getUTCDay();
+  return addDaysToDayKey(dayKey, ((8 - weekday) % 7) || 7);
 }
 
 /** Whole days from `from` to `to` (negative when `to` is earlier). */

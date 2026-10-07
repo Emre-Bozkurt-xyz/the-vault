@@ -44,6 +44,7 @@ describe("parseExtensionBlockLine", () => {
       name: "widget",
       attributes: { id: "w1" },
       source: ":::widget{id=w1}",
+      includeDocumentSource: false,
     });
     expect(parseExtensionBlockLine(":::Widget", blocks)?.attributes).toEqual({});
   });
@@ -53,6 +54,13 @@ describe("parseExtensionBlockLine", () => {
     expect(parseExtensionBlockLine(":::sum", blocks)).toBeNull();
     expect(parseExtensionBlockLine(":::widget{id=1} trailing", blocks)).toBeNull();
     expect(parseExtensionBlockLine("text :::widget", blocks)).toBeNull();
+  });
+
+  it("marks task query blocks as needing the containing source in Live mode", () => {
+    expect(parseExtensionBlockLine(":::tasks{due=week}", extensionBlocks)).toMatchObject({
+      extensionId: "vault.tasks",
+      includeDocumentSource: true,
+    });
   });
 });
 
@@ -113,7 +121,7 @@ describe("planExtensionParts", () => {
     const fenced = "```md\n:::widget{id=1}\n:::sum\n```";
 
     expect(planExtensionParts(fenced, state, owners)).toEqual([
-      { kind: "markdown", markdown: fenced, pieceIndex: 0 },
+      { kind: "markdown", markdown: fenced, pieceIndex: 0, startLine: 0 },
     ]);
     expect(planExtensionParts(":::sum\na = 1\nb = 2", state, owners)).toMatchObject([
       { kind: "container", body: "a = 1\nb = 2" },

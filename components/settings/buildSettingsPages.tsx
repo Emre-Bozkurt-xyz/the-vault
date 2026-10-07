@@ -21,7 +21,7 @@ import { SnippetsSettingsSection } from "@/components/settings/SnippetsSettingsS
 import { getInstalledExtensionIds } from "@/lib/extension-host/manifests";
 import { serverExtensionEntries } from "@/lib/extension-host/server";
 import { buildPreferences } from "@/lib/settings/preferences";
-import { listOwnedFolderOptionsForUser } from "@/server/extension-documents";
+import { listOwnedDocumentOptionsForUser, listOwnedFolderOptionsForUser } from "@/server/extension-documents";
 import { listConnectedAuthProviders } from "@/server/profile";
 import {
   getViewerStylingPreference,
@@ -91,6 +91,14 @@ export async function buildSettingsPages(input: {
   );
   const folderOptions = needsFolders
     ? await listOwnedFolderOptionsForUser(profile.id)
+    : [];
+  const needsDocuments = configurableExtensions.some((extension) =>
+    extension.settings?.sections?.some((section) =>
+      section.fields.some((field) => field.type === "document"),
+    ),
+  );
+  const documentOptions = needsDocuments
+    ? await listOwnedDocumentOptionsForUser(profile.id)
     : [];
 
   const corePages: SettingsPage[] = [
@@ -223,6 +231,7 @@ export async function buildSettingsPages(input: {
               ...(storedByExtension.get(extension.id)?.settings ?? {}),
             }}
             folderOptions={folderOptions}
+            documentOptions={documentOptions}
           />
         ),
       };

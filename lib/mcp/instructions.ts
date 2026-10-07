@@ -18,4 +18,4 @@ Editing:
 
 Extensions:
 - Optional features (tasks, calendars, calculations, dictionary, stickers) expose actions through list_extension_actions and run_extension_action. Call list_extension_actions first for ids and input schemas. If a needed extension is listed under disabledExtensions, ask the user to enable it in Settings → Extensions.
-- Checklist items ("- [ ] …", with optional :due[YYYY-MM-DD]) are tasks. With the Tasks extension enabled, use vault.tasks.listTasks to find them across folders (each comes with its document path) and setTaskStatus / setTaskDue / addTask to change them, rather than editing checkbox text by hand. Pass the user's local date as \`today\` when you know it.`;
+- Checklist items ("- [ ] …", with optional :due[YYYY-MM-DD]) are tasks. With the Tasks extension enabled, use vault.tasks.listTasks to find them (each comes with its document's folder path; filter with \`folder\`), then setTaskStatus / setTaskDue / setTaskPriority / setTaskRepeat with the task's documentId and ordinal, and addTask (prefer documentId) — rather than editing checkbox text by hand. These need the user's local date as \`today\`.`;

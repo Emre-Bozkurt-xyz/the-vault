@@ -185,3 +185,29 @@ export async function listOwnedFolderOptionsForUser(userId: string) {
     .map((row) => ({ id: row.id, path: paths.get(row.id) ?? row.name }))
     .sort((first, second) => first.path.localeCompare(second.path));
 }
+
+/** Generic document options for extension settings (owned, non-Bin only). */
+export async function listOwnedDocumentOptionsForUser(userId: string) {
+  const rows = await db.select({ id: documents.id, title: documents.title })
+    .from(documents)
+    .where(and(eq(documents.ownerId, userId), isNull(documents.deletedAt)))
+    .orderBy(documents.title, documents.id);
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.title.toLocaleLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    title: counts.get(row.title.toLocaleLowerCase())! > 1
+      ? `${row.title} · ${row.id.slice(0, 8)}`
+      : row.title,
+  }));
+}
+
+export async function isOwnedDocumentForUser(userId: string, documentId: string): Promise<boolean> {
+  const [row] = await db.select({ id: documents.id }).from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.ownerId, userId), isNull(documents.deletedAt)))
+    .limit(1);
+  return Boolean(row);
+}
