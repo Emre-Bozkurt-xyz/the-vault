@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { ContextMenuController } from "@/components/ui/use-context-menu";
 import { cn } from "@/lib/utils";
 
 export type ActionableAsset = {
@@ -36,21 +37,25 @@ export type ActionableAsset = {
 /**
  * The "…" quick-actions menu on an asset card: open, download, and the copy
  * actions people otherwise had to open the details panel for. `children` adds
- * page-specific items (e.g. delete in the library) after a separator.
+ * page-specific items (e.g. delete in the library) after a separator. Pass
+ * `contextMenu` (from `useContextMenu`) to also open it by right-clicking the
+ * card.
  */
 export function AssetActionsMenu({
   asset,
   showCopyId = false,
   className,
+  contextMenu,
   children,
 }: {
   asset: ActionableAsset;
   showCopyId?: boolean;
   className?: string;
+  contextMenu?: ContextMenuController;
   children?: ReactNode;
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu {...contextMenu?.rootProps}>
       <DropdownMenuTrigger
         aria-label={`Actions for ${asset.displayName}`}
         onClick={(event) => event.stopPropagation()}
@@ -61,7 +66,11 @@ export function AssetActionsMenu({
       >
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
+      <DropdownMenuContent
+        align="end"
+        className="min-w-48"
+        {...contextMenu?.contentProps}
+      >
         <DropdownMenuGroup>
           {asset.kind !== "file" ? (
             <DropdownMenuItem

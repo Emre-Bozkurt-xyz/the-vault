@@ -20,6 +20,7 @@ import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
 import { TaskDetailPanel, type TaskRef } from "@/components/tasks/TaskDetailPanel";
+import { useContextMenu } from "@/components/ui/use-context-menu";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import {
@@ -562,6 +563,7 @@ function TaskItem({
   const overdue = !done && task.dueDay !== null && task.dueDay < today;
   const folder = task.folderId ? folderPaths.get(task.folderId) : null;
   const where = `${folder ? `${folder} / ` : ""}${task.documentTitle}${task.heading ? ` › ${task.heading}` : ""}`;
+  const menu = useContextMenu();
 
   return (
     <div
@@ -576,6 +578,8 @@ function TaskItem({
       }}
       onClick={() => onSelect(key)}
       onDoubleClick={() => onOpen(task)}
+      // Compact (calendar) rows have no actions menu to open.
+      onContextMenu={compact ? undefined : menu.onContextMenu}
       className={cn(
         "group grid cursor-default items-start rounded-md py-1.5 transition",
         compact
@@ -622,6 +626,7 @@ function TaskItem({
               task={task}
               today={today}
               onChange={(change) => onChange(task, change)}
+              contextMenu={menu}
               className="opacity-0 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
             />
           </span>

@@ -8,6 +8,12 @@ export type WorkspaceDocumentChangedDetail = Partial<
 > & {
   id: string;
   updatedAt?: string;
+  /**
+   * The title was changed outside the document's editor (the Files panel's
+   * "Rename"). Open editors adopt it; their own keystroke echoes leave this
+   * unset so an emptied title field isn't overwritten with the fallback.
+   */
+  renamed?: boolean;
 };
 
 export function dispatchWorkspaceDocumentChanged(

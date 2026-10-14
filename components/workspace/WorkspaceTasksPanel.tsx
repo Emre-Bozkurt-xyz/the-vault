@@ -15,6 +15,7 @@ import {
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
+import { useContextMenu } from "@/components/ui/use-context-menu";
 import {
   SidePanel,
   SidePanelAction,
@@ -374,11 +375,14 @@ function TaskRow({
 }) {
   const done = task.status === "done";
   const context = task.heading ? `${task.documentTitle} › ${task.heading}` : task.documentTitle;
+  const menu = useContextMenu();
 
   return (
     // No "active document" highlight: tasks cluster in a few documents, so
     // marking every row of the open one would light up most of the list.
-    <div className="group relative grid grid-cols-[0.95rem_minmax(0,1fr)_1.5rem] items-start gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent">
+    <div
+      onContextMenu={menu.onContextMenu}
+      className="group relative grid grid-cols-[0.95rem_minmax(0,1fr)_1.5rem] items-start gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent">
       <button
         type="button"
         role="checkbox"
@@ -431,6 +435,7 @@ function TaskRow({
         task={task}
         today={today}
         onChange={onChange}
+        contextMenu={menu}
         className="opacity-0 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
       />
     </div>

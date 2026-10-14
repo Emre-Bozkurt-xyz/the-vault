@@ -106,6 +106,7 @@ import { Button } from "@/components/ui/button";
 import {
   dispatchWorkspaceDocumentChanged,
   dispatchWorkspaceOpenTab,
+  subscribeToWorkspaceDocumentChanges,
 } from "@/components/workspace/workspace-events";
 import {
   extractAssetEmbedIds,
@@ -562,6 +563,17 @@ export function MarkdownEditor({
     // allow re-attempts so anything still missing gets picked up below.
     resolvedEmbedAttemptsRef.current = new Set(Object.keys(assetLinks ?? {}));
   }, [assetLinks]);
+
+  // A rename from outside this editor (the Files panel's "Rename") replaces
+  // the title field, so a later save doesn't write the stale title back.
+  useEffect(() => {
+    return subscribeToWorkspaceDocumentChanges((detail) => {
+      if (detail.id === documentId && detail.renamed && detail.title) {
+        titleValueRef.current = detail.title;
+        setTitleValue(detail.title);
+      }
+    });
+  }, [documentId]);
 
   // Resolve embeds whose id isn't in the map yet — e.g. a public asset embed
   // pasted from the gallery. The server render already handles these on reload;

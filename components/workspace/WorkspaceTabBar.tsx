@@ -26,6 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { cn } from "@/lib/utils";
 import {
+  subscribeToWorkspaceDocumentChanges,
   subscribeToWorkspaceDocumentRemovals,
   subscribeToWorkspaceTabOpened,
 } from "@/components/workspace/workspace-events";
@@ -140,6 +141,29 @@ export function WorkspaceTabBar({
         ...currentTabs,
         { id: href, href, title, type: "document" as const },
       ].slice(-maxTabs);
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      writeWorkspaceTabsCookie(nextTabs);
+    });
+  }, []);
+
+  // A rename from the Files panel retitles every open tab of that document,
+  // not just the active one (which follows `activePage`).
+  useEffect(() => {
+    return subscribeToWorkspaceDocumentChanges(({ id, title, renamed }) => {
+      const currentTabs = tabsRef.current;
+
+      if (
+        !renamed ||
+        !title ||
+        !currentTabs.some((tab) => isDocumentTabForId(tab, id) && tab.title !== title)
+      ) {
+        return;
+      }
+
+      const nextTabs = currentTabs.map((tab) =>
+        isDocumentTabForId(tab, id) ? { ...tab, title } : tab,
+      );
       tabsRef.current = nextTabs;
       setTabs(nextTabs);
       writeWorkspaceTabsCookie(nextTabs);

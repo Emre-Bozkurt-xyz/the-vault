@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { ContextMenuController } from "@/components/ui/use-context-menu";
 import { addDaysToDayKey, nextWeekStart } from "@/lib/tasks/dates";
 import type { TaskChange } from "@/lib/tasks/edit";
 import {
@@ -41,13 +42,15 @@ import { cn } from "@/lib/utils";
  * The per-task "⋯" menu shared by the sidebar agenda and the Tasks page:
  * reschedule (today, tomorrow, next week, a picked date, none), start or stop,
  * and cancel. "Pick date…" opens the browser's native picker on a hidden input
- * anchored to the menu button.
+ * anchored to the menu button. Pass `contextMenu` (from `useContextMenu`) to
+ * also open it by right-clicking the task row.
  */
 export function TaskActionsMenu({
   task,
   today,
   onChange,
   className,
+  contextMenu,
 }: {
   task: {
     priority: TaskPriority | null;
@@ -59,6 +62,7 @@ export function TaskActionsMenu({
   today: string;
   onChange: (change: TaskChange) => void;
   className?: string;
+  contextMenu?: ContextMenuController;
 }) {
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   // Rescheduling keeps the time of day a task already had.
@@ -81,7 +85,7 @@ export function TaskActionsMenu({
 
   return (
     <span className="relative inline-flex">
-      <DropdownMenu>
+      <DropdownMenu {...contextMenu?.rootProps}>
         <DropdownMenuTrigger
           aria-label="Task actions"
           className={cn(
@@ -91,7 +95,7 @@ export function TaskActionsMenu({
         >
           <MoreHorizontal className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" {...contextMenu?.contentProps}>
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => setDue(today)}>
               <Sun /> Today

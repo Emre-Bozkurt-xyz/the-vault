@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -17,9 +19,11 @@ import {
   Files,
   FileText,
   Folder,
+  FolderInput,
   FolderOpen,
   FolderPlus,
   Globe2,
+  Link2,
   MoreHorizontal,
   Pencil,
   RotateCcw,
@@ -41,9 +45,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useContextMenu } from "@/components/ui/use-context-menu";
+import { copyWithToast } from "@/components/assets/asset-ui";
 import { FolderSettingsDialog } from "@/components/folder-settings-dialog";
 import {
   SidePanel,
@@ -51,8 +62,14 @@ import {
   SidePanelHeader,
 } from "@/components/workspace/SidePanel";
 import {
+  dispatchWorkspaceDocumentChanged,
+  dispatchWorkspaceDocumentRemoved,
+} from "@/components/workspace/workspace-events";
+import {
+  archiveDocumentAction,
   createDocumentInFolderAction,
   restoreArchivedDocumentAction,
+  saveDocumentTitleAction,
 } from "@/server/documents";
 import {
   createFolderAction,
@@ -62,6 +79,7 @@ import {
   renameFolderAction,
 } from "@/server/folders";
 import { cn } from "@/lib/utils";
+import { showWorkspaceToast } from "@/lib/workspace-toast";
 import type {
   WorkspaceArchivedItem,
   WorkspaceDocumentItem,
@@ -89,6 +107,25 @@ type DragPayload =
   | { kind: "doc"; id: string }
   | { kind: "folder"; id: string };
 
+/**
+ * What a document row's "⋯" menu needs from the browser. Shared through
+ * context because doc rows render at every depth of both trees, and threading
+ * these through FolderNode/SharedSection/SharedFolderNode would touch every
+ * signature on the way down.
+ */
+type DocActions = {
+  renamingId: string | null;
+  /** The user's own folders, as "Parent / Child" paths, for "Move to". */
+  moveTargets: { id: string; label: string }[];
+  onStartRename: (id: string) => void;
+  onCancelRename: () => void;
+  onRename: (doc: WorkspaceDocumentItem, title: string) => void;
+  onMove: (documentId: string, folderId: string | null) => void;
+  onRequestArchive: (doc: WorkspaceDocumentItem) => void;
+};
+
+const DocActionsContext = createContext<DocActions | null>(null);
+
 export function WorkspaceFileBrowser({
   owned,
   shared,
@@ -108,6 +145,9 @@ export function WorkspaceFileBrowser({
   const [pendingDelete, setPendingDelete] = useState<WorkspaceFolderItem | null>(
     null,
   );
+  const [pendingArchive, setPendingArchive] =
+    useState<WorkspaceDocumentItem | null>(null);
+  const router = useRouter();
   // The folder whose settings dialog is open, plus which tab it opened on —
   // "Share folder…" and "Folder settings…" are the same dialog, entered at
   // different sections.
@@ -149,6 +189,25 @@ export function WorkspaceFileBrowser({
       map.set(key, [...(map.get(key) ?? []), folder]);
     }
     return map;
+  }, [folders]);
+
+  const moveTargets = useMemo(() => {
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const pathOf = (folder: WorkspaceFolderItem) => {
+      const names = [folder.name];
+      const seen = new Set([folder.id]);
+      let parent = folder.parentId ? byId.get(folder.parentId) : undefined;
+      while (parent && !seen.has(parent.id)) {
+        names.unshift(parent.name);
+        seen.add(parent.id);
+        parent = parent.parentId ? byId.get(parent.parentId) : undefined;
+      }
+      return names.join(" / ");
+    };
+
+    return folders
+      .map((folder) => ({ id: folder.id, label: pathOf(folder) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [folders]);
 
   const sharedFolderIds = useMemo(
@@ -272,6 +331,64 @@ export function WorkspaceFileBrowser({
     }, createDocumentInFolderAction);
   }
 
+  function renameDoc(doc: WorkspaceDocumentItem, name: string) {
+    setRenamingId(null);
+    const title = name.trim();
+    if (!title || title === doc.title) {
+      return;
+    }
+
+    // Optimistic: the tree, open tabs and an open editor take the new title
+    // now (`renamed` is what tells the editor to adopt it); revert on failure.
+    const announce = (nextTitle: string) =>
+      dispatchWorkspaceDocumentChanged({
+        id: doc.id,
+        title: nextTitle,
+        href: doc.href,
+        renamed: true,
+      });
+    announce(title);
+
+    startTransition(async () => {
+      let message = "This document could not be renamed.";
+      try {
+        const result = await saveDocumentTitleAction({
+          documentId: doc.id,
+          title,
+        });
+        if (result.ok) {
+          return;
+        }
+        message = result.message;
+      } catch {
+        // notFound() from a lost permission lands here.
+      }
+      announce(doc.title);
+      showWorkspaceToast({ message, tone: "error" });
+    });
+  }
+
+  function archiveDoc(doc: WorkspaceDocumentItem) {
+    // Same order as DocumentArchiveForm: close the doc's tab (and move it to the
+    // Bin in the tree) first, so archiving never flashes its notFound state.
+    dispatchWorkspaceDocumentRemoved({ id: doc.id });
+    void archiveDocumentAction(doc.id).then((result) => {
+      if (!result.ok) {
+        router.refresh();
+      }
+    });
+  }
+
+  const docActions: DocActions = {
+    renamingId,
+    moveTargets,
+    onStartRename: setRenamingId,
+    onCancelRename: () => setRenamingId(null),
+    onRename: renameDoc,
+    onMove: moveDoc,
+    onRequestArchive: setPendingArchive,
+  };
+
   function handleDropOn(target: string | null, payload: DragPayload) {
     if (payload.kind === "doc") {
       moveDoc(payload.id, target);
@@ -289,196 +406,242 @@ export function WorkspaceFileBrowser({
   const rootDocs = docsByFolder.get(ROOT) ?? [];
 
   return (
-    <SidePanel className={cn(isPending && "opacity-90")}>
-      <SidePanelHeader
-        icon={Files}
-        title="Files"
-        subtitle={`${owned.length} document${owned.length === 1 ? "" : "s"}${
-          shared.length > 0 ? ` · ${shared.length} shared` : ""
-        }`}
-        actions={
-          <>
-            <SidePanelAction
-              icon={FolderPlus}
-              label="New folder"
-              onClick={() => setCreatingIn(ROOT)}
-            />
-            <SidePanelAction
-              icon={FilePlus2}
-              label="New document"
-              onClick={() => newDocInFolder(null)}
-            />
-          </>
-        }
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {/* The whole Folders section is a drop zone for the root level; nested
-            folder zones stop propagation so the deepest folder under the cursor
-            wins (VS Code-style). */}
-        <section
-          onDragOver={(event) => {
-            if (hasDragPayload(event)) {
-              event.preventDefault();
-              setDropTarget(ROOT);
-            }
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDropTarget(null);
-            const payload = readDragPayload(event);
-            if (payload) {
-              handleDropOn(null, payload);
-            }
-          }}
-          className={cn(
-            "mb-3 rounded-md",
-            dropTarget === ROOT && "bg-primary/10 ring-1 ring-primary/30",
-          )}
-        >
-          <div className="flex h-7 items-center justify-between px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            <span>Your documents</span>
-          </div>
-
-          {creatingIn === ROOT ? (
-            <InlineFolderInput
-              depth={0}
-              placeholder="Folder name"
-              onCommit={(name) => {
-                createFolder(name, null);
-                setCreatingIn(null);
-              }}
-              onCancel={() => setCreatingIn(null)}
-            />
-          ) : null}
-
-          {rootFolders.length === 0 &&
-          rootDocs.length === 0 &&
-          creatingIn !== ROOT ? (
-            <p className="px-2 py-1 text-xs text-muted-foreground/70">
-              No folders yet. Create one to organize your documents.
-            </p>
-          ) : null}
-
-          <div className="grid gap-0.5">
-            {rootFolders.map((folder) => (
-              <FolderNode
-                key={folder.id}
-                folder={folder}
-                depth={0}
-                expanded={expanded}
-                childFolders={childFolders}
-                docsByFolder={docsByFolder}
-                activeHref={activeHref}
-                creatingIn={creatingIn}
-                renamingId={renamingId}
-                dropTarget={dropTarget}
-                setDropTarget={setDropTarget}
-                onToggle={toggleFolder}
-                onStartCreate={setCreatingIn}
-                onStartRename={setRenamingId}
-                onCancelCreate={() => setCreatingIn(null)}
-                onCancelRename={() => setRenamingId(null)}
-                onCreateFolder={createFolder}
-                onRenameFolder={(id, name) => {
-                  renameFolder(id, name);
-                  setRenamingId(null);
-                }}
-                onRequestDelete={setPendingDelete}
-                onRequestSettings={(folder, section) =>
-                  setFolderSettings({ folder, section })
-                }
-                onNewDoc={newDocInFolder}
-                onExpand={expandFolder}
-                onDropOn={handleDropOn}
+    <DocActionsContext.Provider value={docActions}>
+      <SidePanel className={cn(isPending && "opacity-90")}>
+        <SidePanelHeader
+          icon={Files}
+          title="Files"
+          subtitle={`${owned.length} document${owned.length === 1 ? "" : "s"}${
+            shared.length > 0 ? ` · ${shared.length} shared` : ""
+          }`}
+          actions={
+            <>
+              <SidePanelAction
+                icon={FolderPlus}
+                label="New folder"
+                onClick={() => setCreatingIn(ROOT)}
               />
-            ))}
-
-            {rootDocs.map((doc) => (
-              <DocRow
-                key={doc.id}
-                doc={doc}
-                depth={0}
-                activeHref={activeHref}
-                onDragEndClear={() => setDropTarget(null)}
+              <SidePanelAction
+                icon={FilePlus2}
+                label="New document"
+                onClick={() => newDocInFolder(null)}
               />
-            ))}
-          </div>
-        </section>
-
-        <SharedSection
-          items={shared}
-          ownedDocs={owned}
-          sharedFolders={sharedFolders}
-          expanded={expanded}
-          dropTarget={dropTarget}
-          setDropTarget={setDropTarget}
-          onToggle={toggleFolder}
-          onNewDoc={newDocInFolder}
-          onDropOn={handleDropOn}
-          activeHref={activeHref}
-        />
-        <ServicesSection services={services} activeHref={activeHref} />
-        <FlatSection
-          title="Published"
-          items={published}
-          icon={Globe2}
-          activeHref={activeHref}
-          emptyText="No published documents"
-        />
-        <BinSection items={archived} retentionDays={binRetentionDays} />
-      </div>
-
-      <Dialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingDelete(null);
+            </>
           }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete folder</DialogTitle>
-            <DialogDescription>
-              Delete{" "}
-              <span className="font-medium text-foreground">
-                {pendingDelete?.name}
-              </span>
-              ? Subfolders are removed too. Documents inside are moved out of the
-              folder, not deleted.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPendingDelete(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                if (pendingDelete) {
-                  deleteFolder(pendingDelete.id);
-                }
-                setPendingDelete(null);
-              }}
-            >
-              Delete folder
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        />
 
-      <FolderSettingsDialog
-        folder={folderSettings?.folder ?? null}
-        initialSection={folderSettings?.section ?? "tags"}
-        onClose={() => setFolderSettings(null)}
-      />
-    </SidePanel>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+          {/* The whole Folders section is a drop zone for the root level; nested
+              folder zones stop propagation so the deepest folder under the cursor
+              wins (VS Code-style). */}
+          <section
+            onDragOver={(event) => {
+              if (hasDragPayload(event)) {
+                event.preventDefault();
+                setDropTarget(ROOT);
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDropTarget(null);
+              const payload = readDragPayload(event);
+              if (payload) {
+                handleDropOn(null, payload);
+              }
+            }}
+            className={cn(
+              "mb-3 rounded-md",
+              dropTarget === ROOT && "bg-primary/10 ring-1 ring-primary/30",
+            )}
+          >
+            <div className="flex h-7 items-center justify-between px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span>Your documents</span>
+            </div>
+
+            {creatingIn === ROOT ? (
+              <InlineNameInput
+                depth={0}
+                placeholder="Folder name"
+                onCommit={(name) => {
+                  createFolder(name, null);
+                  setCreatingIn(null);
+                }}
+                onCancel={() => setCreatingIn(null)}
+              />
+            ) : null}
+
+            {rootFolders.length === 0 &&
+            rootDocs.length === 0 &&
+            creatingIn !== ROOT ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground/70">
+                No folders yet. Create one to organize your documents.
+              </p>
+            ) : null}
+
+            <div className="grid gap-0.5">
+              {rootFolders.map((folder) => (
+                <FolderNode
+                  key={folder.id}
+                  folder={folder}
+                  depth={0}
+                  expanded={expanded}
+                  childFolders={childFolders}
+                  docsByFolder={docsByFolder}
+                  activeHref={activeHref}
+                  creatingIn={creatingIn}
+                  renamingId={renamingId}
+                  dropTarget={dropTarget}
+                  setDropTarget={setDropTarget}
+                  onToggle={toggleFolder}
+                  onStartCreate={setCreatingIn}
+                  onStartRename={setRenamingId}
+                  onCancelCreate={() => setCreatingIn(null)}
+                  onCancelRename={() => setRenamingId(null)}
+                  onCreateFolder={createFolder}
+                  onRenameFolder={(id, name) => {
+                    renameFolder(id, name);
+                    setRenamingId(null);
+                  }}
+                  onRequestDelete={setPendingDelete}
+                  onRequestSettings={(folder, section) =>
+                    setFolderSettings({ folder, section })
+                  }
+                  onNewDoc={newDocInFolder}
+                  onExpand={expandFolder}
+                  onDropOn={handleDropOn}
+                />
+              ))}
+
+              {rootDocs.map((doc) => (
+                <DocRow
+                  key={doc.id}
+                  doc={doc}
+                  depth={0}
+                  activeHref={activeHref}
+                  onDragEndClear={() => setDropTarget(null)}
+                />
+              ))}
+            </div>
+          </section>
+
+          <SharedSection
+            items={shared}
+            ownedDocs={owned}
+            sharedFolders={sharedFolders}
+            expanded={expanded}
+            dropTarget={dropTarget}
+            setDropTarget={setDropTarget}
+            onToggle={toggleFolder}
+            onNewDoc={newDocInFolder}
+            onDropOn={handleDropOn}
+            activeHref={activeHref}
+          />
+          <ServicesSection services={services} activeHref={activeHref} />
+          <FlatSection
+            title="Published"
+            items={published}
+            icon={Globe2}
+            activeHref={activeHref}
+            emptyText="No published documents"
+          />
+          <BinSection items={archived} retentionDays={binRetentionDays} />
+        </div>
+
+        <Dialog
+          open={pendingDelete !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingDelete(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete folder</DialogTitle>
+              <DialogDescription>
+                Delete{" "}
+                <span className="font-medium text-foreground">
+                  {pendingDelete?.name}
+                </span>
+                ? Subfolders are removed too. Documents inside are moved out of the
+                folder, not deleted.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPendingDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  if (pendingDelete) {
+                    deleteFolder(pendingDelete.id);
+                  }
+                  setPendingDelete(null);
+                }}
+              >
+                Delete folder
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={pendingArchive !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingArchive(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move to Bin</DialogTitle>
+              <DialogDescription>
+                Move{" "}
+                <span className="font-medium text-foreground">
+                  {pendingArchive?.title}
+                </span>{" "}
+                to the Bin? You can restore it from the Bin below until it is
+                automatically deleted.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPendingArchive(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  if (pendingArchive) {
+                    archiveDoc(pendingArchive);
+                  }
+                  setPendingArchive(null);
+                }}
+              >
+                Move to Bin
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <FolderSettingsDialog
+          folder={folderSettings?.folder ?? null}
+          initialSection={folderSettings?.section ?? "tags"}
+          onClose={() => setFolderSettings(null)}
+        />
+      </SidePanel>
+    </DocActionsContext.Provider>
   );
 }
 
@@ -537,6 +700,7 @@ function FolderNode({
   const docs = docsByFolder.get(folder.id) ?? [];
   const directCount = docs.length;
   const isDropTarget = dropTarget === folder.id;
+  const menu = useContextMenu();
 
   return (
     // This wrapper owns the folder row AND its children; dropping anywhere
@@ -567,6 +731,7 @@ function FolderNode({
           writeDragPayload(event, { kind: "folder", id: folder.id })
         }
         onDragEnd={() => setDropTarget(null)}
+        onContextMenu={menu.onContextMenu}
         style={{ paddingLeft: depth * 12 + 4 }}
         className="group flex min-w-0 items-center gap-1 rounded-[5px] py-1.5 pr-1 text-sm text-foreground/90 transition hover:bg-sidebar-accent"
       >
@@ -582,7 +747,7 @@ function FolderNode({
         </button>
 
         {renamingId === folder.id ? (
-          <InlineFolderInput
+          <InlineNameInput
             depth={0}
             defaultValue={folder.name}
             placeholder="Folder name"
@@ -610,14 +775,14 @@ function FolderNode({
           </button>
         )}
 
-        <DropdownMenu>
+        <DropdownMenu {...menu.rootProps}>
           <DropdownMenuTrigger
-            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-muted/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100"
+            className={rowMenuTriggerClass}
             aria-label="Folder actions"
           >
             <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" {...menu.contentProps}>
             <DropdownMenuItem onClick={() => onNewDoc(folder.id)}>
               <FilePlus2 className="size-4" />
               New document
@@ -662,7 +827,7 @@ function FolderNode({
       {isOpen ? (
         <div>
           {creatingIn === folder.id ? (
-            <InlineFolderInput
+            <InlineNameInput
               depth={depth + 1}
               placeholder="Folder name"
               onCommit={(name) => {
@@ -727,40 +892,156 @@ function FolderNode({
   );
 }
 
+const rowMenuTriggerClass =
+  "flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-muted/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100";
+
+/**
+ * A document in either tree. The "⋯" menu (also opened by right-clicking the
+ * row) offers what the viewer's role allows: rename for editors, move and
+ * "Move to Bin" for the owner, copy link for everyone.
+ */
 function DocRow({
   doc,
   depth,
   activeHref,
+  draggable = true,
   onDragEndClear,
 }: {
   doc: WorkspaceDocumentItem;
   depth: number;
   activeHref?: string;
-  onDragEndClear: () => void;
+  draggable?: boolean;
+  onDragEndClear?: () => void;
 }) {
+  const actions = useContext(DocActionsContext);
+  const menu = useContextMenu();
+  const role = doc.role ?? "owner";
+  const canRename = role !== "viewer";
+  const isOwner = role === "owner";
+  const paddingLeft = depth * 12 + 24;
+
+  if (actions?.renamingId === doc.id) {
+    return (
+      <div
+        style={{ paddingLeft }}
+        className="flex min-w-0 items-center gap-2 pr-1 text-sm text-muted-foreground"
+      >
+        <FileText className="size-3.5 shrink-0 opacity-70" />
+        <InlineNameInput
+          depth={0}
+          defaultValue={doc.title}
+          placeholder="Document title"
+          inline
+          onCommit={(title) => actions.onRename(doc, title)}
+          onCancel={actions.onCancelRename}
+        />
+      </div>
+    );
+  }
+
   return (
-    <Link
-      href={doc.href}
-      draggable
-      onDragStart={(event) => writeDragPayload(event, { kind: "doc", id: doc.id })}
-      onDragEnd={onDragEndClear}
-      style={{ paddingLeft: depth * 12 + 24 }}
+    // The menu sits beside the Link, not inside it: menu-item clicks bubble
+    // through the portal to React ancestors and would otherwise navigate.
+    <div
+      onContextMenu={menu.onContextMenu}
       className={cn(
-        "group flex min-w-0 items-center gap-2 rounded-[5px] py-1.5 pr-2 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "group flex min-w-0 items-center rounded-[5px] pr-1 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         activeHref === doc.href &&
           "bg-sidebar-accent text-sidebar-accent-foreground",
       )}
     >
-      <FileText className="size-3.5 shrink-0 opacity-70" />
-      <span className="min-w-0 flex-1 truncate">{doc.title}</span>
-      {doc.visibility === "public" ? (
-        <Globe2 className="size-3 shrink-0 opacity-60" />
-      ) : null}
-    </Link>
+      <Link
+        href={doc.href}
+        draggable={draggable}
+        onDragStart={
+          draggable
+            ? (event) => writeDragPayload(event, { kind: "doc", id: doc.id })
+            : undefined
+        }
+        onDragEnd={draggable ? onDragEndClear : undefined}
+        style={{ paddingLeft }}
+        className="flex min-w-0 flex-1 items-center gap-2 py-1.5"
+      >
+        <FileText className="size-3.5 shrink-0 opacity-70" />
+        <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+        {doc.visibility === "public" ? (
+          <Globe2 className="size-3 shrink-0 opacity-60" />
+        ) : null}
+      </Link>
+
+      <DropdownMenu {...menu.rootProps}>
+        <DropdownMenuTrigger
+          className={rowMenuTriggerClass}
+          aria-label="Document actions"
+        >
+          <MoreHorizontal className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" {...menu.contentProps}>
+          {canRename && actions ? (
+            <DropdownMenuItem onClick={() => actions.onStartRename(doc.id)}>
+              <Pencil className="size-4" />
+              Rename
+            </DropdownMenuItem>
+          ) : null}
+          {isOwner && actions ? (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <FolderInput className="size-4" />
+                Move to
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-w-72">
+                <DropdownMenuRadioGroup
+                  value={doc.folderId ?? ROOT}
+                  onValueChange={(value) =>
+                    actions.onMove(doc.id, value === ROOT ? null : value)
+                  }
+                >
+                  <DropdownMenuRadioItem value={ROOT}>
+                    No folder
+                  </DropdownMenuRadioItem>
+                  {actions.moveTargets.map((target) => (
+                    <DropdownMenuRadioItem
+                      key={target.id}
+                      value={target.id}
+                      title={target.label}
+                    >
+                      <span className="truncate">{target.label}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ) : null}
+          <DropdownMenuItem
+            onClick={() =>
+              void copyWithToast(
+                new URL(doc.href, window.location.origin).toString(),
+                "Link",
+              )
+            }
+          >
+            <Link2 className="size-4" />
+            Copy link
+          </DropdownMenuItem>
+          {isOwner && actions ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => actions.onRequestArchive(doc)}
+              >
+                <Trash2 className="size-4" />
+                Move to Bin
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
-function InlineFolderInput({
+function InlineNameInput({
   depth,
   defaultValue = "",
   placeholder,
@@ -1244,11 +1525,12 @@ function SharedSection({
                   />
                 ))}
                 {(model.looseDocsByOwner.get(ownerKey) ?? []).map((doc) => (
-                  <SharedDocRow
+                  <DocRow
                     key={`shared-${doc.id}`}
                     doc={doc}
                     depth={0}
                     activeHref={activeHref}
+                    draggable={false}
                   />
                 ))}
               </div>
@@ -1348,7 +1630,7 @@ function SharedFolderNode({
             />
           ))}
           {docs.map((doc) => (
-            <SharedDocRow
+            <DocRow
               key={`shared-${doc.id}`}
               doc={doc}
               depth={depth + 1}
@@ -1397,45 +1679,6 @@ function SharedFolderNode({
     >
       {node}
     </div>
-  );
-}
-
-function SharedDocRow({
-  doc,
-  depth,
-  activeHref,
-  draggable = false,
-  onDragEndClear,
-}: {
-  doc: WorkspaceDocumentItem;
-  depth: number;
-  activeHref?: string;
-  draggable?: boolean;
-  onDragEndClear?: () => void;
-}) {
-  return (
-    <Link
-      href={doc.href}
-      draggable={draggable}
-      onDragStart={
-        draggable
-          ? (event) => writeDragPayload(event, { kind: "doc", id: doc.id })
-          : undefined
-      }
-      onDragEnd={draggable ? onDragEndClear : undefined}
-      style={{ paddingLeft: depth * 12 + 24 }}
-      className={cn(
-        "group flex min-w-0 items-center gap-2 rounded-[5px] py-1.5 pr-2 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        activeHref === doc.href &&
-          "bg-sidebar-accent text-sidebar-accent-foreground",
-      )}
-    >
-      <FileText className="size-3.5 shrink-0 opacity-70" />
-      <span className="min-w-0 flex-1 truncate">{doc.title}</span>
-      {doc.visibility === "public" ? (
-        <Globe2 className="size-3 shrink-0 opacity-60" />
-      ) : null}
-    </Link>
   );
 }
 

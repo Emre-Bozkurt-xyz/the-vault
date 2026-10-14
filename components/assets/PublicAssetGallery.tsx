@@ -28,6 +28,7 @@ import {
 } from "@/components/assets/asset-ui";
 import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { Button } from "@/components/ui/button";
+import { WithContextMenu } from "@/components/ui/use-context-menu";
 import { formatBytes, formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -139,86 +140,91 @@ export function PublicAssetGallery({
     <section className="relative">
       <div className="grid grid-cols-1 content-start gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {assets.map((asset) => (
-          <div key={asset.id} className="group relative">
-            <button
-              type="button"
-              onClick={(event) => {
-                setPanelStyle(getPanelStyle(event.currentTarget));
-                setSelectedId(asset.id);
-                setCopied(null);
-              }}
-              className={cn(
-                "block h-full w-full overflow-hidden rounded-md border bg-card text-left text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                selected?.id === asset.id
-                  ? "border-primary/70 ring-1 ring-primary/35"
-                  : "border-border/70",
-              )}
-            >
-              {asset.kind === "image" ? (
-                <span className="block bg-muted">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={asset.url}
-                    alt={asset.altText ?? asset.displayName}
-                    className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]"
-                    loading="lazy"
-                  />
-                </span>
-              ) : (
-                <span className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground">
-                  {asset.kind === "pdf" ? (
-                    <FileText className="size-10" />
-                  ) : (
-                    <FileIcon className="size-10" />
+          <WithContextMenu key={asset.id}>
+            {(menu) => (
+              <div onContextMenu={menu.onContextMenu} className="group relative">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    setPanelStyle(getPanelStyle(event.currentTarget));
+                    setSelectedId(asset.id);
+                    setCopied(null);
+                  }}
+                  className={cn(
+                    "block h-full w-full overflow-hidden rounded-md border bg-card text-left text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                    selected?.id === asset.id
+                      ? "border-primary/70 ring-1 ring-primary/35"
+                      : "border-border/70",
                   )}
-                  <span className="rounded border border-border/70 bg-background/70 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tracking-wider">
-                    {assetExtensionBadge(asset)}
-                  </span>
-                </span>
-              )}
-              <span className="block p-4">
-                <span className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                >
                   {asset.kind === "image" ? (
-                    <ImageIcon className="size-3.5" />
+                    <span className="block bg-muted">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={asset.url}
+                        alt={asset.altText ?? asset.displayName}
+                        className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]"
+                        loading="lazy"
+                      />
+                    </span>
                   ) : (
-                    <FileText className="size-3.5" />
-                  )}
-                  {assetTypeLabel(asset)}
-                </span>
-                <span className="mt-2 block truncate text-sm font-semibold">
-                  {asset.displayName}
-                </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  @{asset.ownerUsername ?? "unknown"} · {formatShortDate(asset.createdAt)}
-                </span>
-                <ContentInteractionControl
-                  targetKind="asset"
-                  targetId={asset.id}
-                  initialStats={getAssetStats(asset)}
-                  compact
-                  readOnly
-                  className="mt-3"
-                />
-                {asset.tags.length > 0 ? (
-                  <span className="mt-3 flex flex-wrap gap-1">
-                    {asset.tags.slice(0, 4).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full border border-border/70 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
-                      >
-                        {tag}
+                    <span className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground">
+                      {asset.kind === "pdf" ? (
+                        <FileText className="size-10" />
+                      ) : (
+                        <FileIcon className="size-10" />
+                      )}
+                      <span className="rounded border border-border/70 bg-background/70 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tracking-wider">
+                        {assetExtensionBadge(asset)}
                       </span>
-                    ))}
+                    </span>
+                  )}
+                  <span className="block p-4">
+                    <span className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {asset.kind === "image" ? (
+                        <ImageIcon className="size-3.5" />
+                      ) : (
+                        <FileText className="size-3.5" />
+                      )}
+                      {assetTypeLabel(asset)}
+                    </span>
+                    <span className="mt-2 block truncate text-sm font-semibold">
+                      {asset.displayName}
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      @{asset.ownerUsername ?? "unknown"} · {formatShortDate(asset.createdAt)}
+                    </span>
+                    <ContentInteractionControl
+                      targetKind="asset"
+                      targetId={asset.id}
+                      initialStats={getAssetStats(asset)}
+                      compact
+                      readOnly
+                      className="mt-3"
+                    />
+                    {asset.tags.length > 0 ? (
+                      <span className="mt-3 flex flex-wrap gap-1">
+                        {asset.tags.slice(0, 4).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full border border-border/70 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-              </span>
-            </button>
-            <AssetActionsMenu
-              asset={asset}
-              showCopyId
-              className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
-            />
-          </div>
+                </button>
+                <AssetActionsMenu
+                  asset={asset}
+                  showCopyId
+                  contextMenu={menu}
+                  className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+                />
+              </div>
+            )}
+          </WithContextMenu>
         ))}
         {children}
       </div>

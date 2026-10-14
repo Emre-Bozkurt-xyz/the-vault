@@ -43,6 +43,7 @@ import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { WithContextMenu } from "@/components/ui/use-context-menu";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -307,40 +308,45 @@ export function AssetLibraryClient({
         {assets.length > 0 && visibleAssets.length > 0 ? (
           <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
             {visibleAssets.map((asset) => (
-              <div key={asset.id} className="group relative mb-4 break-inside-avoid">
-                <button
-                  type="button"
-                  onClick={() => selectAsset(asset)}
-                  aria-pressed={selected?.id === asset.id}
-                  className={cn(
-                    "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                    selected?.id === asset.id
-                      ? "border-primary/70 ring-1 ring-primary/35"
-                      : "border-border/70",
-                  )}
-                >
-                  <AssetThumbnail asset={asset} />
-                  <span className="flex items-center gap-2 px-3 py-2.5">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {asset.displayName}
+              <WithContextMenu key={asset.id}>
+                {(menu) => (
+                  <div onContextMenu={menu.onContextMenu} className="group relative mb-4 break-inside-avoid">
+                    <button
+                      type="button"
+                      onClick={() => selectAsset(asset)}
+                      aria-pressed={selected?.id === asset.id}
+                      className={cn(
+                        "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                        selected?.id === asset.id
+                          ? "border-primary/70 ring-1 ring-primary/35"
+                          : "border-border/70",
+                      )}
+                    >
+                      <AssetThumbnail asset={asset} />
+                      <span className="flex items-center gap-2 px-3 py-2.5">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">
+                            {asset.displayName}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
+                          </span>
+                        </span>
+                        <VisibilityIcon visibility={asset.visibility} />
                       </span>
-                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                        {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
-                      </span>
-                    </span>
-                    <VisibilityIcon visibility={asset.visibility} />
-                  </span>
-                </button>
-                <AssetActionsMenu
-                  asset={asset}
-                  className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
-                >
-                  <DropdownMenuItem onClick={() => selectAsset(asset)}>
-                    <SlidersHorizontal /> Edit details
-                  </DropdownMenuItem>
-                </AssetActionsMenu>
-              </div>
+                    </button>
+                    <AssetActionsMenu
+                      asset={asset}
+                      contextMenu={menu}
+                      className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+                    >
+                      <DropdownMenuItem onClick={() => selectAsset(asset)}>
+                        <SlidersHorizontal /> Edit details
+                      </DropdownMenuItem>
+                    </AssetActionsMenu>
+                  </div>
+                )}
+              </WithContextMenu>
             ))}
           </div>
         ) : assets.length > 0 ? (
