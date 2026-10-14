@@ -3,7 +3,7 @@ import { Gauge, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
-import { uploadCeilingMiB, type UploadLimitOverrides } from "@/lib/upload-limits";
+import { maxUploadMiB, type UploadLimitOverrides } from "@/lib/upload-limits";
 import { updateUploadLimitsAction } from "@/server/assets-admin";
 
 const MiB = 1024 * 1024;
@@ -44,8 +44,10 @@ export function UploadLimitsForm({
         <p className="text-sm text-muted-foreground">
           Largest single upload per type, in MiB. Leave a field blank to use the
           default. Changes apply to the next upload. The most any limit can be
-          is {uploadCeilingMiB} MiB. &quot;Other files&quot; only matters for users
-          allowed to upload any file type.
+          is {maxUploadMiB} MiB; files over{" "}
+          {ASSET_LIMITS.directUploadThresholdBytes / MiB} MiB upload straight to
+          storage in parts. A user&apos;s storage quota still applies. &quot;Other
+          files&quot; only matters for users allowed to upload any file type.
         </p>
       </div>
 
@@ -64,7 +66,7 @@ export function UploadLimitsForm({
                   type="number"
                   name={field.name}
                   min={0.1}
-                  max={uploadCeilingMiB}
+                  max={maxUploadMiB}
                   step={0.1}
                   defaultValue={current ? roundMiB(current) : ""}
                   placeholder={`${defaultMiB} (default)`}

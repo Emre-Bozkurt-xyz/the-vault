@@ -727,6 +727,24 @@ Important rules:
     updated_by UUID REFERENCES users(id) ON DELETE SET NULL
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   ```
+- Large files upload directly to R2 in parts (added 2026-10-13, migration
+  `0030_oval_moondragon.sql`). Each in-flight upload is a `pending` asset whose
+  declared size is already reserved against quota, plus one `asset_uploads` row
+  (deleted on complete or abort):
+
+  ```txt
+  asset_uploads
+    asset_id UUID PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+    upload_id TEXT NOT NULL              -- R2 multipart UploadId
+    part_size_bytes BIGINT NOT NULL      -- uniform; last part is the remainder
+    part_count INTEGER NOT NULL
+    allow_any_file_type BOOLEAN NOT NULL -- grant at start, used to re-classify
+    document_id UUID REFERENCES documents(id) ON DELETE SET NULL
+    share_link_id TEXT
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    expires_at TIMESTAMPTZ NOT NULL      -- start + 24h; swept on next start
+  ```
 
 Implemented schema additions in migration `0011_tiresome_ultimates.sql`:
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assetErrorResponse, formStringOrNull } from "@/server/asset-route-errors";
 import {
   AssetError,
   createUploadedAsset,
@@ -30,8 +31,8 @@ export async function POST(request: Request) {
     const user = await requireAssetUserFromRequest(request);
     const formData = await request.formData();
     const file = formData.get("file");
-    const documentId = stringOrNull(formData.get("documentId"));
-    const shareLinkId = stringOrNull(formData.get("shareLinkId"));
+    const documentId = formStringOrNull(formData.get("documentId"));
+    const shareLinkId = formStringOrNull(formData.get("shareLinkId"));
 
     if (!(file instanceof File)) {
       throw new AssetError("Upload a file.", 400, "MISSING_FILE");
@@ -60,28 +61,4 @@ export async function POST(request: Request) {
   } catch (error) {
     return assetErrorResponse(error);
   }
-}
-
-function assetErrorResponse(error: unknown) {
-  if (error instanceof AssetError) {
-    return NextResponse.json(
-      { error: error.message, code: error.code },
-      { status: error.status },
-    );
-  }
-
-  console.error(error);
-  return NextResponse.json(
-    { error: "Asset operation failed.", code: "ASSET_OPERATION_FAILED" },
-    { status: 500 },
-  );
-}
-
-function stringOrNull(value: FormDataEntryValue | null) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }

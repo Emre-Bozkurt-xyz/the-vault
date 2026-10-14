@@ -27,11 +27,17 @@ describe("next.config headers", () => {
 });
 
 describe("next.config proxy body limit", () => {
-  it("lets uploads up to the ceiling through proxy.ts untruncated", () => {
+  it("lets single-request uploads through proxy.ts untruncated", () => {
     // Next truncates proxied bodies past this (default 10 MB), which silently
-    // broke every upload over 10 MB. Admin caps are clamped to the ceiling.
+    // broke every upload over 10 MB.
     const limit = nextConfig.experimental?.proxyClientMaxBodySize;
     expect(typeof limit).toBe("number");
-    expect(limit as number).toBeGreaterThan(ASSET_LIMITS.uploadCeilingBytes);
+    expect(limit as number).toBeGreaterThan(ASSET_LIMITS.proxyBodyCeilingBytes);
+  });
+
+  it("routes files to the direct path before they reach the proxy ceiling", () => {
+    expect(ASSET_LIMITS.directUploadThresholdBytes).toBeLessThan(
+      ASSET_LIMITS.proxyBodyCeilingBytes,
+    );
   });
 });

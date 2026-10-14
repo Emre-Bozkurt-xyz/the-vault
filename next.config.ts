@@ -15,10 +15,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["react-dom"],
   experimental: {
     // `proxy.ts` runs on `/api/assets`, so Next buffers upload bodies for it and
-    // silently truncates them past this size (default 10 MB). The upload cap
-    // itself is admin-editable at runtime but clamped to the same ceiling; the
-    // extra MiB covers multipart framing.
-    proxyClientMaxBodySize: ASSET_LIMITS.uploadCeilingBytes + 1024 * 1024,
+    // silently truncates them past this size (default 10 MB). Only the
+    // single-request upload path sends file bytes here; larger files go
+    // straight to R2. The extra MiB covers multipart form framing.
+    proxyClientMaxBodySize: ASSET_LIMITS.proxyBodyCeilingBytes + 1024 * 1024,
   },
   // The enforced CSP for every route except `/embed/...`. It lives here, not in
   // `proxy.ts`, because Next copies every header the proxy puts on a response

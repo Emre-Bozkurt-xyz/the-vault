@@ -96,6 +96,24 @@ export type CspOptions = {
   embed?: boolean;
 };
 
+/**
+ * Large uploads PUT their parts straight to R2 (`server/asset-uploads.ts`);
+ * presigned URLs are path-style, so the endpoint's origin is the only host.
+ */
+function r2UploadConnectSrc(): string[] {
+  const endpoint = process.env.R2_ENDPOINT;
+
+  if (!endpoint) {
+    return [];
+  }
+
+  try {
+    return [new URL(endpoint).origin];
+  } catch {
+    return [];
+  }
+}
+
 export function buildEnforcedCsp(options: CspOptions = {}): string {
   return serialize({
     "frame-ancestors": options.embed ? embedFrameAncestors() : ["'self'"],
@@ -117,7 +135,7 @@ export function buildReportOnlyCsp(nonce: string, options: CspOptions = {}): str
     "style-src-attr": ["'unsafe-inline'"],
     "img-src": ["'self'", "https:", "data:", "blob:"],
     "font-src": ["'self'", "data:"],
-    "connect-src": ["'self'", ...collabConnectSrc()],
+    "connect-src": ["'self'", ...collabConnectSrc(), ...r2UploadConnectSrc()],
     "frame-src": iframeFrameSrc,
     "frame-ancestors": options.embed ? embedFrameAncestors() : ["'self'"],
     "object-src": ["'none'"],

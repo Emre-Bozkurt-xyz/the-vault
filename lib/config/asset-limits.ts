@@ -4,6 +4,7 @@
  * Per-upload caps are edited by admins at runtime (`deployment_settings`, see
  * `lib/upload-limits.ts`); the values here are what applies until an admin sets
  * one. The storage quota default feeds the `users` schema column default.
+ * Client code imports this too (upload routing), so keep it dependency-free.
  */
 const MiB = 1024 * 1024;
 
@@ -18,12 +19,22 @@ export const ASSET_LIMITS = {
    */
   fileMaxBytes: 50 * MiB, // 50 MiB
   /**
-   * Hard ceiling no admin-set cap may exceed. It also sizes Next's proxy body
-   * buffer (`next.config.ts`), which otherwise truncates every request body
-   * at 10 MB. It stays under Cloudflare's 100 MB proxied-request limit, and
-   * uploads are buffered in memory, so raising it is a deploy-time decision.
+   * Largest body the single-request upload path (`POST /api/assets`) accepts.
+   * It sizes Next's proxy body buffer (`next.config.ts`), which otherwise
+   * truncates every request body at 10 MB, and stays under Cloudflare's 100 MB
+   * proxied-request limit. Bigger files take the direct-to-R2 multipart path,
+   * which never sends file bytes through Vault.
    */
-  uploadCeilingBytes: 95 * MiB, // 95 MiB
+  proxyBodyCeilingBytes: 95 * MiB, // 95 MiB
+  /** Files above this size use the direct-to-R2 multipart path. */
+  directUploadThresholdBytes: 32 * MiB, // 32 MiB
+  /** Hard ceiling no admin-set per-upload cap may exceed. */
+  maxUploadBytes: 5 * 1024 * MiB, // 5 GiB
+  /**
+   * Multipart part size floor. R2 needs every part but the last to be the same
+   * size and at least 5 MiB, and allows at most 10,000 parts.
+   */
+  multipartPartBytes: 16 * MiB, // 16 MiB
   /** Default per-user storage quota applied to new users. */
   defaultUserStorageQuotaBytes: 50 * MiB, // 50 MiB
 } as const;

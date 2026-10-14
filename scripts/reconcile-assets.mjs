@@ -131,8 +131,15 @@ async function readQuotaRows() {
     from users u
     left join assets a
       on a.owner_id = u.id
-      and a.status = 'ready'
       and a.deleted_at is null
+      -- In-flight direct uploads hold a reservation completion does not re-add.
+      and (
+        a.status = 'ready'
+        or (
+          a.status = 'pending'
+          and exists (select 1 from asset_uploads au where au.asset_id = a.id)
+        )
+      )
     group by u.id, u.storage_used_bytes
   `;
 }

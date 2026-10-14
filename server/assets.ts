@@ -9,6 +9,7 @@ import {
   inArray,
   isNull,
   notInArray,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -18,6 +19,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import {
   assetTags,
+  assetUploads,
   assets,
   documentAssets,
   tags,
@@ -312,8 +314,9 @@ export async function createUploadedAsset(input: {
   allowAnyFileType?: boolean;
 }) {
   const buffer = Buffer.from(await input.file.arrayBuffer());
-  const validation = await validateAssetFile({
-    buffer,
+  const validation = await classifyAssetBytes({
+    head: buffer,
+    sizeBytes: buffer.byteLength,
     declaredMimeType: input.file.type,
     filename: input.file.name,
     allowAnyFileType: input.allowAnyFileType ?? false,
@@ -1014,6 +1017,8 @@ export async function adminDeleteAsset(assetId: string) {
 }
 
 export async function recalculateUserStorage(userId: string) {
+  // In-flight direct uploads (pending, with an `asset_uploads` row) hold a
+  // quota reservation that completion does not re-add, so they count too.
   const [row] = await db
     .select({
       total: sql<number>`coalesce(sum(${assets.sizeBytes}), 0)`,
@@ -1022,8 +1027,14 @@ export async function recalculateUserStorage(userId: string) {
     .where(
       and(
         eq(assets.ownerId, userId),
-        eq(assets.status, "ready"),
         isNull(assets.deletedAt),
+        or(
+          eq(assets.status, "ready"),
+          and(
+            eq(assets.status, "pending"),
+            sql`exists (select 1 from ${assetUploads} where ${assetUploads.assetId} = ${assets.id})`,
+          ),
+        ),
       ),
     );
 
@@ -1227,17 +1238,24 @@ export async function getReadableAsset(input: {
   return null;
 }
 
-async function validateAssetFile(input: {
-  buffer: Buffer;
+/**
+ * Decides what an upload is from its leading bytes and its total size: the
+ * sniffed type, the asset kind, the stored extension, and whether it is within
+ * the cap for that kind. `head` may be the whole file (single-request uploads)
+ * or just its first bytes (direct uploads, sniffed again after completion).
+ */
+export async function classifyAssetBytes(input: {
+  head: Buffer;
+  sizeBytes: number;
   declaredMimeType?: string;
   filename: string;
   allowAnyFileType?: boolean;
 }) {
-  if (input.buffer.byteLength === 0) {
+  if (input.sizeBytes === 0 || input.head.byteLength === 0) {
     throw new AssetError("Choose a non-empty file.", 400, "EMPTY_FILE");
   }
 
-  const detected = await fileTypeFromBuffer(input.buffer);
+  const detected = await fileTypeFromBuffer(input.head);
   const detectedMimeType = detected?.mime;
   const allowed = detectedMimeType ? ALLOWED_MIME_TYPES[detectedMimeType] : null;
 
@@ -1247,7 +1265,7 @@ async function validateAssetFile(input: {
     }
 
     return await validateGenericFile({
-      buffer: input.buffer,
+      sizeBytes: input.sizeBytes,
       filename: input.filename,
       detectedMimeType: detectedMimeType ?? null,
       detectedExtension: detected?.ext ?? null,
@@ -1268,7 +1286,7 @@ async function validateAssetFile(input: {
   const maxBytes =
     allowed.kind === "image" ? limits.imageMaxBytes : limits.pdfMaxBytes;
 
-  if (input.buffer.byteLength > maxBytes) {
+  if (input.sizeBytes > maxBytes) {
     throw new AssetError("File is too large.", 413, "FILE_TOO_LARGE");
   }
 
@@ -1287,12 +1305,12 @@ async function validateAssetFile(input: {
  * whatever `mimeType` says, so a stored HTML/SVG never renders on our origin.
  */
 async function validateGenericFile(input: {
-  buffer: Buffer;
+  sizeBytes: number;
   filename: string;
   detectedMimeType: string | null;
   detectedExtension: string | null;
 }) {
-  if (input.buffer.byteLength > (await getUploadLimits()).fileMaxBytes) {
+  if (input.sizeBytes > (await getUploadLimits()).fileMaxBytes) {
     throw new AssetError("File is too large.", 413, "FILE_TOO_LARGE");
   }
 
@@ -1305,7 +1323,7 @@ async function validateGenericFile(input: {
   };
 }
 
-async function reserveUserStorage(userId: string, sizeBytes: number) {
+export async function reserveUserStorage(userId: string, sizeBytes: number) {
   const rows = await db
     .update(users)
     .set({
@@ -1325,7 +1343,7 @@ async function reserveUserStorage(userId: string, sizeBytes: number) {
   }
 }
 
-async function releaseUserStorage(userId: string, sizeBytes: number) {
+export async function releaseUserStorage(userId: string, sizeBytes: number) {
   await db
     .update(users)
     .set({
@@ -1335,18 +1353,18 @@ async function releaseUserStorage(userId: string, sizeBytes: number) {
     .where(eq(users.id, userId));
 }
 
-async function markAssetFailed(assetId: string) {
+export async function markAssetFailed(assetId: string) {
   await db
     .update(assets)
     .set({ status: "failed", updatedAt: new Date() })
     .where(eq(assets.id, assetId));
 }
 
-function buildObjectKey(userId: string, assetId: string, extension: string) {
+export function buildObjectKey(userId: string, assetId: string, extension: string) {
   return `users/${userId}/assets/${assetId}.${extension}`;
 }
 
-function sanitizeFilename(filename: string) {
+export function sanitizeFilename(filename: string) {
   return filename
     .replaceAll("\\", "/")
     .split("/")

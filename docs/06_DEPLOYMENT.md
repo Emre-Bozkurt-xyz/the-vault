@@ -300,6 +300,32 @@ Proxy: usually on is fine for web HTTPS
 
 If OAuth has weird issues, temporarily test with Cloudflare proxy off, then re-enable.
 
+With the proxy on, Cloudflare rejects request bodies over 100 MB (Free/Pro). Vault
+never sends large files through it: files over 32 MiB upload from the browser
+straight to R2 (see "R2 bucket for large uploads" below).
+
+### R2 bucket for large uploads
+
+Large uploads PUT presigned parts directly to the R2 endpoint, so the bucket needs
+a CORS rule for the Vault origin plus a lifecycle rule that aborts abandoned
+multipart uploads. With an R2 token that can edit bucket settings
+("Admin Read & Write"):
+
+```bash
+npm run assets:configure-bucket                 # dry run, prints the rules
+npm run assets:configure-bucket -- --apply      # writes them (keeps other rules)
+# origin defaults to NEXTAUTH_URL; override with --origin https://vault.ems-place.com
+```
+
+Or set them in the dashboard (R2 -> bucket -> Settings):
+
+- CORS: allowed origin `https://vault.ems-place.com`, method `PUT`, allowed header
+  `content-type`, expose header `ETag`, max age 3600.
+- Object lifecycle: abort incomplete multipart uploads after 2 days.
+
+Without the CORS rule, uploads over 32 MiB fail in the browser ("Check your
+connection"); smaller uploads are unaffected.
+
 ---
 
 ## 10. Production Migrations
@@ -509,6 +535,7 @@ cat "$BACKUP_FILE" | docker compose exec -T vault-postgres psql \
 | [x] | Health endpoint works |
 | [ ] | Collab WebSocket route works |
 | [ ] | Two-user live editing works |
+| [ ] | R2 CORS + lifecycle rules applied (`npm run assets:configure-bucket -- --apply`) |
 
 ---
 

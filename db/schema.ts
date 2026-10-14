@@ -691,6 +691,44 @@ export const assets = pgTable(
   ],
 );
 
+/**
+ * In-flight direct-to-R2 multipart uploads (large files). The asset row exists
+ * as `status = 'pending'` with its declared size already reserved against the
+ * owner's quota; this row holds what completing or aborting needs. Deleted on
+ * completion or abort; rows past `expires_at` are swept (abort + release quota)
+ * the next time their owner starts an upload.
+ */
+export const assetUploads = pgTable(
+  "asset_uploads",
+  {
+    assetId: uuid("asset_id")
+      .primaryKey()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** R2's multipart UploadId. */
+    uploadId: text("upload_id").notNull(),
+    partSizeBytes: bigint("part_size_bytes", { mode: "number" }).notNull(),
+    partCount: integer("part_count").notNull(),
+    /** Whether the user held the any-file-type grant when the upload began. */
+    allowAnyFileType: boolean("allow_any_file_type").notNull(),
+    /** Document to link on completion; edit access is rechecked then. */
+    documentId: uuid("document_id").references(() => documents.id, {
+      onDelete: "set null",
+    }),
+    shareLinkId: text("share_link_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("asset_uploads_user_id_idx").on(table.userId),
+    index("asset_uploads_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
 export const documentAssets = pgTable(
   "document_assets",
   {

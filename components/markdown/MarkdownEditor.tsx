@@ -60,6 +60,8 @@ import {
 import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 
+import { UploadProgressList } from "@/components/assets/UploadProgressList";
+import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
 import { ExtensionOverlayLayer } from "@/components/extensions/ExtensionOverlays";
 import { ContentPickerDialog } from "@/components/content-picker-dialog";
@@ -479,7 +481,6 @@ export function MarkdownEditor({
   const [readTaskError, setReadTaskError] = useState<string | null>(null);
   const [readTaskPending, setReadTaskPending] = useState(false);
   const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
-  const [uploadingAsset, setUploadingAsset] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("live");
   const [wikiLinkMap] = useState<WikiLinkResolutionMap>(wikiLinks ?? {});
@@ -1355,6 +1356,36 @@ export function MarkdownEditor({
     return () => window.clearTimeout(autosaveTimer);
   }, [dirty, saveDocument, saving, titleValue, markdownValue]);
 
+  const assetUploads = useAssetUploads({
+    documentId,
+    shareLinkId,
+    bearerToken: embedSessionToken,
+    autoDismissMs: 2500,
+    onUploaded: (asset) => {
+      setAssetLinkMap((current) => ({
+        ...current,
+        [asset.id]: {
+          id: asset.id,
+          kind: asset.kind,
+          displayName: asset.displayName,
+          altText: asset.displayName,
+          mimeType: asset.mimeType,
+          sizeBytes: asset.sizeBytes,
+          url: asset.url,
+        },
+      }));
+
+      // Large uploads can take minutes; insert into whichever view is live
+      // now (a mode switch recreates it), at the current cursor.
+      const view = viewRef.current;
+      if (view) {
+        insertMarkdownAtSelection(view, `${asset.markdown}
+`);
+      }
+    },
+  });
+  const enqueueAssetUpload = assetUploads.enqueue;
+
   const uploadAssetFile = useCallback(
     async (file: File, view: EditorView | null = viewRef.current) => {
       if (!view) {
@@ -1362,64 +1393,9 @@ export function MarkdownEditor({
       }
 
       setAssetUploadError(null);
-      setUploadingAsset(true);
-
-      try {
-        const formData = new FormData();
-        formData.set("file", file);
-        formData.set("documentId", documentId);
-
-        if (shareLinkId) {
-          formData.set("shareLinkId", shareLinkId);
-        }
-
-        const response = await fetch("/api/assets", {
-          method: "POST",
-          body: formData,
-          headers: embedSessionToken
-            ? { Authorization: `Bearer ${embedSessionToken}` }
-            : undefined,
-        });
-        const payload = (await response.json()) as {
-          asset?: {
-            id: string;
-            kind: "image" | "pdf" | "file";
-            displayName: string;
-            mimeType: string;
-            sizeBytes: number;
-            url: string;
-            markdown: string;
-          };
-          error?: string;
-        };
-
-        if (!response.ok || !payload.asset) {
-          throw new Error(payload.error ?? "Upload failed.");
-        }
-
-        const asset = payload.asset;
-        setAssetLinkMap((current) => ({
-          ...current,
-          [asset.id]: {
-            id: asset.id,
-            kind: asset.kind,
-            displayName: asset.displayName,
-            altText: asset.displayName,
-            mimeType: asset.mimeType,
-            sizeBytes: asset.sizeBytes,
-            url: asset.url,
-          },
-        }));
-        insertMarkdownAtSelection(view, `${asset.markdown}\n`);
-      } catch (error) {
-        setAssetUploadError(
-          error instanceof Error ? error.message : "Upload failed.",
-        );
-      } finally {
-        setUploadingAsset(false);
-      }
+      enqueueAssetUpload([file]);
     },
-    [documentId, embedSessionToken, shareLinkId],
+    [enqueueAssetUpload],
   );
   assetUploadHandlerRef.current = uploadAssetFile;
 
@@ -1786,9 +1762,15 @@ export function MarkdownEditor({
           <CollaborationPresence users={presenceUsers} />
           <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} />
         </div>
-        {uploadingAsset || assetUploadError ? (
+        <UploadProgressList
+          items={assetUploads.items}
+          onCancel={assetUploads.cancel}
+          onDismiss={assetUploads.dismiss}
+          className="max-w-md"
+        />
+        {assetUploadError ? (
           <p className="text-sm text-muted-foreground" aria-live="polite">
-            {uploadingAsset ? "Uploading asset..." : assetUploadError}
+            {assetUploadError}
           </p>
         ) : null}
         {editorMode !== "read" && selectedAssetEmbed ? (

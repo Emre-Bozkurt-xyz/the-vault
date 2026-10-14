@@ -36,6 +36,22 @@ describe("buildReportOnlyCsp", () => {
     expect(csp).toContain("https://*.bandcamp.com");
     expect(csp).toContain("img-src 'self' https: data: blob:");
   });
+
+  it("lets large uploads reach the R2 endpoint origin only", () => {
+    const original = process.env.R2_ENDPOINT;
+    process.env.R2_ENDPOINT = "https://acct123.r2.cloudflarestorage.com";
+
+    try {
+      const connectSrc = buildReportOnlyCsp("n")
+        .split(";")
+        .find((directive) => directive.trim().startsWith("connect-src"));
+      expect(connectSrc).toContain("https://acct123.r2.cloudflarestorage.com");
+      expect(connectSrc).not.toContain("*");
+    } finally {
+      if (original === undefined) delete process.env.R2_ENDPOINT;
+      else process.env.R2_ENDPOINT = original;
+    }
+  });
 });
 
 describe("embed frame-ancestors", () => {

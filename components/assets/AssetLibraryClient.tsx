@@ -19,6 +19,8 @@ import {
   Upload,
 } from "lucide-react";
 
+import { UploadProgressList } from "@/components/assets/UploadProgressList";
+import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
@@ -71,7 +73,6 @@ export function AssetLibraryClient({
 }) {
   const [assets, setAssets] = useState(initialAssets);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
     initialAssets[0]?.id ?? null,
   );
@@ -91,6 +92,10 @@ export function AssetLibraryClient({
     () => getContentSearchSummary(parsedQuery),
     [parsedQuery],
   );
+  const uploads = useAssetUploads({
+    onSettled: () => void refreshAssets().catch(() => undefined),
+    autoDismissMs: 4000,
+  });
   const visibleAssets = useMemo(
     () =>
       filterAndSortAssets(assets, {
@@ -117,66 +122,33 @@ export function AssetLibraryClient({
     fileInputRef.current?.click();
   }
 
-  async function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
+  function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = "";
 
-    if (files.length === 0) {
+    if (files.length > 0) {
+      setMessage(null);
+      uploads.enqueue(files);
+    }
+  }
+
+  async function refreshAssets() {
+    const listResponse = await fetch("/api/assets");
+    const listPayload = (await listResponse.json()) as {
+      assets?: AssetLibraryItem[];
+      error?: string;
+    };
+
+    if (!listResponse.ok || !listPayload.assets) {
       return;
     }
 
-    setUploading(true);
-    setMessage(null);
+    const refreshed = listPayload.assets;
+    setAssets(refreshed);
 
-    let uploaded = 0;
-
-    try {
-      for (const file of files) {
-        const formData = new FormData();
-        formData.set("file", file);
-
-        const response = await fetch("/api/assets", {
-          method: "POST",
-          body: formData,
-        });
-        const payload = (await response.json()) as {
-          asset?: { id: string };
-          error?: string;
-        };
-
-        if (!response.ok || !payload.asset) {
-          throw new Error(payload.error ?? `Could not upload ${file.name}.`);
-        }
-
-        uploaded += 1;
-      }
-
-      const listResponse = await fetch("/api/assets");
-      const listPayload = (await listResponse.json()) as {
-        assets?: AssetLibraryItem[];
-        error?: string;
-      };
-
-      if (listResponse.ok && listPayload.assets) {
-        const refreshed = listPayload.assets;
-        setAssets(refreshed);
-
-        const stillSelected = refreshed.some((asset) => asset.id === selectedId);
-        if (!stillSelected && refreshed[0]) {
-          setSelectedId(refreshed[0].id);
-          setDraft(toDraft(refreshed[0]));
-        }
-      }
-
-      setMessage(
-        files.length === 1
-          ? "Asset uploaded."
-          : `${uploaded} of ${files.length} assets uploaded.`,
-      );
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not upload asset.");
-    } finally {
-      setUploading(false);
+    if (!refreshed.some((asset) => asset.id === selectedId) && refreshed[0]) {
+      setSelectedId(refreshed[0].id);
+      setDraft(toDraft(refreshed[0]));
     }
   }
 
@@ -296,7 +268,14 @@ export function AssetLibraryClient({
           accept={unrestrictedUploads ? undefined : UPLOAD_ACCEPT}
           multiple
           className="sr-only"
-          onChange={(event) => void handleFilesSelected(event)}
+          onChange={handleFilesSelected}
+        />
+
+        <UploadProgressList
+          items={uploads.items}
+          onCancel={uploads.cancel}
+          onDismiss={uploads.dismiss}
+          className="mt-4"
         />
 
         {assets.length > 0 ? (
@@ -347,15 +326,14 @@ export function AssetLibraryClient({
             <Button
               type="button"
               onClick={openFilePicker}
-              disabled={uploading}
               className="lg:px-4"
             >
-              {uploading ? (
+              {uploads.hasActive ? (
                 <Loader2 data-icon="inline-start" className="animate-spin" />
               ) : (
                 <Upload data-icon="inline-start" />
               )}
-              {uploading ? "Uploading..." : "Upload"}
+              Upload
             </Button>
           </div>
         ) : null}
@@ -436,15 +414,14 @@ export function AssetLibraryClient({
             <Button
               type="button"
               onClick={openFilePicker}
-              disabled={uploading}
               className="mx-auto mt-5"
             >
-              {uploading ? (
+              {uploads.hasActive ? (
                 <Loader2 data-icon="inline-start" className="animate-spin" />
               ) : (
                 <Upload data-icon="inline-start" />
               )}
-              {uploading ? "Uploading..." : "Upload asset"}
+              Upload asset
             </Button>
           </div>
         )}
