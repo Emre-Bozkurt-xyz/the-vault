@@ -1,57 +1,102 @@
-import Link from "next/link";
-import { BookOpen } from "lucide-react";
+"use client";
 
-import { cn } from "@/lib/utils";
+import { useMemo, useState } from "react";
+import { BookOpen, FileText, Library } from "lucide-react";
+
+import {
+  SidePanel,
+  SidePanelAction,
+  SidePanelBody,
+  SidePanelEmpty,
+  SidePanelHeader,
+  SidePanelNavItem,
+  SidePanelSearch,
+  SidePanelSection,
+  SidePanelToolbar,
+  useActiveHref,
+} from "@/components/workspace/SidePanel";
 import type { WorkspaceGuideGroup } from "@/components/workspace/workspace-types";
 
+/**
+ * Docs mode of the left panel: the official guides by category, with a filter.
+ * Categories collapse; the one holding the open guide always starts expanded,
+ * and the rest start collapsed only once the catalogue gets long.
+ */
 export function WorkspaceDocsPanel({
   docs,
-  activeSlug,
 }: {
   docs: WorkspaceGuideGroup[];
-  activeSlug?: string;
 }) {
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-border/70 px-3 py-3">
-        <div className="flex items-center gap-2">
-          <BookOpen className="size-4 text-muted-foreground" />
-          <span>
-            <span className="block text-sm font-semibold">Vault Docs</span>
-            <span className="block text-xs text-muted-foreground">
-              Official guides
-            </span>
-          </span>
-        </div>
-      </div>
+  const isActive = useActiveHref();
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const groups = useMemo(
+    () =>
+      docs
+        .map((group) => ({
+          ...group,
+          docs: normalizedQuery
+            ? group.docs.filter((doc) =>
+                `${doc.title} ${group.category}`.toLowerCase().includes(normalizedQuery),
+              )
+            : group.docs,
+        }))
+        .filter((group) => group.docs.length > 0),
+    [docs, normalizedQuery],
+  );
+  const guideCount = docs.reduce((sum, group) => sum + group.docs.length, 0);
+  // Collapse only long catalogues; a short one reads better fully open.
+  const collapseByDefault = guideCount > 30;
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        {docs.length > 0 ? (
-          docs.map((group) => (
-            <nav key={group.category} className="mb-4 grid gap-1">
-              <p className="px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {group.category}
-              </p>
-              {group.docs.map((doc) => (
-                <Link
-                  key={doc.id}
-                  href={doc.href}
-                  className={cn(
-                    "rounded-[5px] px-2 py-1.5 text-sm transition",
-                    doc.slug === activeSlug
-                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  )}
-                >
-                  {doc.title}
-                </Link>
-              ))}
-            </nav>
-          ))
+  return (
+    <SidePanel>
+      <SidePanelHeader
+        icon={BookOpen}
+        title="Docs"
+        subtitle={`${guideCount} official guide${guideCount === 1 ? "" : "s"}`}
+        actions={<SidePanelAction icon={Library} label="All docs" href="/docs" />}
+      />
+      <SidePanelToolbar>
+        <SidePanelSearch
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter guides"
+          label="Filter guides"
+        />
+      </SidePanelToolbar>
+
+      <SidePanelBody>
+        {groups.length > 0 ? (
+          groups.map((group) => {
+            const holdsActive = group.docs.some((doc) => isActive(doc.href));
+
+            return (
+              <SidePanelSection
+                // Re-key on filtering so matches always show expanded.
+                key={`${group.category}-${normalizedQuery ? "q" : ""}`}
+                title={group.category}
+                count={group.docs.length}
+                collapsible
+                defaultOpen={Boolean(normalizedQuery) || holdsActive || !collapseByDefault}
+              >
+                {group.docs.map((doc) => (
+                  <SidePanelNavItem
+                    key={doc.id}
+                    href={doc.href}
+                    icon={FileText}
+                    label={doc.title}
+                    active={isActive(doc.href)}
+                  />
+                ))}
+              </SidePanelSection>
+            );
+          })
         ) : (
-          <p className="px-2 text-sm text-muted-foreground">No published docs.</p>
+          <SidePanelEmpty>
+            {normalizedQuery ? "No guides match." : "No published docs yet."}
+          </SidePanelEmpty>
         )}
-      </div>
-    </div>
+      </SidePanelBody>
+    </SidePanel>
   );
 }

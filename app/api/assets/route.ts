@@ -18,7 +18,14 @@ export async function GET() {
   try {
     const user = await requireAssetUser();
     const assets = await listAssetsForUser(user.id);
-    return NextResponse.json({ assets });
+    return NextResponse.json({
+      assets,
+      storage: {
+        usedBytes: user.storageUsedBytes,
+        quotaBytes: user.storageQuotaBytes,
+        unrestrictedUploadsAllowed: user.unrestrictedUploadsAllowed,
+      },
+    });
   } catch (error) {
     return assetErrorResponse(error);
   }

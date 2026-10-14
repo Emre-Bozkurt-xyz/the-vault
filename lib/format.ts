@@ -22,3 +22,17 @@ export function formatBytes(bytes: number): string {
 
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
+
+/**
+ * "Oct 13, 2026". Fixed locale and UTC: client components render on the server
+ * too, and a locale- or zone-dependent date mismatches on hydration.
+ */
+export function formatShortDate(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}

@@ -15,6 +15,15 @@ import {
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
+import {
+  SidePanel,
+  SidePanelAction,
+  SidePanelBody,
+  SidePanelEmpty,
+  SidePanelHeader,
+  SidePanelSection,
+  SidePanelToolbar,
+} from "@/components/workspace/SidePanel";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import { requestEditorJump } from "@/lib/editor-jump-events";
 import { captureTaskFromClient } from "@/lib/tasks/capture-client";
@@ -254,25 +263,33 @@ export function WorkspaceTasksPanel() {
     void load();
   };
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between border-b border-border/70 px-3 py-2">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Tasks
-        </p>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={refreshing}
-          aria-label="Refresh tasks"
-          title="Refresh"
-          className="flex size-6 items-center justify-center rounded text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:opacity-50"
-        >
-          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-        </button>
-      </div>
+  const openCount = result?.ok
+    ? result.tasks.filter((task) => task.status !== "done").length
+    : null;
 
-      <CaptureBox />
+  return (
+    <SidePanel>
+      <SidePanelHeader
+        icon={ListChecks}
+        title="Tasks"
+        subtitle={openCount === null ? "Agenda" : `${openCount} open this week`}
+        actions={
+          <>
+            <SidePanelAction
+              icon={RefreshCw}
+              label="Refresh tasks"
+              onClick={refresh}
+              disabled={refreshing}
+              spinning={refreshing}
+            />
+            <SidePanelAction icon={ArrowUpRight} label="Open Tasks page" href="/tasks" />
+          </>
+        }
+      />
+
+      <SidePanelToolbar>
+        <CaptureBox />
+      </SidePanelToolbar>
 
       {notice ? (
         <p role="status" className="border-b border-border/70 px-3 py-1.5 text-xs text-destructive">
@@ -280,47 +297,39 @@ export function WorkspaceTasksPanel() {
         </p>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <SidePanelBody>
         {result === null ? (
-          <p className="px-2 py-3 text-xs text-muted-foreground">Loading tasks…</p>
+          <SidePanelEmpty>Loading tasks…</SidePanelEmpty>
         ) : !result.ok ? (
-          <p className="px-2 py-3 text-xs text-muted-foreground">{result.error}</p>
+          <SidePanelEmpty>{result.error}</SidePanelEmpty>
         ) : result.tasks.length === 0 && result.events.length === 0 ? (
           <EmptyAgenda today={result.today} laterCount={result.laterCount} />
         ) : (
           <>
             {sections.map((section) =>
               section.tasks.length > 0 ? (
-                <section key={section.id} className="mb-3">
-                  <h3
-                    className={cn(
-                      "flex items-center justify-between px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em]",
-                      section.overdue ? "text-destructive" : "text-muted-foreground",
-                    )}
-                  >
-                    {section.label}
-                    <span className="font-normal tabular-nums">
-                      {section.tasks.filter((task) => task.status !== "done").length}
-                    </span>
-                  </h3>
-                  <div className="grid gap-0.5">
-                    {section.tasks.map((task) => (
-                      <TaskRow
-                        key={taskKey(task)}
-                        task={task}
-                        today={result.today}
-                        showDue={section.id !== "today" && section.id !== "inbox"}
-                        overdue={Boolean(section.overdue)}
-                        onChange={(change) => changeTask(task, change)}
-                      />
-                    ))}
-                  </div>
-                </section>
+                <SidePanelSection
+                  key={section.id}
+                  title={section.label}
+                  count={section.tasks.filter((task) => task.status !== "done").length}
+                  tone={section.overdue ? "danger" : "default"}
+                  collapsible
+                >
+                  {section.tasks.map((task) => (
+                    <TaskRow
+                      key={taskKey(task)}
+                      task={task}
+                      today={result.today}
+                      showDue={section.id !== "today" && section.id !== "inbox"}
+                      overdue={Boolean(section.overdue)}
+                      onChange={(change) => changeTask(task, change)}
+                    />
+                  ))}
+                </SidePanelSection>
               ) : null,
             )}
             {result.events.length > 0 ? (
-              <section className="mb-3" aria-label="Calendar events">
-                <h3 className="px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Calendar events</h3>
+              <SidePanelSection title="Calendar events" count={result.events.length} collapsible>
                 <div className="grid gap-0.5">
                   {result.events.map((event) => (
                     <Link key={event.id} href={`/docs/${event.documentId}`}
@@ -333,23 +342,20 @@ export function WorkspaceTasksPanel() {
                     </Link>
                   ))}
                 </div>
-              </section>
+              </SidePanelSection>
             ) : null}
             {result.laterCount > 0 ? (
-              <p className="px-2 py-1 text-xs text-muted-foreground">
-                {result.laterCount} more due later.
-              </p>
+              <SidePanelEmpty>
+                {result.laterCount} more due later.{" "}
+                <Link href="/tasks" className="underline underline-offset-2 hover:text-foreground">
+                  See all tasks
+                </Link>
+              </SidePanelEmpty>
             ) : null}
-            <Link
-              href="/tasks"
-              className="mt-1 flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground transition hover:text-foreground"
-            >
-              Open Tasks page <ArrowUpRight className="size-3" />
-            </Link>
           </>
         )}
-      </div>
-    </div>
+      </SidePanelBody>
+    </SidePanel>
   );
 }
 
@@ -450,7 +456,6 @@ function CaptureBox() {
 
   return (
     <form
-      className="border-b border-border/70 px-3 py-2"
       onSubmit={(event) => {
         event.preventDefault();
         void submit();

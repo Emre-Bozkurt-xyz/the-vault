@@ -14,6 +14,7 @@ import {
   Boxes,
   ChevronRight,
   FilePlus2,
+  Files,
   FileText,
   Folder,
   FolderOpen,
@@ -44,6 +45,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FolderSettingsDialog } from "@/components/folder-settings-dialog";
+import {
+  SidePanel,
+  SidePanelAction,
+  SidePanelHeader,
+} from "@/components/workspace/SidePanel";
 import {
   createDocumentInFolderAction,
   restoreArchivedDocumentAction,
@@ -283,35 +289,28 @@ export function WorkspaceFileBrowser({
   const rootDocs = docsByFolder.get(ROOT) ?? [];
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col", isPending && "opacity-90")}>
-      <div className="flex items-center justify-between border-b border-border/70 px-3 py-2">
-        <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Vault
-          </p>
-          <h2 className="text-sm font-semibold">Files</h2>
-        </div>
-        <div className="flex items-center gap-0.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            title="New folder"
-            onClick={() => setCreatingIn(ROOT)}
-          >
-            <FolderPlus className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            title="New document"
-            onClick={() => newDocInFolder(null)}
-          >
-            <FilePlus2 className="size-4" />
-          </Button>
-        </div>
-      </div>
+    <SidePanel className={cn(isPending && "opacity-90")}>
+      <SidePanelHeader
+        icon={Files}
+        title="Files"
+        subtitle={`${owned.length} document${owned.length === 1 ? "" : "s"}${
+          shared.length > 0 ? ` · ${shared.length} shared` : ""
+        }`}
+        actions={
+          <>
+            <SidePanelAction
+              icon={FolderPlus}
+              label="New folder"
+              onClick={() => setCreatingIn(ROOT)}
+            />
+            <SidePanelAction
+              icon={FilePlus2}
+              label="New document"
+              onClick={() => newDocInFolder(null)}
+            />
+          </>
+        }
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {/* The whole Folders section is a drop zone for the root level; nested
@@ -337,8 +336,8 @@ export function WorkspaceFileBrowser({
             dropTarget === ROOT && "bg-primary/10 ring-1 ring-primary/30",
           )}
         >
-          <div className="flex items-center justify-between px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            <span>Folders</span>
+          <div className="flex h-7 items-center justify-between px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span>Your documents</span>
           </div>
 
           {creatingIn === ROOT ? (
@@ -479,7 +478,7 @@ export function WorkspaceFileBrowser({
         initialSection={folderSettings?.section ?? "tags"}
         onClose={() => setFolderSettings(null)}
       />
-    </div>
+    </SidePanel>
   );
 }
 
@@ -834,7 +833,7 @@ function FlatSection({
 }) {
   return (
     <section className="mb-3">
-      <div className="flex items-center justify-between px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="flex h-7 items-center justify-between px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <span>{title}</span>
         <span>{items.length}</span>
       </div>
@@ -891,7 +890,7 @@ function BinSection({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition hover:text-foreground"
+        className="flex h-7 w-full items-center gap-1.5 px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition hover:text-foreground"
       >
         <ChevronRight
           className={cn("size-3.5 shrink-0 transition", open && "rotate-90")}
@@ -998,7 +997,7 @@ function ServicesSection({
 
   return (
     <section className="mb-3">
-      <div className="flex items-center justify-between px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="flex h-7 items-center justify-between px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <span>Services</span>
         <span>{totalDocuments}</span>
       </div>
@@ -1208,7 +1207,7 @@ function SharedSection({
 
   return (
     <section className="mb-3">
-      <div className="flex items-center justify-between px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="flex h-7 items-center justify-between px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <span>Shared with me</span>
         <span>{totalCount}</span>
       </div>

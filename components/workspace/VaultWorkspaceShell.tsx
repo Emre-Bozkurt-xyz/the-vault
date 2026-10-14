@@ -1,21 +1,15 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  BookOpen,
   Files,
   GripVertical,
-  ImageIcon,
-  LayoutGrid,
-  ListChecks,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Search,
   Settings,
-  ShieldCheck,
 } from "lucide-react";
 
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
@@ -26,7 +20,7 @@ import {
 } from "@/components/ui/sheet";
 import { subscribeToOpenRightPanel } from "@/lib/document-command-events";
 import { cn } from "@/lib/utils";
-import { WorkspaceIconRail } from "@/components/workspace/WorkspaceIconRail";
+import { WorkspaceIconRail, railItems } from "@/components/workspace/WorkspaceIconRail";
 import {
   WorkspaceCommandPalette,
   openWorkspaceCommandPalette,
@@ -151,21 +145,12 @@ export function VaultWorkspaceShell({
   }
 
   /**
-   * Rail clicks try not to open the panel: a collapsed panel stays collapsed
-   * when the icon loads a page (it just remembers the mode for next time), and
-   * clicking the active panel-only icon again collapses it.
+   * Rail icons only switch the left panel; the panels hold the navigation.
+   * Clicking the icon of the panel that is already open closes it, so the same
+   * icon toggles its panel.
    */
-  function selectRailMode(
-    mode: WorkspacePanelMode,
-    { navigates }: { navigates: boolean },
-  ) {
-    if (leftCollapsed && navigates) {
-      setPanelMode(mode);
-      persistLayout({ panelMode: mode });
-      return;
-    }
-
-    if (!leftCollapsed && !navigates && mode === effectiveMode) {
+  function selectRailMode(mode: WorkspacePanelMode) {
+    if (!leftCollapsed && mode === effectiveMode) {
       toggleLeftPanel();
       return;
     }
@@ -437,28 +422,9 @@ export function VaultWorkspaceShell({
         >
           <SheetTitle className="sr-only">Workspace navigation</SheetTitle>
           <div className="flex items-center gap-1 overflow-x-auto border-b border-border/70 p-2">
-            {mobilePanelItems(isAdmin, tasksEnabled).map((item) => {
+            {railItems(isAdmin, tasksEnabled).map((item) => {
               const Icon = item.icon;
               const active = effectiveMode === item.mode;
-              const className = cn(
-                "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                active && "bg-sidebar-accent text-sidebar-accent-foreground",
-              );
-
-              if (item.href) {
-                return (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    title={item.label}
-                    aria-label={item.label}
-                    onClick={() => setMobilePanelOpen(false)}
-                    className={className}
-                  >
-                    <Icon className="size-4" />
-                  </Link>
-                );
-              }
 
               return (
                 <button
@@ -466,15 +432,27 @@ export function VaultWorkspaceShell({
                   type="button"
                   title={item.label}
                   aria-label={item.label}
+                  aria-pressed={active}
                   onClick={() => changeMode(item.mode)}
-                  className={className}
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    active && "bg-sidebar-accent text-sidebar-accent-foreground",
+                  )}
                 >
                   <Icon className="size-4" />
                 </button>
               );
             })}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
+          {/* Following a link from a panel closes the drawer, like any nav. */}
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe"
+            onClickCapture={(event) => {
+              if ((event.target as HTMLElement).closest("a[href]")) {
+                setMobilePanelOpen(false);
+              }
+            }}
+          >
             {activePanel ?? <PlaceholderPanel mode={effectiveMode} />}
           </div>
         </SheetContent>
@@ -523,41 +501,6 @@ function MobileActionButton({
       {label}
     </button>
   );
-}
-
-type MobilePanelItem = {
-  label: string;
-  mode: WorkspacePanelMode;
-  icon: typeof Files;
-  href?: string;
-};
-
-// Mirrors `WorkspaceIconRail`: gallery/assets/admin navigate to their routes,
-// the rest just switch the active panel in place.
-function mobilePanelItems(
-  isAdmin: boolean,
-  tasksEnabled: boolean,
-): MobilePanelItem[] {
-  return [
-    { label: "Files", mode: "files", icon: Files },
-    { label: "Search", mode: "search", icon: Search },
-    ...(tasksEnabled
-      ? [{ label: "Tasks", mode: "tasks" as const, icon: ListChecks }]
-      : []),
-    { label: "Gallery", mode: "gallery", icon: LayoutGrid, href: "/gallery" },
-    { label: "Assets", mode: "assets", icon: ImageIcon, href: "/assets" },
-    { label: "Docs", mode: "docs", icon: BookOpen },
-    ...(isAdmin
-      ? [
-          {
-            label: "Admin" as const,
-            mode: "admin" as const,
-            icon: ShieldCheck,
-            href: "/dashboard/admin",
-          },
-        ]
-      : []),
-  ];
 }
 
 function ResizeHandle({

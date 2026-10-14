@@ -6,6 +6,7 @@ import { FilePlus2, FileText, Search } from "lucide-react";
 
 import { HomeTodayTasks } from "@/components/tasks/HomeTodayTasks";
 import { Button } from "@/components/ui/button";
+import { formatShortDate } from "@/lib/format";
 import { createDocumentAction } from "@/server/documents";
 import type { WorkspaceDocumentItem } from "@/components/workspace/workspace-types";
 
@@ -105,7 +106,7 @@ export function WorkspaceNewTab({
                     <span className="truncate">{document.title}</span>
                   </span>
                   <span className="shrink-0 text-xs">
-                    {document.updatedAt.toLocaleDateString()}
+                    {formatShortDate(document.updatedAt)}
                   </span>
                 </Link>
               ))

@@ -10,7 +10,8 @@ import { WorkspaceDocsPanel } from "@/components/workspace/WorkspaceDocsPanel";
 import { WorkspaceFileBrowser } from "@/components/workspace/WorkspaceFileBrowser";
 import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPanel";
 import { WorkspaceSearchPanel } from "@/components/workspace/WorkspaceSearchPanel";
-import { WorkspaceUtilityPanel } from "@/components/workspace/WorkspaceUtilityPanel";
+import { WorkspaceAdminPanel } from "@/components/workspace/WorkspaceAdminPanel";
+import { WorkspaceAssetsPanel } from "@/components/workspace/WorkspaceAssetsPanel";
 import { VaultWorkspaceShell } from "@/components/workspace/VaultWorkspaceShell";
 import type { WorkspaceGuideGroup } from "@/components/workspace/workspace-types";
 import { cn } from "@/lib/utils";
@@ -58,22 +59,15 @@ export default async function OfficialDocsIndexPage() {
             shared={workspace.shared}
             publicDocuments={workspace.publicDocuments}
             guideGroups={workspace.guideGroups}
-            activeHref="/docs"
           />
         }
         galleryPanel={
           <WorkspaceGalleryPanel
             publicDocuments={workspace.publicDocuments}
-            activeHref="/docs"
           />
         }
-        adminPanel={
-          <WorkspaceUtilityPanel
-            mode="admin"
-            activeHref="/docs"
-            isAdmin={workspace.profile.role === "admin"}
-          />
-        }
+        assetsPanel={<WorkspaceAssetsPanel />}
+        adminPanel={<WorkspaceAdminPanel isAdmin={workspace.profile.role === "admin"} />}
       >
         <DocsIndexContent docs={docs} groupedDocs={groupedDocs} />
       </VaultWorkspaceShell>

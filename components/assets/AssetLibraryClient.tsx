@@ -2,16 +2,16 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
-  type Dispatch,
   type FormEvent,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "next/navigation";
 import {
   Code2,
   Copy,
@@ -51,6 +51,7 @@ import {
   ContextPanelSection,
 } from "@/components/workspace/ContextPanel";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
 import { requestOpenRightPanel } from "@/lib/document-command-events";
 import { formatBytes } from "@/lib/format";
 import {
@@ -101,21 +102,17 @@ export function AssetLibraryClient({
 }) {
   const [assets, setAssets] = useState(initialAssets);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    initialAssets[0]?.id ?? null,
-  );
+  // Filters and the selected asset live in the URL, so the assets side panel
+  // and links can open the library in a given view (`?kind=image`,
+  // `?visibility=public`, `?asset=<id>`). Search text and sort stay local.
+  const searchParams = useSearchParams();
+  const kindFilter = parseKindFilter(searchParams.get("kind"));
+  const visibilityFilter = parseVisibilityFilter(searchParams.get("visibility"));
+  const selectedId = searchParams.get("asset");
   const selected = assets.find((asset) => asset.id === selectedId) ?? null;
-  const [draft, setDraft] = useState<AssetDraft>(() => toDraft(selected));
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
-  const [visibilityFilter, setVisibilityFilter] =
-    useState<VisibilityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const storage = useMemo(() => summarizeStorage(assets), [assets]);
-  const dirty = selected !== null && !sameDraft(draft, toDraft(selected));
 
   // The configure panel lives in the workspace's right panel (resizable and
   // collapsible like a document's). The page registers an empty host there and
@@ -138,7 +135,8 @@ export function AssetLibraryClient({
     [parsedQuery],
   );
   const uploads = useAssetUploads({
-    onSettled: () => void refreshAssets().catch(() => undefined),
+    // Refreshes this page and the side panel alike.
+    onSettled: () => dispatchAssetsChanged(),
     autoDismissMs: 4000,
   });
   const visibleAssets = useMemo(
@@ -152,10 +150,20 @@ export function AssetLibraryClient({
     [assets, kindFilter, parsedQuery, sortMode, visibilityFilter],
   );
 
+  const refreshAssets = useCallback(async () => {
+    try {
+      const response = await fetch("/api/assets");
+      const payload = (await response.json()) as { assets?: AssetLibraryItem[] };
+      if (response.ok && payload.assets) setAssets(payload.assets);
+    } catch {
+      // Keep the list we have.
+    }
+  }, []);
+
+  useEffect(() => subscribeToAssetsChanged(() => void refreshAssets()), [refreshAssets]);
+
   function selectAsset(asset: AssetLibraryItem) {
-    setSelectedId(asset.id);
-    setDraft(toDraft(asset));
-    setMessage(null);
+    updateLibraryUrl({ asset: asset.id });
 
     // Collapsed panel (or the mobile sheet): bring the details into view.
     if (!panelHost || panelHost.offsetParent === null) {
@@ -172,116 +180,7 @@ export function AssetLibraryClient({
     event.target.value = "";
 
     if (files.length > 0) {
-      setMessage(null);
       uploads.enqueue(files);
-    }
-  }
-
-  async function refreshAssets() {
-    const listResponse = await fetch("/api/assets");
-    const listPayload = (await listResponse.json()) as {
-      assets?: AssetLibraryItem[];
-      error?: string;
-    };
-
-    if (!listResponse.ok || !listPayload.assets) {
-      return;
-    }
-
-    const refreshed = listPayload.assets;
-    setAssets(refreshed);
-
-    if (!refreshed.some((asset) => asset.id === selectedId) && refreshed[0]) {
-      setSelectedId(refreshed[0].id);
-      setDraft(toDraft(refreshed[0]));
-    }
-  }
-
-  async function saveAsset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!selected) {
-      return;
-    }
-
-    setSaving(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`/api/assets/${selected.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...draft,
-          tags: draft.tags
-            .split(/\s+/)
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-        }),
-      });
-      const payload = (await response.json()) as {
-        asset?: AssetLibraryItem;
-        error?: string;
-      };
-
-      if (!response.ok || !payload.asset) {
-        throw new Error(payload.error ?? "Could not save asset.");
-      }
-
-      setAssets((current) =>
-        current.map((asset) =>
-          asset.id === payload.asset?.id ? payload.asset : asset,
-        ),
-      );
-      setDraft(toDraft(payload.asset));
-      setMessage("Asset saved.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save asset.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteSelectedAsset() {
-    if (!selected) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete "${selected.displayName}"? This removes it from documents, the library, gallery, and R2 storage.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeleting(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`/api/assets/${selected.id}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as {
-        asset?: { id: string };
-        error?: string;
-      };
-
-      if (!response.ok || !payload.asset) {
-        throw new Error(payload.error ?? "Could not delete asset.");
-      }
-
-      setAssets((current) =>
-        current.filter((asset) => asset.id !== payload.asset?.id),
-      );
-      const nextAsset = assets.find((asset) => asset.id !== payload.asset?.id) ?? null;
-      setSelectedId(nextAsset?.id ?? null);
-      setDraft(toDraft(nextAsset));
-      setMessage("Asset deleted.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not delete asset.");
-    } finally {
-      setDeleting(false);
     }
   }
 
@@ -293,8 +192,10 @@ export function AssetLibraryClient({
         rightPanelTitle="Asset"
       />
 
-      <div className="grid min-w-0 gap-6">
-        <header className="flex flex-col gap-5 border-b border-border/70 pb-6 md:flex-row md:items-end md:justify-between">
+      {/* Container queries: the space this page gets depends on which side
+          panels are open, so breakpoints follow the page, not the window. */}
+      <div className="@container grid min-w-0 gap-6">
+        <header className="flex flex-col gap-5 border-b border-border/70 pb-6 @3xl:flex-row @3xl:items-end @3xl:justify-between">
           <div className="min-w-0">
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground">
               Asset library
@@ -307,7 +208,7 @@ export function AssetLibraryClient({
               it should be visible outside private docs.
             </p>
           </div>
-          <div className="grid shrink-0 gap-2 text-sm sm:grid-cols-[6.5rem_16rem]">
+          <div className="grid w-full grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-2 text-sm @3xl:w-[22rem] @3xl:shrink-0">
             <Metric label="Assets" value={String(assets.length)} />
             <StorageBar used={storage.bytes} quota={storageQuotaBytes} />
           </div>
@@ -337,7 +238,7 @@ export function AssetLibraryClient({
             <FilterSelect
               label="Filter by asset type"
               value={kindFilter}
-              onChange={(value) => setKindFilter(value as KindFilter)}
+              onChange={(value) => updateLibraryUrl({ kind: value === "all" ? null : value })}
               options={[
                 ["all", "All types"],
                 ["image", "Images"],
@@ -348,7 +249,9 @@ export function AssetLibraryClient({
             <FilterSelect
               label="Filter by visibility"
               value={visibilityFilter}
-              onChange={(value) => setVisibilityFilter(value as VisibilityFilter)}
+              onChange={(value) =>
+                updateLibraryUrl({ visibility: value === "all" ? null : value })
+              }
               options={[
                 ["all", "Any visibility"],
                 ["private", "Private"],
@@ -381,7 +284,7 @@ export function AssetLibraryClient({
           items={uploads.items}
           onCancel={uploads.cancel}
           onDismiss={uploads.dismiss}
-          className="sm:grid-cols-2 xl:grid-cols-3"
+          className="@xl:grid-cols-2 @5xl:grid-cols-3"
         />
 
         {querySummary.length > 0 ? (
@@ -398,7 +301,7 @@ export function AssetLibraryClient({
         ) : null}
 
         {assets.length > 0 && visibleAssets.length > 0 ? (
-          <div className="columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4">
+          <div className="columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
             {visibleAssets.map((asset) => (
               <div key={asset.id} className="group relative mb-4 break-inside-avoid">
                 <button
@@ -471,18 +374,17 @@ export function AssetLibraryClient({
               <AssetConfigurePanel
                 key={selected.id}
                 asset={selected}
-                draft={draft}
-                setDraft={setDraft}
-                dirty={dirty}
-                saving={saving}
-                deleting={deleting}
-                message={message}
-                onSubmit={saveAsset}
-                onReset={() => {
-                  setDraft(toDraft(selected));
-                  setMessage(null);
+                onSaved={(saved) => {
+                  setAssets((current) =>
+                    current.map((asset) => (asset.id === saved.id ? saved : asset)),
+                  );
+                  dispatchAssetsChanged();
                 }}
-                onDelete={() => void deleteSelectedAsset()}
+                onDeleted={(id) => {
+                  setAssets((current) => current.filter((asset) => asset.id !== id));
+                  updateLibraryUrl({ asset: null });
+                  dispatchAssetsChanged();
+                }}
               />
             ) : (
               <div className="grid flex-1 place-content-center gap-2 px-6 py-16 text-center">
@@ -502,32 +404,93 @@ export function AssetLibraryClient({
 
 function AssetConfigurePanel({
   asset,
-  draft,
-  setDraft,
-  dirty,
-  saving,
-  deleting,
-  message,
-  onSubmit,
-  onReset,
-  onDelete,
+  onSaved,
+  onDeleted,
 }: {
   asset: AssetLibraryItem;
-  draft: AssetDraft;
-  setDraft: Dispatch<SetStateAction<AssetDraft>>;
-  dirty: boolean;
-  saving: boolean;
-  deleting: boolean;
-  message: string | null;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onReset: () => void;
-  onDelete: () => void;
+  onSaved: (asset: AssetLibraryItem) => void;
+  onDeleted: (id: string) => void;
 }) {
+  // Keyed by asset id, so switching assets starts a fresh draft.
+  const [draft, setDraft] = useState<AssetDraft>(() => toDraft(asset));
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const dirty = !sameDraft(draft, toDraft(asset));
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/assets/${asset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...draft,
+          tags: draft.tags
+            .split(/\s+/)
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        }),
+      });
+      const payload = (await response.json()) as {
+        asset?: AssetLibraryItem;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.asset) {
+        throw new Error(payload.error ?? "Could not save asset.");
+      }
+
+      setDraft(toDraft(payload.asset));
+      setMessage("Saved.");
+      onSaved(payload.asset);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save asset.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onDelete() {
+    const confirmed = window.confirm(
+      `Delete "${asset.displayName}"? This removes it from documents, the library, gallery, and storage.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleting(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
+      const payload = (await response.json()) as { asset?: { id: string }; error?: string };
+
+      if (!response.ok || !payload.asset) {
+        throw new Error(payload.error ?? "Could not delete asset.");
+      }
+
+      onDeleted(asset.id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete asset.");
+      setDeleting(false);
+    }
+  }
+
+  function onReset() {
+    setDraft(toDraft(asset));
+    setMessage(null);
+  }
+
   const update = (patch: Partial<AssetDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
 
   return (
-    <form onSubmit={onSubmit} className="flex min-h-full flex-1 flex-col">
+    <form onSubmit={(event) => void onSubmit(event)} className="flex min-h-full flex-1 flex-col">
       <ContextPanelBody>
         <div className="grid gap-3 border-b border-border/60 p-4">
           <AssetPreview asset={asset} />
@@ -664,7 +627,7 @@ function AssetConfigurePanel({
             variant="destructive"
             size="sm"
             disabled={deleting}
-            onClick={onDelete}
+            onClick={() => void onDelete()}
           >
             <Trash2 data-icon="inline-start" />
             {deleting ? "Deleting…" : "Delete asset"}
@@ -887,6 +850,37 @@ function VisibilityOption({
         <span className="block text-xs leading-snug text-muted-foreground">{detail}</span>
       </span>
     </button>
+  );
+}
+
+function parseKindFilter(value: string | null): KindFilter {
+  return value === "image" || value === "pdf" || value === "file" ? value : "all";
+}
+
+function parseVisibilityFilter(value: string | null): VisibilityFilter {
+  return value === "private" || value === "public" ? value : "all";
+}
+
+/**
+ * Shallow URL update: Next keeps `useSearchParams` in sync with
+ * `history.replaceState`, so filters and selection change without a server
+ * round trip, yet stay linkable and survive a reload.
+ */
+function updateLibraryUrl(changes: Record<string, string | null>) {
+  const params = new URLSearchParams(window.location.search);
+
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === null) params.delete(key);
+    else params.set(key, value);
+  }
+
+  const query = params.toString();
+  // `null` state, not `history.state`: Next marks its own entries there, and a
+  // call carrying those markers is treated as internal and never synced.
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${query ? `?${query}` : ""}`,
   );
 }
 

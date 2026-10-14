@@ -28,7 +28,7 @@ import {
 } from "@/components/assets/asset-ui";
 import { ContentInteractionControl } from "@/components/content-interaction-control";
 import { Button } from "@/components/ui/button";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type PublicGalleryAsset = {
@@ -189,7 +189,7 @@ export function PublicAssetGallery({
                   {asset.displayName}
                 </span>
                 <span className="mt-1 block text-xs text-muted-foreground">
-                  @{asset.ownerUsername ?? "unknown"} · {formatDate(asset.createdAt)}
+                  @{asset.ownerUsername ?? "unknown"} · {formatShortDate(asset.createdAt)}
                 </span>
                 <ContentInteractionControl
                   targetKind="asset"
@@ -286,7 +286,7 @@ export function PublicAssetGallery({
               <dl className="grid gap-2 border-y border-border/70 py-3 text-xs">
                 <InfoRow label="Type" value={assetTypeLabel(selected)} />
                 <InfoRow label="Size" value={formatBytes(selected.sizeBytes)} />
-                <InfoRow label="Uploaded" value={formatDate(selected.createdAt)} />
+                <InfoRow label="Uploaded" value={formatShortDate(selected.createdAt)} />
                 <InfoRow
                   label="Owner"
                   value={selected.ownerName ?? selected.ownerUsername ?? "Unknown"}
@@ -384,16 +384,4 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <dd className="truncate text-foreground">{value}</dd>
     </div>
   );
-}
-
-// Fixed locale and zone: this renders on the server and the client, and a
-// locale-dependent date would mismatch on hydration.
-function formatDate(value: Date | string) {
-  const date = value instanceof Date ? value : new Date(value);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
 }

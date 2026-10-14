@@ -18,7 +18,8 @@ import { WorkspaceFileBrowser } from "@/components/workspace/WorkspaceFileBrowse
 import { WorkspaceGalleryPanel } from "@/components/workspace/WorkspaceGalleryPanel";
 import { WorkspaceSearchPanel } from "@/components/workspace/WorkspaceSearchPanel";
 import { WorkspaceTasksPanel } from "@/components/workspace/WorkspaceTasksPanel";
-import { WorkspaceUtilityPanel } from "@/components/workspace/WorkspaceUtilityPanel";
+import { WorkspaceAdminPanel } from "@/components/workspace/WorkspaceAdminPanel";
+import { WorkspaceAssetsPanel } from "@/components/workspace/WorkspaceAssetsPanel";
 import { VaultWorkspaceShell } from "@/components/workspace/VaultWorkspaceShell";
 import {
   subscribeToWorkspaceDocumentChanges,
@@ -254,7 +255,6 @@ export function WorkspaceChrome({
         docsPanel={
           <WorkspaceDocsPanel
             docs={workspaceState.guideGroups}
-            activeSlug={activeGuideSlugForHref(currentHref)}
           />
         }
         searchPanel={
@@ -263,25 +263,17 @@ export function WorkspaceChrome({
             shared={workspaceState.shared}
             publicDocuments={workspaceState.publicDocuments}
             guideGroups={workspaceState.guideGroups}
-            activeHref={currentHref}
           />
         }
         galleryPanel={
           <WorkspaceGalleryPanel
             publicDocuments={workspaceState.publicDocuments}
-            activeHref={currentHref}
           />
         }
-        assetsPanel={<WorkspaceUtilityPanel mode="assets" activeHref={currentHref} />}
+        assetsPanel={<WorkspaceAssetsPanel />}
         tasksEnabled={workspaceState.tasksEnabled}
         tasksPanel={<WorkspaceTasksPanel />}
-        adminPanel={
-          <WorkspaceUtilityPanel
-            mode="admin"
-            activeHref={currentHref}
-            isAdmin={isAdmin}
-          />
-        }
+        adminPanel={<WorkspaceAdminPanel isAdmin={isAdmin} />}
         rightPanel={rightPanelState.panel}
         rightPanelTitle={rightPanelState.title}
       >
@@ -599,13 +591,4 @@ function defaultPanelModeForHref(href: string) {
   }
 
   return "files";
-}
-
-function activeGuideSlugForHref(href: string) {
-  const pathname = href.split("?")[0] ?? href;
-  const prefix = "/docs/guides/";
-
-  return pathname.startsWith(prefix)
-    ? decodeURIComponent(pathname.slice(prefix.length))
-    : undefined;
 }
