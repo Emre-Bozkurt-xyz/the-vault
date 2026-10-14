@@ -13,6 +13,7 @@ import {
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { MetricCard, UsageBar } from "@/components/admin/metric-card";
+import { UploadLimitsForm } from "@/components/admin/UploadLimitsForm";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
   listAssetsForUserAdmin,
 } from "@/server/assets-admin-data";
 import { requireAdmin } from "@/server/authz";
+import { getUploadLimitOverrides } from "@/server/deployment-settings";
 
 const MB = 1024 * 1024;
 const MIN_OPTIONS = [
@@ -63,16 +65,18 @@ export default async function AdminAssetsPage({
   const { q, sort, min, userId } = await searchParams;
   const minMb = Number(min) > 0 ? Number(min) : 0;
 
-  const [overview, userRows, selectedAssets, focusedUser] = await Promise.all([
-    getAssetStorageOverview(),
-    listUserStorageForAdmin({
-      query: q,
-      sort,
-      minBytes: minMb * MB,
-    }),
-    userId ? listAssetsForUserAdmin(userId) : Promise.resolve([]),
-    userId ? getUserStorageForAdmin(userId) : Promise.resolve(null),
-  ]);
+  const [overview, userRows, selectedAssets, focusedUser, uploadLimitOverrides] =
+    await Promise.all([
+      getAssetStorageOverview(),
+      listUserStorageForAdmin({
+        query: q,
+        sort,
+        minBytes: minMb * MB,
+      }),
+      userId ? listAssetsForUserAdmin(userId) : Promise.resolve([]),
+      userId ? getUserStorageForAdmin(userId) : Promise.resolve(null),
+      getUploadLimitOverrides(),
+    ]);
 
   const overallRatio =
     overview.totalQuotaBytes > 0
@@ -161,6 +165,8 @@ export default async function AdminAssetsPage({
             </p>
           </div>
         </section>
+
+        <UploadLimitsForm overrides={uploadLimitOverrides} />
 
         {userId ? (
           <section className="grid gap-4 border border-primary/40 bg-card/45 p-4 text-card-foreground">

@@ -714,6 +714,19 @@ Important rules:
   type outside the sniffed image/PDF allow-list. Only users with
   `users.unrestricted_uploads_allowed` (admin grant, default `false`) can create
   one, and it is always served as a sandboxed `octet-stream` download.
+- Per-upload size caps live in `deployment_settings` (added 2026-10-13,
+  migration `0029_clear_golden_guardian.sql`), a single-row table for
+  deployment-wide settings admins edit at runtime:
+
+  ```txt
+  deployment_settings
+    id BOOLEAN PRIMARY KEY DEFAULT true  -- CHECK (id): exactly one row
+    image_max_upload_bytes BIGINT        -- null = repo default
+    pdf_max_upload_bytes BIGINT
+    file_max_upload_bytes BIGINT
+    updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  ```
 
 Implemented schema additions in migration `0011_tiresome_ultimates.sql`:
 

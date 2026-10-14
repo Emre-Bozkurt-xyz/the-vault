@@ -26,7 +26,6 @@ import {
 } from "@/db/schema";
 import { fileExtensionFromName } from "@/lib/asset-delivery";
 import { extractAssetEmbedIds } from "@/lib/asset-embeds";
-import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import {
   type ContentSearchQuery,
   contentSearchIsEmpty,
@@ -37,6 +36,7 @@ import { canReadDocument } from "@/lib/permissions";
 import { deleteAssetObject, getR2Bucket, putAssetObject } from "@/lib/storage/r2";
 import { isUserBanActive } from "@/server/authz";
 import { syncAssetTags } from "@/server/content-metadata";
+import { getUploadLimits } from "@/server/deployment-settings";
 import { getAssetContentStats } from "@/server/content-interactions";
 
 const ALLOWED_MIME_TYPES: Record<string, { kind: AssetKind; extension: string }> = {
@@ -268,14 +268,6 @@ export async function requireAssetUserFromRequest(request: Request) {
   }
 
   return user;
-}
-
-export function getAssetUploadLimits() {
-  return {
-    imageMaxBytes: readByteEnv("MAX_IMAGE_UPLOAD_BYTES", ASSET_LIMITS.imageMaxBytes),
-    pdfMaxBytes: readByteEnv("MAX_PDF_UPLOAD_BYTES", ASSET_LIMITS.pdfMaxBytes),
-    fileMaxBytes: readByteEnv("MAX_FILE_UPLOAD_BYTES", ASSET_LIMITS.fileMaxBytes),
-  };
 }
 
 export function buildAssetMarkdown(assetId: string, label?: string | null) {
@@ -1254,7 +1246,7 @@ async function validateAssetFile(input: {
       throw new AssetError("Unsupported file type.", 415, "UNSUPPORTED_TYPE");
     }
 
-    return validateGenericFile({
+    return await validateGenericFile({
       buffer: input.buffer,
       filename: input.filename,
       detectedMimeType: detectedMimeType ?? null,
@@ -1272,7 +1264,7 @@ async function validateAssetFile(input: {
     throw new AssetError("File type does not match its contents.", 415, "TYPE_MISMATCH");
   }
 
-  const limits = getAssetUploadLimits();
+  const limits = await getUploadLimits();
   const maxBytes =
     allowed.kind === "image" ? limits.imageMaxBytes : limits.pdfMaxBytes;
 
@@ -1294,13 +1286,13 @@ async function validateAssetFile(input: {
  * content route serves `kind: "file"` as a sandboxed `octet-stream` download
  * whatever `mimeType` says, so a stored HTML/SVG never renders on our origin.
  */
-function validateGenericFile(input: {
+async function validateGenericFile(input: {
   buffer: Buffer;
   filename: string;
   detectedMimeType: string | null;
   detectedExtension: string | null;
 }) {
-  if (input.buffer.byteLength > getAssetUploadLimits().fileMaxBytes) {
+  if (input.buffer.byteLength > (await getUploadLimits()).fileMaxBytes) {
     throw new AssetError("File is too large.", 413, "FILE_TOO_LARGE");
   }
 
@@ -1363,17 +1355,6 @@ function sanitizeFilename(filename: string) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 160);
-}
-
-function readByteEnv(name: string, fallback: number) {
-  const value = process.env[name];
-
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function emptyToNull(value?: string | null) {

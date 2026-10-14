@@ -323,6 +323,7 @@ Reference plan: `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md`
 | [x] | Add editor upload and paste flows | Toolbar file picker, clipboard paste, and drag/drop upload supported through the same asset API |
 | [x] | Add asset library page | `/assets` workspace page has a masonry-style owned asset grid, search/filter/sort controls, details/config panel, metadata editing, delete, and copy embed |
 | [x] | Add explicit asset publishing | `/assets` can toggle owned assets public/private; publishing documents still does not publish embedded assets, and the owner publish control warns when linked private embeds will be hidden publicly |
+| [x] | Make per-upload size caps admin-editable | `deployment_settings` row edited under Admin → Assets → Upload limits, clamped to a 95 MiB ceiling that also sizes Next's proxy body buffer (which had been truncating uploads over 10 MB) |
 | [x] | Add admin grant for any-file-type uploads | `users.unrestricted_uploads_allowed` toggled per user in the admin panel; other types store as `kind: "file"` and are always served as sandboxed downloads (`lib/asset-delivery.ts`) |
 | [x] | Integrate public assets into gallery | `/gallery` lists explicitly public assets alongside public documents |
 | [x] | Add cleanup and reconciliation tools | Document saves/collab stores remove stale document-asset links; `assets:audit`, `assets:repair-quota`, `assets:delete-orphans`, and `assets:export` cover unused asset detection, object cleanup, quota repair, and R2 export |

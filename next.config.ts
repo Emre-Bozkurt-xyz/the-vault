@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+import { ASSET_LIMITS } from "./lib/config/asset-limits";
 import { buildEnforcedCsp } from "./lib/security/csp";
 
 const nextConfig: NextConfig = {
@@ -12,6 +13,13 @@ const nextConfig: NextConfig = {
   // `react-dom` external keeps that one Node-runtime route handler on a plain
   // `require()` of the real package instead.
   serverExternalPackages: ["react-dom"],
+  experimental: {
+    // `proxy.ts` runs on `/api/assets`, so Next buffers upload bodies for it and
+    // silently truncates them past this size (default 10 MB). The upload cap
+    // itself is admin-editable at runtime but clamped to the same ceiling; the
+    // extra MiB covers multipart framing.
+    proxyClientMaxBodySize: ASSET_LIMITS.uploadCeilingBytes + 1024 * 1024,
+  },
   // The enforced CSP for every route except `/embed/...`. It lives here, not in
   // `proxy.ts`, because Next copies every header the proxy puts on a response
   // onto the request as well, and the renderer takes its script nonce from the

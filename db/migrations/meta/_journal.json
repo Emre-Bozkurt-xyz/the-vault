@@ -204,6 +204,13 @@
       "when": 1791943760334,
       "tag": "0028_dusty_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791945900503,
+      "tag": "0029_clear_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

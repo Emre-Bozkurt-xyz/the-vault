@@ -5,7 +5,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { assets, users, type AssetKind, type AssetVisibility } from "@/db/schema";
+import {
+  assets,
+  deploymentSettings,
+  users,
+  type AssetKind,
+  type AssetVisibility,
+} from "@/db/schema";
+import { uploadLimitMiBSchema } from "@/lib/upload-limits";
 import {
   adminDeleteAsset,
   recalculateUserStorage,
@@ -208,4 +215,26 @@ export async function updateUserQuotaAction(formData: FormData) {
 
   revalidatePath(ADMIN_ASSETS_PATH);
   revalidatePath("/dashboard/admin/users");
+}
+
+/**
+ * Save the deployment-wide per-upload caps. A blank field resets that cap to
+ * the repo default. Applies to the next upload; no restart needed.
+ */
+export async function updateUploadLimitsAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const values = {
+    imageMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("imageMaxMiB") ?? ""),
+    pdfMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("pdfMaxMiB") ?? ""),
+    fileMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("fileMaxMiB") ?? ""),
+    updatedBy: admin.id,
+    updatedAt: new Date(),
+  };
+
+  await db
+    .insert(deploymentSettings)
+    .values({ id: true, ...values })
+    .onConflictDoUpdate({ target: deploymentSettings.id, set: values });
+
+  revalidatePath(ADMIN_ASSETS_PATH);
 }

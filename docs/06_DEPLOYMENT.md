@@ -162,10 +162,7 @@ R2_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com
 R2_ACCESS_KEY_ID=<r2-access-key-id>
 R2_SECRET_ACCESS_KEY=<r2-secret-access-key>
 ASSET_ROUTE_BASE_PATH=/api/assets
-# Optional overrides; defaults live in lib/config/asset-limits.ts
-# MAX_IMAGE_UPLOAD_BYTES=10485760
-# MAX_PDF_UPLOAD_BYTES=26214400
-# MAX_FILE_UPLOAD_BYTES=52428800
+# Per-upload size caps: Admin -> Assets -> Upload limits (not env vars)
 ASSET_PRIVATE_CACHE_SECONDS=0
 ASSET_PUBLIC_CACHE_SECONDS=3600
 

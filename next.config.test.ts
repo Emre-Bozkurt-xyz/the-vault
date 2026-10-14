@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ASSET_LIMITS } from "./lib/config/asset-limits";
 import nextConfig from "./next.config";
 
 describe("next.config headers", () => {
@@ -22,5 +23,15 @@ describe("next.config headers", () => {
     expect(matches("/workspace")).toBe(true);
     expect(matches("/public/some-note")).toBe(true);
     expect(matches("/embed/editor/abc")).toBe(false);
+  });
+});
+
+describe("next.config proxy body limit", () => {
+  it("lets uploads up to the ceiling through proxy.ts untruncated", () => {
+    // Next truncates proxied bodies past this (default 10 MB), which silently
+    // broke every upload over 10 MB. Admin caps are clamped to the ceiling.
+    const limit = nextConfig.experimental?.proxyClientMaxBodySize;
+    expect(typeof limit).toBe("number");
+    expect(limit as number).toBeGreaterThan(ASSET_LIMITS.uploadCeilingBytes);
   });
 });

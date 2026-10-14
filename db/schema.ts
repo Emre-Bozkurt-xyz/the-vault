@@ -3,6 +3,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   customType,
   date,
   index,
@@ -124,6 +125,29 @@ export const users = pgTable(
     index("users_role_idx").on(table.role),
     index("users_banned_until_idx").on(table.bannedUntil),
   ],
+);
+
+/**
+ * Deployment-wide settings admins edit at runtime instead of through env vars.
+ * Exactly one row (`id = true`, enforced by the check), created on first save;
+ * a missing row or a null column means "use the repo default".
+ */
+export const deploymentSettings = pgTable(
+  "deployment_settings",
+  {
+    id: boolean("id").primaryKey().default(true),
+    /** Per-upload caps; null falls back to `ASSET_LIMITS` (lib/upload-limits.ts). */
+    imageMaxUploadBytes: bigint("image_max_upload_bytes", { mode: "number" }),
+    pdfMaxUploadBytes: bigint("pdf_max_upload_bytes", { mode: "number" }),
+    fileMaxUploadBytes: bigint("file_max_upload_bytes", { mode: "number" }),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [check("deployment_settings_singleton", sql`${table.id}`)],
 );
 
 export const accounts = pgTable(
