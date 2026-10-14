@@ -13,6 +13,7 @@ import {
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { MetricCard, UsageBar } from "@/components/admin/metric-card";
+import { AssetMaintenancePanel } from "@/components/admin/AssetMaintenancePanel";
 import { UploadLimitsForm } from "@/components/admin/UploadLimitsForm";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -33,6 +34,8 @@ import {
   listAssetsForUserAdmin,
 } from "@/server/assets-admin-data";
 import { requireAdmin } from "@/server/authz";
+import { getAssetMaintenanceStatus } from "@/server/asset-maintenance";
+import { isAssetMaintenanceScheduled } from "@/server/asset-maintenance-scheduler";
 import { getUploadLimitOverrides } from "@/server/deployment-settings";
 
 const MB = 1024 * 1024;
@@ -65,8 +68,14 @@ export default async function AdminAssetsPage({
   const { q, sort, min, userId } = await searchParams;
   const minMb = Number(min) > 0 ? Number(min) : 0;
 
-  const [overview, userRows, selectedAssets, focusedUser, uploadLimitOverrides] =
-    await Promise.all([
+  const [
+    overview,
+    userRows,
+    selectedAssets,
+    focusedUser,
+    uploadLimitOverrides,
+    maintenance,
+  ] = await Promise.all([
       getAssetStorageOverview(),
       listUserStorageForAdmin({
         query: q,
@@ -76,6 +85,7 @@ export default async function AdminAssetsPage({
       userId ? listAssetsForUserAdmin(userId) : Promise.resolve([]),
       userId ? getUserStorageForAdmin(userId) : Promise.resolve(null),
       getUploadLimitOverrides(),
+      getAssetMaintenanceStatus(),
     ]);
 
   const overallRatio =
@@ -167,6 +177,13 @@ export default async function AdminAssetsPage({
         </section>
 
         <UploadLimitsForm overrides={uploadLimitOverrides} />
+
+        <AssetMaintenancePanel
+          ranAt={maintenance.ranAt}
+          startedAt={maintenance.startedAt}
+          result={maintenance.result}
+          scheduled={isAssetMaintenanceScheduled()}
+        />
 
         {userId ? (
           <section className="grid gap-4 border border-primary/40 bg-card/45 p-4 text-card-foreground">

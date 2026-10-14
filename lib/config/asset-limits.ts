@@ -35,6 +35,10 @@ export const ASSET_LIMITS = {
    * size and at least 5 MiB, and allows at most 10,000 parts.
    */
   multipartPartBytes: 16 * MiB, // 16 MiB
+  /** Deleted and failed asset rows are purged this long after they ended. */
+  deletedAssetRetentionDays: 30,
+  /** Objects younger than this are never treated as orphans (race margin). */
+  orphanGraceMs: 6 * 60 * 60 * 1000, // 6 hours
   /** Default per-user storage quota applied to new users. */
   defaultUserStorageQuotaBytes: 50 * MiB, // 50 MiB
 } as const;

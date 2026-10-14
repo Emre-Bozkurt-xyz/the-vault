@@ -165,6 +165,8 @@ ASSET_ROUTE_BASE_PATH=/api/assets
 # Per-upload size caps: Admin -> Assets -> Upload limits (not env vars)
 ASSET_PRIVATE_CACHE_SECONDS=0
 ASSET_PUBLIC_CACHE_SECONDS=3600
+# Daily asset cleanup runs automatically in production; set to off to disable.
+# ASSET_MAINTENANCE=off
 
 # Den embed bridge (docs/DEN_EMBED_BRIDGE.md). Comma-separated origins allowed
 # to frame /embed/...; defaults to https://den.ems-place.com when unset.

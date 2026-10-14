@@ -13,6 +13,7 @@ import {
   type AssetVisibility,
 } from "@/db/schema";
 import { uploadLimitMiBSchema } from "@/lib/upload-limits";
+import { runAssetMaintenance } from "@/server/asset-maintenance";
 import {
   adminDeleteAsset,
   recalculateUserStorage,
@@ -239,5 +240,15 @@ export async function updateUploadLimitsAction(formData: FormData) {
     .values({ id: true, ...values })
     .onConflictDoUpdate({ target: deploymentSettings.id, set: values });
 
+  revalidatePath(ADMIN_ASSETS_PATH);
+}
+
+/**
+ * Runs the asset cleanup now (normally daily). Skips silently if a run is
+ * already in progress; the panel shows that from the lease timestamp.
+ */
+export async function runAssetMaintenanceAction() {
+  await requireAdmin();
+  await runAssetMaintenance({ trigger: "manual" });
   revalidatePath(ADMIN_ASSETS_PATH);
 }

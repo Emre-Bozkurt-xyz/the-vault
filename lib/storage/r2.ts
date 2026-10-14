@@ -7,6 +7,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
@@ -262,4 +263,30 @@ export async function readAssetObjectHead(key: string, bytes: number) {
   }
 
   return Buffer.from(await body.transformToByteArray());
+}
+
+/** Every object under `prefix`, following ListObjectsV2 paging. */
+export async function listAssetObjects(prefix: string) {
+  const objects: { key: string; lastModified: Date | null }[] = [];
+  let token: string | undefined;
+
+  do {
+    const page = await getR2Client().send(
+      new ListObjectsV2Command({
+        Bucket: getR2Bucket(),
+        Prefix: prefix,
+        ContinuationToken: token,
+      }),
+    );
+
+    for (const object of page.Contents ?? []) {
+      if (object.Key) {
+        objects.push({ key: object.Key, lastModified: object.LastModified ?? null });
+      }
+    }
+
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+
+  return objects;
 }

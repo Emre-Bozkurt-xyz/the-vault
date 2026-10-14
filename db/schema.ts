@@ -20,6 +20,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { ASSET_LIMITS } from "../lib/config/asset-limits";
+import type { AssetMaintenanceResult } from "../lib/asset-maintenance";
 import type { SnippetStatus } from "../lib/config/snippet-limits";
 import type {
   CodeJobOperation,
@@ -140,6 +141,16 @@ export const deploymentSettings = pgTable(
     imageMaxUploadBytes: bigint("image_max_upload_bytes", { mode: "number" }),
     pdfMaxUploadBytes: bigint("pdf_max_upload_bytes", { mode: "number" }),
     fileMaxUploadBytes: bigint("file_max_upload_bytes", { mode: "number" }),
+    /**
+     * Daily asset cleanup (`server/asset-maintenance.ts`). `started_at` is a
+     * lease so only one process runs it; `ran_at` and `result` record the last
+     * finished run for the admin panel.
+     */
+    assetMaintenanceStartedAt: timestamp("asset_maintenance_started_at", {
+      withTimezone: true,
+    }),
+    assetMaintenanceRanAt: timestamp("asset_maintenance_ran_at", { withTimezone: true }),
+    assetMaintenanceResult: jsonb("asset_maintenance_result").$type<AssetMaintenanceResult>(),
     updatedBy: uuid("updated_by").references(() => users.id, {
       onDelete: "set null",
     }),
