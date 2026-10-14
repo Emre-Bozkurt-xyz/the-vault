@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Check, Plus, Sparkles, X } from "lucide-react";
+import { Check, Plus, Settings2, X } from "lucide-react";
 
+import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import { Button } from "@/components/ui/button";
 import type {
   DocumentSnippetAttachment,
@@ -96,14 +97,6 @@ export function DocumentSnippetsPanel({
 
   return (
     <div className="grid gap-3">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <Sparkles className="size-4 text-muted-foreground" />
-        Styling
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Attach your CSS snippets to style this document for everyone who can view
-        it. Manage snippets in Settings → Snippets.
-      </p>
 
       {attached.length > 0 ? (
         <ul className="grid gap-1.5">
@@ -161,6 +154,17 @@ export function DocumentSnippetsPanel({
       ) : null}
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className="justify-self-start text-muted-foreground"
+        onClick={() => openWorkspaceSettings("snippets")}
+      >
+        <Settings2 data-icon="inline-start" />
+        Manage snippets
+      </Button>
     </div>
   );
 }

@@ -43,7 +43,7 @@ export function DocumentArchiveForm({ documentId }: { documentId: string }) {
         type="button"
         variant="destructive"
         size="sm"
-        className="mt-3 w-full"
+        className="w-full"
         onClick={() => setConfirming(true)}
       >
         Archive document

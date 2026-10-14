@@ -1,31 +1,58 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
-  Check,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  Code2,
   Copy,
   Download,
-  Eye,
+  ExternalLink,
   File as FileIcon,
   FileText,
   Globe2,
   ImageIcon,
   Loader2,
   Lock,
-  PanelRightOpen,
-  Save,
+  MousePointerClick,
+  PenLine,
   Search,
+  SlidersHorizontal,
+  Tags,
   Trash2,
   Upload,
 } from "lucide-react";
 
+import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
+import {
+  assetExtensionBadge,
+  assetTypeLabel,
+  copyWithToast,
+  downloadAsset,
+} from "@/components/assets/asset-ui";
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  ContextPanelBody,
+  ContextPanelSection,
+} from "@/components/workspace/ContextPanel";
+import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { requestOpenRightPanel } from "@/lib/document-command-events";
+import { formatBytes } from "@/lib/format";
 import {
   getContentSearchSummary,
   matchesContentSearchQuery,
@@ -60,6 +87,7 @@ type VisibilityFilter = "all" | "private" | "public";
 type SortMode = "newest" | "oldest" | "name" | "size";
 
 const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
+const ASSETS_PAGE = { type: "assets", title: "Assets", href: "/assets" } as const;
 
 export function AssetLibraryClient({
   initialAssets,
@@ -87,6 +115,23 @@ export function AssetLibraryClient({
     useState<VisibilityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const storage = useMemo(() => summarizeStorage(assets), [assets]);
+  const dirty = selected !== null && !sameDraft(draft, toDraft(selected));
+
+  // The configure panel lives in the workspace's right panel (resizable and
+  // collapsible like a document's). The page registers an empty host there and
+  // portals the panel into it, so its form state stays here. The shell can
+  // mount two hosts (desktop aside, mobile sheet); the newest one wins.
+  const [panelHosts, setPanelHosts] = useState<HTMLElement[]>([]);
+  const panelHostRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    setPanelHosts((current) => [...current, node]);
+    return () => setPanelHosts((current) => current.filter((host) => host !== node));
+  }, []);
+  const panelSlot = useMemo(
+    () => <div ref={panelHostRef} className="flex min-h-full flex-col" />,
+    [panelHostRef],
+  );
+  const panelHost = panelHosts.at(-1) ?? null;
   const parsedQuery = useMemo(() => parseContentSearchQuery(query), [query]);
   const querySummary = useMemo(
     () => getContentSearchSummary(parsedQuery),
@@ -111,11 +156,11 @@ export function AssetLibraryClient({
     setSelectedId(asset.id);
     setDraft(toDraft(asset));
     setMessage(null);
-  }
 
-  async function copyEmbed(asset: AssetLibraryItem) {
-    await navigator.clipboard.writeText(asset.markdown);
-    setMessage("Embed copied.");
+    // Collapsed panel (or the mobile sheet): bring the details into view.
+    if (!panelHost || panelHost.offsetParent === null) {
+      requestOpenRightPanel();
+    }
   }
 
   function openFilePicker() {
@@ -241,26 +286,32 @@ export function AssetLibraryClient({
   }
 
   return (
-    <div className="grid min-h-full gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="min-w-0">
-        <div className="flex flex-col gap-5 border-b border-border/70 pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
+    <>
+      <WorkspacePageRegistration
+        page={ASSETS_PAGE}
+        rightPanel={panelSlot}
+        rightPanelTitle="Asset"
+      />
+
+      <div className="grid min-w-0 gap-6">
+        <header className="flex flex-col gap-5 border-b border-border/70 pb-6 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0">
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground">
               Asset library
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
               Content
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
               Private uploads used by your documents. Publish an asset only when
               it should be visible outside private docs.
             </p>
           </div>
-          <div className="grid gap-2 text-sm sm:min-w-80 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+          <div className="grid shrink-0 gap-2 text-sm sm:grid-cols-[6.5rem_16rem]">
             <Metric label="Assets" value={String(assets.length)} />
             <StorageBar used={storage.bytes} quota={storageQuotaBytes} />
           </div>
-        </div>
+        </header>
 
         <input
           ref={fileInputRef}
@@ -271,63 +322,51 @@ export function AssetLibraryClient({
           onChange={handleFilesSelected}
         />
 
-        <UploadProgressList
-          items={uploads.items}
-          onCancel={uploads.cancel}
-          onDismiss={uploads.dismiss}
-          className="mt-4"
-        />
-
         {assets.length > 0 ? (
-          <div className="mt-5 grid gap-3 border-b border-border/50 pb-5 lg:grid-cols-[minmax(0,1fr)_9rem_9rem_9rem_auto]">
-            <label className="relative">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-[10rem] flex-1 basis-40">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <span className="sr-only">Search assets</span>
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search title, tags, @user, kind:image..."
+                placeholder="Search title, tags, kind:image…"
                 className="pl-9"
               />
             </label>
-            <select
+            <FilterSelect
+              label="Filter by asset type"
               value={kindFilter}
-              onChange={(event) => setKindFilter(event.target.value as KindFilter)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-              aria-label="Filter by asset type"
-            >
-              <option value="all">All types</option>
-              <option value="image">Images</option>
-              <option value="pdf">PDFs</option>
-              <option value="file">Other files</option>
-            </select>
-            <select
+              onChange={(value) => setKindFilter(value as KindFilter)}
+              options={[
+                ["all", "All types"],
+                ["image", "Images"],
+                ["pdf", "PDFs"],
+                ["file", "Other files"],
+              ]}
+            />
+            <FilterSelect
+              label="Filter by visibility"
               value={visibilityFilter}
-              onChange={(event) =>
-                setVisibilityFilter(event.target.value as VisibilityFilter)
-              }
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-              aria-label="Filter by visibility"
-            >
-              <option value="all">All visibility</option>
-              <option value="private">Private</option>
-              <option value="public">Public</option>
-            </select>
-            <select
+              onChange={(value) => setVisibilityFilter(value as VisibilityFilter)}
+              options={[
+                ["all", "Any visibility"],
+                ["private", "Private"],
+                ["public", "Public"],
+              ]}
+            />
+            <FilterSelect
+              label="Sort assets"
               value={sortMode}
-              onChange={(event) => setSortMode(event.target.value as SortMode)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-              aria-label="Sort assets"
-            >
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-              <option value="name">Name</option>
-              <option value="size">Size</option>
-            </select>
-            <Button
-              type="button"
-              onClick={openFilePicker}
-              className="lg:px-4"
-            >
+              onChange={(value) => setSortMode(value as SortMode)}
+              options={[
+                ["newest", "Newest"],
+                ["oldest", "Oldest"],
+                ["name", "Name"],
+                ["size", "Largest"],
+              ]}
+            />
+            <Button type="button" onClick={openFilePicker}>
               {uploads.hasActive ? (
                 <Loader2 data-icon="inline-start" className="animate-spin" />
               ) : (
@@ -337,8 +376,16 @@ export function AssetLibraryClient({
             </Button>
           </div>
         ) : null}
+
+        <UploadProgressList
+          items={uploads.items}
+          onCancel={uploads.cancel}
+          onDismiss={uploads.dismiss}
+          className="sm:grid-cols-2 xl:grid-cols-3"
+        />
+
         {querySummary.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <div className="-mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
             {querySummary.map((summary) => (
               <span
                 key={summary}
@@ -351,51 +398,46 @@ export function AssetLibraryClient({
         ) : null}
 
         {assets.length > 0 && visibleAssets.length > 0 ? (
-          <div className="mt-6 columns-1 gap-4 sm:columns-2 xl:columns-3">
+          <div className="columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4">
             {visibleAssets.map((asset) => (
-              <button
-                key={asset.id}
-                type="button"
-                onClick={() => selectAsset(asset)}
-                className={cn(
-                  "mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg",
-                  selected?.id === asset.id
-                    ? "border-primary/70 ring-1 ring-primary/35"
-                    : "border-border/70",
-                )}
-              >
-                {asset.kind === "image" ? (
-                  <span className="block bg-muted">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={asset.url}
-                      alt={asset.altText ?? asset.displayName}
-                      className="h-auto w-full object-cover"
-                      loading="lazy"
-                    />
-                  </span>
-                ) : (
-                  <span className="flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground">
-                    <AssetKindIcon kind={asset.kind} className="size-10" />
-                  </span>
-                )}
-                <span className="block p-3">
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm font-medium">
-                      {asset.displayName}
+              <div key={asset.id} className="group relative mb-4 break-inside-avoid">
+                <button
+                  type="button"
+                  onClick={() => selectAsset(asset)}
+                  aria-pressed={selected?.id === asset.id}
+                  className={cn(
+                    "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                    selected?.id === asset.id
+                      ? "border-primary/70 ring-1 ring-primary/35"
+                      : "border-border/70",
+                  )}
+                >
+                  <AssetThumbnail asset={asset} />
+                  <span className="flex items-center gap-2 px-3 py-2.5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {asset.displayName}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
+                      </span>
                     </span>
-                    <VisibilityBadge visibility={asset.visibility} />
+                    <VisibilityIcon visibility={asset.visibility} />
                   </span>
-                  <span className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                    <AssetKindIcon kind={asset.kind} className="size-3.5" />
-                    {asset.mimeType} - {formatBytes(asset.sizeBytes)}
-                  </span>
-                </span>
-              </button>
+                </button>
+                <AssetActionsMenu
+                  asset={asset}
+                  className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+                >
+                  <DropdownMenuItem onClick={() => selectAsset(asset)}>
+                    <SlidersHorizontal /> Edit details
+                  </DropdownMenuItem>
+                </AssetActionsMenu>
+              </div>
             ))}
           </div>
         ) : assets.length > 0 ? (
-          <div className="mt-6 border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
+          <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
             <Search className="mx-auto size-8 text-muted-foreground" />
             <h2 className="mt-4 text-lg font-semibold">No matching assets</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
@@ -403,7 +445,7 @@ export function AssetLibraryClient({
             </p>
           </div>
         ) : (
-          <div className="mt-6 border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
+          <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
             <ImageIcon className="mx-auto size-8 text-muted-foreground" />
             <h2 className="mt-4 text-lg font-semibold">No assets yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
@@ -411,11 +453,7 @@ export function AssetLibraryClient({
               started, or add one from the image upload button in a
               document&apos;s Markdown toolbar.
             </p>
-            <Button
-              type="button"
-              onClick={openFilePicker}
-              className="mx-auto mt-5"
-            >
+            <Button type="button" onClick={openFilePicker} className="mx-auto mt-5">
               {uploads.hasActive ? (
                 <Loader2 data-icon="inline-start" className="animate-spin" />
               ) : (
@@ -425,160 +463,330 @@ export function AssetLibraryClient({
             </Button>
           </div>
         )}
-      </section>
+      </div>
 
-      <aside className="min-h-0 min-w-0 overflow-x-hidden border border-border/70 bg-card/70 lg:sticky lg:top-6 lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto">
-        {selected ? (
-          <form onSubmit={saveAsset} className="flex h-full flex-col">
-            <div className="border-b border-border/70 p-4">
-              <p className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                <PanelRightOpen className="size-3.5" />
-                Configure
-              </p>
-              <h2 className="mt-2 truncate text-lg font-semibold">
-                {selected.displayName}
-              </h2>
-            </div>
-            <div className="grid gap-4 p-4">
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium">Display name</span>
-                <Input
-                  value={draft.displayName}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      displayName: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium">Alt text</span>
-                <Input
-                  value={draft.altText}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      altText: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium">Tags</span>
-                <TagAutocompleteInput
-                  value={draft.tags}
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      tags: value,
-                    }))
-                  }
-                  placeholder="tag1 tag2 ..."
-                  inputClassName="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                />
-                <span className="text-xs text-muted-foreground">
-                  Separate tags with spaces. Use underscores for multi-word tags.
-                </span>
-              </label>
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium">Description</span>
-                <Textarea
-                  value={draft.description}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                  rows={4}
-                />
-              </label>
-              <div className="grid gap-2">
-                <span className="text-sm font-medium">Visibility</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <VisibilityButton
-                    active={draft.visibility === "private"}
-                    icon={Lock}
-                    label="Private"
-                    onClick={() =>
-                      setDraft((current) => ({ ...current, visibility: "private" }))
-                    }
-                  />
-                  <VisibilityButton
-                    active={draft.visibility === "public"}
-                    icon={Globe2}
-                    label="Public"
-                    onClick={() =>
-                      setDraft((current) => ({ ...current, visibility: "public" }))
-                    }
-                  />
-                </div>
+      {panelHost
+        ? createPortal(
+            selected ? (
+              <AssetConfigurePanel
+                key={selected.id}
+                asset={selected}
+                draft={draft}
+                setDraft={setDraft}
+                dirty={dirty}
+                saving={saving}
+                deleting={deleting}
+                message={message}
+                onSubmit={saveAsset}
+                onReset={() => {
+                  setDraft(toDraft(selected));
+                  setMessage(null);
+                }}
+                onDelete={() => void deleteSelectedAsset()}
+              />
+            ) : (
+              <div className="grid flex-1 place-content-center gap-2 px-6 py-16 text-center">
+                <MousePointerClick className="mx-auto size-6 text-muted-foreground" />
+                <p className="text-sm font-medium">Nothing selected</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Choose an asset to preview it and edit its details.
+                </p>
               </div>
-              <div className="grid gap-2.5 rounded-md border border-border/70 bg-background/55 p-3">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Markdown embed
-                </span>
-                <code className="block overflow-hidden rounded bg-muted/60 px-2.5 py-2 font-mono text-[0.72rem] leading-relaxed text-foreground [overflow-wrap:anywhere]">
-                  {selected.markdown}
-                </code>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void copyEmbed(selected)}
-                  >
-                    <Copy data-icon="inline-start" />
-                    Copy embed
-                  </Button>
-                  <a
-                    href={selected.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
-                  >
-                    {selected.kind === "file" ? (
-                      <Download data-icon="inline-start" />
-                    ) : (
-                      <Eye data-icon="inline-start" />
-                    )}
-                    {selected.kind === "file" ? "Download" : "Open"}
-                  </a>
-                </div>
-              </div>
-            </div>
-            <div className="mt-auto border-t border-border/70 p-4">
-              {message ? (
-                <p className="mb-3 text-sm text-muted-foreground">{message}</p>
-              ) : null}
-              <Button type="submit" className="w-full" disabled={saving}>
-                {saving ? (
-                  <Save data-icon="inline-start" />
-                ) : (
-                  <Check data-icon="inline-start" />
-                )}
-                {saving ? "Saving..." : "Save asset"}
-              </Button>
+            ),
+            panelHost,
+          )
+        : null}
+    </>
+  );
+}
+
+function AssetConfigurePanel({
+  asset,
+  draft,
+  setDraft,
+  dirty,
+  saving,
+  deleting,
+  message,
+  onSubmit,
+  onReset,
+  onDelete,
+}: {
+  asset: AssetLibraryItem;
+  draft: AssetDraft;
+  setDraft: Dispatch<SetStateAction<AssetDraft>>;
+  dirty: boolean;
+  saving: boolean;
+  deleting: boolean;
+  message: string | null;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onReset: () => void;
+  onDelete: () => void;
+}) {
+  const update = (patch: Partial<AssetDraft>) =>
+    setDraft((current) => ({ ...current, ...patch }));
+
+  return (
+    <form onSubmit={onSubmit} className="flex min-h-full flex-1 flex-col">
+      <ContextPanelBody>
+        <div className="grid gap-3 border-b border-border/60 p-4">
+          <AssetPreview asset={asset} />
+          <div className="min-w-0">
+            <h2 className="break-words text-base font-semibold leading-snug">
+              {asset.displayName}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)} · Added{" "}
+              {formatDate(asset.createdAt)}
+            </p>
+          </div>
+          <div className={cn("grid gap-2", asset.kind === "file" ? "grid-cols-2" : "grid-cols-3")}>
+            {asset.kind !== "file" ? (
               <Button
                 type="button"
-                className="mt-2 w-full"
                 variant="outline"
-                disabled={deleting}
-                onClick={() => void deleteSelectedAsset()}
+                size="sm"
+                onClick={() => window.open(asset.url, "_blank", "noopener,noreferrer")}
               >
-                <Trash2 data-icon="inline-start" />
-                {deleting ? "Deleting..." : "Delete asset"}
+                <ExternalLink data-icon="inline-start" />
+                Open
               </Button>
-            </div>
-          </form>
-        ) : (
-          <div className="p-4 text-sm text-muted-foreground">
-            Select an asset to configure it.
+            ) : null}
+            <Button type="button" variant="outline" size="sm" onClick={() => downloadAsset(asset)}>
+              <Download data-icon="inline-start" />
+              Download
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void copyWithToast(asset.markdown, "Embed")}
+            >
+              <Copy data-icon="inline-start" />
+              Embed
+            </Button>
           </div>
-        )}
-      </aside>
-    </div>
+        </div>
+
+        <ContextPanelSection
+          icon={PenLine}
+          title="Details"
+          description="How it is labelled in documents and the gallery."
+        >
+          <PanelField label="Display name">
+            <Input
+              value={draft.displayName}
+              onChange={(event) => update({ displayName: event.target.value })}
+            />
+          </PanelField>
+          {asset.kind === "image" ? (
+            <PanelField label="Alt text" hint="Read aloud by screen readers in place of the image.">
+              <Input
+                value={draft.altText}
+                onChange={(event) => update({ altText: event.target.value })}
+              />
+            </PanelField>
+          ) : null}
+          <PanelField label="Description">
+            <Textarea
+              value={draft.description}
+              onChange={(event) => update({ description: event.target.value })}
+              rows={3}
+              placeholder="Optional"
+            />
+          </PanelField>
+        </ContextPanelSection>
+
+        <ContextPanelSection
+          icon={Tags}
+          title="Tags"
+          description="Separate with spaces; underscores join words."
+        >
+          <TagAutocompleteInput
+            value={draft.tags}
+            onChange={(value) => update({ tags: value })}
+            placeholder="photos travel_2026"
+            inputClassName="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+          />
+        </ContextPanelSection>
+
+        <ContextPanelSection
+          icon={draft.visibility === "public" ? Globe2 : Lock}
+          title="Visibility"
+        >
+          <div className="grid gap-2" role="radiogroup" aria-label="Visibility">
+            <VisibilityOption
+              active={draft.visibility === "private"}
+              icon={Lock}
+              label="Private"
+              detail="Only you, and readers of documents that embed it."
+              onClick={() => update({ visibility: "private" })}
+            />
+            <VisibilityOption
+              active={draft.visibility === "public"}
+              icon={Globe2}
+              label="Public"
+              detail="Anyone with the link; listed in the gallery."
+              onClick={() => update({ visibility: "public" })}
+            />
+          </div>
+        </ContextPanelSection>
+
+        <ContextPanelSection
+          icon={Code2}
+          title="Embed"
+          description="Paste into any document."
+          action={
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => void copyWithToast(asset.markdown, "Embed")}
+            >
+              <Copy data-icon="inline-start" />
+              Copy
+            </Button>
+          }
+        >
+          <code className="block rounded-md border border-border/60 bg-muted/40 px-2.5 py-2 font-mono text-[0.72rem] leading-relaxed text-foreground [overflow-wrap:anywhere]">
+            {asset.markdown}
+          </code>
+        </ContextPanelSection>
+
+        <ContextPanelSection
+          icon={Trash2}
+          tone="danger"
+          title="Delete"
+          description="Removes it from documents, the library, the gallery, and storage."
+        >
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            <Trash2 data-icon="inline-start" />
+            {deleting ? "Deleting…" : "Delete asset"}
+          </Button>
+        </ContextPanelSection>
+      </ContextPanelBody>
+
+      <div className="sticky bottom-0 mt-auto flex items-center gap-2 border-t border-border/70 bg-card/95 px-4 py-3 backdrop-blur">
+        <p
+          className={cn(
+            "min-w-0 flex-1 truncate text-xs",
+            dirty ? "text-foreground" : "text-muted-foreground",
+          )}
+          aria-live="polite"
+        >
+          {message ?? (dirty ? "Unsaved changes" : "All changes saved")}
+        </p>
+        <Button type="button" variant="ghost" size="sm" disabled={!dirty || saving} onClick={onReset}>
+          Reset
+        </Button>
+        <Button type="submit" size="sm" disabled={!dirty || saving}>
+          {saving ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function AssetThumbnail({ asset }: { asset: AssetLibraryItem }) {
+  if (asset.kind === "image") {
+    return (
+      <span className="block bg-muted">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={asset.url}
+          alt={asset.altText ?? asset.displayName}
+          className="h-auto w-full object-cover"
+          loading="lazy"
+        />
+      </span>
+    );
+  }
+
+  return <FileTile asset={asset} className="aspect-[4/3]" />;
+}
+
+function AssetPreview({ asset }: { asset: AssetLibraryItem }) {
+  if (asset.kind === "image") {
+    return (
+      <div className="grid max-h-64 place-items-center overflow-hidden rounded-md border border-border/60 bg-muted/40">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={asset.url}
+          alt={asset.altText ?? asset.displayName}
+          className="max-h-64 w-full object-contain"
+        />
+      </div>
+    );
+  }
+
+  return <FileTile asset={asset} className="h-36 rounded-md border border-border/60" />;
+}
+
+function FileTile({ asset, className }: { asset: AssetLibraryItem; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "flex w-full flex-col items-center justify-center gap-2 bg-muted/60 text-muted-foreground",
+        className,
+      )}
+    >
+      <AssetKindIcon kind={asset.kind} className="size-9" />
+      <span className="rounded border border-border/70 bg-background/70 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tracking-wider">
+        {assetExtensionBadge(asset)}
+      </span>
+    </span>
+  );
+}
+
+function PanelField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+      {hint ? <span className="text-[0.7rem] leading-snug text-muted-foreground">{hint}</span> : null}
+    </label>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={label}
+      className="h-9 w-32 rounded-md border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      {options.map(([optionValue, optionLabel]) => (
+        <option key={optionValue} value={optionValue}>
+          {optionLabel}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -627,44 +835,77 @@ function StorageBar({ used, quota }: { used: number; quota: number }) {
   );
 }
 
-function VisibilityBadge({
-  visibility,
-}: {
-  visibility: "private" | "public";
-}) {
+function VisibilityIcon({ visibility }: { visibility: "private" | "public" }) {
+  const Icon = visibility === "public" ? Globe2 : Lock;
+  const label = visibility === "public" ? "Public" : "Private";
+
   return (
-    <Badge variant={visibility === "public" ? "secondary" : "outline"}>
-      {visibility === "public" ? "Public" : "Private"}
-    </Badge>
+    <span
+      className={cn(
+        "grid size-6 shrink-0 place-items-center rounded-full border",
+        visibility === "public"
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border/70 text-muted-foreground",
+      )}
+      title={label}
+    >
+      <Icon className="size-3" aria-hidden />
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 
-function VisibilityButton({
+function VisibilityOption({
   active,
   icon: Icon,
   label,
+  detail,
   onClick,
 }: {
   active: boolean;
   icon: typeof Lock;
   label: string;
+  detail: string;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
       className={cn(
-        "flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition",
+        "flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition",
         active
-          ? "border-primary/70 bg-primary/10 text-foreground"
-          : "border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground",
+          ? "border-primary/60 bg-primary/10"
+          : "border-border/70 hover:border-border hover:bg-muted/50",
       )}
     >
-      <Icon className="size-4" />
-      {label}
+      <Icon className={cn("mt-0.5 size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="block text-xs leading-snug text-muted-foreground">{detail}</span>
+      </span>
     </button>
   );
+}
+
+function sameDraft(a: AssetDraft, b: AssetDraft) {
+  return (
+    a.displayName === b.displayName &&
+    a.altText === b.altText &&
+    a.description === b.description &&
+    a.visibility === b.visibility &&
+    a.tags.trim().split(/\s+/).join(" ") === b.tags.trim().split(/\s+/).join(" ")
+  );
+}
+
+function formatDate(value: Date | string) {
+  return (value instanceof Date ? value : new Date(value)).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function toDraft(asset: AssetLibraryItem | null): AssetDraft {
@@ -737,23 +978,6 @@ function filterAndSortAssets(
 
 function dateValue(value: Date | string) {
   return value instanceof Date ? value.getTime() : new Date(value).getTime();
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  const units = ["KiB", "MiB", "GiB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function AssetKindIcon({

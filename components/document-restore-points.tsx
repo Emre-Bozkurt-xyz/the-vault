@@ -46,7 +46,7 @@ export function DocumentRestorePoints({
   return (
     <details
       ref={ref}
-      className="group mt-3 border border-border/70 bg-background/35"
+      className="group rounded-md border border-border/70 bg-background/35"
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >

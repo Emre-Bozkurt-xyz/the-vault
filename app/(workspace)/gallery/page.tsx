@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 
 import { PublicAssetGallery } from "@/components/assets/PublicAssetGallery";
 import { Button } from "@/components/ui/button";
+import { WorkspacePage } from "@/components/workspace/WorkspacePage";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { WorkspaceDocumentPreviewCard } from "@/components/workspace/WorkspaceDocumentPreviewCard";
 import { parseContentSearchQuery } from "@/lib/content-search-query";
@@ -42,7 +43,7 @@ export default async function GalleryPage({
       <WorkspacePageRegistration
         page={{ type: "gallery", title: "Gallery", href: "/gallery" }}
       />
-      <section className="mx-auto w-full max-w-5xl py-6">
+      <WorkspacePage className="max-w-5xl">
         <div className="flex flex-col gap-4 border-b border-border/70 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground">
@@ -100,7 +101,7 @@ export default async function GalleryPage({
             </p>
           )}
         </div>
-      </section>
+      </WorkspacePage>
     </>
   );
 }

@@ -39,6 +39,7 @@ export type AssetStorageOverview = {
   totalBytes: number;
   imageCount: number;
   pdfCount: number;
+  fileCount: number;
   publicCount: number;
   privateCount: number;
   totalQuotaBytes: number;
@@ -78,6 +79,7 @@ export async function getAssetStorageOverview(): Promise<AssetStorageOverview> {
       totalBytes: sql<number>`coalesce(sum(${assets.sizeBytes}), 0)`,
       imageCount: sql<number>`count(*) filter (where ${assets.kind} = 'image')::int`,
       pdfCount: sql<number>`count(*) filter (where ${assets.kind} = 'pdf')::int`,
+      fileCount: sql<number>`count(*) filter (where ${assets.kind} = 'file')::int`,
       publicCount: sql<number>`count(*) filter (where ${assets.visibility} = 'public')::int`,
     })
     .from(assets)
@@ -100,6 +102,7 @@ export async function getAssetStorageOverview(): Promise<AssetStorageOverview> {
     totalBytes: Number(assetStats?.totalBytes ?? 0),
     imageCount: Number(assetStats?.imageCount ?? 0),
     pdfCount: Number(assetStats?.pdfCount ?? 0),
+    fileCount: Number(assetStats?.fileCount ?? 0),
     publicCount,
     privateCount: totalAssets - publicCount,
     totalQuotaBytes: Number(userStats?.totalQuotaBytes ?? 0),

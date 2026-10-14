@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { assetDeliveryHeaders, fileExtensionFromName } from "./asset-delivery";
+import {
+  assetDeliveryHeaders,
+  assetDownloadUrl,
+  fileExtensionFromName,
+} from "./asset-delivery";
 
 describe("assetDeliveryHeaders", () => {
   it("renders allow-listed media inline with its sniffed type", () => {
@@ -28,6 +32,16 @@ describe("assetDeliveryHeaders", () => {
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
   });
 
+  it("serves media as an attachment when a download is requested", () => {
+    const headers = assetDeliveryHeaders(
+      { kind: "image", mimeType: "image/png", displayName: "cat.png" },
+      { download: true },
+    );
+
+    expect(headers["Content-Type"]).toBe("image/png");
+    expect(headers["Content-Disposition"]).toBe('attachment; filename="cat.png"');
+  });
+
   it("strips header-breaking characters from the filename", () => {
     const headers = assetDeliveryHeaders({
       kind: "file",
@@ -50,5 +64,14 @@ describe("fileExtensionFromName", () => {
     [`long.${"x".repeat(17)}`, null],
   ])("%s -> %s", (name, expected) => {
     expect(fileExtensionFromName(name)).toBe(expected);
+  });
+});
+
+describe("assetDownloadUrl", () => {
+  it("adds download=1 with the right separator", () => {
+    expect(assetDownloadUrl("/api/assets/a/content")).toBe("/api/assets/a/content?download=1");
+    expect(assetDownloadUrl("/api/assets/a/content?doc=d")).toBe(
+      "/api/assets/a/content?doc=d&download=1",
+    );
   });
 });

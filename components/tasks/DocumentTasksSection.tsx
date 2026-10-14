@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ListChecks } from "lucide-react";
 
+import { ContextPanelSection } from "@/components/workspace/ContextPanel";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
 import { todayDayKey } from "@/lib/tasks/dates";
 import { requestEditorJump } from "@/lib/editor-jump-events";
@@ -103,23 +104,19 @@ export function DocumentTasksSection({ documentId }: { documentId: string }) {
   }
 
   return (
-    <section className="border-b border-border/70 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="font-medium">Tasks</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {summary.total === 0
-              ? "No tasks in this document."
-              : `${summary.open} open${
-                  summary.nextDue ? ` · next due ${formatDueLabel(summary.nextDue, today)}` : ""
-                }`}
-          </p>
-        </div>
-        <ListChecks className="size-4 shrink-0 text-muted-foreground" />
-      </div>
-
+    <ContextPanelSection
+      icon={ListChecks}
+      title="Tasks"
+      description={
+        summary.total === 0
+          ? "No tasks in this document."
+          : `${summary.open} open${
+              summary.nextDue ? ` · next due ${formatDueLabel(summary.nextDue, today)}` : ""
+            }`
+      }
+    >
       {summary.listed.length > 0 ? (
-        <ul className="mt-2 grid gap-0.5">
+        <ul className="-mx-1 grid gap-0.5">
           {summary.listed.slice(0, maxListed).map((task) => {
             const progress = summary.children.get(task.ordinal);
             const overdue = task.dueDay !== null && task.dueDay < today;
@@ -158,10 +155,10 @@ export function DocumentTasksSection({ documentId }: { documentId: string }) {
         </ul>
       ) : null}
       {summary.listed.length > maxListed ? (
-        <p className="mt-1 px-1 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {summary.listed.length - maxListed} more
         </p>
       ) : null}
-    </section>
+    </ContextPanelSection>
   );
 }

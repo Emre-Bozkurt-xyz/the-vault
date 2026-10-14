@@ -64,7 +64,7 @@ type WorkspaceChromeData = {
 
 type WorkspaceChromeContextValue = {
   setActivePage: (page: WorkspacePageDescriptor) => void;
-  setRightPanel: (panel: ReactNode | null) => void;
+  setRightPanel: (panel: ReactNode | null, title?: string) => void;
   upsertDocument: (document: WorkspaceDocumentItem) => void;
   activeDocument: ActiveDocumentCommandContext | null;
   setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
@@ -123,7 +123,14 @@ export function WorkspaceChrome({
   );
   const [activePage, setActivePage] =
     useState<WorkspacePageDescriptor>(fallbackPage);
-  const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
+  const [rightPanelState, setRightPanelState] = useState<{
+    panel: ReactNode | null;
+    title?: string;
+  }>({ panel: null });
+  const setRightPanel = useCallback(
+    (panel: ReactNode | null, title?: string) => setRightPanelState({ panel, title }),
+    [],
+  );
   const [activeDocument, setActiveDocument] =
     useState<ActiveDocumentCommandContext | null>(null);
   const [recentPages, setRecentPages] = useState<WorkspacePageDescriptor[]>(
@@ -212,6 +219,7 @@ export function WorkspaceChrome({
     }),
     [
       handleSetActivePage,
+      setRightPanel,
       upsertDocument,
       activeDocument,
       recentPages,
@@ -274,7 +282,8 @@ export function WorkspaceChrome({
             isAdmin={isAdmin}
           />
         }
-        rightPanel={rightPanel}
+        rightPanel={rightPanelState.panel}
+        rightPanelTitle={rightPanelState.title}
       >
         {children}
       </VaultWorkspaceShell>
@@ -285,11 +294,14 @@ export function WorkspaceChrome({
 export function WorkspacePageRegistration({
   page,
   rightPanel,
+  rightPanelTitle,
   documentItem,
   documentCommand,
 }: {
   page: WorkspacePageDescriptor;
   rightPanel?: ReactNode;
+  /** Heading of the right panel; defaults to "Context". */
+  rightPanelTitle?: string;
   documentItem?: WorkspaceDocumentItem;
   documentCommand?: ActiveDocumentCommandContext;
 }) {
@@ -297,7 +309,7 @@ export function WorkspacePageRegistration({
 
   useEffect(() => {
     context?.setActivePage(page);
-    context?.setRightPanel(rightPanel ?? null);
+    context?.setRightPanel(rightPanel ?? null, rightPanelTitle);
     context?.setActiveDocument(documentCommand ?? null);
 
     if (documentItem) {
@@ -308,7 +320,7 @@ export function WorkspacePageRegistration({
       context?.setRightPanel(null);
       context?.setActiveDocument(null);
     };
-  }, [context, documentCommand, documentItem, page, rightPanel]);
+  }, [context, documentCommand, documentItem, page, rightPanel, rightPanelTitle]);
 
   return null;
 }

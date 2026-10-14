@@ -47,7 +47,7 @@ function UploadRow({
   const indeterminate = item.status === "starting" || item.status === "finishing";
 
   return (
-    <li className="grid gap-1.5 rounded-md border border-border/70 bg-card/80 px-3 py-2 text-card-foreground">
+    <li className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 rounded-md border border-border/70 bg-card/80 px-3 py-2 text-card-foreground">
       <div className="flex items-center gap-2">
         <StatusIcon status={item.status} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={item.name}>
@@ -90,7 +90,7 @@ function UploadRow({
 
       <p
         className={cn(
-          "text-xs tabular-nums",
+          "truncate text-xs tabular-nums",
           item.status === "error" ? "text-destructive" : "text-muted-foreground",
         )}
         aria-live="polite"

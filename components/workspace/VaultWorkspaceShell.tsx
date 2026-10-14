@@ -65,6 +65,7 @@ type VaultWorkspaceShellProps = {
   contentClassName?: string;
   children: ReactNode;
   rightPanel?: ReactNode;
+  rightPanelTitle?: string;
 };
 
 export function VaultWorkspaceShell({
@@ -85,6 +86,7 @@ export function VaultWorkspaceShell({
   contentClassName,
   children,
   rightPanel,
+  rightPanelTitle = "Context",
 }: VaultWorkspaceShellProps) {
   const [panelMode, setPanelMode] = useState<WorkspacePanelMode>(
     initialLayout?.panelMode ?? defaultPanelMode,
@@ -120,7 +122,11 @@ export function VaultWorkspaceShell({
         }
         return false;
       });
-      setMobileRightPanelOpen(true);
+      // Below `lg` the context panel is a sheet; on desktop the aside above is
+      // enough, and opening the sheet too would cover the page.
+      if (!window.matchMedia("(min-width: 1024px)").matches) {
+        setMobileRightPanelOpen(true);
+      }
     });
   }, [panelMode, leftCollapsed, leftPanelWidth, rightPanelWidth]);
 
@@ -142,6 +148,29 @@ export function VaultWorkspaceShell({
     setPanelMode(mode);
     setLeftCollapsed(false);
     persistLayout({ panelMode: mode, leftCollapsed: false });
+  }
+
+  /**
+   * Rail clicks try not to open the panel: a collapsed panel stays collapsed
+   * when the icon loads a page (it just remembers the mode for next time), and
+   * clicking the active panel-only icon again collapses it.
+   */
+  function selectRailMode(
+    mode: WorkspacePanelMode,
+    { navigates }: { navigates: boolean },
+  ) {
+    if (leftCollapsed && navigates) {
+      setPanelMode(mode);
+      persistLayout({ panelMode: mode });
+      return;
+    }
+
+    if (!leftCollapsed && !navigates && mode === effectiveMode) {
+      toggleLeftPanel();
+      return;
+    }
+
+    changeMode(mode);
   }
 
   function toggleLeftPanel() {
@@ -236,7 +265,8 @@ export function VaultWorkspaceShell({
     <div className="fixed inset-0 flex min-h-0 overflow-hidden bg-background text-foreground pt-safe pb-safe pl-safe pr-safe">
       <WorkspaceIconRail
         mode={effectiveMode}
-        onModeChange={changeMode}
+        collapsed={leftCollapsed}
+        onSelect={selectRailMode}
         isAdmin={isAdmin}
         tasksEnabled={tasksEnabled}
       />
@@ -303,9 +333,9 @@ export function VaultWorkspaceShell({
                   className="hidden h-full min-h-0 shrink-0 overflow-hidden border-l border-border/70 bg-card/35 lg:flex lg:flex-col"
                   style={{ width: rightPanelWidth }}
                 >
-                  <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 px-3">
+                  <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 pl-4 pr-2">
                     <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Context
+                      {rightPanelTitle}
                     </p>
                     <button
                       type="button"
@@ -457,8 +487,8 @@ export function VaultWorkspaceShell({
             showCloseButton={false}
             className="w-[min(24rem,90vw)] max-w-none gap-0 border-border/70 bg-card p-0 pr-safe pt-safe text-card-foreground"
           >
-            <SheetTitle className="flex h-12 shrink-0 items-center border-b border-border/70 px-3 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Context
+            <SheetTitle className="flex h-12 shrink-0 items-center border-b border-border/70 px-4 font-sans text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {rightPanelTitle}
             </SheetTitle>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
               {rightPanel}

@@ -122,7 +122,7 @@ export default async function AdminAssetsPage({
               icon={<FileText className="size-4" />}
               label="Assets"
               value={overview.totalAssets.toLocaleString()}
-              hint={`${overview.imageCount} images - ${overview.pdfCount} PDFs`}
+              hint={`${overview.imageCount} images · ${overview.pdfCount} PDFs · ${overview.fileCount} other`}
             />
             <MetricCard
               icon={<ImageIcon className="size-4" />}

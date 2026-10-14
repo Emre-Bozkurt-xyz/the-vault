@@ -6,11 +6,14 @@ import type { AssetKind } from "@/db/schema";
  * (HTML, SVG, scripts), so they are always a sandboxed download with an opaque
  * type: rendering them inline on our origin would be stored XSS.
  */
-export function assetDeliveryHeaders(asset: {
-  kind: AssetKind;
-  mimeType: string;
-  displayName: string;
-}): Record<string, string> {
+export function assetDeliveryHeaders(
+  asset: {
+    kind: AssetKind;
+    mimeType: string;
+    displayName: string;
+  },
+  options: { download?: boolean } = {},
+): Record<string, string> {
   const filename = escapeHeaderValue(asset.displayName);
 
   if (asset.kind === "file") {
@@ -24,7 +27,8 @@ export function assetDeliveryHeaders(asset: {
 
   return {
     "Content-Type": asset.mimeType,
-    "Content-Disposition": `inline; filename="${filename}"`,
+    // `?download=1` asks for a save dialog instead of rendering inline.
+    "Content-Disposition": `${options.download ? "attachment" : "inline"}; filename="${filename}"`,
     "X-Content-Type-Options": "nosniff",
   };
 }
@@ -37,4 +41,9 @@ export function fileExtensionFromName(filename: string) {
 
 function escapeHeaderValue(value: string) {
   return value.replace(/["\\\r\n]/g, "_");
+}
+
+/** The asset's content URL with `download=1`, keeping any existing query. */
+export function assetDownloadUrl(url: string) {
+  return `${url}${url.includes("?") ? "&" : "?"}download=1`;
 }

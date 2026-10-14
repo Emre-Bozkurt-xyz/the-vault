@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UserSearchField } from "@/components/user-search-field";
+import { WorkspacePage } from "@/components/workspace/WorkspacePage";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import {
   acceptFriendRequestAction,
@@ -34,7 +35,7 @@ export default async function FriendsPage() {
       <WorkspacePageRegistration
         page={{ type: "settings", title: "Friends", href: "/dashboard/friends" }}
       />
-      <section className="mx-auto grid w-full max-w-6xl gap-5 py-4">
+      <WorkspacePage className="grid gap-5">
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/70 pb-5">
           <div>
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
@@ -167,7 +168,7 @@ export default async function FriendsPage() {
             </section>
           </div>
         </div>
-      </section>
+      </WorkspacePage>
     </>
   );
 }

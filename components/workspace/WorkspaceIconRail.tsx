@@ -16,27 +16,44 @@ import type { WorkspacePanelMode } from "@/components/workspace/workspace-types"
 
 type WorkspaceIconRailProps = {
   mode: WorkspacePanelMode;
-  onModeChange: (mode: WorkspacePanelMode) => void;
+  /** Whether the left panel is collapsed; changes what a click does. */
+  collapsed: boolean;
+  /**
+   * `navigates` is true when the click also loads a page, in which case a
+   * collapsed panel should stay collapsed.
+   */
+  onSelect: (mode: WorkspacePanelMode, options: { navigates: boolean }) => void;
   isAdmin?: boolean;
   /** The Tasks agenda is the `vault.tasks` extension's; hidden while it is off. */
   tasksEnabled?: boolean;
 };
 
+type RailItem = {
+  label: string;
+  mode: WorkspacePanelMode;
+  icon: typeof Files;
+  /** Always navigates here. */
+  href?: string;
+  /** Navigates here only while the panel is collapsed (else switches panel). */
+  collapsedHref?: string;
+};
+
 export function WorkspaceIconRail({
   mode,
-  onModeChange,
+  collapsed,
+  onSelect,
   isAdmin = false,
   tasksEnabled = false,
 }: WorkspaceIconRailProps) {
-  const items = [
-    { label: "Files", mode: "files" as const, icon: Files },
-    { label: "Search", mode: "search" as const, icon: Search },
+  const items: RailItem[] = [
+    { label: "Files", mode: "files", icon: Files },
+    { label: "Search", mode: "search", icon: Search },
     ...(tasksEnabled
-      ? [{ label: "Tasks", mode: "tasks" as const, icon: ListChecks }]
+      ? [{ label: "Tasks", mode: "tasks" as const, icon: ListChecks, collapsedHref: "/tasks" }]
       : []),
-    { label: "Gallery", mode: "gallery" as const, icon: LayoutGrid, href: "/gallery" },
-    { label: "Assets", mode: "assets" as const, icon: ImageIcon, href: "/assets" },
-    { label: "Docs", mode: "docs" as const, icon: BookOpen },
+    { label: "Gallery", mode: "gallery", icon: LayoutGrid, href: "/gallery" },
+    { label: "Assets", mode: "assets", icon: ImageIcon, href: "/assets" },
+    { label: "Docs", mode: "docs", icon: BookOpen },
     ...(isAdmin
       ? [{ label: "Admin", mode: "admin" as const, icon: ShieldCheck, href: "/dashboard/admin" }]
       : []),
@@ -48,19 +65,20 @@ export function WorkspaceIconRail({
         {items.map((item) => {
           const Icon = item.icon;
           const active = mode === item.mode;
+          const href = item.href ?? (collapsed ? item.collapsedHref : undefined);
           const className = cn(
             "mb-1 flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
             active && "bg-sidebar-accent text-sidebar-accent-foreground",
           );
 
-          if ("href" in item && item.href) {
+          if (href) {
             return (
               <Link
                 key={item.label}
-                href={item.href}
+                href={href}
                 title={item.label}
                 aria-label={item.label}
-                onClick={() => onModeChange(item.mode)}
+                onClick={() => onSelect(item.mode, { navigates: true })}
                 className={className}
               >
                 <Icon className="size-4" />
@@ -74,7 +92,8 @@ export function WorkspaceIconRail({
               type="button"
               title={item.label}
               aria-label={item.label}
-              onClick={() => onModeChange(item.mode)}
+              aria-pressed={active && !collapsed}
+              onClick={() => onSelect(item.mode, { navigates: false })}
               className={className}
             >
               <Icon className="size-4" />

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AdminNav } from "@/components/admin/AdminNav";
+import { WorkspacePage } from "@/components/workspace/WorkspacePage";
 
 /**
  * Shared chrome for the admin dashboard section pages (overview, users, assets,
@@ -9,7 +10,7 @@ import { AdminNav } from "@/components/admin/AdminNav";
  */
 export function AdminShell({ children }: { children: ReactNode }) {
   return (
-    <section className="mx-auto grid w-full max-w-7xl gap-5 py-4">
+    <WorkspacePage width="wide" className="grid gap-5">
       <header className="grid gap-3">
         <h1 className="text-2xl font-semibold tracking-tight vault-display">
           Admin
@@ -17,6 +18,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <AdminNav />
       </header>
       {children}
-    </section>
+    </WorkspacePage>
   );
 }

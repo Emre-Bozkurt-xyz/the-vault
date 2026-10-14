@@ -11,15 +11,24 @@ import {
 import {
   Check,
   Copy,
-  Eye,
+  Download,
+  ExternalLink,
+  File as FileIcon,
   FileText,
   ImageIcon,
   Info,
   X,
 } from "lucide-react";
 
+import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
+import {
+  assetExtensionBadge,
+  assetTypeLabel,
+  downloadAsset,
+} from "@/components/assets/asset-ui";
 import { ContentInteractionControl } from "@/components/content-interaction-control";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type PublicGalleryAsset = {
@@ -130,73 +139,86 @@ export function PublicAssetGallery({
     <section className="relative">
       <div className="grid content-start gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {assets.map((asset) => (
-          <button
-            key={asset.id}
-            type="button"
-            onClick={(event) => {
-              setPanelStyle(getPanelStyle(event.currentTarget));
-              setSelectedId(asset.id);
-              setCopied(null);
-            }}
-            className={cn(
-              "group overflow-hidden rounded-md border bg-card text-left text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg",
-              selected?.id === asset.id
-                ? "border-primary/70 ring-1 ring-primary/35"
-                : "border-border/70",
-            )}
-          >
-            {asset.kind === "image" ? (
-              <span className="block bg-muted">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={asset.url}
-                  alt={asset.altText ?? asset.displayName}
-                  className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]"
-                  loading="lazy"
-                />
-              </span>
-            ) : (
-              <span className="flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground">
-                <FileText className="size-10" />
-              </span>
-            )}
-            <span className="block p-4">
-              <span className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {asset.kind === "image" ? (
-                  <ImageIcon className="size-3.5" />
-                ) : (
-                  <FileText className="size-3.5" />
-                )}
-                Public asset
-              </span>
-              <span className="mt-2 block truncate text-sm font-semibold">
-                {asset.displayName}
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                @{asset.ownerUsername ?? "unknown"} - {formatDate(asset.createdAt)}
-              </span>
-              <ContentInteractionControl
-                targetKind="asset"
-                targetId={asset.id}
-                initialStats={getAssetStats(asset)}
-                compact
-                readOnly
-                className="mt-3"
-              />
-              {asset.tags.length > 0 ? (
-                <span className="mt-3 flex flex-wrap gap-1">
-                  {asset.tags.slice(0, 4).map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full border border-border/70 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
-                    >
-                      {tag}
-                    </span>
-                  ))}
+          <div key={asset.id} className="group relative">
+            <button
+              type="button"
+              onClick={(event) => {
+                setPanelStyle(getPanelStyle(event.currentTarget));
+                setSelectedId(asset.id);
+                setCopied(null);
+              }}
+              className={cn(
+                "block h-full w-full overflow-hidden rounded-md border bg-card text-left text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                selected?.id === asset.id
+                  ? "border-primary/70 ring-1 ring-primary/35"
+                  : "border-border/70",
+              )}
+            >
+              {asset.kind === "image" ? (
+                <span className="block bg-muted">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={asset.url}
+                    alt={asset.altText ?? asset.displayName}
+                    className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]"
+                    loading="lazy"
+                  />
                 </span>
-              ) : null}
-            </span>
-          </button>
+              ) : (
+                <span className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground">
+                  {asset.kind === "pdf" ? (
+                    <FileText className="size-10" />
+                  ) : (
+                    <FileIcon className="size-10" />
+                  )}
+                  <span className="rounded border border-border/70 bg-background/70 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tracking-wider">
+                    {assetExtensionBadge(asset)}
+                  </span>
+                </span>
+              )}
+              <span className="block p-4">
+                <span className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {asset.kind === "image" ? (
+                    <ImageIcon className="size-3.5" />
+                  ) : (
+                    <FileText className="size-3.5" />
+                  )}
+                  {assetTypeLabel(asset)}
+                </span>
+                <span className="mt-2 block truncate text-sm font-semibold">
+                  {asset.displayName}
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  @{asset.ownerUsername ?? "unknown"} · {formatDate(asset.createdAt)}
+                </span>
+                <ContentInteractionControl
+                  targetKind="asset"
+                  targetId={asset.id}
+                  initialStats={getAssetStats(asset)}
+                  compact
+                  readOnly
+                  className="mt-3"
+                />
+                {asset.tags.length > 0 ? (
+                  <span className="mt-3 flex flex-wrap gap-1">
+                    {asset.tags.slice(0, 4).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-border/70 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+            <AssetActionsMenu
+              asset={asset}
+              showCopyId
+              className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+            />
+          </div>
         ))}
         {children}
       </div>
@@ -218,7 +240,7 @@ export function PublicAssetGallery({
                     {selected.displayName}
                   </h2>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    @{selected.ownerUsername ?? "unknown"} - {selected.mimeType}
+                    @{selected.ownerUsername ?? "unknown"} · {assetTypeLabel(selected)}
                   </p>
                 </div>
                 <button
@@ -262,7 +284,7 @@ export function PublicAssetGallery({
               />
 
               <dl className="grid gap-2 border-y border-border/70 py-3 text-xs">
-                <InfoRow label="Kind" value={selected.kind} />
+                <InfoRow label="Type" value={assetTypeLabel(selected)} />
                 <InfoRow label="Size" value={formatBytes(selected.sizeBytes)} />
                 <InfoRow label="Uploaded" value={formatDate(selected.createdAt)} />
                 <InfoRow
@@ -270,6 +292,24 @@ export function PublicAssetGallery({
                   value={selected.ownerName ?? selected.ownerUsername ?? "Unknown"}
                 />
               </dl>
+
+              <div className={cn("grid gap-2", selected.kind === "file" ? "grid-cols-1" : "grid-cols-2")}>
+                {selected.kind !== "file" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(selected.url, "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLink data-icon="inline-start" />
+                    Open
+                  </Button>
+                ) : null}
+                <Button type="button" size="sm" onClick={() => downloadAsset(selected)}>
+                  <Download data-icon="inline-start" />
+                  Download
+                </Button>
+              </div>
 
               <div className="grid gap-2 rounded-md border border-border/70 bg-background/55 p-3">
                 <p className="break-all font-mono text-[0.72rem] text-foreground">
@@ -303,15 +343,6 @@ export function PublicAssetGallery({
                     ID
                   </Button>
                 </div>
-                <a
-                  href={selected.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
-                >
-                  <Eye data-icon="inline-start" />
-                  Open asset
-                </a>
               </div>
             </div>
         </aside>
@@ -355,24 +386,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Fixed locale and zone: this renders on the server and the client, and a
+// locale-dependent date would mismatch on hydration.
 function formatDate(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
-  return date.toLocaleDateString();
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  const units = ["KiB", "MiB", "GiB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }

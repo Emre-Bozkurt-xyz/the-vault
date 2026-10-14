@@ -87,7 +87,7 @@ export default async function AdminOverviewPage() {
             icon={<FileText className="size-4" />}
             label="Assets"
             value={storage.totalAssets.toLocaleString()}
-            hint={`${storage.imageCount} images · ${storage.pdfCount} PDFs`}
+            hint={`${storage.imageCount} images · ${storage.pdfCount} PDFs · ${storage.fileCount} other`}
           />
           <MetricCard
             icon={<ImageIcon className="size-4" />}

@@ -4,6 +4,8 @@ import {
   Archive,
   Globe2,
   History,
+  Lock,
+  Paintbrush,
   RotateCcw,
   Save,
   Share2,
@@ -24,7 +26,12 @@ import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { resolveInheritedTagsForDocument } from "@/lib/folder-tags";
 import { MarkdownEditor } from "@/components/markdown/MarkdownEditor";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  ContextPanelBody,
+  ContextPanelSection,
+} from "@/components/workspace/ContextPanel";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { createCollabToken } from "@/lib/collab-token";
 import { ExtensionOverlaySurface } from "@/components/extensions/ExtensionOverlays";
@@ -233,6 +240,7 @@ export default async function DocumentPage({
             ? documentExtensions.enabledIds
             : [],
         }}
+        rightPanelTitle="Document"
         rightPanel={
           showRightPanel ? (
           <DocumentContextPanel
@@ -364,141 +372,122 @@ function DocumentContextPanel({
   tasksEnabled,
 }: DocumentContextPanelProps) {
   return (
-    <div className="flex h-full flex-col overflow-y-auto px-3 py-3 text-sm">
-      <div className="border-b border-border/70 pb-3">
-        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Document
-        </p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className="rounded border border-border/70 px-2 py-0.5 text-xs text-muted-foreground">
-            {visibility}
-          </span>
-          <span className="rounded border border-border/70 bg-muted/35 px-2 py-0.5 text-xs font-medium">
-            {role}
-          </span>
-        </div>
+    <ContextPanelBody>
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-4 py-3">
+        <Badge variant={visibility === "public" ? "secondary" : "outline"}>
+          {visibility === "public" ? <Globe2 /> : <Lock />}
+          {visibility === "public" ? "Public" : "Private"}
+        </Badge>
+        <Badge variant="outline" className="capitalize">
+          {role}
+        </Badge>
       </div>
 
       {tasksEnabled ? <DocumentTasksSection documentId={documentId} /> : null}
 
       {canShare ? (
-        <section className="border-b border-border/70 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-medium">Sharing</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                People, roles, and link access.
-              </p>
-            </div>
-            <Share2 className="size-4 shrink-0 text-muted-foreground" />
-          </div>
-          <div className="mt-3">
-            <DocumentShareDialog
-              documentId={documentId}
-              collaborators={collaborators}
-              folderCollaborators={folderCollaborators}
-              friends={friends}
-              activeShareLink={activeShareLink}
-            />
-          </div>
-        </section>
+        <ContextPanelSection
+          icon={Share2}
+          title="Sharing"
+          description="People, roles, and link access."
+        >
+          <DocumentShareDialog
+            documentId={documentId}
+            collaborators={collaborators}
+            folderCollaborators={folderCollaborators}
+            friends={friends}
+            activeShareLink={activeShareLink}
+          />
+        </ContextPanelSection>
       ) : null}
 
       {canDelete ? (
-        <section className="border-b border-border/70 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-medium">Publish</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Public read-only page.
-              </p>
-            </div>
-            <Globe2 className="size-4 shrink-0 text-muted-foreground" />
-          </div>
-
-          <div className="mt-3 grid gap-2">
-            {canPublish ? (
-              visibility === "public" ? (
-                <>
-                  {publicSlug ? (
-                    <div className="grid gap-2">
-                      <Link
-                        href={`/public/${publicSlug}`}
-                        className={buttonVariants({
-                          variant: "outline",
-                          size: "sm",
-                        })}
-                      >
-                        View public page
-                      </Link>
-                      <CopyPublicLink path={`/public/${publicSlug}`} />
-                    </div>
-                  ) : null}
-                  <form action={unpublishDocumentAction}>
-                    <input type="hidden" name="documentId" value={documentId} />
-                    <Button type="submit" variant="ghost" size="sm" className="w-full">
-                      Unpublish
-                    </Button>
-                  </form>
-                </>
-              ) : (
-                <DocumentPublishControl
-                  documentId={documentId}
-                  privateAssets={privateEmbeddedAssets}
-                  action={publishDocumentAction}
-                />
-              )
+        <ContextPanelSection
+          icon={Globe2}
+          title="Publish"
+          description={
+            visibility === "public"
+              ? "Live as a public read-only page."
+              : "Share a public read-only page."
+          }
+        >
+          {canPublish ? (
+            visibility === "public" ? (
+              <>
+                {publicSlug ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      href={`/public/${publicSlug}`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      View page
+                    </Link>
+                    <CopyPublicLink path={`/public/${publicSlug}`} />
+                  </div>
+                ) : null}
+                <form action={unpublishDocumentAction}>
+                  <input type="hidden" name="documentId" value={documentId} />
+                  <Button type="submit" variant="ghost" size="sm" className="w-full">
+                    Unpublish
+                  </Button>
+                </form>
+              </>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Only owners can publish.
-              </p>
-            )}
-          </div>
-        </section>
+              <DocumentPublishControl
+                documentId={documentId}
+                privateAssets={privateEmbeddedAssets}
+                action={publishDocumentAction}
+              />
+            )
+          ) : (
+            <p className="text-xs text-muted-foreground">Only owners can publish.</p>
+          )}
+        </ContextPanelSection>
       ) : null}
 
       {snippetAttachments ? (
-        <section className="border-b border-border/70 py-3">
+        <ContextPanelSection
+          icon={Paintbrush}
+          title="Styling"
+          description="Your CSS snippets, applied for everyone who views this."
+        >
           <DocumentSnippetsPanel
             documentId={documentId}
             initialAttached={snippetAttachments.attached}
             initialAvailable={snippetAttachments.available}
           />
-        </section>
+        </ContextPanelSection>
       ) : null}
 
       {canEdit ? (
-        <section className="border-b border-border/70 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-medium">History</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Batched restore points.
-              </p>
-            </div>
-            <History className="size-4 shrink-0 text-muted-foreground" />
-          </div>
-
-          <form action={createManualDocumentVersionAction} className="mt-3">
-            <input type="hidden" name="documentId" value={documentId} />
-            <Button type="submit" variant="outline" size="sm" className="w-full gap-2">
-              <Save className="size-3.5" />
-              Create point
-            </Button>
-          </form>
-
-          <DocumentRestorePoints count={versions.length}>
-            {versions.length > 0 ? (
-              versions.map((version) => (
+        <ContextPanelSection
+          icon={History}
+          title="History"
+          description={
+            versions.length === 0
+              ? "No restore points yet."
+              : "Snapshots you can roll back to."
+          }
+          action={
+            <form action={createManualDocumentVersionAction}>
+              <input type="hidden" name="documentId" value={documentId} />
+              <Button type="submit" variant="outline" size="xs">
+                <Save data-icon="inline-start" />
+                Save point
+              </Button>
+            </form>
+          }
+        >
+          {versions.length > 0 ? (
+            <DocumentRestorePoints count={versions.length}>
+              {versions.map((version) => (
                 <div
                   key={version.id}
-                  className="border border-border/60 bg-card/30 p-2"
+                  className="grid gap-1.5 rounded-md border border-border/60 bg-background/40 p-2.5"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium">
-                        {version.title}
-                      </p>
+                      <p className="truncate text-xs font-medium">{version.title}</p>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                         <p className="text-[0.68rem] text-muted-foreground">
                           {version.createdAt.toLocaleString()}
@@ -511,51 +500,41 @@ function DocumentContextPanel({
                         ) : null}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[0.66rem] text-muted-foreground">
+                    <span
+                      className="shrink-0 text-[0.66rem] tabular-nums text-muted-foreground"
+                      title="Characters"
+                    >
                       {version.markdownLength.toLocaleString()}
                     </span>
                   </div>
-                  <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[0.68rem] leading-4 text-muted-foreground">
+                  <p className="line-clamp-2 whitespace-pre-wrap text-[0.68rem] leading-4 text-muted-foreground">
                     {version.markdownPreview.trim() || "Empty document"}
                   </p>
-                  <form action={restoreDocumentVersionAction} className="mt-2">
+                  <form action={restoreDocumentVersionAction}>
                     <input type="hidden" name="documentId" value={documentId} />
                     <input type="hidden" name="versionId" value={version.id} />
-                    <Button
-                      type="submit"
-                      size="xs"
-                      variant="ghost"
-                      className="h-7 w-full gap-1.5"
-                    >
-                      <RotateCcw className="size-3" />
+                    <Button type="submit" size="xs" variant="ghost" className="w-full">
+                      <RotateCcw data-icon="inline-start" />
                       Restore
                     </Button>
                   </form>
                 </div>
-              ))
-            ) : (
-              <p className="px-1 py-2 text-xs text-muted-foreground">
-                No restore points yet.
-              </p>
-            )}
-          </DocumentRestorePoints>
-        </section>
+              ))}
+            </DocumentRestorePoints>
+          ) : null}
+        </ContextPanelSection>
       ) : null}
 
       {canDelete ? (
-        <section className="py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-medium">Archive</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Remove from active lists.
-              </p>
-            </div>
-            <Archive className="size-4 shrink-0 text-muted-foreground" />
-          </div>
+        <ContextPanelSection
+          icon={Archive}
+          tone="danger"
+          title="Archive"
+          description="Moves it to the Bin. Restore it from Files until it is deleted."
+        >
           <DocumentArchiveForm documentId={documentId} />
-        </section>
+        </ContextPanelSection>
       ) : null}
-    </div>
+    </ContextPanelBody>
   );
 }

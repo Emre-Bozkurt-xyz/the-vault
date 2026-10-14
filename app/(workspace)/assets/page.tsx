@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { AssetLibraryClient } from "@/components/assets/AssetLibraryClient";
-import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { WorkspacePage } from "@/components/workspace/WorkspacePage";
 import { getUserStorageSummary, listAssetsForUser } from "@/server/assets";
 
 export default async function AssetsPage() {
@@ -19,16 +19,14 @@ export default async function AssetsPage() {
 
   return (
     <>
-      <WorkspacePageRegistration
-        page={{ type: "assets", title: "Assets", href: "/assets" }}
-      />
-      <section className="mx-auto w-full max-w-6xl py-6">
+      {/* AssetLibraryClient registers the page itself: it owns the right panel. */}
+      <WorkspacePage width="full" className="max-w-[96rem]">
         <AssetLibraryClient
           initialAssets={assets}
           storageQuotaBytes={storage.quotaBytes}
           unrestrictedUploads={storage.unrestrictedUploadsAllowed}
         />
-      </section>
+      </WorkspacePage>
     </>
   );
 }

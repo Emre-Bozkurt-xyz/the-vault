@@ -61,7 +61,11 @@ async function serveAsset(
     });
   }
 
-  const headers = buildHeaders(asset, range?.status === "ok" ? range : null);
+  const headers = buildHeaders(
+    asset,
+    range?.status === "ok" ? range : null,
+    url.searchParams.get("download") === "1",
+  );
 
   if (headOnly) {
     return new Response(null, {
@@ -70,11 +74,18 @@ async function serveAsset(
     });
   }
 
+  // A row whose object is gone (manual bucket cleanup, a restore into another
+  // bucket) is a missing asset, not a server error.
   const object = await getAssetObject(
     asset.storageKey,
     range?.status === "ok" ? `bytes=${range.start}-${range.end}` : undefined,
-  );
-  const body = object.Body;
+  ).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "NoSuchKey") {
+      return null;
+    }
+    throw error;
+  });
+  const body = object?.Body;
 
   if (!body) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -92,12 +103,12 @@ function buildHeaders(asset: {
   mimeType: string;
   sizeBytes: number;
   visibility: "private" | "public";
-}, range: { start: number; end: number } | null) {
+}, range: { start: number; end: number } | null, download: boolean) {
   const contentLength = range
     ? range.end - range.start + 1
     : asset.sizeBytes;
   const headers = new Headers({
-    ...assetDeliveryHeaders(asset),
+    ...assetDeliveryHeaders(asset, { download }),
     "Content-Length": String(contentLength),
     "Accept-Ranges": "bytes",
   });
