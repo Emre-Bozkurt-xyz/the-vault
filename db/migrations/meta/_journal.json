@@ -197,6 +197,13 @@
       "when": 1791298188701,
       "tag": "0027_wonderful_microchip",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791943760334,
+      "tag": "0028_dusty_mojo",
+      "breakpoints": true
     }
   ]
 }

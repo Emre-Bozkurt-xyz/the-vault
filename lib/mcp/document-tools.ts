@@ -512,7 +512,7 @@ export function registerVaultDocumentTools(server: McpServer): void {
     {
       title: "Search assets",
       description:
-        "Find the current user's uploaded assets (images, PDFs) to embed in documents. Filter by free text (matched in name/description/alt text), tags, and kind. Returns each asset's id, name, kind, description, alt text, tags, and size. Pass an id to embed_asset to place it in a document with styling.",
+        "Find the current user's uploaded assets (images, PDFs, other files) to embed in documents. Filter by free text (matched in name/description/alt text), tags, and kind. Returns each asset's id, name, kind, description, alt text, tags, and size. Pass an id to embed_asset to place it in a document with styling.",
       inputSchema: {
         query: z
           .string()
@@ -525,9 +525,11 @@ export function registerVaultDocumentTools(server: McpServer): void {
             "Require all of these tags. Normalized to lowercase slugs (dashes become underscores).",
           ),
         kind: z
-          .enum(["image", "pdf"])
+          .enum(["image", "pdf", "file"])
           .optional()
-          .describe("Filter by asset kind."),
+          .describe(
+            'Filter by asset kind. "file" is any other type, uploaded by users an admin allowed to upload any file type.',
+          ),
         limit: z
           .number()
           .int()

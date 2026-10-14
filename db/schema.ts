@@ -31,7 +31,11 @@ export type DocumentVisibility = "private" | "public";
 export type DocumentShareLinkScope = "anyone" | "members";
 export type DocumentShareLinkRole = "viewer" | "editor";
 export type UserRole = "user" | "admin";
-export type AssetKind = "image" | "pdf";
+/**
+ * `file` is any other type, accepted only from users an admin granted
+ * unrestricted uploads. Always served as a sandboxed download, never inline.
+ */
+export type AssetKind = "image" | "pdf" | "file";
 export type AssetVisibility = "private" | "public";
 export type AssetStatus = "pending" | "ready" | "failed" | "deleted";
 export type TagCategory =
@@ -92,6 +96,13 @@ export const users = pgTable(
      * editing a document never implies it. Off for everyone by default.
      */
     codeExecutionAllowed: boolean("code_execution_allowed").notNull().default(false),
+    /**
+     * Admin grant to upload any file type, not just the image/PDF allow-list.
+     * Such files get `kind: "file"`. Off for everyone by default.
+     */
+    unrestrictedUploadsAllowed: boolean("unrestricted_uploads_allowed")
+      .notNull()
+      .default(false),
     profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
     storageUsedBytes: bigint("storage_used_bytes", { mode: "number" })
       .notNull()

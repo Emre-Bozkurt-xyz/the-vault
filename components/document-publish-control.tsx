@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { AlertTriangle, FileText, LockKeyhole, X } from "lucide-react";
+import { AlertTriangle, File, FileText, LockKeyhole, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
 type PrivateEmbeddedAsset = {
   id: string;
-  kind: "image" | "pdf";
+  kind: "image" | "pdf" | "file";
   displayName: string;
   mimeType: string;
   sizeBytes: number;
@@ -125,10 +125,12 @@ export function DocumentPublishControl({
 
 function PrivateAssetRow({ asset }: { asset: PrivateEmbeddedAsset }) {
   const icon: ReactNode =
-    asset.kind === "pdf" ? (
+    asset.kind === "image" ? (
+      <span className="text-[0.65rem] font-bold">IMG</span>
+    ) : asset.kind === "pdf" ? (
       <FileText className="size-4" />
     ) : (
-      <span className="text-[0.65rem] font-bold">IMG</span>
+      <File className="size-4" />
     );
 
   return (

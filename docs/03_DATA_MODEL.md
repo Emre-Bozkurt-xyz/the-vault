@@ -710,6 +710,10 @@ Important rules:
 - Route asset reads through Vault permission checks.
 - Publishing a document does not automatically publish embedded assets.
 - Individual assets can be explicitly published later for gallery visibility.
+- `kind = 'file'` (added 2026-10-13, migration `0028_dusty_mojo.sql`) holds any
+  type outside the sniffed image/PDF allow-list. Only users with
+  `users.unrestricted_uploads_allowed` (admin grant, default `false`) can create
+  one, and it is always served as a sandboxed `octet-stream` download.
 
 Implemented schema additions in migration `0011_tiresome_ultimates.sql`:
 
@@ -735,7 +739,7 @@ assets
   size_bytes BIGINT NOT NULL
   width INTEGER
   height INTEGER
-  kind TEXT NOT NULL
+  kind TEXT NOT NULL -- image | pdf | file
   visibility TEXT NOT NULL DEFAULT 'private'
   status TEXT NOT NULL DEFAULT 'pending'
   checksum_sha256 TEXT

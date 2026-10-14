@@ -273,7 +273,7 @@ type WikiLinkMapStore = {
 };
 type AssetCompletionItem = {
   id: string;
-  kind: "image" | "pdf";
+  kind: "image" | "pdf" | "file";
   displayName: string;
   description: string | null;
   altText: string | null;
@@ -1383,7 +1383,7 @@ export function MarkdownEditor({
         const payload = (await response.json()) as {
           asset?: {
             id: string;
-            kind: "image" | "pdf";
+            kind: "image" | "pdf" | "file";
             displayName: string;
             mimeType: string;
             sizeBytes: number;

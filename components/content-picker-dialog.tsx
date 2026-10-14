@@ -8,7 +8,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { FileText, Image as ImageIcon, Loader2, Search, X } from "lucide-react";
+import {
+  File as FileIcon,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  Search,
+  X,
+} from "lucide-react";
 
 import {
   listPublicAssetsForPickerAction,
@@ -87,6 +94,8 @@ export function ContentPickerDialog({
 
   const queryKinds: AssetKind[] | undefined = useMemo(() => {
     if (activeKind === "all") return allowedKinds;
+    // Unfiltered, the "Files" tab (id "pdf") also covers generic uploads.
+    if (activeKind === "pdf" && !allowedKinds?.length) return ["pdf", "file"];
     return [activeKind];
   }, [activeKind, allowedKinds]);
 
@@ -159,7 +168,7 @@ export function ContentPickerDialog({
   }
 
   const hasImages = allAssets.some((a) => a.kind === "image");
-  const hasPdfs = allAssets.some((a) => a.kind === "pdf");
+  const hasFiles = allAssets.some((a) => a.kind !== "image");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -257,7 +266,7 @@ export function ContentPickerDialog({
             <div className="space-y-5">
               {(activeKind === "all" || activeKind === "image") && hasImages && (
                 <AssetSection>
-                  {activeKind === "all" && hasPdfs ? (
+                  {activeKind === "all" && hasFiles ? (
                     <SectionLabel>Images</SectionLabel>
                   ) : null}
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -274,14 +283,14 @@ export function ContentPickerDialog({
                 </AssetSection>
               )}
 
-              {(activeKind === "all" || activeKind === "pdf") && hasPdfs && (
+              {activeKind !== "image" && hasFiles && (
                 <AssetSection>
                   {activeKind === "all" && hasImages ? (
                     <SectionLabel>Files</SectionLabel>
                   ) : null}
                   <div className="grid gap-1">
                     {allAssets
-                      .filter((a) => a.kind === "pdf")
+                      .filter((a) => a.kind !== "image")
                       .map((asset) => (
                         <FileTile
                           key={asset.id}
@@ -352,7 +361,11 @@ function FileTile({
       onClick={() => onSelect(asset)}
       className="flex w-full items-center gap-3 rounded border border-border/50 bg-card/30 px-3 py-2 text-left transition hover:border-primary/40 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
     >
-      <FileText className="size-4 shrink-0 text-muted-foreground" />
+      {asset.kind === "pdf" ? (
+        <FileText className="size-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+      )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium">
           {asset.displayName}

@@ -67,7 +67,7 @@ export type ExtensionAgentStateApi = {
 export type ExtensionAgentAssetApi = {
   get: (assetId: string) => Promise<{
     id: string;
-    kind: "image" | "pdf";
+    kind: "image" | "pdf" | "file";
     displayName: string;
     mimeType: string;
     visibility: "private" | "public";

@@ -24,6 +24,7 @@ import {
   users,
   type AssetKind,
 } from "@/db/schema";
+import { fileExtensionFromName } from "@/lib/asset-delivery";
 import { extractAssetEmbedIds } from "@/lib/asset-embeds";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import {
@@ -60,6 +61,8 @@ export type ActiveAssetUser = {
   id: string;
   storageUsedBytes: number;
   storageQuotaBytes: number;
+  /** Admin grant: may upload any file type (stored as `kind: "file"`). */
+  unrestrictedUploadsAllowed: boolean;
 };
 
 export type AssetResolution = {
@@ -109,6 +112,7 @@ export async function getOptionalAssetUser(): Promise<ActiveAssetUser | null> {
       bannedUntil: users.bannedUntil,
       storageUsedBytes: users.storageUsedBytes,
       storageQuotaBytes: users.storageQuotaBytes,
+      unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
     })
     .from(users)
     .where(eq(users.id, session.user.id))
@@ -122,16 +126,22 @@ export async function getOptionalAssetUser(): Promise<ActiveAssetUser | null> {
     id: user.id,
     storageUsedBytes: user.storageUsedBytes,
     storageQuotaBytes: user.storageQuotaBytes,
+    unrestrictedUploadsAllowed: user.unrestrictedUploadsAllowed,
   };
 }
 
 export async function getUserStorageSummary(
   userId: string,
-): Promise<{ usedBytes: number; quotaBytes: number }> {
+): Promise<{
+  usedBytes: number;
+  quotaBytes: number;
+  unrestrictedUploadsAllowed: boolean;
+}> {
   const [user] = await db
     .select({
       storageUsedBytes: users.storageUsedBytes,
       storageQuotaBytes: users.storageQuotaBytes,
+      unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -140,6 +150,7 @@ export async function getUserStorageSummary(
   return {
     usedBytes: user?.storageUsedBytes ?? 0,
     quotaBytes: user?.storageQuotaBytes ?? 0,
+    unrestrictedUploadsAllowed: user?.unrestrictedUploadsAllowed ?? false,
   };
 }
 
@@ -182,6 +193,7 @@ async function resolveAssetUserFromEmbedSessionToken(
       bannedUntil: users.bannedUntil,
       storageUsedBytes: users.storageUsedBytes,
       storageQuotaBytes: users.storageQuotaBytes,
+      unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
     })
     .from(users)
     .where(eq(users.id, payload.vaultUserId))
@@ -195,6 +207,7 @@ async function resolveAssetUserFromEmbedSessionToken(
     id: user.id,
     storageUsedBytes: user.storageUsedBytes,
     storageQuotaBytes: user.storageQuotaBytes,
+    unrestrictedUploadsAllowed: user.unrestrictedUploadsAllowed,
   };
 }
 
@@ -261,6 +274,7 @@ export function getAssetUploadLimits() {
   return {
     imageMaxBytes: readByteEnv("MAX_IMAGE_UPLOAD_BYTES", ASSET_LIMITS.imageMaxBytes),
     pdfMaxBytes: readByteEnv("MAX_PDF_UPLOAD_BYTES", ASSET_LIMITS.pdfMaxBytes),
+    fileMaxBytes: readByteEnv("MAX_FILE_UPLOAD_BYTES", ASSET_LIMITS.fileMaxBytes),
   };
 }
 
@@ -302,12 +316,15 @@ export async function createUploadedAsset(input: {
   userId: string;
   file: File;
   documentId?: string | null;
+  /** From the uploader's `users.unrestricted_uploads_allowed` grant. */
+  allowAnyFileType?: boolean;
 }) {
   const buffer = Buffer.from(await input.file.arrayBuffer());
   const validation = await validateAssetFile({
     buffer,
     declaredMimeType: input.file.type,
     filename: input.file.name,
+    allowAnyFileType: input.allowAnyFileType ?? false,
   });
   const assetId = randomUUID();
   const checksumSha256 = createHash("sha256").update(buffer).digest("hex");
@@ -338,7 +355,8 @@ export async function createUploadedAsset(input: {
     await putAssetObject({
       key: storageKey,
       body: buffer,
-      contentType: validation.mimeType,
+      contentType:
+        validation.kind === "file" ? "application/octet-stream" : validation.mimeType,
     });
 
     await db
@@ -721,12 +739,16 @@ function buildPublicAssetSearchWhere(query?: ContentSearchQuery) {
 
   if (
     query.filters.kind &&
-    !["asset", "image", "pdf"].includes(query.filters.kind)
+    !["asset", "image", "pdf", "file"].includes(query.filters.kind)
   ) {
     conditions.push(sql`false`);
   }
 
-  if (query.filters.kind === "image" || query.filters.kind === "pdf") {
+  if (
+    query.filters.kind === "image" ||
+    query.filters.kind === "pdf" ||
+    query.filters.kind === "file"
+  ) {
     conditions.push(eq(assets.kind, query.filters.kind));
   }
 
@@ -1170,6 +1192,7 @@ export async function getReadableAsset(input: {
       ownerId: assets.ownerId,
       storageKey: assets.storageKey,
       displayName: assets.displayName,
+      kind: assets.kind,
       mimeType: assets.mimeType,
       sizeBytes: assets.sizeBytes,
       visibility: assets.visibility,
@@ -1216,6 +1239,7 @@ async function validateAssetFile(input: {
   buffer: Buffer;
   declaredMimeType?: string;
   filename: string;
+  allowAnyFileType?: boolean;
 }) {
   if (input.buffer.byteLength === 0) {
     throw new AssetError("Choose a non-empty file.", 400, "EMPTY_FILE");
@@ -1226,7 +1250,16 @@ async function validateAssetFile(input: {
   const allowed = detectedMimeType ? ALLOWED_MIME_TYPES[detectedMimeType] : null;
 
   if (!detectedMimeType || !allowed) {
-    throw new AssetError("Unsupported file type.", 415, "UNSUPPORTED_TYPE");
+    if (!input.allowAnyFileType) {
+      throw new AssetError("Unsupported file type.", 415, "UNSUPPORTED_TYPE");
+    }
+
+    return validateGenericFile({
+      buffer: input.buffer,
+      filename: input.filename,
+      detectedMimeType: detectedMimeType ?? null,
+      detectedExtension: detected?.ext ?? null,
+    });
   }
 
   const declaredMimeType = input.declaredMimeType || "application/octet-stream";
@@ -1252,6 +1285,31 @@ async function validateAssetFile(input: {
     mimeType: detectedMimeType,
     detectedMimeType,
     extension: detected?.ext ?? allowed.extension,
+  };
+}
+
+/**
+ * Anything outside the image/PDF allow-list, for users granted unrestricted
+ * uploads. The declared type is client-controlled, so it is ignored; the
+ * content route serves `kind: "file"` as a sandboxed `octet-stream` download
+ * whatever `mimeType` says, so a stored HTML/SVG never renders on our origin.
+ */
+function validateGenericFile(input: {
+  buffer: Buffer;
+  filename: string;
+  detectedMimeType: string | null;
+  detectedExtension: string | null;
+}) {
+  if (input.buffer.byteLength > getAssetUploadLimits().fileMaxBytes) {
+    throw new AssetError("File is too large.", 413, "FILE_TOO_LARGE");
+  }
+
+  return {
+    kind: "file" as AssetKind,
+    mimeType: input.detectedMimeType ?? "application/octet-stream",
+    detectedMimeType: input.detectedMimeType ?? "application/octet-stream",
+    extension:
+      fileExtensionFromName(input.filename) ?? input.detectedExtension ?? "bin",
   };
 }
 

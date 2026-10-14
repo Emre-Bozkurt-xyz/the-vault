@@ -32,6 +32,8 @@ const codeExecutionMutationSchema = z.object({
   allowed: z.enum(["true", "false"]),
 });
 
+const unrestrictedUploadsMutationSchema = codeExecutionMutationSchema;
+
 export type AdminUserListItem = {
   id: string;
   nickname: string | null;
@@ -43,6 +45,7 @@ export type AdminUserListItem = {
   bannedUntil: Date | null;
   banReason: string | null;
   codeExecutionAllowed: boolean;
+  unrestrictedUploadsAllowed: boolean;
   createdAt: Date;
   updatedAt: Date;
   isBanActive: boolean;
@@ -142,6 +145,7 @@ export async function listUsersForAdmin(options: {
         bannedUntil: users.bannedUntil,
         banReason: users.banReason,
         codeExecutionAllowed: users.codeExecutionAllowed,
+        unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
         storageUsedBytes: users.storageUsedBytes,
@@ -282,6 +286,29 @@ export async function setCodeExecutionAction(formData: FormData) {
     .update(users)
     .set({
       codeExecutionAllowed: input.allowed === "true",
+      updatedAt: sql`now()`,
+    })
+    .where(eq(users.id, input.userId));
+
+  revalidatePath(USERS_PATH);
+}
+
+/**
+ * Grant or revoke uploading any file type. Takes effect on the user's next
+ * upload: `POST /api/assets` re-reads this column every time. Revoking does
+ * not touch files already uploaded.
+ */
+export async function setUnrestrictedUploadsAction(formData: FormData) {
+  await requireAdmin();
+  const input = unrestrictedUploadsMutationSchema.parse({
+    userId: formData.get("userId"),
+    allowed: formData.get("allowed"),
+  });
+
+  await db
+    .update(users)
+    .set({
+      unrestrictedUploadsAllowed: input.allowed === "true",
       updatedAt: sql`now()`,
     })
     .where(eq(users.id, input.userId));

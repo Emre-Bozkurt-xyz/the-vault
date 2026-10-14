@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "unrestricted_uploads_allowed" boolean DEFAULT false NOT NULL;

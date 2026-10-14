@@ -53,6 +53,7 @@ export async function POST(request: Request) {
       userId: user.id,
       file,
       documentId,
+      allowAnyFileType: user.unrestrictedUploadsAllowed,
     });
 
     return NextResponse.json({ asset }, { status: 201 });

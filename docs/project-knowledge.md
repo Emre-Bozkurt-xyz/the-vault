@@ -19,10 +19,10 @@ Update this file whenever the codebase changes in a meaningful way.
 
 ## 1. Current Status Snapshot
 
-Last updated: 2026-10-06
+Last updated: 2026-10-13
 
 ```txt
-2026-10-06
+2026-10-13
 ```
 
 Current phase:
@@ -405,6 +405,7 @@ ASSET_ROUTE_BASE_PATH=/api/assets
 # Optional overrides; defaults live in lib/config/asset-limits.ts
 # MAX_IMAGE_UPLOAD_BYTES=10485760
 # MAX_PDF_UPLOAD_BYTES=26214400
+# MAX_FILE_UPLOAD_BYTES=52428800
 ASSET_PRIVATE_CACHE_SECONDS=0
 ASSET_PUBLIC_CACHE_SECONDS=3600
 EMBED_FRAME_ANCESTORS=https://den.ems-place.com
@@ -442,6 +443,7 @@ Rules:
 | `ASSET_ROUTE_BASE_PATH` | Optional | Asset renderer/API | Vault route prefix for permission-checked asset reads, default `/api/assets` |
 | `MAX_IMAGE_UPLOAD_BYTES` | Optional override | Asset upload validation | Per-upload image cap; default (10 MiB) in `lib/config/asset-limits.ts` |
 | `MAX_PDF_UPLOAD_BYTES` | Optional override | Asset upload validation | Per-upload PDF cap; default (25 MiB) in `lib/config/asset-limits.ts` |
+| `MAX_FILE_UPLOAD_BYTES` | Optional override | Asset upload validation | Per-upload cap for `kind: "file"` uploads (users granted any file type); default (50 MiB) in `lib/config/asset-limits.ts` |
 | `ASSET_PRIVATE_CACHE_SECONDS` | Optional | Asset content route | Cache seconds for private asset responses; current default is `0` |
 | `ASSET_PUBLIC_CACHE_SECONDS` | Optional | Asset content route | Cache seconds for explicitly public asset responses; current default is `3600` |
 | `EMBED_FRAME_ANCESTORS` | Optional | `lib/security/csp.ts`, `proxy.ts` | Comma-separated origin allow-list for `frame-ancestors` on `/embed/...` routes only (Den embed bridge); defaults to `https://den.ems-place.com` when unset/empty; a literal `*` in the value is filtered out rather than passed through |
@@ -539,6 +541,7 @@ Current migrations:
 | `0021_hot_triathlon.sql` | Adds `fx_rates` for the `:calc` extension's daily currency-conversion rates | Yes | No |
 | `0022_hesitant_union_jack.sql` | Adds `folders.default_tags` (jsonb `string[]`, default `'[]'`) for folder-inherited document tags | Yes | No |
 | `0023_lively_cable.sql` | Adds `code_jobs`, the durable queue behind Run for code fences. Private user data with 24h retention; see `docs/03_DATA_MODEL.md` §10.6 | Yes | No |
+| `0028_dusty_mojo.sql` | Adds `users.unrestricted_uploads_allowed` (default `false`), the admin grant to upload any file type | Generated | No |
 
 Schema notes:
 
@@ -572,6 +575,7 @@ Schema notes:
 - Wiki-link metadata is derived from document Markdown at read time. Resolved wiki maps include headings, Obsidian-style block anchors (`^block-id`), and hidden Vault regions (`<!-- vault-region id="..." -->`), so links and embeds can target a specific heading, block, or region without schema changes. Vault regions marked `foldable` render as collapsible disclosure blocks; `collapsed` makes them initially closed.
 - Wiki links support explicit namespaces: `doc:<uuid>` for readable app documents, `guide:<slug>` for official documentation pages, and `public:<slug>` for published user documents. The authenticated completion API merges readable documents, official guides, and published documents; public-document suggestions show the publisher username.
 - `users.storage_used_bytes` and `users.storage_quota_bytes` track uploaded asset quota. The new-user quota default is sourced from `lib/config/asset-limits.ts` (`defaultUserStorageQuotaBytes`, 50 MiB) via the schema column default; migration `0016_flawless_betty_ross.sql` set it (was 256 MiB in `0011`). Existing rows keep their stored quota.
+- `assets.kind` is `image`, `pdf`, or `file`. `file` is anything outside the sniffed image/PDF allow-list and is only accepted from users with `users.unrestricted_uploads_allowed` (admin grant, default off).
 - `assets` stores private-by-default uploaded object metadata, ownership, R2 bucket/key, MIME detection data, size, checksum, visibility, and upload status. R2 stores bytes; Postgres owns identity, quota, and authorization metadata.
 - `document_assets` links assets to documents without duplicating object bytes. The current upload route creates this link when uploading from a document editor; document saves and collaboration stores remove links for assets no longer embedded in the Markdown source.
 - `asset_tags` links assets into the same global tag vocabulary as documents. The asset PATCH route accepts optional tag arrays and syncs them through `server/content-metadata.ts`; the asset library can edit tags and includes tags in local library filtering.
@@ -1422,6 +1426,7 @@ Current invariants:
 
 ```txt
 - Document access must be checked server-side.
+- Assets with `kind: "file"` (any type, from users granted unrestricted uploads) must only ever be served through `assetDeliveryHeaders` in `lib/asset-delivery.ts`: `application/octet-stream`, `attachment`, `Content-Security-Policy: sandbox`. Never serve them inline or with their stored MIME type; an uploaded HTML/SVG would run script on the Vault origin.
 - Private documents must not be exposed through public routes.
 - Real-time collaboration should not be added before core auth/document permissions are stable.
 - Secrets must not be committed.
@@ -1758,3 +1763,4 @@ Use this as a compact implementation log.
 | 2026-10-06 | Added Markdown task priority | `:priority[high]`, `:priority[medium]` and `:priority[low]` flow through the structural parser, minimal live source edits, nullable indexed priority (migration `0026_free_lester.sql`, applied locally), task menus/detail controls, workspace/query badges and Live/Read rendering. Date/time ties sort by priority; the SDK adds `setTaskPriority` and exposes priority in task reads. Migration invalidates only disposable index stamps. Updated the prior source-position test assertion. Production build/typecheck and changed-file lint pass; full lint remains at 26 issues. Full tests: 823 passed with one SDK import timeout; all 63 contract checks passed separately. Authenticated browser verification remains. |
 | 2026-10-06 | Added recurring Markdown tasks | `:repeat` supports presets, bounded fixed intervals and intervals from completion, plus persistent month/year anchors. `document-edit.ts` archives the completed item and creates one next occurrence with notes/checklist; unfinished old children cancel, copied work stays open, and outer recurring tasks own nested cadence. `withDocumentWriteLock` adds a separate four-connection advisory-lock pool before permission-checked live writes; Live recurring checkboxes delegate to the server, queued workspace writes refresh after ordinal shifts, and SDK `setTaskRepeat` uses the same path. Migration `0027_wonderful_microchip.sql` adds indexed repeat rules and invalidates stamps, applied locally. Build/typecheck pass; full 839 tests and final 181 focused checks pass; changed-file lint matches the editor baseline. A real-Postgres lock/index check with simulated live synchronization confirmed one successor for concurrent requests. Guides/schema/tracker/CSS contract updated; authenticated browser verification remains. |
 | 2026-10-06 | Gave MCP agents workspace context | Read tools now load one snapshot (`lib/mcp/workspace-context.ts`) and report every document's `folderPath`/`path` (`Courses/CS101/Todo`); new `list_folders`, `list_deleted_documents`, `move_document`, `create_folder`; `list_documents` gains folder/tag/scope filters, sort and paging; `search_documents` is multi-term AND over title + folder path + body, ranked, with 1-based hit lines (`lib/mcp/workspace-index.ts`); `get_outline`/`read_document` add heading lines, `lineCount`, tags, and the slice range; `create_document` takes a folder (id or path, via `resolveFolderRef` in `lib/folder-paths.ts`). Folder writes moved into `server/folders-data.ts` (`createFolderForUser`, `moveDocumentToFolderForUser`, `resyncDocumentTags`, `listAccessibleFoldersForUser`) and the sidebar actions call them. Extension discovery lists `disabledExtensions`; bad action input gets a `z.prettifyError` message. `vault.tasks.listTasks` now returns each task's `folderPath`/`path`/`heading` and filters by `folder` and `text`; `addTask` accepts `documentId`. MCP server sends `instructions` (`lib/mcp/instructions.ts`). Unit-tested; not yet run against real Postgres/collab |
+| 2026-10-13 | Added an admin grant for uploading any file type | New `users.unrestricted_uploads_allowed` (migration `0028_dusty_mojo.sql`, default off) toggled from the admin user sheet (`setUnrestrictedUploadsAction`, "any upload" badge). `POST /api/assets` passes it to `createUploadedAsset`; files outside the sniffed image/PDF allow-list then store as the new `AssetKind` `"file"` (extension from the filename, declared MIME ignored, capped by `ASSET_LIMITS.fileMaxBytes` 50 MiB / `MAX_FILE_UPLOAD_BYTES`). `lib/asset-delivery.ts` makes the content route serve `file` assets as `application/octet-stream`, `Content-Disposition: attachment`, `Content-Security-Policy: sandbox`, so a stored HTML/SVG never renders on the Vault origin. `/assets` drops the picker `accept` filter for granted users and gains an "Other files" filter; the editor content picker's Files tab, publish control, and MCP `search_assets` (`kind: "file"`) include them. Revoking the grant leaves existing files alone |

@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Ban,
   CodeXml,
+  FileUp,
   HardDrive,
   RefreshCw,
   ShieldCheck,
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 import {
   banUserAction,
   setCodeExecutionAction,
+  setUnrestrictedUploadsAction,
   setUserRoleAction,
   unbanUserAction,
   type AdminUserListItem,
@@ -86,6 +88,9 @@ export function UsersTable({ users, executionEnabled }: {
                     )}
                     {user.codeExecutionAllowed ? (
                       <Badge variant="outline" title="May run code blocks">runs code</Badge>
+                    ) : null}
+                    {user.unrestrictedUploadsAllowed ? (
+                      <Badge variant="outline" title="May upload any file type">any upload</Badge>
                     ) : null}
                   </span>
                 </td>
@@ -187,6 +192,26 @@ function UserDetail({ user, executionEnabled }: {
           <Button type="submit" variant="outline" size="sm">
             <CodeXml className="size-4" />
             {user.codeExecutionAllowed ? "Revoke code execution" : "Allow code execution"}
+          </Button>
+        </form>
+      </section>
+
+      {/* Uploads */}
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Uploads
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {user.unrestrictedUploadsAllowed
+            ? "Can upload any file type. Files outside images and PDFs are only ever served as downloads."
+            : "Can upload images and PDFs only."}
+        </p>
+        <form action={setUnrestrictedUploadsAction}>
+          <input type="hidden" name="userId" value={user.id} />
+          <input type="hidden" name="allowed" value={user.unrestrictedUploadsAllowed ? "false" : "true"} />
+          <Button type="submit" variant="outline" size="sm">
+            <FileUp className="size-4" />
+            {user.unrestrictedUploadsAllowed ? "Restrict to images and PDFs" : "Allow any file type"}
           </Button>
         </form>
       </section>

@@ -4,7 +4,9 @@ import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "rea
 import {
   Check,
   Copy,
+  Download,
   Eye,
+  File as FileIcon,
   FileText,
   Globe2,
   ImageIcon,
@@ -31,7 +33,7 @@ import { cn } from "@/lib/utils";
 
 export type AssetLibraryItem = {
   id: string;
-  kind: "image" | "pdf";
+  kind: "image" | "pdf" | "file";
   displayName: string;
   description: string | null;
   altText: string | null;
@@ -51,7 +53,7 @@ type AssetDraft = {
   visibility: "private" | "public";
   tags: string;
 };
-type KindFilter = "all" | "image" | "pdf";
+type KindFilter = "all" | "image" | "pdf" | "file";
 type VisibilityFilter = "all" | "private" | "public";
 type SortMode = "newest" | "oldest" | "name" | "size";
 
@@ -60,9 +62,12 @@ const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf
 export function AssetLibraryClient({
   initialAssets,
   storageQuotaBytes,
+  unrestrictedUploads = false,
 }: {
   initialAssets: AssetLibraryItem[];
   storageQuotaBytes: number;
+  /** Admin grant: the picker offers every file type, not just media. */
+  unrestrictedUploads?: boolean;
 }) {
   const [assets, setAssets] = useState(initialAssets);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -288,7 +293,7 @@ export function AssetLibraryClient({
         <input
           ref={fileInputRef}
           type="file"
-          accept={UPLOAD_ACCEPT}
+          accept={unrestrictedUploads ? undefined : UPLOAD_ACCEPT}
           multiple
           className="sr-only"
           onChange={(event) => void handleFilesSelected(event)}
@@ -314,6 +319,7 @@ export function AssetLibraryClient({
               <option value="all">All types</option>
               <option value="image">Images</option>
               <option value="pdf">PDFs</option>
+              <option value="file">Other files</option>
             </select>
             <select
               value={visibilityFilter}
@@ -392,7 +398,7 @@ export function AssetLibraryClient({
                   </span>
                 ) : (
                   <span className="flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground">
-                    <FileText className="size-10" />
+                    <AssetKindIcon kind={asset.kind} className="size-10" />
                   </span>
                 )}
                 <span className="block p-3">
@@ -403,11 +409,7 @@ export function AssetLibraryClient({
                     <VisibilityBadge visibility={asset.visibility} />
                   </span>
                   <span className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                    {asset.kind === "image" ? (
-                      <ImageIcon className="size-3.5" />
-                    ) : (
-                      <FileText className="size-3.5" />
-                    )}
+                    <AssetKindIcon kind={asset.kind} className="size-3.5" />
                     {asset.mimeType} - {formatBytes(asset.sizeBytes)}
                   </span>
                 </span>
@@ -427,8 +429,9 @@ export function AssetLibraryClient({
             <ImageIcon className="mx-auto size-8 text-muted-foreground" />
             <h2 className="mt-4 text-lg font-semibold">No assets yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              Upload an image or PDF to get started, or add one from the image
-              upload button in a document&apos;s Markdown toolbar.
+              Upload {unrestrictedUploads ? "any file" : "an image or PDF"} to get
+              started, or add one from the image upload button in a
+              document&apos;s Markdown toolbar.
             </p>
             <Button
               type="button"
@@ -558,8 +561,12 @@ export function AssetLibraryClient({
                     rel="noreferrer"
                     className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
                   >
-                    <Eye data-icon="inline-start" />
-                    Open
+                    {selected.kind === "file" ? (
+                      <Download data-icon="inline-start" />
+                    ) : (
+                      <Eye data-icon="inline-start" />
+                    )}
+                    {selected.kind === "file" ? "Download" : "Open"}
                   </a>
                 </div>
               </div>
@@ -770,4 +777,16 @@ function formatBytes(bytes: number) {
   }
 
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function AssetKindIcon({
+  kind,
+  className,
+}: {
+  kind: AssetLibraryItem["kind"];
+  className?: string;
+}) {
+  if (kind === "image") return <ImageIcon className={className} />;
+  if (kind === "pdf") return <FileText className={className} />;
+  return <FileIcon className={className} />;
 }

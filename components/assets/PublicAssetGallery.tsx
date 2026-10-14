@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 
 export type PublicGalleryAsset = {
   id: string;
-  kind: "image" | "pdf";
+  kind: "image" | "pdf" | "file";
   displayName: string;
   description: string | null;
   altText: string | null;

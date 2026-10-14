@@ -13,6 +13,12 @@ export const ASSET_LIMITS = {
   imageMaxBytes: 10 * MiB, // 10 MiB
   /** Per-upload cap for PDFs (override: MAX_PDF_UPLOAD_BYTES). */
   pdfMaxBytes: 25 * MiB, // 25 MiB
+  /**
+   * Per-upload cap for any other file type, which only users granted
+   * unrestricted uploads may send (override: MAX_FILE_UPLOAD_BYTES). Uploads are
+   * buffered in memory, so keep this bounded.
+   */
+  fileMaxBytes: 50 * MiB, // 50 MiB
   /** Default per-user storage quota applied to new users. */
   defaultUserStorageQuotaBytes: 50 * MiB, // 50 MiB
 } as const;

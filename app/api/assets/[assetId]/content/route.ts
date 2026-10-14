@@ -2,6 +2,8 @@ import { Readable } from "node:stream";
 
 import { NextResponse } from "next/server";
 
+import type { AssetKind } from "@/db/schema";
+import { assetDeliveryHeaders } from "@/lib/asset-delivery";
 import { getAssetObject } from "@/lib/storage/r2";
 import {
   getOptionalAssetUserForContentRequest,
@@ -86,6 +88,7 @@ async function serveAsset(
 
 function buildHeaders(asset: {
   displayName: string;
+  kind: AssetKind;
   mimeType: string;
   sizeBytes: number;
   visibility: "private" | "public";
@@ -94,10 +97,8 @@ function buildHeaders(asset: {
     ? range.end - range.start + 1
     : asset.sizeBytes;
   const headers = new Headers({
-    "Content-Type": asset.mimeType,
+    ...assetDeliveryHeaders(asset),
     "Content-Length": String(contentLength),
-    "Content-Disposition": `inline; filename="${escapeHeaderValue(asset.displayName)}"`,
-    "X-Content-Type-Options": "nosniff",
     "Accept-Ranges": "bytes",
   });
 
@@ -187,10 +188,6 @@ function toWebStream(body: unknown): ReadableStream<Uint8Array> {
   }
 
   return Readable.toWeb(body as Readable) as ReadableStream<Uint8Array>;
-}
-
-function escapeHeaderValue(value: string) {
-  return value.replace(/["\\\r\n]/g, "_");
 }
 
 function readPositiveIntEnv(name: string, fallback: number) {

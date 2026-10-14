@@ -26,6 +26,7 @@ export default async function AssetsPage() {
         <AssetLibraryClient
           initialAssets={assets}
           storageQuotaBytes={storage.quotaBytes}
+          unrestrictedUploads={storage.unrestrictedUploadsAllowed}
         />
       </section>
     </>
