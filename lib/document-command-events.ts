@@ -12,6 +12,7 @@ export type DocumentCommandType =
 
 const eventName = "vault:document-command";
 const openRightPanelEventName = "vault:open-right-panel";
+const closeRightPanelEventName = "vault:close-right-panel";
 
 /** How long a dispatched command waits for a just-mounted target to claim it. */
 const retainWindowMs = 2000;
@@ -99,4 +100,23 @@ export function subscribeToOpenRightPanel(listener: () => void) {
   const handler = () => listener();
   window.addEventListener(openRightPanelEventName, handler);
   return () => window.removeEventListener(openRightPanelEventName, handler);
+}
+
+/** Asks the workspace shell to collapse the right panel (the mobile sheet closes). */
+export function requestCloseRightPanel() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event(closeRightPanelEventName));
+}
+
+export function subscribeToCloseRightPanel(listener: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const handler = () => listener();
+  window.addEventListener(closeRightPanelEventName, handler);
+  return () => window.removeEventListener(closeRightPanelEventName, handler);
 }

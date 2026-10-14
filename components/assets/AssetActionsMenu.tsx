@@ -57,6 +57,7 @@ export function AssetActionsMenu({
   return (
     <DropdownMenu {...contextMenu?.rootProps}>
       <DropdownMenuTrigger
+        ref={contextMenu?.triggerRef}
         aria-label={`Actions for ${asset.displayName}`}
         onClick={(event) => event.stopPropagation()}
         className={cn(

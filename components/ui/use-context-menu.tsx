@@ -13,9 +13,10 @@ import type { Menu as MenuPrimitive } from "@base-ui/react/menu";
 type MenuAnchor = MenuPrimitive.Positioner.Props["anchor"];
 
 export type ContextMenuController = {
-  /** Spread on `<DropdownMenu>`: makes the menu's open state controllable. */
+  /** Pass as `ref` to the menu's `<DropdownMenuTrigger>` (the "⋯" button). */
+  triggerRef: (node: HTMLButtonElement | null) => void;
+  /** Spread on `<DropdownMenu>`. */
   rootProps: {
-    open: boolean;
     onOpenChange: (open: boolean) => void;
     onOpenChangeComplete: (open: boolean) => void;
     modal: false;
@@ -36,64 +37,81 @@ export type ContextMenuController = {
  * fields are left alone. Keyboard context-menu presses (no pointer position)
  * anchor the menu to the row instead.
  *
+ * The right-click opens the menu by clicking its "⋯" trigger rather than by
+ * driving a controlled `open` prop. Base UI only treats a menu as click-opened
+ * when its open event was a click; opened any other way, it assumes hover and
+ * closes the popup as soon as the pointer leaves it.
+ *
  * The menu is non-modal so a right-click on another row while one is open
  * lands on that row (a modal menu's backdrop would swallow it) — the outside
  * press closes this menu and the row's own handler opens its menu.
  */
 export function useContextMenu(): ContextMenuController {
-  const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<MenuAnchor>(undefined);
+  const triggerElementRef = useRef<HTMLButtonElement | null>(null);
   const openRef = useRef(false);
 
-  const setOpenState = useCallback((next: boolean) => {
-    openRef.current = next;
-    setOpen(next);
+  // A callback ref, not the ref object, so the returned controller holds no
+  // ref values and components can read it freely during render.
+  const triggerRef = useCallback((node: HTMLButtonElement | null) => {
+    triggerElementRef.current = node;
   }, []);
 
-  const onContextMenu = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      if (event.shiftKey || isEditableTarget(event.target)) {
-        return;
-      }
+  const onOpenChange = useCallback((open: boolean) => {
+    openRef.current = open;
+  }, []);
 
-      event.preventDefault();
-      // Nested rows (a doc inside a folder) only open the innermost menu.
-      event.stopPropagation();
+  // Drop the cursor anchor only once the close animation has finished, so the
+  // popup doesn't jump to the "⋯" button on its way out — and not if a new
+  // right-click reopened it in the meantime.
+  const onOpenChangeComplete = useCallback((open: boolean) => {
+    if (!open && !openRef.current) {
+      setAnchor(undefined);
+    }
+  }, []);
 
-      const { clientX: x, clientY: y } = event;
-      const row = event.currentTarget;
-      setAnchor(
-        x === 0 && y === 0
-          ? row
-          : {
-              getBoundingClientRect: () =>
-                DOMRect.fromRect({ x, y, width: 0, height: 0 }),
-            },
-      );
-      setOpenState(true);
-    },
-    [setOpenState],
-  );
+  const onContextMenu = useCallback((event: MouseEvent<HTMLElement>) => {
+    const trigger = triggerElementRef.current;
+    if (!trigger || event.shiftKey || isEditableTarget(event.target)) {
+      return;
+    }
+
+    event.preventDefault();
+    // Nested rows (a doc inside a folder) only open the innermost menu.
+    event.stopPropagation();
+
+    const row = event.currentTarget;
+    // A right-click inside the open popup reaches the row through the React
+    // portal; leave the menu where it is.
+    if (!row.contains(event.target as Node)) {
+      return;
+    }
+
+    const { clientX: x, clientY: y } = event;
+    setAnchor(
+      x === 0 && y === 0
+        ? row
+        : {
+            getBoundingClientRect: () =>
+              DOMRect.fromRect({ x, y, width: 0, height: 0 }),
+          },
+    );
+
+    // Already open (keyboard menu key, or a right-click inside the popup):
+    // the new anchor just moves it, where a click would toggle it shut.
+    if (!openRef.current) {
+      trigger.click();
+    }
+  }, []);
 
   return useMemo<ContextMenuController>(
     () => ({
-      rootProps: {
-        open,
-        onOpenChange: setOpenState,
-        // Drop the cursor anchor only once the close animation has finished,
-        // so the popup doesn't jump to the "⋯" button on its way out — and
-        // not if a new right-click reopened it in the meantime.
-        onOpenChangeComplete: (nextOpen: boolean) => {
-          if (!nextOpen && !openRef.current) {
-            setAnchor(undefined);
-          }
-        },
-        modal: false,
-      },
+      triggerRef,
+      rootProps: { onOpenChange, onOpenChangeComplete, modal: false },
       contentProps: anchor ? { anchor, align: "start", sideOffset: 2 } : {},
       onContextMenu,
     }),
-    [anchor, onContextMenu, open, setOpenState],
+    [anchor, onContextMenu, onOpenChange, onOpenChangeComplete, triggerRef],
   );
 }
 

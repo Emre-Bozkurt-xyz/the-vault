@@ -700,7 +700,8 @@ function FolderNode({
   const docs = docsByFolder.get(folder.id) ?? [];
   const directCount = docs.length;
   const isDropTarget = dropTarget === folder.id;
-  const menu = useContextMenu();
+  const { triggerRef, rootProps, contentProps, onContextMenu } =
+    useContextMenu();
 
   return (
     // This wrapper owns the folder row AND its children; dropping anywhere
@@ -731,7 +732,7 @@ function FolderNode({
           writeDragPayload(event, { kind: "folder", id: folder.id })
         }
         onDragEnd={() => setDropTarget(null)}
-        onContextMenu={menu.onContextMenu}
+        onContextMenu={onContextMenu}
         style={{ paddingLeft: depth * 12 + 4 }}
         className="group flex min-w-0 items-center gap-1 rounded-[5px] py-1.5 pr-1 text-sm text-foreground/90 transition hover:bg-sidebar-accent"
       >
@@ -775,14 +776,15 @@ function FolderNode({
           </button>
         )}
 
-        <DropdownMenu {...menu.rootProps}>
+        <DropdownMenu {...rootProps}>
           <DropdownMenuTrigger
+            ref={triggerRef}
             className={rowMenuTriggerClass}
             aria-label="Folder actions"
           >
             <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" {...menu.contentProps}>
+          <DropdownMenuContent align="end" {...contentProps}>
             <DropdownMenuItem onClick={() => onNewDoc(folder.id)}>
               <FilePlus2 className="size-4" />
               New document
@@ -914,7 +916,8 @@ function DocRow({
   onDragEndClear?: () => void;
 }) {
   const actions = useContext(DocActionsContext);
-  const menu = useContextMenu();
+  const { triggerRef, rootProps, contentProps, onContextMenu } =
+    useContextMenu();
   const role = doc.role ?? "owner";
   const canRename = role !== "viewer";
   const isOwner = role === "owner";
@@ -943,7 +946,7 @@ function DocRow({
     // The menu sits beside the Link, not inside it: menu-item clicks bubble
     // through the portal to React ancestors and would otherwise navigate.
     <div
-      onContextMenu={menu.onContextMenu}
+      onContextMenu={onContextMenu}
       className={cn(
         "group flex min-w-0 items-center rounded-[5px] pr-1 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         activeHref === doc.href &&
@@ -969,14 +972,15 @@ function DocRow({
         ) : null}
       </Link>
 
-      <DropdownMenu {...menu.rootProps}>
+      <DropdownMenu {...rootProps}>
         <DropdownMenuTrigger
+          ref={triggerRef}
           className={rowMenuTriggerClass}
           aria-label="Document actions"
         >
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" {...menu.contentProps}>
+        <DropdownMenuContent align="end" {...contentProps}>
           {canRename && actions ? (
             <DropdownMenuItem onClick={() => actions.onStartRename(doc.id)}>
               <Pencil className="size-4" />

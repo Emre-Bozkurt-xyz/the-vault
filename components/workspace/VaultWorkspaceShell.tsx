@@ -18,7 +18,10 @@ import {
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { subscribeToOpenRightPanel } from "@/lib/document-command-events";
+import {
+  subscribeToCloseRightPanel,
+  subscribeToOpenRightPanel,
+} from "@/lib/document-command-events";
 import { cn } from "@/lib/utils";
 import { WorkspaceIconRail, railItems } from "@/components/workspace/WorkspaceIconRail";
 import {
@@ -121,6 +124,25 @@ export function VaultWorkspaceShell({
       if (!window.matchMedia("(min-width: 1024px)").matches) {
         setMobileRightPanelOpen(true);
       }
+    });
+  }, [panelMode, leftCollapsed, leftPanelWidth, rightPanelWidth]);
+
+  // The asset library collapses its details panel on a click in empty space.
+  useEffect(() => {
+    return subscribeToCloseRightPanel(() => {
+      setRightCollapsed((current) => {
+        if (!current) {
+          writeWorkspaceLayoutCookie({
+            panelMode,
+            leftCollapsed,
+            leftWidth: leftPanelWidth,
+            rightCollapsed: true,
+            rightWidth: rightPanelWidth,
+          });
+        }
+        return true;
+      });
+      setMobileRightPanelOpen(false);
     });
   }, [panelMode, leftCollapsed, leftPanelWidth, rightPanelWidth]);
 

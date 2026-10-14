@@ -87,6 +87,7 @@ export function TaskActionsMenu({
     <span className="relative inline-flex">
       <DropdownMenu {...contextMenu?.rootProps}>
         <DropdownMenuTrigger
+          ref={contextMenu?.triggerRef}
           aria-label="Task actions"
           className={cn(
             "flex size-6 items-center justify-center rounded text-muted-foreground transition hover:bg-muted/70 hover:text-foreground data-[popup-open]:opacity-100",

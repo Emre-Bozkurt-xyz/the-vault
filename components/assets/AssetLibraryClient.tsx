@@ -53,7 +53,10 @@ import {
 } from "@/components/workspace/ContextPanel";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
-import { requestOpenRightPanel } from "@/lib/document-command-events";
+import {
+  requestCloseRightPanel,
+  requestOpenRightPanel,
+} from "@/lib/document-command-events";
 import { formatBytes } from "@/lib/format";
 import {
   getContentSearchSummary,
@@ -162,6 +165,43 @@ export function AssetLibraryClient({
   }, []);
 
   useEffect(() => subscribeToAssetsChanged(() => void refreshAssets()), [refreshAssets]);
+
+  // A click on empty page space deselects the asset and collapses the details
+  // panel, like a file manager's background click. Cards, controls, text
+  // selections, and the click that only dismissed an open menu don't count;
+  // neither do clicks in the side panels (outside `main`).
+  useEffect(() => {
+    let menuWasOpen = false;
+    const onPointerDown = () => {
+      menuWasOpen =
+        document.querySelector('[data-slot="dropdown-menu-content"]') !== null;
+    };
+    const onClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (
+        menuWasOpen ||
+        event.button !== 0 ||
+        !(target instanceof Element) ||
+        !target.closest("main") ||
+        target.closest(backgroundClickIgnore) ||
+        window.getSelection()?.toString()
+      ) {
+        return;
+      }
+
+      if (new URLSearchParams(window.location.search).has("asset")) {
+        updateLibraryUrl({ asset: null });
+      }
+      requestCloseRightPanel();
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("click", onClick);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("click", onClick);
+    };
+  }, []);
 
   function selectAsset(asset: AssetLibraryItem) {
     updateLibraryUrl({ asset: asset.id });
@@ -310,7 +350,11 @@ export function AssetLibraryClient({
             {visibleAssets.map((asset) => (
               <WithContextMenu key={asset.id}>
                 {(menu) => (
-                  <div onContextMenu={menu.onContextMenu} className="group relative mb-4 break-inside-avoid">
+                  <div
+                    data-asset-card
+                    onContextMenu={menu.onContextMenu}
+                    className="group relative mb-4 break-inside-avoid"
+                  >
                     <button
                       type="button"
                       onClick={() => selectAsset(asset)}
@@ -876,6 +920,10 @@ function parseVisibilityFilter(value: string | null): VisibilityFilter {
  * `history.replaceState`, so filters and selection change without a server
  * round trip, yet stay linkable and survive a reload.
  */
+/** Targets a background click must not treat as "empty space". */
+const backgroundClickIgnore =
+  "[data-asset-card], a, button, input, select, textarea, label, summary, [role='button'], [role='menuitem'], [role='option'], [role='combobox'], [role='listbox']";
+
 function updateLibraryUrl(changes: Record<string, string | null>) {
   const params = new URLSearchParams(window.location.search);
 
