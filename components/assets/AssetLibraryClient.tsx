@@ -193,8 +193,12 @@ export function AssetLibraryClient({
       />
 
       {/* Container queries: the space this page gets depends on which side
-          panels are open, so breakpoints follow the page, not the window. */}
-      <div className="@container grid min-w-0 gap-6">
+          panels are open, so breakpoints follow the page, not the window.
+          The explicit `minmax(0,1fr)` column matters: an implicit `auto` track
+          never shrinks below its content's min-content width, and the
+          multi-column card grid reports that as roughly (columns × the
+          longest unbroken filename), which pushed the page past its column. */}
+      <div className="@container grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
         <header className="flex flex-col gap-5 border-b border-border/70 pb-6 @3xl:flex-row @3xl:items-end @3xl:justify-between">
           <div className="min-w-0">
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground">
@@ -301,7 +305,7 @@ export function AssetLibraryClient({
         ) : null}
 
         {assets.length > 0 && visibleAssets.length > 0 ? (
-          <div className="columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
+          <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
             {visibleAssets.map((asset) => (
               <div key={asset.id} className="group relative mb-4 break-inside-avoid">
                 <button

@@ -129,7 +129,7 @@ export function PublicAssetGallery({
 
   if (assets.length === 0) {
     return (
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {children}
       </div>
     );
@@ -137,7 +137,7 @@ export function PublicAssetGallery({
 
   return (
     <section className="relative">
-      <div className="grid content-start gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 content-start gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {assets.map((asset) => (
           <div key={asset.id} className="group relative">
             <button

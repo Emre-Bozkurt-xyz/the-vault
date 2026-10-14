@@ -13,9 +13,13 @@ type AssetLike = {
 export function assetTypeLabel(asset: AssetLike) {
   if (asset.kind === "pdf") return "PDF";
 
+  // Images and PDFs were sniffed on upload, so their MIME type is the truth;
+  // only `file` assets (no sniffable type) fall back to the filename.
+  const mimeSubtype = asset.mimeType.includes("/") ? asset.mimeType.split("/")[1] : null;
   const extension =
-    fileExtensionFromName(asset.displayName) ??
-    (asset.mimeType.includes("/") ? asset.mimeType.split("/")[1] : null);
+    asset.kind === "image"
+      ? mimeSubtype
+      : fileExtensionFromName(asset.displayName) ?? mimeSubtype;
   const tag = extension && extension !== "octet-stream" ? extension.toUpperCase() : null;
 
   if (asset.kind === "image") return tag ? `${tag} image` : "Image";
