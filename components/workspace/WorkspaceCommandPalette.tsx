@@ -34,6 +34,7 @@ import {
   X,
   type LucideIcon,
   ListChecks,
+  ListPlus,
   Puzzle,
 } from "lucide-react";
 
@@ -67,6 +68,7 @@ import {
   unpublishDocumentAction,
 } from "@/server/documents";
 import { captureTaskFromClient } from "@/lib/tasks/capture-client";
+import { openQuickAddTask } from "@/components/tasks/QuickAddTaskDialog";
 import { cn } from "@/lib/utils";
 
 type CommandSearchResult = {
@@ -182,6 +184,15 @@ export function WorkspaceCommandPalette() {
               keywords: "agenda todo week month backlog schedule",
               icon: ListChecks,
               run: navigate("/tasks"),
+            },
+            {
+              id: "quick-add-task",
+              slug: "add-task",
+              label: "Add task…",
+              group: "Tasks",
+              keywords: "todo capture new inbox quick",
+              icon: ListPlus,
+              run: () => openQuickAddTask(),
             },
           ]
         : []),

@@ -78,7 +78,9 @@ export function priorityRank(priority: TaskPriority | null | undefined): number 
   return priority === "high" ? 0 : priority === "medium" ? 1 : priority === "low" ? 2 : 3;
 }
 
-export function compareViewTasks(a: ViewTask, b: ViewTask): number {
+type SortableTask = Pick<ViewTask, "dueDay" | "dueTime" | "priority" | "documentTitle" | "ordinal">;
+
+export function compareViewTasks(a: SortableTask, b: SortableTask): number {
   const day =
     a.dueDay === b.dueDay ? 0 : a.dueDay === null ? 1 : b.dueDay === null ? -1 : a.dueDay.localeCompare(b.dueDay);
 

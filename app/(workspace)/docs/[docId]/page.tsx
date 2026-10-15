@@ -283,6 +283,7 @@ export default async function DocumentPage({
             wikiLinks={wikiLinks}
             assetLinks={assetLinks}
             slashMenuEnabled={slashMenuEnabled}
+            ownedByViewer={document.access.role === "owner"}
             snippetCss={editorSnippetCss}
             snippetNonce={cspNonce}
             collaboration={

@@ -172,6 +172,7 @@ import {
 } from "@/lib/content-metadata";
 import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
+import { usePublishLiveTasks } from "@/components/tasks/use-live-tasks";
 import {
   escapeWikiLinkLabel,
   extractWikiEmbedKeys,
@@ -233,6 +234,11 @@ type MarkdownEditorProps = {
   embedSessionToken?: string | null;
   /** Whether the in-editor `/` slash command menu is active (user preference). */
   slashMenuEnabled?: boolean;
+  /**
+   * The viewer owns this document, so its live tasks may join their personal
+   * agenda while it is open (docs/24_TASKS_AND_AGENDA_PLAN.md §5.4).
+   */
+  ownedByViewer?: boolean;
   /** Compiled snippet CSS applied to the Read-mode preview so owners can see it. */
   snippetCss?: string;
   snippetNonce?: string;
@@ -360,6 +366,7 @@ export function MarkdownEditor({
   assetLinks,
   embedSessionToken = null,
   slashMenuEnabled = true,
+  ownedByViewer = false,
   snippetCss = "",
   snippetNonce,
   // Aliased: `extensions` is this component's CodeMirror extension list.
@@ -477,6 +484,15 @@ export function MarkdownEditor({
   );
   const [titleValue, setTitleValue] = useState(title);
   const [markdownValue, setMarkdownValue] = useState(markdown);
+  // Task lists elsewhere in the workspace follow this document as it is typed.
+  usePublishLiveTasks({
+    enabled: (documentExtensions?.enabledIds ?? []).includes("vault.tasks") && !embedSessionToken && !shareLinkId,
+    documentId,
+    markdown: markdownValue,
+    title: titleValue,
+    folderId,
+    owned: ownedByViewer,
+  });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

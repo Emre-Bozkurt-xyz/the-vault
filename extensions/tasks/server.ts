@@ -98,5 +98,41 @@ export default defineServer(manifest, {
         return { message: "Task recurrence updated." };
       },
     },
+    {
+      id: "vault.tasks.setTaskText", title: "Rename a Markdown task",
+      description: "Replace the words of a task returned by listTasks. Its status, due date, priority and recurrence are kept.",
+      scope: "workspace", mutates: true, permissions: ["document:read", "document:write"],
+      input: z.object({ ...taskRef, text: z.string().trim().min(1).max(500) }),
+      async handler(input, context) {
+        if (!context.tasks?.change) throw new Error("Task write access is required.");
+        const args = input as { documentId: string; ordinal: number; today: string; text: string };
+        await context.tasks.change({ ...args, change: { type: "text", text: args.text } });
+        return { message: "Task renamed." };
+      },
+    },
+    {
+      id: "vault.tasks.deleteTask", title: "Delete a Markdown task",
+      description: "Delete a task returned by listTasks, together with its note and subtasks. Prefer setTaskStatus 'cancelled' when the user wants a record kept. List tasks again afterwards: later ordinals in that document shift.",
+      scope: "workspace", mutates: true, permissions: ["document:read", "document:write"],
+      input: z.object(taskRef),
+      async handler(input, context) {
+        if (!context.tasks?.remove) throw new Error("Task write access is required.");
+        await context.tasks.remove(input as { documentId: string; ordinal: number; today: string });
+        return { message: "Task deleted." };
+      },
+    },
+    {
+      id: "vault.tasks.moveTask", title: "Move a Markdown task",
+      description: "Move a task returned by listTasks (with its note and subtasks) to the end of another document you can edit, identified by targetDocumentId. List tasks again afterwards: ordinals in both documents change.",
+      scope: "workspace", mutates: true, permissions: ["document:read", "document:write"],
+      input: z.object({ ...taskRef, targetDocumentId: z.string().uuid() }),
+      async handler(input, context) {
+        if (!context.tasks?.move) throw new Error("Task write access is required.");
+        const result = await context.tasks.move(
+          input as { documentId: string; ordinal: number; today: string; targetDocumentId: string },
+        );
+        return { data: result, message: `Task moved${result.targetTitle ? ` to ${result.targetTitle}` : ""}.` };
+      },
+    },
   ],
 });

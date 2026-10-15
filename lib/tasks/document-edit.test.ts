@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { applyTextEdits } from "./edit";
-import { planTaskDocumentEdit } from "./document-edit";
+import {
+  dedentTaskBlock,
+  planBlockAppend,
+  planBlockRemoval,
+  planTaskDocumentEdit,
+  planTaskRemoval,
+  planTaskRestore,
+} from "./document-edit";
 import { parseTasks } from "./parse";
 const today = "2026-10-06";
 function complete(source: string, line = 0, stampDone = true) {
@@ -156,4 +163,84 @@ it("persists the original monthly day in the generated recurrence rule", () => {
   expect(next).toMatchObject({ repeat: "monthly on 31", dueDay: "2026-02-28" });
   const following = planTaskDocumentEdit(next.rawLine, 0, next.rawLine, { type: "status", status: "done" }, "2026-02-28")!;
   expect(parseTasks(applyTextEdits(next.rawLine, following))[1].dueDay).toBe("2026-03-31");
+});
+
+describe("planTaskRemoval", () => {
+  const remove = (source: string, line: number) => {
+    const raw = source.split(/\r?\n/)[line];
+    const removal = planTaskRemoval(source, line, raw);
+    expect(removal).not.toBeNull();
+    return { ...removal!, result: applyTextEdits(source, [removal!.edit]) };
+  };
+
+  it("removes the task with its note and subtasks, leaving neighbours alone", () => {
+    const source = [
+      "# Launch",
+      "- [ ] Before",
+      "- [ ] Ship it :due[2026-10-02]",
+      "  a note line",
+      "  - [x] Subtask",
+      "- [ ] After",
+      "",
+    ].join("\n");
+    const { result, block, lineIndex } = remove(source, 2);
+    expect(result).toBe("# Launch\n- [ ] Before\n- [ ] After\n");
+    expect(lineIndex).toBe(2);
+    expect(block).toBe("- [ ] Ship it :due[2026-10-02]\n  a note line\n  - [x] Subtask");
+  });
+
+  it("removes a lone subtask only", () => {
+    const source = "- [ ] Parent\n  - [ ] Child\n  - [ ] Sibling\n";
+    expect(remove(source, 1).result).toBe("- [ ] Parent\n  - [ ] Sibling\n");
+  });
+
+  it("removes the last line of a document without a trailing newline", () => {
+    expect(remove("Intro\n- [ ] Last", 1).result).toBe("Intro");
+  });
+
+  it("refuses a task that moved or became ambiguous", () => {
+    expect(planTaskRemoval("- [ ] A\n- [ ] A\n", 5, "- [ ] A")).toBeNull();
+    expect(planTaskRemoval("- [ ] A\n", 0, "- [ ] B")).toBeNull();
+  });
+
+  it("restores the block where it was, even after edits elsewhere", () => {
+    const source = "# Plan\n- [ ] One\n- [ ] Two\n  - [ ] Two.a\n- [ ] Three\n";
+    const { result, block, lineIndex } = remove(source, 2);
+    expect(applyTextEdits(result, [planTaskRestore(result, lineIndex, block)])).toBe(source);
+
+    const edited = `${result}- [ ] Four\n`;
+    expect(applyTextEdits(edited, [planTaskRestore(edited, lineIndex, block)])).toBe(
+      "# Plan\n- [ ] One\n- [ ] Two\n  - [ ] Two.a\n- [ ] Three\n- [ ] Four\n",
+    );
+  });
+
+  it("appends the block when the document got shorter than its old line", () => {
+    expect(applyTextEdits("Short", [planTaskRestore("Short", 9, "- [ ] Back")])).toBe(
+      "Short\n- [ ] Back\n",
+    );
+  });
+});
+
+describe("moving blocks", () => {
+  it("dedents a quoted or nested task block to the top level", () => {
+    expect(dedentTaskBlock("  - [ ] Child\n    - [ ] Grandchild\n    note")).toBe(
+      "- [ ] Child\n  - [ ] Grandchild\n  note",
+    );
+    expect(dedentTaskBlock("> - [ ] In a callout\n>   - [x] Sub")).toBe("- [ ] In a callout\n  - [x] Sub");
+  });
+
+  it("appends a block and removes it again for Undo", () => {
+    const source = "# Target\n- [ ] Existing";
+    const { edit, lineIndex } = planBlockAppend(source, "- [ ] Moved\n  - [ ] Sub");
+    const appended = applyTextEdits(source, [edit]);
+    expect(appended).toBe("# Target\n- [ ] Existing\n- [ ] Moved\n  - [ ] Sub\n");
+    expect(lineIndex).toBe(2);
+
+    const removal = planBlockRemoval(`Intro\n${appended}`, lineIndex, "- [ ] Moved\n  - [ ] Sub");
+    expect(applyTextEdits(`Intro\n${appended}`, [removal!])).toBe("Intro\n# Target\n- [ ] Existing\n");
+  });
+
+  it("leaves an edited appended block in place", () => {
+    expect(planBlockRemoval("- [ ] Moved and edited\n", 0, "- [ ] Moved")).toBeNull();
+  });
 });

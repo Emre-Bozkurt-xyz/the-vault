@@ -1,12 +1,15 @@
 "use client";
 
-import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
-import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
-import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
-import { ArrowUpRight, CalendarX2, Keyboard } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, CalendarX2, Keyboard, ListChecks } from "lucide-react";
 
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import type { TaskChange } from "@/lib/tasks/edit";
+import { requestMoveTasks } from "@/components/tasks/MoveTasksDialog";
+import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
+import { TaskTextEditor } from "@/components/tasks/TaskRow";
+import type { RowChange } from "@/lib/tasks/optimistic";
 import type { TaskStatus } from "@/lib/tasks/parse";
 import { cn } from "@/lib/utils";
 import type { TaskDetail } from "@/server/tasks-data";
@@ -22,34 +25,56 @@ const statuses: Array<{ value: TaskStatus; label: string }> = [
 ];
 
 /**
- * The Tasks page's right context panel (plan §6.2): the selected task's
- * status, date, location, note, subtasks and a few lines of its source.
+ * The Tasks page's right context panel (plan §6.2): the focused task's text
+ * (click to edit), status, date, location, note, subtasks and a few lines of
+ * its source. With several tasks selected it points at the bulk bar instead.
  */
 export function TaskDetailPanel({
   detail,
   today,
   loading,
+  selectedCount = 0,
   folderPath,
   onChange,
   onOpen,
+  onShowShortcuts,
 }: {
   detail: TaskDetail | null;
   today: string;
   loading: boolean;
+  /** More than one task selected: no single task to show. */
+  selectedCount?: number;
   folderPath: string | null;
-  onChange: (task: TaskRef, change: TaskChange) => void;
+  onChange: (task: TaskRef, change: RowChange) => void;
   onOpen: (task: TaskRef) => void;
+  onShowShortcuts?: () => void;
 }) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+
   if (!detail) {
     return (
       <div className="px-3 py-4 text-sm text-muted-foreground">
-        <p>{loading ? "Loading…" : "Select a task to see its details."}</p>
+        {selectedCount > 1 ? (
+          <p className="flex items-center gap-1.5 text-foreground">
+            <ListChecks className="size-4" /> {selectedCount} tasks selected
+          </p>
+        ) : (
+          <p>{loading ? "Loading…" : "Select a task to see its details."}</p>
+        )}
+        {selectedCount > 1 ? (
+          <p className="mt-1 text-xs">Use the bar above the list, or the keyboard, to change them together.</p>
+        ) : null}
         <div className="mt-4 grid gap-1 text-xs">
           <p className="flex items-center gap-1.5 font-medium text-foreground">
             <Keyboard className="size-3.5" /> Keyboard
           </p>
-          <p><Key>j</Key> <Key>k</Key> move · <Key>x</Key> tick · <Key>Enter</Key> open</p>
-          <p><Key>t</Key> today · <Key>m</Key> tomorrow · <Key>/</Key> filter</p>
+          <p><Key>j</Key> <Key>k</Key> move · <Key>x</Key> tick · <Key>e</Key> edit</p>
+          <p><Key>t</Key> today · <Key>m</Key> tomorrow · <Key>Delete</Key> delete</p>
+          {onShowShortcuts ? (
+            <button type="button" onClick={onShowShortcuts} className="mt-1 w-fit text-primary hover:underline">
+              All shortcuts <Key>?</Key>
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -58,6 +83,8 @@ export function TaskDetailPanel({
   const { task, subtasks, context } = detail;
   const counted = subtasks.filter((subtask) => subtask.status !== "cancelled");
   const finished = counted.filter((subtask) => subtask.status === "done").length;
+  const key = `${task.documentId}:${task.ordinal}:${task.rawLine}`;
+  const editing = editingKey === key;
 
   return (
     // `minmax(0,1fr)`: the source <pre> scrolls sideways instead of widening
@@ -67,13 +94,32 @@ export function TaskDetailPanel({
         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Task
         </p>
-        <div className="vault-task-md mt-2 text-base font-medium">
-          {task.text ? (
-            <MarkdownDocument markdown={task.text} contained={false} disableLinks />
-          ) : (
-            <span className="italic text-muted-foreground">Untitled task</span>
-          )}
-        </div>
+        {editing ? (
+          <div className="mt-2">
+            <TaskTextEditor
+              value={task.text}
+              className="text-base"
+              onCommit={(value) => {
+                setEditingKey(null);
+                if (value !== task.text) onChange(task, { type: "text", text: value });
+              }}
+              onCancel={() => setEditingKey(null)}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            title="Edit text"
+            onClick={() => setEditingKey(key)}
+            className="vault-task-md -mx-1 mt-1.5 block w-[calc(100%+0.5rem)] rounded px-1 py-0.5 text-left text-base font-medium transition hover:bg-muted/60"
+          >
+            {task.text ? (
+              <MarkdownDocument markdown={task.text} contained={false} disableLinks />
+            ) : (
+              <span className="italic text-muted-foreground">Untitled task</span>
+            )}
+          </button>
+        )}
         <div className="mt-3 flex flex-wrap gap-1">
           {statuses.map((status) => (
             <button
@@ -143,7 +189,14 @@ export function TaskDetailPanel({
         <span className="text-sm text-muted-foreground">Priority / repeat</span>
         <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} />
         {!task.priority && !task.repeat ? <span className="text-sm">None</span> : null}
-        <TaskActionsMenu task={task} today={today} onChange={(change) => onChange(task, change)} />
+        <TaskActionsMenu
+          task={task}
+          today={today}
+          onChange={(change) => onChange(task, change)}
+          onEdit={() => setEditingKey(key)}
+          onRequestMove={() => requestMoveTasks([task])}
+          currentDocumentId={task.documentId}
+        />
       </section>
 
       <section>

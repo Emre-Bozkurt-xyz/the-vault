@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import nextEnv from "@next/env";
 import { Server } from "@hocuspocus/server";
@@ -20,6 +20,18 @@ if (!databaseUrl) {
 }
 
 const db = postgres(databaseUrl, { max: 5 });
+
+/**
+ * Task-change notices (server/task-events.ts, docs/24_TASKS_AND_AGENDA_PLAN.md
+ * §5.4). A store notifies the owner's open task views only when the
+ * document's task lines or headings changed since this process last stored it,
+ * so typing prose sends nothing. The signature is seeded when a document loads.
+ */
+const taskEventsChannel = "vault_tasks_changed";
+const taskSignatures = new Map();
+// Deliberately looser than lib/tasks/parse.ts (it ignores fences and HTML
+// blocks): a false positive only costs one refetch of an unchanged index.
+const taskSourceLinePattern = /^[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+\[[ xX/-]\](?=[ \t]|$)|#{1,6}[ \t])/;
 
 const server = new Server({
   port,
@@ -151,17 +163,25 @@ const server = new Server({
   async onStoreDocument({ document, documentName }) {
     const markdown = document.getText("markdown").toString();
     const yjsState = Buffer.from(Y.encodeStateAsUpdate(document));
+    const taskSignature = taskSourceSignature(markdown);
+    const tasksChanged = taskSignatures.get(documentName) !== taskSignature;
 
     await maybeCreateAutomaticDocumentVersion(documentName, markdown);
 
     await db.begin(async (tx) => {
-      await tx`
+      const updated = await tx`
         update documents
         set markdown = ${markdown},
             updated_at = now()
         where id = ${documentName}
           and deleted_at is null
+        returning owner_id
       `;
+
+      // Delivered on commit, so a listener's refetch sees the stored text.
+      if (tasksChanged && updated[0]) {
+        await tx`select pg_notify(${taskEventsChannel}, ${JSON.stringify({ o: updated[0].owner_id, d: documentName })})`;
+      }
 
       await reconcileDocumentAssetLinks(tx, documentName, markdown);
       await syncDocumentMetadata(tx, documentName, markdown);
@@ -174,12 +194,49 @@ const server = new Server({
             updated_at = now()
       `;
     });
+
+    taskSignatures.set(documentName, taskSignature);
+  },
+
+  async afterLoadDocument({ document, documentName }) {
+    taskSignatures.set(documentName, taskSourceSignature(document.getText("markdown").toString()));
+  },
+
+  async afterUnloadDocument({ documentName }) {
+    taskSignatures.delete(documentName);
   },
 });
 
 await server.listen(port, () => {
   console.log(`Vault collaboration server listening on ${port}`);
 });
+
+/**
+ * A digest of the lines the task index reads: task lines, the indented lines
+ * right under them (notes and nested items), and headings (each task's
+ * heading context). Empty when the document has no task lines, so a heading
+ * edit in a task-free document stays silent.
+ */
+function taskSourceSignature(markdown) {
+  const kept = [];
+  let hasTask = false;
+  let inTask = false;
+
+  for (const line of markdown.split("\n")) {
+    if (taskSourceLinePattern.test(line)) {
+      const isHeading = /^[ \t>]*#/.test(line);
+      hasTask ||= !isHeading;
+      inTask = !isHeading;
+      kept.push(line);
+    } else if (inTask && /^[ \t>]*[ \t]\S/.test(line)) {
+      kept.push(line);
+    } else {
+      inTask = false;
+    }
+  }
+
+  return hasTask ? createHash("sha1").update(kept.join("\n")).digest("base64") : "";
+}
 
 async function shutdown() {
   await server.destroy();

@@ -18,6 +18,9 @@ import {
   subscribeToTasksChanged,
   getTaskPageAction,
   parseTaskQueryFence,
+  applyTaskPatches,
+  runTaskWrite,
+  useTaskPatches,
   type TaskQuery,
   type TaskPageResult,
 } from "@/lib/extension-api/tasks";
@@ -29,6 +32,10 @@ import { cn } from "@/lib/utils";
  * through MarkdownDocument — MarkdownDocument mounts this component, and the
  * import cycle would resolve to `undefined` at module init — so text is shown
  * plain, with links reduced to their labels.
+ *
+ * In the workspace, editors can tick rows; the write goes through the same
+ * permission-checked path as every other task list. Public, share, guide and
+ * embed surfaces stay read-only.
  */
 
 type Row = {
@@ -62,6 +69,7 @@ export default function HostedTaskQueryBlock({ ctx, source, documentMarkdown }: 
       documentMarkdown={documentMarkdown ?? null}
       documentId={ctx.documentId ?? undefined}
       publicSurface={ctx.surface !== "workspace"}
+      canEdit={ctx.surface === "workspace" && ctx.canEdit}
     />
   );
 }
@@ -71,6 +79,7 @@ function TaskQueryBlock({
   documentMarkdown,
   documentId,
   publicSurface,
+  canEdit,
 }: {
   query: TaskQuery;
   /** The whole document's Markdown, for `scope=doc`. */
@@ -78,6 +87,8 @@ function TaskQueryBlock({
   documentId?: string;
   /** A public page: `scope=all` must not fetch, and rows do not link. */
   publicSurface: boolean;
+  /** Ticking writes to the task's document; only for workspace editors. */
+  canEdit: boolean;
 }) {
   const today = useToday();
 
@@ -100,6 +111,7 @@ function TaskQueryBlock({
       markdown={documentMarkdown ?? ""}
       documentId={documentId}
       linkable={!publicSurface}
+      canEdit={canEdit && Boolean(documentId)}
     />
   );
 }
@@ -110,12 +122,14 @@ function DocumentTasks({
   markdown,
   documentId,
   linkable,
+  canEdit,
 }: {
   query: TaskQuery;
   today: string | null;
   markdown: string;
   documentId?: string;
   linkable: boolean;
+  canEdit: boolean;
 }) {
   const rows = useMemo<Row[]>(() => {
     if (!today) return [];
@@ -138,7 +152,7 @@ function DocumentTasks({
 
   return (
     <Frame query={query}>
-      <Rows rows={rows} today={today} linkable={linkable && Boolean(documentId)} />
+      <Rows rows={rows} today={today} linkable={linkable && Boolean(documentId)} canEdit={canEdit} />
     </Frame>
   );
 }
@@ -191,7 +205,8 @@ function PersonalTasks({ query, today }: { query: TaskQuery; today: string | nul
       ) : !result.ok ? (
         <p className="vault-task-query-empty">{result.error}</p>
       ) : (
-        <Rows rows={rows} today={today} linkable />
+        // Personal rows are the viewer's own tasks, so always tickable.
+        <Rows rows={rows} today={today} linkable canEdit />
       )}
     </Frame>
   );
@@ -209,7 +224,23 @@ function Frame({ query, children }: { query: TaskQuery; children: React.ReactNod
   );
 }
 
-function Rows({ rows, today, linkable }: { rows: Row[]; today: string | null; linkable: boolean }) {
+function Rows({
+  rows: storedRows,
+  today,
+  linkable,
+  canEdit,
+}: {
+  rows: Row[];
+  today: string | null;
+  linkable: boolean;
+  canEdit: boolean;
+}) {
+  const patches = useTaskPatches();
+  const rows = useMemo(
+    () => (today ? applyTaskPatches(storedRows.map((row) => ({ ...row, documentId: row.documentId ?? "" })), patches, today) : []),
+    [storedRows, patches, today],
+  );
+
   if (!today) return <p className="vault-task-query-empty">Loading…</p>;
   if (rows.length === 0) return <p className="vault-task-query-empty">Nothing here.</p>;
 
@@ -219,10 +250,36 @@ function Rows({ rows, today, linkable }: { rows: Row[]; today: string | null; li
     <>
       <ul className="vault-task-query-list">
         {shown.map((row) => {
-          const overdue = row.status !== "done" && row.dueDay !== null && row.dueDay < today;
+          const closed = row.status === "done" || row.status === "cancelled";
+          const overdue = !closed && row.dueDay !== null && row.dueDay < today;
+          const box =
+            canEdit && row.documentId ? (
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={row.status === "done"}
+                aria-label={closed ? "Mark not done" : "Mark done"}
+                title={closed ? "Mark not done" : "Mark done"}
+                className="vault-task-box"
+                data-status={row.status}
+                data-overdue={overdue ? "true" : undefined}
+                // In Live mode this sits inside CodeMirror: keep the click from
+                // moving the cursor into (and revealing) the block's source.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void runTaskWrite([row], { type: "status", status: closed ? "open" : "done" });
+                }}
+              />
+            ) : (
+              <span className="vault-task-box" data-status={row.status} data-overdue={overdue ? "true" : undefined} />
+            );
           const body = (
             <>
-              <span className="vault-task-box" data-status={row.status} data-overdue={overdue ? "true" : undefined} />
               <span
                 className={cn(
                   "vault-task-query-text",
@@ -244,12 +301,15 @@ function Rows({ rows, today, linkable }: { rows: Row[]; today: string | null; li
             </>
           );
 
+          const linked = linkable && Boolean(row.documentId);
+
           return (
-            <li key={row.key}>
-              {linkable && row.documentId ? (
+            <li key={row.key} className="vault-task-query-item" data-linkable={linked ? "true" : undefined}>
+              {box}
+              {linked ? (
                 <a
                   href={`/docs/${row.documentId}`}
-                  className="vault-task-query-item"
+                  className="vault-task-query-link"
                   onClick={(event) => {
                     event.preventDefault();
                     requestEditorJump({
@@ -266,7 +326,7 @@ function Rows({ rows, today, linkable }: { rows: Row[]; today: string | null; li
                   {body}
                 </a>
               ) : (
-                <span className="vault-task-query-item">{body}</span>
+                <span className="vault-task-query-link">{body}</span>
               )}
             </li>
           );

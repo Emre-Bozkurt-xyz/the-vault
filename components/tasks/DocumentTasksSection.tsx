@@ -10,10 +10,13 @@ import { requestEditorJump } from "@/lib/editor-jump-events";
 import { formatDueLabel } from "@/lib/tasks/dates";
 import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
 import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
+import { useLiveDocumentTasks } from "@/components/tasks/use-live-tasks";
+import { applyTaskPatches } from "@/lib/tasks/optimistic";
 import { plainTaskText } from "@/lib/tasks/query";
+import { runTaskWrite, useTaskPatches } from "@/lib/tasks/task-writes";
 import { cn } from "@/lib/utils";
-import { dispatchTasksChanged, subscribeToTasksChanged } from "@/lib/workspace-toast";
-import { getDocumentTasksAction, updateTaskAction } from "@/server/tasks";
+import { subscribeToTasksChanged } from "@/lib/workspace-toast";
+import { getDocumentTasksAction } from "@/server/tasks";
 import type { DocumentTaskSummary } from "@/server/tasks-data";
 
 /** After an editor save the collab server stores the text on a debounce. */
@@ -26,8 +29,17 @@ const maxListed = 12;
  * Click a task to jump to its line; tick it to complete it in place.
  */
 export function DocumentTasksSection({ documentId }: { documentId: string }) {
-  const [tasks, setTasks] = useState<DocumentTaskSummary[] | null>(null);
+  const [stored, setTasks] = useState<DocumentTaskSummary[] | null>(null);
   const [today] = useState(todayDayKey);
+  const liveDocument = useLiveDocumentTasks().get(documentId);
+  const patches = useTaskPatches();
+  // The open editor's own text is fresher than the stored copy (§5.4).
+  const tasks = useMemo(() => {
+    const source = liveDocument ? liveDocument.tasks : stored;
+    if (!source) return null;
+    const rows = source.map((task) => ({ ...task, documentId }));
+    return applyTaskPatches(rows, patches, today);
+  }, [liveDocument, stored, patches, documentId, today]);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +61,9 @@ export function DocumentTasksSection({ documentId }: { documentId: string }) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(load, refetchAfterSaveMs);
     });
-    const unsubscribeTasks = subscribeToTasksChanged(load);
+    const unsubscribeTasks = subscribeToTasksChanged((detail) => {
+      if (!detail.documentId || detail.documentId === documentId) load();
+    });
     return () => {
       cancelled = true;
       unsubscribeDocuments();
@@ -83,21 +97,8 @@ export function DocumentTasksSection({ documentId }: { documentId: string }) {
     return { total: all.length, open: open.length, nextDue, children, listed };
   }, [tasks]);
 
-  const toggle = async (task: DocumentTaskSummary) => {
-    setTasks((current) =>
-      current?.map((candidate) =>
-        candidate.ordinal === task.ordinal ? { ...candidate, status: "done" } : candidate,
-      ) ?? current,
-    );
-    await updateTaskAction({
-      today: todayDayKey(),
-      documentId,
-      line: task.line,
-      rawLine: task.rawLine,
-      change: { type: "status", status: "done" },
-    }).catch(() => null);
-    dispatchTasksChanged();
-  };
+  const toggle = (task: DocumentTaskSummary) =>
+    void runTaskWrite([{ ...task, documentId }], { type: "status", status: "done" });
 
   if (tasks === null) {
     return null;
@@ -127,7 +128,7 @@ export function DocumentTasksSection({ documentId }: { documentId: string }) {
                   role="checkbox"
                   aria-checked={false}
                   aria-label="Mark done"
-                  onClick={() => void toggle(task)}
+                  onClick={() => toggle(task)}
                   className="vault-task-box mt-[0.15rem] cursor-pointer"
                   data-status={task.status}
                   data-overdue={overdue ? "true" : undefined}

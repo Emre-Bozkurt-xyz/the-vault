@@ -26,14 +26,24 @@ export function subscribeToWorkspaceToasts(handler: (detail: WorkspaceToastDetai
   return () => window.removeEventListener(toastEventName, listener);
 }
 
-/** Tells any open task surface to refetch (after a capture, an undo, …). */
-export function dispatchTasksChanged() {
+export type TasksChangedDetail = {
+  /** The one document whose tasks changed; null or absent when unknown or several. */
+  documentId?: string | null;
+};
+
+/**
+ * Tells any open task surface to refetch: after a capture, an undo, a write
+ * from another surface, or a live notice from the server (`lib/tasks/live-events.ts`).
+ */
+export function dispatchTasksChanged(detail: TasksChangedDetail = {}) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(tasksChangedEventName));
+  window.dispatchEvent(new CustomEvent<TasksChangedDetail>(tasksChangedEventName, { detail }));
 }
 
-export function subscribeToTasksChanged(handler: () => void) {
+export function subscribeToTasksChanged(handler: (detail: TasksChangedDetail) => void) {
   if (typeof window === "undefined") return () => {};
-  window.addEventListener(tasksChangedEventName, handler);
-  return () => window.removeEventListener(tasksChangedEventName, handler);
+  const listener = (event: Event) =>
+    handler((event instanceof CustomEvent ? (event.detail as TasksChangedDetail | null) : null) ?? {});
+  window.addEventListener(tasksChangedEventName, listener);
+  return () => window.removeEventListener(tasksChangedEventName, listener);
 }

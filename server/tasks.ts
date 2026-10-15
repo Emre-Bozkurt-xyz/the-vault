@@ -2,9 +2,13 @@
 
 import { z } from "zod";
 
-import { parseRecurrence } from "@/lib/tasks/recurrence";
-import { addDaysToDayKey, isValidDayKey } from "@/lib/tasks/dates";
-import { TASK_PRIORITIES, TASK_TIME_PATTERN } from "@/lib/tasks/parse";
+import {
+  taskDayKeySchema as dayKeySchema,
+  taskOperationInputSchema,
+  taskUndoSchema,
+
+} from "@/lib/tasks/change-schema";
+import { addDaysToDayKey } from "@/lib/tasks/dates";
 import { requireActiveUser } from "@/server/authz";
 import {
   TaskMovedError,
@@ -14,10 +18,17 @@ import {
   getInboxDocumentId,
   getTaskDetail,
   listAgendaTasks,
+  listCompletedTasks,
   listDocumentTasks,
   listTaskPageData,
   removeCapturedTask,
+  runTaskOperation,
+  searchTaskTargetDocuments,
+  undoTaskOperation,
+  type CompletedTask,
   type DocumentTaskSummary,
+  type TaskOperationResult,
+  type TaskTargetDocument,
   type TaskAgenda,
   type TaskDetail,
   type TaskPageData,
@@ -29,33 +40,9 @@ import type { WorkspaceAgendaEvent } from "@/lib/extension-api/server";
 /** How far ahead the sidebar agenda looks, counting today. */
 const agendaHorizonDays = 7;
 
-const dayKeySchema = z.string().refine(isValidDayKey, "Must be a real YYYY-MM-DD date.");
-
 const agendaInputSchema = z.object({
   /** The viewer's local day. The server clock is never the reference. */
   today: dayKeySchema,
-});
-
-const updateTaskInputSchema = z.object({
-  today: dayKeySchema,
-  documentId: z.string().uuid(),
-  line: z.number().int().min(0),
-  rawLine: z.string().max(20_000),
-  change: z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("status"),
-      status: z.enum(["open", "in_progress", "done", "cancelled"]),
-    }),
-    z.object({
-      type: z.literal("due"),
-      day: dayKeySchema.nullable(),
-      time: z.string().regex(TASK_TIME_PATTERN).nullable().optional(),
-    }),
-    z.object({ type: z.literal("priority"), priority: z.enum(TASK_PRIORITIES).nullable() }),
-    z.object({ type: z.literal("repeat"), repeat: z.string().max(40).refine((value) => Boolean(parseRecurrence(value))).nullable() }),
-    z.object({ type: z.literal("priority"), priority: z.enum(TASK_PRIORITIES).nullable() }),
-    z.object({ type: z.literal("repeat"), repeat: z.string().max(40).refine((value) => Boolean(parseRecurrence(value))).nullable() }),
-  ]),
 });
 
 export type TaskAgendaResult =
@@ -65,6 +52,8 @@ export type TaskAgendaResult =
 const captureInputSchema = z.object({
   today: dayKeySchema,
   text: z.string().max(2_000),
+  /** A document picked in the capture box; wins over a typed `#Title`. */
+  targetDocumentId: z.string().uuid().nullable().optional(),
 });
 
 const undoCaptureInputSchema = z.object({
@@ -77,7 +66,6 @@ const undoCaptureInputSchema = z.object({
 export type CaptureTaskResult =
   | {
       ok: true;
-      agenda: TaskAgendaResult;
       /** Where the task landed, for the confirmation and for Undo. */
       documentId: string;
       destination: string;
@@ -135,44 +123,102 @@ export async function getTaskAgendaAction(input: unknown): Promise<TaskAgendaRes
   }
 }
 
+export type TaskOperationActionResult =
+  | ({ ok: true } & TaskOperationResult)
+  | { ok: false; error: string; code?: "moved" };
+
 /**
- * Changes one task's status or due date in its source document and returns the
- * refreshed agenda. The task is addressed by line + exact text (index row ids
- * are not stable); a task that moved or changed since the caller's read yields
- * `code: "moved"` rather than an edit to the wrong line. Edit access is checked
- * by the collaboration write itself.
+ * Every workspace task write: change a field, edit the text, delete, or move
+ * one or many tasks (see `runTaskOperation`). Returns counts and, for deletes
+ * and moves, the Undo record. Surfaces refetch on the task-change event that
+ * follows, so no list is returned. Edit access is checked per document by
+ * the collaboration write.
  */
-export async function updateTaskAction(input: unknown): Promise<TaskAgendaResult> {
+export async function runTaskOperationAction(input: unknown): Promise<TaskOperationActionResult> {
   const user = await requireActiveUser();
-  const parsed = updateTaskInputSchema.safeParse(input);
+  const parsed = taskOperationInputSchema.safeParse(input);
 
   if (!parsed.success) {
     return { ok: false, error: "Invalid task change." };
   }
 
   if (!(await requireTasksEnabled(user.id))) {
-    return disabledResult;
+    return { ok: false, error: "Tasks is turned off in Settings → Extensions." };
   }
 
-  const { today, documentId, line, rawLine, change } = parsed.data;
-
   try {
-    await applyTaskChange(user.id, { documentId, line, rawLine, change, today });
+    return { ok: true, ...(await runTaskOperation(user.id, parsed.data)) };
   } catch (error) {
     if (error instanceof TaskMovedError) {
-      return { ok: false, code: "moved", error: "That task changed since the list loaded." };
+      return {
+        ok: false,
+        code: "moved",
+        error:
+          parsed.data.items.length > 1
+            ? "Those tasks changed since the list loaded."
+            : "That task changed since the list loaded.",
+      };
     }
 
-    console.error("Failed to update a task", error);
-    return { ok: false, error: collabError(error, "Could not change the task.") };
+    console.error("Failed to run a task operation", error);
+    const message = error instanceof Error && /cannot edit/.test(error.message) ? error.message : null;
+    return { ok: false, error: message ?? collabError(error, "Could not change the task.") };
+  }
+}
+
+/** Undo for a delete or move from `runTaskOperationAction`. */
+export async function undoTaskOperationAction(
+  input: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireActiveUser();
+  const parsed = taskUndoSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid undo." };
   }
 
   try {
-    return await loadAgenda(user.id, today);
+    await undoTaskOperation(user.id, parsed.data);
+    return { ok: true };
   } catch (error) {
-    console.error("Failed to reload the task agenda", error);
-    return { ok: false, error: "The task changed, but the list could not reload." };
+    console.error("Failed to undo a task operation", error);
+    return { ok: false, error: collabError(error, "Could not undo.") };
   }
+}
+
+/** How far back the Tasks page's Done view reaches. */
+const completedWindowDays = 30;
+
+export type CompletedTasksResult =
+  | { ok: true; today: string; since: string; tasks: CompletedTask[] }
+  | { ok: false; error: string };
+
+/** Tasks completed in the last month, newest first, for the Done view. */
+export async function getCompletedTasksAction(input: unknown): Promise<CompletedTasksResult> {
+  const user = await requireActiveUser();
+  const parsed = agendaInputSchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Invalid date." };
+  if (!(await requireTasksEnabled(user.id))) {
+    return { ok: false, error: "Tasks is turned off in Settings → Extensions." };
+  }
+
+  try {
+    await ensureTaskIndexFresh(user.id);
+    const since = addDaysToDayKey(parsed.data.today, -completedWindowDays);
+    return { ok: true, today: parsed.data.today, since, tasks: await listCompletedTasks(user.id, since) };
+  } catch (error) {
+    console.error("Failed to load completed tasks", error);
+    return { ok: false, error: "Could not load completed tasks." };
+  }
+}
+
+/** Owned documents matching `query`, for "Move to…" and `#` in the capture box. */
+export async function searchTaskTargetsAction(input: unknown): Promise<TaskTargetDocument[]> {
+  const user = await requireActiveUser();
+  const parsed = z.object({ query: z.string().max(200) }).safeParse(input);
+  if (!parsed.success) return [];
+  return searchTaskTargetDocuments(user.id, parsed.data.query);
 }
 
 const readCheckboxInputSchema = z.object({
@@ -217,7 +263,7 @@ function collabError(error: unknown, fallback: string): string {
 /**
  * Quick capture: appends a task to the Inbox (created on first use), taking a
  * trailing date from the text ("send invoice friday"). Returns where it landed,
- * for the confirmation and its Undo, plus the refreshed agenda.
+ * for the confirmation and its Undo.
  */
 export async function captureTaskAction(input: unknown): Promise<CaptureTaskResult> {
   const user = await requireActiveUser();
@@ -231,10 +277,10 @@ export async function captureTaskAction(input: unknown): Promise<CaptureTaskResu
     return { ok: false, error: disabledResult.ok ? "" : disabledResult.error };
   }
 
-  const { today, text } = parsed.data;
+  const { today, text, targetDocumentId } = parsed.data;
 
   try {
-    const captured = await captureTask(user.id, { text, today });
+    const captured = await captureTask(user.id, { text, today, targetDocumentId });
 
     if (!captured) {
       return { ok: false, error: "Type the task first." };
@@ -242,7 +288,6 @@ export async function captureTaskAction(input: unknown): Promise<CaptureTaskResu
 
     return {
       ok: true,
-      agenda: await loadAgenda(user.id, today),
       documentId: captured.documentId,
       destination: captured.destination,
       line: captured.lineIndex,

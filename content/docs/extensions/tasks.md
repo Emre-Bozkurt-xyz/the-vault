@@ -102,15 +102,63 @@ The **Tasks** sidebar lists:
 - **Inbox** — tasks in your Inbox that have no date yet.
 
 Click a task to open its document at that line. Tick its box to complete it, or
-use the **⋯** menu to move it to today, tomorrow or next week, pick a date,
-clear the date, set a priority, mark it in progress, or cancel it. Every change is written back
-into the document itself, so collaborators see it straight away.
+use the **⋯** menu (or right-click the task) to:
+
+- **Edit text** — rename it in place; its date, priority and repeat stay.
+- Move it to **Today**, **Tomorrow** or **Next week**, **Pick date…**, or
+  **Clear date**.
+- Set **Repeat** or **Priority**.
+- **Move to** another document: your Inbox, a document already in the list, or
+  **Other document…** to search. The task goes to the end of that document,
+  with its note and subtasks.
+- **Mark done**, **In progress**, **Cancel task**, or **Delete task**. Deleting
+  removes the task together with its note and subtasks.
+
+Deletes and moves confirm with an **Undo**. Every change is written back into
+the document itself, so collaborators see it straight away.
+
+The overdue section has **Move to today**, which reschedules everything in it
+at once.
+
+The lists stay live. While you type a task into a document, it shows up in the
+Tasks panel, the Tasks page and the Today section as you pause, before the
+document is even saved. Changes made elsewhere — on another device, by a
+collaborator or by an agent — arrive within a few seconds. Editing ordinary
+prose does not cause any refresh.
 
 Undated tasks in your other documents stay out of the agenda on purpose;
 otherwise every old checklist would crowd it. Give a task a date to schedule it.
 
 Only documents **you own** feed your agenda. Tasks in documents others have
 shared with you are not included.
+
+## The Tasks page
+
+Open **Tasks** from the sidebar's "Open Tasks page" arrow or the command palette.
+It has five views: **Agenda**, **Week** (drag a task to another day), **Month**,
+**Backlog** (undated tasks by document) and **Done** (what you ticked off in the
+last 30 days; untick one to reopen it). Filter by text, folder or tag.
+
+**Selecting several tasks.** Ctrl/Cmd-click adds a task to the selection,
+Shift-click selects a range, and Ctrl/Cmd+A selects every task in the view. A bar
+appears above the list to mark them done, reschedule, set a priority, move or
+delete them together.
+
+**Keyboard.** Press `?` on the Tasks page for the full list:
+
+| Key | Does |
+|---|---|
+| `j` / `k` | Move down / up (with Shift: extend the selection) |
+| `x` | Done / not done |
+| `t` / `m` | Due today / tomorrow |
+| `p` | Next priority |
+| `e` | Edit the text |
+| `Delete` | Delete, with Undo |
+| `Enter` | Open at its line |
+| `/` | Filter |
+| `Esc` | Clear the selection |
+
+With tasks selected, `x`, `t`, `m`, `p` and `Delete` act on all of them.
 
 ## Tasks around the workspace
 
@@ -143,21 +191,38 @@ shows **the reader's own** tasks, never yours: share a "My week" document and
 each person sees their own week. On a public page it shows a short note
 instead.
 
+If you can edit the document, you can tick tasks right in the block. Readers,
+public pages and shared links see it read-only.
+
 ## Capturing a task quickly
 
-Type into **Add task…** at the top of the Tasks sidebar, or press
+Press **Ctrl+Alt+T** (**⌘⌥T** on a Mac; change it under Settings → Hotkeys)
+anywhere in the workspace, or run **Add task…** from the command palette. You
+can also type into **Add task…** at the top of the Tasks sidebar, or press
 **Ctrl/Cmd+K** and type `/task` followed by the task:
 
 ```txt
-/task send invoice friday
-/task call Sam tomorrow at 9am
-/task pay rent @oct 1
+call Sam tomorrow at 9am
+water the plants every week !low
+standup every monday
+draft the intro friday !high #Thesis
 ```
 
-The task is added to your selected capture document, with the date taken from the end
-of what you typed. Only clear dates are picked up — "call Tom" stays "call Tom"
-rather than becoming a task for tomorrow; put `@` in front of a date to make it
-explicit. A confirmation appears with an **Undo** button.
+Extras go at the **end**, in any order:
+
+| You type | You get |
+|---|---|
+| a date: `friday`, `tomorrow at 9am`, `oct 12`, `@fri` | a due date |
+| `!high`, `!med`, `!low` | a priority |
+| `every day`, `every week`, `every 2 weeks`, `every other week`, `every monday` | a repeating task (`every monday` also starts it next Monday) |
+| `#Document` or `#[[Document with spaces]]` | added to that document instead |
+
+As you type, what Vault understood shows as small chips under the field, so you
+can check before pressing Enter. Typing `#` lists your documents to pick from.
+Anything that doesn't parse stays part of the task: "fix bug #123" keeps its
+`#123`, and "call Tom" stays "call Tom" rather than becoming a task for
+tomorrow. Put `@` in front of a date to make it explicit. A confirmation
+appears with an **Undo** button.
 
 Under **Settings → Tasks → Quick capture destination**, choose **Inbox** or
 **Daily note**. Daily note capture reuses your root-level document titled with

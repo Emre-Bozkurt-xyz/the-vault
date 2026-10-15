@@ -12,6 +12,8 @@ export {
 export { compareViewTasks } from "@/lib/tasks/views";
 export { navigateWorkspace } from "@/lib/workspace-navigation";
 export { subscribeToTasksChanged } from "@/lib/workspace-toast";
+export { applyTaskPatches } from "@/lib/tasks/optimistic";
+export { runTaskWrite, useTaskPatches } from "@/lib/tasks/task-writes";
 export { getTaskPageAction, type TaskPageResult } from "@/server/tasks";
 export { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 export { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";

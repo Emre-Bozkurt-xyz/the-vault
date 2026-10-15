@@ -45,7 +45,7 @@ import {
 import { resolveViewerExtensions } from "@/server/extension-runtime";
 import { listAccessibleFoldersForUser } from "@/server/folders-data";
 import { collectFolderSubtreeIds, resolveFolderRef } from "@/lib/folder-paths";
-import { addTaskToDocument, applyTaskChange, captureTask, getAgentTask, listAgentTasks, TaskMovedError } from "@/server/tasks-data";
+import { addTaskToDocument, applyTaskChange, captureTask, getAgentTask, listAgentTasks, runTaskOperation, TaskMovedError } from "@/server/tasks-data";
 
 /**
  * Permissions for which {@link buildDocumentContext} can currently supply a
@@ -535,6 +535,25 @@ export async function runAgentActionForUser({
           const task = await getAgentTask(userId, documentId, ordinal);
           if (!task) throw new TaskMovedError();
           await applyTaskChange(userId, { documentId, line: task.line, rawLine: task.rawLine, change, today });
+        },
+        remove: async ({ documentId, ordinal, today }) => {
+          const task = await getAgentTask(userId, documentId, ordinal);
+          if (!task) throw new TaskMovedError();
+          await runTaskOperation(userId, {
+            today,
+            items: [{ documentId, line: task.line, rawLine: task.rawLine }],
+            operation: { kind: "delete" },
+          });
+        },
+        move: async ({ documentId, ordinal, today, targetDocumentId }) => {
+          const task = await getAgentTask(userId, documentId, ordinal);
+          if (!task) throw new TaskMovedError();
+          const result = await runTaskOperation(userId, {
+            today,
+            items: [{ documentId, line: task.line, rawLine: task.rawLine }],
+            operation: { kind: "move", targetDocumentId },
+          });
+          return { targetTitle: result.targetTitle };
         },
       } : {}),
     };

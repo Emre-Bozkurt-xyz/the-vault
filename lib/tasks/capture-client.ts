@@ -1,8 +1,8 @@
 "use client";
 
-// Client side of quick capture, shared by the Tasks panel's "Add task…" box and
-// the command palette's `/task …`: runs the action, then announces the result
-// with an Undo, and tells any open task surface to refetch.
+// Client side of quick capture, shared by every "Add task…" box, the quick-add
+// dialog and the command palette's `/task …`: runs the action, announces the
+// result with an Undo, and tells any open task surface to refetch.
 
 import { todayDayKey } from "@/lib/tasks/dates";
 import { formatDueLabel } from "@/lib/tasks/dates";
@@ -13,12 +13,15 @@ import {
   type CaptureTaskResult,
 } from "@/server/tasks";
 
-export async function captureTaskFromClient(text: string): Promise<CaptureTaskResult> {
+export async function captureTaskFromClient(
+  text: string,
+  options: { targetDocumentId?: string | null } = {},
+): Promise<CaptureTaskResult> {
   const today = todayDayKey();
   let result: CaptureTaskResult;
 
   try {
-    result = await captureTaskAction({ today, text });
+    result = await captureTaskAction({ today, text, targetDocumentId: options.targetDocumentId ?? null });
   } catch {
     result = { ok: false, error: "Could not add the task." };
   }
@@ -33,7 +36,7 @@ export async function captureTaskFromClient(text: string): Promise<CaptureTaskRe
     : "";
   const { documentId, line, rawLine } = result;
 
-  dispatchTasksChanged();
+  dispatchTasksChanged({ documentId });
   showWorkspaceToast({
     message: `Added to ${result.destination}${due}: ${result.text}`,
     action: {
@@ -42,7 +45,7 @@ export async function captureTaskFromClient(text: string): Promise<CaptureTaskRe
         const undone = await undoCaptureAction({ today: todayDayKey(), documentId, line, rawLine }).catch(
           () => ({ ok: false as const, error: "Could not undo." }),
         );
-        dispatchTasksChanged();
+        dispatchTasksChanged({ documentId });
         if (!undone.ok) showWorkspaceToast({ message: undone.error, tone: "error" });
       },
     },

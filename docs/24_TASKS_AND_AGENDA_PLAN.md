@@ -244,8 +244,9 @@ and costs one stamp comparison when nothing has changed.
 
 Freshness caveat: `documents.markdown` is written by the collab server's
 debounced store (1.5s, at most 10s). A task edited in the editor reaches the
-agenda after that store. The panel also refetches on the existing
-`dispatchWorkspaceDocumentChanged` save events.
+agenda after that store. Since 2026-10-15 that store pushes a notice to the
+owner's open task views (§5.4), so they refetch without waiting for a focus
+event; before then, collaborative body edits fired no client event at all.
 
 ### 4.3 Parser
 
@@ -311,6 +312,91 @@ time, or clear), and append a task (capture, §6.3).
   `withLiveDocumentText`. Personal scope means the viewer owns every document the
   agenda shows, but the check stays.
 
+### 5.4 Live sync (2026-10-15)
+
+Every surface is a query over Markdown, so the server only has to say *which
+document's tasks changed*; clients refetch through the lazy index, which
+reparses just that document.
+
+- **Source.** `scripts/collab-server.mjs` keeps a per-document signature (sha1
+  of task-marker lines plus headings; empty when there are no task lines),
+  seeded in `afterLoadDocument`. `onStoreDocument` sends
+  `pg_notify('vault_tasks_changed', {"o": owner, "d": document})` inside its
+  store transaction only when the signature changed, so prose typing is
+  silent and the notice is delivered after commit. Task writes in the web
+  process (`reindexAfterWrite`: tick, reschedule, capture, delete, undo,
+  agent actions) notify immediately, ahead of the store. Task notes
+  (continuation lines) are not in the signature; editing only a note waits for
+  the next focus or task event.
+- **Fan-out.** `server/task-events.ts` holds one postgres.js `LISTEN` connection
+  per process (kept on `globalThis` for dev reloads) and routes notices by owner.
+  `GET /api/tasks/events` is an authenticated SSE stream (401 signed out, 204
+  while Tasks is off so EventSource stops, 25s heartbeat comments).
+- **Client.** `LiveTaskEvents` (mounted by `VaultWorkspaceShell` while Tasks is
+  on) runs `lib/tasks/live-events.ts`: one EventSource per tab, notices
+  coalesced over 250ms, held while the tab is hidden and flushed once when it is
+  shown, and one catch-up after a reconnect. It re-dispatches the existing
+  `dispatchTasksChanged` window event, which now carries `{ documentId }` so the
+  document side panel ignores other documents.
+- Verified 2026-10-15 against the real collab server: a headless collaborator's
+  task edit produced an SSE notice ~0.5s after flush and an untouched `/tasks`
+  page showed it; a prose-only edit produced no notice.
+
+- **Instant, same tab (second pass, 2026-10-15).** The SSE notice waits for the
+  collab server's store. A document open in an editor is fresher than that, so
+  `MarkdownEditor` (via `usePublishLiveTasks`, only for workspace editors with
+  Tasks on) parses its own text after each 250ms pause, but only when
+  `taskSourceSignature` (`lib/tasks/signature.ts`: task lines with line numbers,
+  their indented notes, headings) changed, and publishes the tasks to a per-tab
+  store (`lib/tasks/overlay.ts`). Every list merges them over the server's rows
+  for that document with `mergeLiveTasks`, filtered by `inAgenda`/`inTaskPage`
+  (the server queries' rules as predicates). Personal lists only take documents
+  the viewer owns (`ownedByViewer`); the document side panel takes its own
+  document whatever the role. The entry is withdrawn when the editor unmounts.
+- The collab-server signature also covers the indented lines under a task, so
+  editing a note alone now announces a change too.
+
+### 5.5 One write path: change, edit, delete, move (2026-10-15)
+
+Every workspace task write is one operation over one or more tasks:
+`runTaskOperationAction({ today, items: [{documentId, line, rawLine}], operation })`
+with `operation` = `{kind:"change", change}` | `{kind:"delete"}` |
+`{kind:"move", targetDocumentId}` (`lib/tasks/change-schema.ts`, max 200 items).
+`runTaskOperation` (`server/tasks-data.ts`) groups items by document, makes one
+collaboration write per document, and applies them **bottom-up** so lines still
+to come stay where the caller saw them. A task whose line moved is skipped and
+counted (`skipped`); only when every task is skipped does the call fail as
+"moved". The old single-task `updateTaskAction` and `deleteTaskAction` are gone.
+
+- **Text.** `TaskChange` gained `{type:"text", text}`: the task's words are
+  replaced whole; its marker and `:due`/`:done`/`:priority`/`:repeat` fields are
+  kept, moved after the new words (`planTaskEdit`).
+- **Delete** removes the task's whole list item (line, note, nested subtasks;
+  `planTaskRemoval`).
+- **Move** removes the items, then appends them dedented (`dedentTaskBlock`:
+  a subtask or a task inside a callout lands as a top-level item, children still
+  nested) to the end of the target in reading order. The target must be
+  editable. If the append fails the items are restored to their sources.
+- **Undo** (deletes and moves): `{ removed, appended }` blocks.
+  `undoTaskOperationAction` takes a moved block out of its destination only if
+  it is still there unedited (`planBlockRemoval`), then reinserts the removed
+  blocks top to bottom per document (`planTaskRestore`): a duplicate beats a loss.
+
+**Client (`lib/tasks/task-writes.ts`).** Every surface calls `runTaskWrite(tasks,
+change)`: one queue for the whole tab (two surfaces never race on a document);
+optimistic **patches** shared by all lists (`useTaskPatches`), keyed by document
+and exact line text rather than ordinal, so renumbering by deletes, moves and
+recurring completions cannot misapply them, and they drop out once a refetch or
+the live overlay shows the new line (`lib/tasks/optimistic.ts`). A field change
+records the line it will leave behind (`expectedRawLine`) so a second change
+queued for the same task still finds it. Toasts: deletes and moves confirm with
+Undo, bulk changes say what they did, skipped tasks are reported, failures are
+errors; then `dispatchTasksChanged` refetches everything.
+
+**Agents.** `vault.tasks.setTaskText`, `vault.tasks.deleteTask` and
+`vault.tasks.moveTask` join the existing actions, through new `remove`/`move`
+methods and the `text` change on the SDK task service.
+
 ## 6. Surfaces
 
 ### 6.1 Sidebar Tasks mode (glance)
@@ -352,6 +438,30 @@ mode plus a full page.
   heading, a few rendered lines of surrounding context, status and date controls,
   subtasks, and note.
 
+**Second pass (2026-10-15).** One shared row (`components/tasks/TaskRow.tsx`,
+variants `sidebar` / `page` / `compact`) and one menu (`TaskActionsMenu`: Edit
+text; Today / Tomorrow / Next week / Pick date / Clear date; Repeat, Priority and
+Move to submenus; Mark done or Reopen, In progress, Cancel; Delete) serve the
+sidebar, every page view and the detail panel.
+
+- **Done** view: tasks ticked in the last 30 days (`getCompletedTasksAction`),
+  grouped by completion day, newest first; untick to reopen.
+- **Multi-select**: Ctrl/Cmd-click toggles, Shift-click selects a range,
+  Shift+`j`/`k` extends, Ctrl/Cmd+`a` selects every listed task, Esc clears.
+  A sticky bar above the list offers Done/Reopen, Today, Tomorrow, Date…,
+  Priority, Move and Delete for the selection; a row's menu and dragging a
+  selected card in Week act on the whole selection.
+- **Overdue → "Move all to today"** in the Agenda heading and the sidebar's
+  Overdue section.
+- **Inline edit**: menu "Edit text", `e`, or clicking the title in the detail
+  panel; the same field as renaming in the Files panel (Enter/blur saves, Esc
+  cancels).
+- **Keyboard** adds `e`, `p` (cycle priority), `Delete`/`Backspace` (with Undo),
+  and `?` for a shortcut sheet; `x`/`t`/`m`/`p`/`Delete` act on the selection.
+- **Move to**: the Inbox and documents already in the list, plus "Other
+  document…", a search dialog (`MoveTasksDialogHost`, mounted once by the shell,
+  opened with `requestMoveTasks`).
+
 ### 6.3 Inbox and capture
 
 - **Inbox pointer.** Stored in the `vault.tasks` extension settings
@@ -366,6 +476,19 @@ mode plus a full page.
   phrase is parsed with the §7 grammar: `/task send invoice fri` appends
   `- [ ] send invoice :due[2026-10-02]` to the end of the Inbox. Capture never
   navigates. A toast confirms "Added to Inbox · Fri 2 Oct" with **Undo**.
+- **Richer capture (2026-10-15).** `parseCapture` peels extras off the end, in
+  any order: a date, `!high`/`!med`/`!low` (also `!h`/`!m`/`!l`), `every day|week|
+  month|year`, `every N units`, `every other week`, `every monday` (weekly from
+  the next Monday), and `#Title` or `#[[Multi word]]`. What does not parse stays
+  in the words (`fix bug #123`). A `#Title` counts only if it names exactly one
+  owned document; otherwise it is kept as typed. The one capture field
+  (`TaskCaptureInput`: sidebar, quick-add dialog) shows what it understood as
+  chips before saving, and `#` offers the user's documents (`searchTaskTargetsAction`);
+  a picked document is sent as `targetDocumentId` (must be editable) and wins.
+  An explicit target skips the daily-note `:due[today]` default.
+- **Quick add from anywhere.** `global.quickAddTask` (default `Mod-Alt-t`,
+  rebindable in Hotkeys) and the palette's "Add task…" open
+  `QuickAddTaskDialogHost`, mounted by the shell while Tasks is on.
 - **Daily note option.** `captureTarget` in Tasks settings switches quick capture
   to a root-level `YYYY-MM-DD` document. A transaction serializes first captures
   for the same owner so they reuse one note. Captures without an explicit date

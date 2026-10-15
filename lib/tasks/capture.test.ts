@@ -56,3 +56,43 @@ describe("parseDailyCapture", () => {
       .toBe("- [ ] send invoice :due[2026-10-02]");
   });
 });
+
+describe("parseCapture extras", () => {
+  const parse = (input: string) => parseCapture(input, today);
+
+  it("reads priority, recurrence and target in any order at the end", () => {
+    expect(parse("water plants every week !low")).toMatchObject({
+      text: "water plants",
+      priority: "low",
+      repeat: "weekly",
+      line: "- [ ] water plants :priority[low] :repeat[weekly]",
+    });
+    expect(parse("draft intro friday !high #Thesis")).toMatchObject({
+      text: "draft intro",
+      priority: "high",
+      target: "Thesis",
+      line: "- [ ] draft intro :due[2026-10-02] :priority[high]",
+    });
+    expect(parse("call the bank #[[Money stuff]] tomorrow")).toMatchObject({
+      text: "call the bank",
+      target: "Money stuff",
+      due: { day: "2026-10-01", time: null },
+    });
+  });
+
+  it("turns 'every <weekday>' into a weekly task starting that day", () => {
+    expect(parse("standup every monday")?.line).toBe(
+      "- [ ] standup :due[2026-10-05] :repeat[weekly]",
+    );
+    expect(parse("review every other week")?.repeat).toBe("every 2 weeks");
+    expect(parse("backup every 3 days")?.repeat).toBe("every 3 days");
+  });
+
+  it("keeps what does not parse as words", () => {
+    expect(parse("fix bug #123 in parser")?.text).toBe("fix bug #123 in parser");
+    expect(parse("every")?.text).toBe("every");
+    expect(parse("tell everyone every")?.text).toBe("tell everyone every");
+    expect(parse("!high")?.text).toBe("!high");
+    expect(parse("#Thesis")?.text).toBe("#Thesis");
+  });
+});

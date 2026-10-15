@@ -10,12 +10,26 @@ import { createCoalescedRunner } from "@/lib/coalesce";
 import { withDocumentWriteLock } from "@/lib/document-write-lock";
 import { withLiveDocumentText } from "@/lib/collab-write";
 import { getDocumentAccess } from "@/lib/permissions";
-import { parseCapture, parseDailyCapture, type CapturedTask } from "@/lib/tasks/capture";
+import { buildTaskLine, parseCapture, type CapturedTask } from "@/lib/tasks/capture";
+import { findOwnedDocumentByTitleForUser } from "@/server/extension-documents";
 import { isValidDayKey } from "@/lib/tasks/dates";
 import { locateTaskLine, type TaskChange } from "@/lib/tasks/edit";
-import { planTaskDocumentEdit } from "@/lib/tasks/document-edit";
+import type * as Y from "yjs";
+
+import type { taskOperationSchema, taskUndoSchema } from "@/lib/tasks/change-schema";
+import {
+  dedentTaskBlock,
+  planBlockAppend,
+  planBlockRemoval,
+  planTaskDocumentEdit,
+  planTaskRemoval,
+  planTaskRestore,
+} from "@/lib/tasks/document-edit";
+import type { TextEdit } from "@/lib/tasks/edit";
+import { listAccessibleFoldersForUser } from "@/server/folders-data";
 import { parseTasks, type TaskPriority, type TaskStatus } from "@/lib/tasks/parse";
 import { createDocumentForUser } from "@/server/documents-data";
+import { notifyTaskSourceChanged } from "@/server/task-events";
 import { getUserExtensionSetting, upsertUserExtensionSettings } from "@/server/user-settings";
 
 /**
@@ -440,36 +454,72 @@ export type CaptureResult = CapturedTask & {
  */
 export async function captureTask(
   userId: string,
-  input: { text: string; today: string },
+  input: { text: string; today: string; targetDocumentId?: string | null },
 ): Promise<CaptureResult | null> {
   if (!isValidDayKey(input.today)) throw new Error("Invalid capture day.");
+  let captured = parseCapture(input.text, input.today);
+  if (!captured) return null;
+
+  // An explicit target (picked in the capture box) wins over `#Title`, which
+  // only counts when it names exactly one of the user's documents; otherwise
+  // it stays in the task's words as typed.
+  let target: { id: string; title: string } | null = null;
+  if (input.targetDocumentId) {
+    const access = await getDocumentAccess(userId, input.targetDocumentId);
+    const [row] = access.canEdit
+      ? await db
+          .select({ id: documents.id, title: documents.title })
+          .from(documents)
+          .where(and(eq(documents.id, input.targetDocumentId), isNull(documents.deletedAt)))
+          .limit(1)
+      : [];
+    if (!row) throw new Error("That document was not found or you cannot edit it.");
+    target = row;
+  } else if (captured.target) {
+    const found = await findOwnedDocumentByTitleForUser(userId, captured.target);
+    if (found) {
+      target = { id: found.documentId, title: found.title };
+    } else {
+      const token = /\s/.test(captured.target) ? `#[[${captured.target}]]` : `#${captured.target}`;
+      const text = `${captured.text} ${token}`;
+      captured = { ...captured, text, target: null, line: buildTaskLine({ ...captured, text }) };
+    }
+  }
+
+  if (target) {
+    const result = await appendCapturedLine(userId, target.id, captured);
+    return { ...result, destination: target.title };
+  }
+
   const settings = await readTasksSettings(userId);
   const dailyNote = settings.captureTarget === "daily-note";
-  const captured = dailyNote
-    ? parseDailyCapture(input.text, input.today)
-    : parseCapture(input.text, input.today);
-  if (!captured) return null;
+  if (dailyNote && !captured.due) {
+    const due = { day: input.today, time: null };
+    captured = { ...captured, due, line: buildTaskLine({ ...captured, due }) };
+  }
 
   const documentId = dailyNote
     ? await resolveDailyNoteDocument(userId, input.today)
     : await resolveInboxDocument(userId);
+  const result = await appendCapturedLine(userId, documentId, captured);
+  return { ...result, destination: dailyNote ? input.today : "Inbox" };
+}
+
+/** Appends a captured task's line through collaboration and reindexes. */
+async function appendCapturedLine(
+  userId: string,
+  documentId: string,
+  captured: CapturedTask,
+): Promise<Omit<CaptureResult, "destination">> {
   let lineIndex = 0;
 
-  const { markdown } = await withLiveDocumentText(
-    userId,
-    documentId,
-    (ytext) => {
-      const current = ytext.toString();
-      const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
-      // Lines before the insertion point, counting the separator's new line.
-      lineIndex = current.length === 0 ? 0 : current.split("\n").length - (separator ? 0 : 1);
-      ytext.insert(current.length, `${separator}${captured.line}\n`);
-    },
-    { origin: "tasks", restorePoint: false },
-  );
+  await writeDocument(userId, documentId, (ytext) => {
+    const { edit, lineIndex: at } = planBlockAppend(ytext.toString(), captured.line);
+    lineIndex = at;
+    applyEdit(ytext, edit);
+  });
 
-  await reindexAfterWrite(documentId, markdown);
-  return { ...captured, documentId, lineIndex, destination: dailyNote ? input.today : "Inbox" };
+  return { ...captured, documentId, lineIndex };
 }
 
 /** Append a captured task to a specific owned document using the same live write path as Inbox capture. */
@@ -482,15 +532,7 @@ export async function addTaskToDocument(
   if (!captured) return null;
   const access = await getDocumentAccess(userId, documentId);
   if (!access.canEdit) throw new Error("Document not found or you cannot edit it.");
-  let lineIndex = 0;
-  const { markdown } = await withLiveDocumentText(userId, documentId, (ytext) => {
-    const current = ytext.toString();
-    const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
-    lineIndex = current.length === 0 ? 0 : current.split("\n").length - (separator ? 0 : 1);
-    ytext.insert(current.length, `${separator}${captured.line}\n`);
-  }, { origin: "tasks", restorePoint: false });
-  await reindexAfterWrite(documentId, markdown);
-  return { ...captured, documentId, lineIndex, destination: "document" };
+  return { ...(await appendCapturedLine(userId, documentId, captured)), destination: "document" };
 }
 
 /** Owner-scoped indexed tasks for agent discovery. Refresh before querying. */
@@ -575,6 +617,247 @@ export async function removeCapturedTask(
   await reindexAfterWrite(input.documentId, markdown);
 }
 
+export type TaskLocator = { documentId: string; line: number; rawLine: string };
+export type TaskOperation = z.infer<typeof taskOperationSchema>;
+export type TaskUndo = z.infer<typeof taskUndoSchema>;
+type TaskBlock = TaskUndo["removed"][number];
+
+export type TaskOperationResult = {
+  /** Tasks changed, deleted or moved. */
+  applied: number;
+  /** Tasks whose line moved or changed since the caller read it; left alone. */
+  skipped: number;
+  /** For deletes and moves; null for field changes. */
+  undo: TaskUndo | null;
+  /** A move's destination, for the confirmation. */
+  targetTitle: string | null;
+};
+
+function applyEdit(ytext: Y.Text, edit: TextEdit) {
+  if (edit.to > edit.from) ytext.delete(edit.from, edit.to - edit.from);
+  if (edit.insert) ytext.insert(edit.from, edit.insert);
+}
+
+/** One permission-checked live write to one document, then a reindex and notice. */
+async function writeDocument(userId: string, documentId: string, mutate: (ytext: Y.Text) => void) {
+  const { markdown } = await withDocumentWriteLock(documentId, () =>
+    withLiveDocumentText(userId, documentId, (ytext) => mutate(ytext), {
+      origin: "tasks",
+      restorePoint: false,
+    }),
+  );
+  await reindexAfterWrite(documentId, markdown);
+}
+
+/**
+ * The workspace's one write path for tasks (plan §5.5): a field change, a
+ * delete, or a move to another document, over one or many tasks. Each source
+ * document is one collaboration write, applied bottom-up so the lines still to
+ * come stay where the caller saw them. A task whose line changed since the
+ * caller read it is skipped, never guessed at; when every task was skipped the
+ * whole call fails with `TaskMovedError`.
+ *
+ * Deletes and moves take the task's whole item (note and subtasks) and return
+ * an `undo` record for `undoTaskOperation`. A move appends the items, dedented,
+ * to the end of the target document in reading order, after removing them.
+ */
+export async function runTaskOperation(
+  userId: string,
+  input: { today: string; items: TaskLocator[]; operation: TaskOperation },
+): Promise<TaskOperationResult> {
+  const { today, operation } = input;
+  let target: { id: string; title: string } | null = null;
+
+  if (operation.kind === "move") {
+    const access = await getDocumentAccess(userId, operation.targetDocumentId);
+    const [row] = access.canEdit
+      ? await db
+          .select({ id: documents.id, title: documents.title })
+          .from(documents)
+          .where(and(eq(documents.id, operation.targetDocumentId), isNull(documents.deletedAt)))
+          .limit(1)
+      : [];
+    if (!row) throw new Error("That document was not found or you cannot edit it.");
+    target = row;
+  }
+
+  const byDocument = new Map<string, TaskLocator[]>();
+  for (const item of input.items) {
+    // Moving a task into the document it is already in does nothing.
+    if (target && item.documentId === target.id) continue;
+    const list = byDocument.get(item.documentId) ?? [];
+    list.push(item);
+    byDocument.set(item.documentId, list);
+  }
+
+  let applied = 0;
+  let skipped = input.items.length - [...byDocument.values()].reduce((sum, list) => sum + list.length, 0);
+  const removed: TaskBlock[] = [];
+
+  for (const [documentId, items] of byDocument) {
+    const bottomUp = [...items].sort((a, b) => b.line - a.line);
+
+    await writeDocument(userId, documentId, (ytext) => {
+      for (const item of bottomUp) {
+        const text = ytext.toString();
+
+        if (operation.kind === "change") {
+          const edits = planTaskDocumentEdit(text, item.line, item.rawLine, operation.change, today);
+          if (!edits) {
+            skipped += 1;
+            continue;
+          }
+          for (const edit of edits) applyEdit(ytext, edit);
+        } else {
+          const removal = planTaskRemoval(text, item.line, item.rawLine);
+          if (!removal) {
+            skipped += 1;
+            continue;
+          }
+          applyEdit(ytext, removal.edit);
+          removed.push({ documentId, lineIndex: removal.lineIndex, block: removal.block });
+        }
+        applied += 1;
+      }
+    });
+  }
+
+  if (applied === 0) throw new TaskMovedError();
+  if (operation.kind === "change") return { applied, skipped, undo: null, targetTitle: null };
+
+  const appended: TaskBlock[] = [];
+
+  if (target) {
+    const destination = target;
+    // Reading order: by source document as given, then top to bottom.
+    const order = [...byDocument.keys()];
+    const blocks = [...removed]
+      .sort((a, b) => order.indexOf(a.documentId) - order.indexOf(b.documentId) || a.lineIndex - b.lineIndex)
+      .map((entry) => dedentTaskBlock(entry.block))
+      .join("\n");
+
+    try {
+      await writeDocument(userId, destination.id, (ytext) => {
+        const { edit, lineIndex } = planBlockAppend(ytext.toString(), blocks);
+        applyEdit(ytext, edit);
+        appended.push({ documentId: destination.id, lineIndex, block: blocks });
+      });
+    } catch (error) {
+      // Nothing may be lost: put the tasks back where they came from.
+      await restoreTaskBlocks(userId, removed).catch((restoreError: unknown) =>
+        console.error("Could not restore tasks after a failed move", restoreError),
+      );
+      throw error;
+    }
+  }
+
+  return { applied, skipped, undo: { removed, appended }, targetTitle: target?.title ?? null };
+}
+
+/** Puts removed blocks back at their old lines, top to bottom per document. */
+async function restoreTaskBlocks(userId: string, blocks: TaskBlock[]) {
+  const byDocument = new Map<string, TaskBlock[]>();
+  for (const block of blocks) byDocument.set(block.documentId, [...(byDocument.get(block.documentId) ?? []), block]);
+
+  for (const [documentId, list] of byDocument) {
+    await writeDocument(userId, documentId, (ytext) => {
+      // Ascending: each insert returns the lines below it to where they were.
+      for (const entry of [...list].sort((a, b) => a.lineIndex - b.lineIndex)) {
+        applyEdit(ytext, planTaskRestore(ytext.toString(), entry.lineIndex, entry.block));
+      }
+    });
+  }
+}
+
+/**
+ * Undo for a delete or move. A moved block is taken out of its destination
+ * only if it is still there unedited; otherwise the destination is left alone
+ * and the originals still come back (a duplicate beats a loss).
+ */
+export async function undoTaskOperation(userId: string, undo: TaskUndo): Promise<void> {
+  for (const entry of undo.appended) {
+    await writeDocument(userId, entry.documentId, (ytext) => {
+      const removal = planBlockRemoval(ytext.toString(), entry.lineIndex, entry.block);
+      if (removal) applyEdit(ytext, removal);
+    });
+  }
+  await restoreTaskBlocks(userId, undo.removed);
+}
+
+export type CompletedTask = Omit<PageTask, "doneDay"> & { doneDay: string };
+
+/** Tasks completed on or after `since` (newest first), for the Tasks page's Done view. */
+export async function listCompletedTasks(userId: string, since: string): Promise<CompletedTask[]> {
+  const rows = await db
+    .select({
+      documentId: documentTasks.documentId,
+      documentTitle: documents.title,
+      folderId: documents.folderId,
+      ordinal: documentTasks.ordinal,
+      line: documentTasks.line,
+      rawLine: documentTasks.rawLine,
+      parentOrdinal: documentTasks.parentOrdinal,
+      status: documentTasks.status,
+      text: documentTasks.text,
+      note: documentTasks.note,
+      heading: documentTasks.heading,
+      dueDay: documentTasks.dueDay,
+      dueTime: documentTasks.dueTime,
+      doneDay: documentTasks.doneDay,
+      priority: documentTasks.priority,
+      repeat: documentTasks.repeat,
+    })
+    .from(documentTasks)
+    .innerJoin(documents, eq(documents.id, documentTasks.documentId))
+    .where(
+      and(
+        eq(documents.ownerId, userId),
+        isNull(documents.deletedAt),
+        eq(documentTasks.status, "done"),
+        gte(documentTasks.doneDay, since),
+      ),
+    )
+    .orderBy(sql`${documentTasks.doneDay} desc`, asc(documents.title), asc(documentTasks.ordinal))
+    .limit(500);
+
+  return rows.flatMap((row) => (row.doneDay ? [{ ...row, doneDay: row.doneDay }] : []));
+}
+
+export type TaskTargetDocument = { id: string; title: string; path: string | null };
+
+/** Owned documents whose title matches `query`, for "Move to…" and `#` in capture. */
+export async function searchTaskTargetDocuments(
+  userId: string,
+  query: string,
+  limit = 8,
+): Promise<TaskTargetDocument[]> {
+  const term = query.trim().replace(/[%_\\]/g, "\\$&");
+  const rows = await db
+    .select({ id: documents.id, title: documents.title, folderId: documents.folderId })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.ownerId, userId),
+        isNull(documents.deletedAt),
+        term ? ilike(documents.title, `%${term}%`) : undefined,
+      ),
+    )
+    // Prefix matches first, then the most recently edited.
+    .orderBy(
+      sql`case when ${documents.title} ilike ${`${term}%`} then 0 else 1 end`,
+      sql`${documents.updatedAt} desc`,
+    )
+    .limit(limit);
+
+  if (rows.length === 0) return [];
+  const paths = new Map((await listAccessibleFoldersForUser(userId)).map((folder) => [folder.id, folder.path]));
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    path: row.folderId ? (paths.get(row.folderId) ?? null) : null,
+  }));
+}
+
 async function reindexAfterWrite(documentId: string, markdown: string) {
   const [row] = await db
     .select({ updatedAt: sql<string>`${documents.updatedAt}::text` })
@@ -584,6 +867,10 @@ async function reindexAfterWrite(documentId: string, markdown: string) {
   if (row) {
     await reindexDocumentTasks({ documentId, markdown, sourceUpdatedAt: row.updatedAt });
   }
+
+  // The index already holds the new text, so other tabs and devices can
+  // refetch now rather than after the collab server's debounced store.
+  await notifyTaskSourceChanged(documentId);
 }
 
 export type PageTask = AgendaTask & {

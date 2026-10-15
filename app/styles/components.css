@@ -425,8 +425,18 @@
     text-decoration: none;
   }
 
-  a.vault-task-query-item:hover {
+  .vault-task-query-item[data-linkable="true"]:hover {
     background: color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  /* Text and meta, linking to the task's line; the box beside it stays its own control. */
+  .vault-task-query-link {
+    display: grid;
+    grid-column: 2 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    color: inherit;
+    text-decoration: none;
   }
 
   .vault-task-query-item .vault-task-box {

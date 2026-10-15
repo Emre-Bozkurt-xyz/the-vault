@@ -1,39 +1,65 @@
 "use client";
 
-import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
-import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  CalendarClock,
   CalendarDays,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
+  FileInput,
+  FileSearch,
+  FileText,
+  Flag,
   Inbox,
+  Keyboard,
   ListChecks,
   ListTodo,
   Search,
+  Sun,
+  Sunrise,
+  Trash2,
+  X,
 } from "lucide-react";
 
-import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
-import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
+import { useKeybindings } from "@/components/shortcuts/KeybindingsProvider";
+import { formatBindingForDisplay } from "@/lib/shortcuts/binding";
+import { requestMoveTasks } from "@/components/tasks/MoveTasksDialog";
+import { sentenceCase, taskMoveTargets, type TaskMoveTarget } from "@/components/tasks/TaskActionsMenu";
 import { TaskDetailPanel, type TaskRef } from "@/components/tasks/TaskDetailPanel";
-import { useContextMenu } from "@/components/ui/use-context-menu";
+import { TaskRow } from "@/components/tasks/TaskRow";
+import { useLiveDocumentTasks } from "@/components/tasks/use-live-tasks";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
+import { requestEditorJump } from "@/lib/editor-jump-events";
+import { buildFolderPaths, type FolderPathNode } from "@/lib/folder-paths";
 import {
+  addDaysToDayKey,
   addMonths,
+  formatDueLabel,
   formatMonthLabel,
   getMonthMatrix,
   todayDayKey,
   type CalendarMonth,
 } from "@/lib/tasks/dates";
-import { requestEditorJump } from "@/lib/editor-jump-events";
-import { buildFolderPaths, type FolderPathNode } from "@/lib/folder-paths";
-import { addDaysToDayKey, formatDueLabel } from "@/lib/tasks/dates";
-import { readTaskRepeat, type TaskChange } from "@/lib/tasks/edit";
+import { applyTaskPatches } from "@/lib/tasks/optimistic";
+import { inTaskPage, liveRow, mergeLiveTasks } from "@/lib/tasks/overlay";
+import { TASK_PRIORITIES, type TaskPriority } from "@/lib/tasks/parse";
+import { runTaskWrite, useTaskPatches, type RowChange } from "@/lib/tasks/task-writes";
 import {
   dayCounts,
   filterTasks,
@@ -46,26 +72,25 @@ import {
   type TaskFilters,
 } from "@/lib/tasks/views";
 import { cn } from "@/lib/utils";
-import { dispatchTasksChanged, subscribeToTasksChanged } from "@/lib/workspace-toast";
-import {
-  getTaskDetailAction,
-  getTaskPageAction,
-  updateTaskAction,
-  type TaskPageResult,
-} from "@/server/tasks";
-import type { PageTask, TaskDetail } from "@/server/tasks-data";
+import { subscribeToTasksChanged } from "@/lib/workspace-toast";
+import { getCompletedTasksAction, getTaskDetailAction, getTaskPageAction, type CompletedTasksResult, type TaskPageResult } from "@/server/tasks";
+import type { CompletedTask, PageTask, TaskDetail } from "@/server/tasks-data";
 import type { WorkspaceAgendaEvent } from "@/lib/extension-api/server";
 
 /**
- * The full Tasks page (docs/24_TASKS_AND_AGENDA_PLAN.md §6.2, slice 5): Agenda,
- * Week, Month and Backlog views over every open task in the viewer's own
- * documents, with filters, keyboard control and a detail panel on the right.
- * All grouping lives in `lib/tasks/views.ts`; this file is presentation and
- * the optimistic write queue (the same pattern as the sidebar agenda).
+ * The full Tasks page (docs/24_TASKS_AND_AGENDA_PLAN.md §6.2): Agenda, Week,
+ * Month, Backlog and Done views over the viewer's own tasks, with filters,
+ * multi-select and bulk actions, keyboard control and a detail panel.
+ *
+ * Rows come from the server, with documents open in an editor replaced by
+ * their live parse and pending writes applied on top (the same pipeline as
+ * the sidebar). Grouping lives in `lib/tasks/views.ts`; writes go through
+ * `lib/tasks/task-writes.ts`.
  */
 
-type View = "agenda" | "week" | "month" | "backlog";
+type View = "agenda" | "week" | "month" | "backlog" | "done";
 type OkPage = Extract<TaskPageResult, { ok: true }>;
+type ListTask = PageTask | CompletedTask;
 
 const pageDescriptor = { type: "tasks", title: "Tasks", href: "/tasks" } as const;
 const refetchAfterSaveMs = 2500;
@@ -76,15 +101,27 @@ const views: Array<{ id: View; label: string; icon: typeof ListTodo }> = [
   { id: "week", label: "Week", icon: CalendarRange },
   { id: "month", label: "Month", icon: CalendarDays },
   { id: "backlog", label: "Backlog", icon: Inbox },
+  { id: "done", label: "Done", icon: CircleCheck },
 ];
 
-export function TasksPage({
-  enabled,
-  folders,
-}: {
-  enabled: boolean;
-  folders: FolderPathNode[];
-}) {
+const shortcutRows: Array<[string[], string]> = [
+  [["j", "k"], "Move down / up"],
+  [["Shift", "j / k"], "Extend the selection"],
+  [["Ctrl", "click"], "Add a task to the selection"],
+  [["Shift", "click"], "Select a range"],
+  [["Ctrl", "a"], "Select every listed task"],
+  [["x"], "Done / not done"],
+  [["t"], "Due today"],
+  [["m"], "Due tomorrow"],
+  [["p"], "Next priority"],
+  [["e"], "Edit text"],
+  [["Delete"], "Delete (with Undo)"],
+  [["Enter"], "Open at its line"],
+  [["/"], "Filter"],
+  [["Esc"], "Clear the selection"],
+];
+
+export function TasksPage({ enabled, folders }: { enabled: boolean; folders: FolderPathNode[] }) {
   return enabled ? <TasksWorkspace folders={folders} /> : <TasksDisabled />;
 }
 
@@ -110,53 +147,44 @@ function TasksDisabled() {
   );
 }
 
-function patchTask(task: PageTask, change: TaskChange, today: string): PageTask | null {
-  if (change.type === "status") {
-    if (change.status === "cancelled") return null;
-    return {
-      ...task,
-      status: change.status,
-      doneDay: change.status === "done" ? (task.doneDay ?? today) : null,
-    };
-  }
-  if (change.type === "repeat") return { ...task, repeat: change.repeat };
-  if (change.type === "priority") return { ...task, priority: change.priority };
-  return { ...task, dueDay: change.day, dueTime: change.day ? (change.time ?? null) : null };
-}
+const nextPriority: Record<string, TaskPriority | null> = { none: "high", high: "medium", medium: "low", low: null };
 
 function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
   const router = useRouter();
   const [data, setData] = useState<TaskPageResult | null>(null);
+  const [completed, setCompleted] = useState<CompletedTasksResult | null>(null);
   const [view, setView] = useState<View>("agenda");
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [month, setMonth] = useState<CalendarMonth | null>(null);
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const [filters, setFilters] = useState<TaskFilters>({ text: "", folderId: null, tag: null });
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  /** The keyboard cursor; its task fills the detail panel. */
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  /** An explicit multi-selection (Ctrl/Shift-click, Shift+j/k). */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const filterInputRef = useRef<HTMLInputElement | null>(null);
   const requestIdRef = useRef(0);
   const detailRequestRef = useRef(0);
-  const serverDataRef = useRef<OkPage | null>(null);
-  const pendingWritesRef = useRef(0);
-  const queuesRef = useRef(new Map<string, Promise<void>>());
-  const recurrenceVersionsRef = useRef(new Map<string, number>());
+  const live = useLiveDocumentTasks();
+  const patches = useTaskPatches();
 
   const folderPaths = useMemo(() => buildFolderPaths(folders), [folders]);
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
-    let next: TaskPageResult;
-    try {
-      next = await getTaskPageAction({ today: todayDayKey() });
-    } catch {
-      next = { ok: false, error: "Could not load tasks." };
-    }
+    const today = todayDayKey();
+    const [next, done] = await Promise.all([
+      getTaskPageAction({ today }).catch((): TaskPageResult => ({ ok: false, error: "Could not load tasks." })),
+      getCompletedTasksAction({ today }).catch(
+        (): CompletedTasksResult => ({ ok: false, error: "Could not load completed tasks." }),
+      ),
+    ]);
     if (requestId !== requestIdRef.current) return;
-    if (next.ok) serverDataRef.current = next;
-    if (pendingWritesRef.current === 0) setData(next);
+    setData(next);
+    setCompleted(done);
   }, []);
 
   useEffect(() => {
@@ -177,191 +205,245 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
     };
   }, [load]);
 
-  const ok = data?.ok ? data : null;
+  const ok: OkPage | null = data?.ok ? data : null;
   const today = ok?.today ?? todayDayKey();
+  const tagsByDocument = ok?.tagsByDocument;
+
+  const tasks = useMemo<PageTask[]>(() => {
+    if (!ok) return [];
+    const merged = mergeLiveTasks(ok.tasks, live, {
+      ownedOnly: true,
+      include: (task) => inTaskPage(task, ok.today),
+      build: (task, document) => liveRow(task, document),
+    });
+    return applyTaskPatches(merged, patches, ok.today).filter((task) => inTaskPage(task, ok.today));
+  }, [ok, live, patches]);
 
   const visible = useMemo(
-    () =>
-      ok
-        ? filterTasks(ok.tasks, filters, { folders, tagsByDocument: ok.tagsByDocument })
-        : [],
-    [ok, filters, folders],
+    () => (ok ? filterTasks(tasks, filters, { folders, tagsByDocument: ok.tagsByDocument }) : []),
+    [ok, tasks, filters, folders],
   );
 
-  const changeTask = useCallback(
-    (ref: TaskRef, change: TaskChange) => {
-      const key = taskKey(ref);
-      const version = recurrenceVersionsRef.current.get(ref.documentId) ?? 0;
-      setNotice(null);
-      setData((current) => {
-        if (!current?.ok) return current;
-        const tasks = current.tasks.flatMap((task) => {
-          if (taskKey(task) !== key) return [task];
-          const patched = patchTask(task, change, current.today);
-          return patched ? [patched] : [];
-        });
-        return { ...current, tasks };
-      });
-      pendingWritesRef.current += 1;
+  const doneTasks = useMemo<CompletedTask[]>(() => {
+    if (!completed?.ok) return [];
+    const patched = applyTaskPatches(completed.tasks, patches, today).filter(
+      (task): task is CompletedTask => task.status === "done" && Boolean(task.doneDay),
+    );
+    return filterTasks(patched, filters, { folders, tagsByDocument: tagsByDocument ?? {} });
+  }, [completed, patches, today, filters, folders, tagsByDocument]);
 
-      const queues = queuesRef.current;
-      const previous = queues.get(ref.documentId) ?? Promise.resolve();
-      const run = previous.then(async () => {
-        if ((recurrenceVersionsRef.current.get(ref.documentId) ?? 0) !== version) {
-          pendingWritesRef.current -= 1;
-          setNotice("Task structure may have changed. Refresh before changing another task.");
-          dispatchTasksChanged();
-          return;
-        }
-        const latest =
-          version > 0 ? ref : serverDataRef.current?.tasks.find((task) => taskKey(task) === key) ?? ref;
-        const result = await updateTaskAction({
-          today: todayDayKey(),
-          documentId: latest.documentId,
-          line: latest.line,
-          rawLine: latest.rawLine,
-          change,
-        }).catch(() => ({ ok: false as const, error: "Could not change the task." }));
-
-        pendingWritesRef.current -= 1;
-        if (result.ok && change.type === "status" && change.status === "done" && readTaskRepeat(latest.rawLine)) recurrenceVersionsRef.current.set(ref.documentId, version + 1);
-        if (!result.ok) setNotice(result.error);
-        // Refreshes this page and the sidebar agenda alike.
-        dispatchTasksChanged();
-      });
-
-      queues.set(ref.documentId, run);
-      void run.finally(() => {
-        if (queues.get(ref.documentId) === run) queues.delete(ref.documentId);
-      });
-    },
-    [],
-  );
-
-  const openTask = useCallback(
-    (ref: TaskRef) => {
-      requestEditorJump({ documentId: ref.documentId, line: ref.line, text: ref.rawLine });
-      router.push(`/docs/${ref.documentId}`);
-    },
-    [router],
-  );
-
-  // Detail for the selected task; refetched when the data changes under it.
-  useEffect(() => {
-    if (!selectedKey) return;
-    const [documentId, ordinalText] = selectedKey.split(":");
-    const requestId = ++detailRequestRef.current;
-    void getTaskDetailAction({ documentId, ordinal: Number(ordinalText) })
-      .catch(() => null)
-      .then((next) => {
-        if (requestId !== detailRequestRef.current) return;
-        setDetail(next);
-        setDetailLoading(false);
-      });
-  }, [selectedKey, data]);
-
-  const select = (key: string | null) => {
-    setSelectedKey(key);
-    setDetailLoading(key !== null);
-    if (key === null) setDetail(null);
-  };
+  const moveTargets = useMemo(() => taskMoveTargets(tasks, ok?.inboxDocumentId ?? null), [tasks, ok?.inboxDocumentId]);
 
   const currentWeek = weekStart ?? mondayOf(today);
-  const currentMonth: CalendarMonth = month ?? {
-    year: Number(today.slice(0, 4)),
-    month: Number(today.slice(5, 7)),
-  };
+  const currentMonth: CalendarMonth = month ?? { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) };
 
-  // The tasks in on-screen order, for j/k.
-  const ordered = useMemo<PageTask[]>(() => {
+  // The tasks in on-screen order, for j/k, ranges and select-all.
+  const ordered = useMemo<ListTask[]>(() => {
     if (!ok) return [];
-    if (view === "agenda") {
-      return groupAgenda(visible, today, ok.inboxDocumentId, focusDay).flatMap((group) => group.tasks);
-    }
+    if (view === "agenda") return groupAgenda(visible, today, ok.inboxDocumentId, focusDay).flatMap((group) => group.tasks);
     if (view === "week") {
       const byDay = tasksByDay(visible, weekDays(currentWeek));
       return weekDays(currentWeek).flatMap((day) => byDay.get(day) ?? []);
     }
-    if (view === "backlog") {
-      return groupBacklog(visible, ok.inboxDocumentId).flatMap((group) => group.tasks);
-    }
+    if (view === "backlog") return groupBacklog(visible, ok.inboxDocumentId).flatMap((group) => group.tasks);
+    if (view === "done") return groupDone(doneTasks).flatMap((group) => group.tasks);
     return [];
-  }, [ok, view, visible, today, focusDay, currentWeek]);
+  }, [ok, view, visible, today, focusDay, currentWeek, doneTasks]);
 
-  // Keyboard: j/k move, x ticks, t/m schedule, Enter opens, / filters.
+  const byKey = useMemo(() => new Map(ordered.map((task) => [taskKey(task), task])), [ordered]);
+  const focused = (focusKey && byKey.get(focusKey)) || null;
+  const selectedTasks = useMemo(
+    () => ordered.filter((task) => selection.has(taskKey(task))),
+    [ordered, selection],
+  );
+
+  /** What an action applies to: the selection, else the focused task. */
+  const targetsFor = useCallback(
+    (row?: ListTask): ListTask[] => {
+      if (row && !selection.has(taskKey(row))) return [row];
+      if (selectedTasks.length > 0) return selectedTasks;
+      return focused ? [focused] : [];
+    },
+    [selection, selectedTasks, focused],
+  );
+
+  const apply = useCallback(
+    (change: RowChange, row?: ListTask) => {
+      const targets = targetsFor(row);
+      if (targets.length === 0) return;
+      void runTaskWrite(targets, change);
+      if (change.type === "delete" || change.type === "move") setSelection(new Set());
+    },
+    [targetsFor],
+  );
+
+  const openTask = useCallback(
+    (task: TaskRef) => {
+      requestEditorJump({ documentId: task.documentId, line: task.line, text: task.rawLine });
+      router.push(`/docs/${task.documentId}`);
+    },
+    [router],
+  );
+
+  const focusOn = (key: string | null) => {
+    setFocusKey(key);
+    if (key) document.getElementById(`task-${key}`)?.scrollIntoView({ block: "nearest" });
+  };
+
+  const selectRange = (fromKey: string | null, toKey: string) => {
+    const from = ordered.findIndex((task) => taskKey(task) === fromKey);
+    const to = ordered.findIndex((task) => taskKey(task) === toKey);
+    if (to === -1) return;
+    const [start, end] = from === -1 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+    setSelection(new Set(ordered.slice(start, end + 1).map(taskKey)));
+  };
+
+  const onRowClick = (task: ListTask, event: MouseEvent) => {
+    const key = taskKey(task);
+    if (event.shiftKey) {
+      event.preventDefault();
+      selectRange(focusKey, key);
+    } else if (event.metaKey || event.ctrlKey) {
+      setSelection((current) => {
+        const next = new Set(current);
+        // The first Ctrl-click also keeps the task that was already focused.
+        if (next.size === 0 && focusKey && focusKey !== key) next.add(focusKey);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    } else {
+      setSelection(new Set());
+    }
+    setFocusKey(key);
+  };
+
+  // Detail for the focused task; refetched when the data changes under it.
+  useEffect(() => {
+    if (!focusKey) return;
+    const [documentId, ordinalText] = focusKey.split(":");
+    const requestId = ++detailRequestRef.current;
+    void getTaskDetailAction({ documentId, ordinal: Number(ordinalText) })
+      .catch(() => null)
+      .then((next) => {
+        if (requestId === detailRequestRef.current) setDetail(next);
+      });
+  }, [focusKey, data]);
+
+  // Keyboard: see `shortcutRows`.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
         event.defaultPrevented ||
-        event.metaKey ||
-        event.ctrlKey ||
         event.altKey ||
         target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")
       ) {
         return;
       }
 
-      const index = ordered.findIndex((task) => taskKey(task) === selectedKey);
-      const selected = index >= 0 ? ordered[index] : null;
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && event.key.toLowerCase() === "a" && ordered.length > 0) {
+        event.preventDefault();
+        setSelection(new Set(ordered.map(taskKey)));
+        return;
+      }
+      if (mod) return;
+
+      const index = ordered.findIndex((task) => taskKey(task) === focusKey);
       const move = (delta: number) => {
         if (ordered.length === 0) return;
-        const next = index < 0 ? (delta > 0 ? 0 : ordered.length - 1) : (index + delta + ordered.length) % ordered.length;
+        const next = index < 0 ? (delta > 0 ? 0 : ordered.length - 1) : Math.min(Math.max(index + delta, 0), ordered.length - 1);
         const key = taskKey(ordered[next]);
-        select(key);
-        document.getElementById(`task-${key}`)?.scrollIntoView({ block: "nearest" });
+        if (event.shiftKey) {
+          setSelection((current) => {
+            const selected = new Set(current);
+            if (focusKey) selected.add(focusKey);
+            selected.add(key);
+            return selected;
+          });
+        } else {
+          setSelection(new Set());
+        }
+        focusOn(key);
       };
+      const targets = targetsFor();
 
       switch (event.key) {
         case "j":
+        case "J":
         case "ArrowDown":
           event.preventDefault();
           move(1);
           break;
         case "k":
+        case "K":
         case "ArrowUp":
           event.preventDefault();
           move(-1);
           break;
         case "x":
-          if (selected) {
+          if (targets.length) {
             event.preventDefault();
-            changeTask(selected, {
-              type: "status",
-              status: selected.status === "done" ? "open" : "done",
-            });
+            const allDone = targets.every((task) => task.status === "done");
+            apply({ type: "status", status: allDone ? "open" : "done" });
           }
           break;
         case "t":
         case "m":
-          if (selected) {
+          if (targets.length) {
             event.preventDefault();
-            changeTask(selected, {
-              type: "due",
-              day: event.key === "t" ? today : addDaysToDayKey(today, 1),
-              time: selected.dueTime,
-            });
+            const day = event.key === "t" ? today : addDaysToDayKey(today, 1);
+            if (targets.length === 1) apply({ type: "due", day, time: targets[0].dueTime });
+            else apply({ type: "due", day });
+          }
+          break;
+        case "p":
+          if (targets.length) {
+            event.preventDefault();
+            apply({ type: "priority", priority: nextPriority[targets[0].priority ?? "none"] });
+          }
+          break;
+        case "e":
+          if (focused && selection.size <= 1) {
+            event.preventDefault();
+            setEditingKey(taskKey(focused));
+          }
+          break;
+        case "Delete":
+        case "Backspace":
+          if (targets.length) {
+            event.preventDefault();
+            // Undo lives in the toast, so no confirmation step.
+            const after = ordered.slice(index + 1).find((task) => !targets.includes(task));
+            apply({ type: "delete" });
+            setFocusKey(after ? taskKey(after) : null);
           }
           break;
         case "Enter":
-          if (selected) {
+          if (focused) {
             event.preventDefault();
-            openTask(selected);
+            openTask(focused);
           }
           break;
         case "/":
           event.preventDefault();
           filterInputRef.current?.focus();
           break;
+        case "?":
+          event.preventDefault();
+          setHelpOpen(true);
+          break;
         case "Escape":
-          select(null);
+          if (selection.size > 0) setSelection(new Set());
+          else setFocusKey(null);
           break;
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [ordered, selectedKey, changeTask, openTask, today]);
+  }, [ordered, focusKey, focused, selection, targetsFor, apply, openTask, today]);
 
   // A day clicked in the Month view: scroll the Agenda to it. Open tasks from
   // a past day live in Overdue, so a past day scrolls there instead.
@@ -371,29 +453,32 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
     document.getElementById(id)?.scrollIntoView({ block: "start" });
   }, [view, focusDay, today]);
 
-  const selectedTask = ok?.tasks.find((task) => taskKey(task) === selectedKey) ?? null;
+  const folderOf = (folderId: string | null) => (folderId ? (folderPaths.get(folderId) ?? null) : null);
+  const showDetail = selection.size <= 1 && focusKey && detail && taskKey(detail.task) === focusKey;
   const rightPanel = (
     <TaskDetailPanel
-      detail={detail}
+      detail={showDetail ? detail : null}
       today={today}
-      loading={detailLoading}
-      folderPath={
-        (detail?.task.folderId ?? selectedTask?.folderId)
-          ? (folderPaths.get((detail?.task.folderId ?? selectedTask?.folderId) as string) ?? null)
-          : null
-      }
-      onChange={changeTask}
+      loading={Boolean(focusKey) && !showDetail && selection.size <= 1}
+      selectedCount={selection.size > 1 ? selection.size : 0}
+      folderPath={showDetail && detail ? folderOf(detail.task.folderId) : null}
+      onChange={(task, change) => void runTaskWrite([task], change)}
       onOpen={openTask}
+      onShowShortcuts={() => setHelpOpen(true)}
     />
   );
 
-  const rowProps = {
+  const rowProps: RowProps = {
     today,
-    folderPaths,
-    selectedKey,
-    onSelect: (key: string) => select(key),
+    folderOf,
+    focusKey,
+    selection,
+    editingKey,
+    moveTargets,
+    onEditingChange: (key, editing) => setEditingKey(editing ? key : null),
+    onRowClick,
     onOpen: openTask,
-    onChange: changeTask,
+    onChange: apply,
   };
 
   return (
@@ -407,36 +492,46 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight vault-display">Tasks</h1>
           </div>
-          <div role="tablist" aria-label="Task views" className="flex rounded-md border border-border/70 p-0.5">
-            {views.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === item.id}
-                  onClick={() => {
-                    setView(item.id);
-                    setFocusDay(null);
-                  }}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition",
-                    view === item.id
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon className="size-3.5" />
-                  {item.label}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            >
+              <Keyboard className="size-4" />
+            </button>
+            <div role="tablist" aria-label="Task views" className="flex rounded-md border border-border/70 p-0.5">
+              {views.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === item.id}
+                    onClick={() => {
+                      setView(item.id);
+                      setFocusDay(null);
+                      setSelection(new Set());
+                    }}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition",
+                      view === item.id ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                    <span className="hidden sm:inline">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </header>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <label className="flex h-8 min-w-[12rem] flex-1 items-center gap-2 rounded-md border border-border/70 bg-background/55 px-2">
+          <label className="flex h-8 min-w-[12rem] flex-1 items-center gap-2 rounded-md border border-border/70 bg-background/55 px-2 transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
             <input
               ref={filterInputRef}
@@ -482,15 +577,18 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
           ) : null}
         </div>
 
-        {notice ? (
-          <p role="status" className="mt-3 text-sm text-destructive">
-            {notice}
-          </p>
-        ) : null}
         {ok?.truncated ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            Showing the first 2,000 tasks; filter to narrow the list.
-          </p>
+          <p className="mt-3 text-xs text-muted-foreground">Showing the first 2,000 tasks; filter to narrow the list.</p>
+        ) : null}
+
+        {selectedTasks.length > 0 ? (
+          <BulkBar
+            tasks={selectedTasks}
+            today={today}
+            moveTargets={moveTargets}
+            onChange={(change) => apply(change)}
+            onClear={() => setSelection(new Set())}
+          />
         ) : null}
 
         <div className="mt-4">
@@ -502,6 +600,7 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
             <AgendaView
               groups={groupAgenda(visible, today, data.inboxDocumentId, focusDay)}
               events={data.events}
+              onMoveOverdue={(overdue) => void runTaskWrite(overdue, { type: "due", day: today })}
               {...rowProps}
             />
           ) : view === "week" ? (
@@ -510,10 +609,11 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
               byDay={tasksByDay(visible, weekDays(currentWeek))}
               onWeekChange={setWeekStart}
               onReschedule={(key, day) => {
-                const task = data.tasks.find((candidate) => taskKey(candidate) === key);
-                if (task && task.dueDay !== day) {
-                  changeTask(task, { type: "due", day, time: task.dueTime });
-                }
+                const task = byKey.get(key);
+                if (!task || task.dueDay === day) return;
+                const targets = targetsFor(task);
+                if (targets.length === 1) void runTaskWrite(targets, { type: "due", day, time: task.dueTime });
+                else void runTaskWrite(targets, { type: "due", day });
               }}
               {...rowProps}
             />
@@ -528,115 +628,239 @@ function TasksWorkspace({ folders }: { folders: FolderPathNode[] }) {
                 setView("agenda");
               }}
             />
-          ) : (
+          ) : view === "backlog" ? (
             <BacklogView groups={groupBacklog(visible, data.inboxDocumentId)} {...rowProps} />
+          ) : (
+            <DoneView result={completed} groups={groupDone(doneTasks)} {...rowProps} />
           )}
         </div>
       </section>
+
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Keyboard shortcuts</DialogTitle>
+          </DialogHeader>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 text-sm">
+            {shortcutRows.map(([keys, label]) => (
+              <div key={label} className="contents">
+                <dt className="flex gap-1">
+                  {keys.map((key) => (
+                    <Key key={key}>{key}</Key>
+                  ))}
+                </dt>
+                <dd className="text-muted-foreground">{label}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            With tasks selected, <Key>x</Key> <Key>t</Key> <Key>m</Key> <Key>p</Key> and <Key>Delete</Key> act on all of
+            them.
+          </p>
+        </DialogContent>
+      </Dialog>
     </>
+  );
+}
+
+export function Key({ children }: { children: string }) {
+  return (
+    <kbd className="rounded border border-border/70 bg-muted/40 px-1 font-mono text-[0.68rem] text-foreground">
+      {children}
+    </kbd>
+  );
+}
+
+/** The user's current binding for a global shortcut, as a key cap. */
+function ShortcutKey({ id }: { id: string }) {
+  const { bindings, isMac } = useKeybindings();
+  const label = formatBindingForDisplay(bindings[id] ?? "", isMac);
+  return label ? <Key>{label}</Key> : <span>the Quick add shortcut</span>;
+}
+
+/**
+ * The bar above the list while tasks are selected: the same actions as a
+ * task's menu, applied to all of them. Undo comes with deletes and moves.
+ */
+function BulkBar({
+  tasks,
+  today,
+  moveTargets,
+  onChange,
+  onClear,
+}: {
+  tasks: ListTask[];
+  today: string;
+  moveTargets: TaskMoveTarget[];
+  onChange: (change: RowChange) => void;
+  onClear: () => void;
+}) {
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+  const allDone = tasks.every((task) => task.status === "done");
+  const sources = new Set(tasks.map((task) => task.documentId));
+  const targets = moveTargets.filter((target) => !(sources.size === 1 && sources.has(target.id)));
+
+  return (
+    <div
+      role="toolbar"
+      aria-label="Selected tasks"
+      className="sticky top-2 z-20 mt-4 flex items-start gap-1 rounded-lg border border-border/70 bg-popover/95 px-2 py-1.5 text-popover-foreground shadow-sm backdrop-blur"
+    >
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
+        <span className="px-1.5 text-sm font-medium tabular-nums">{tasks.length} selected</span>
+        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onChange({ type: "status", status: allDone ? "open" : "done" })}
+        >
+          <CircleCheck /> {allDone ? "Reopen" : "Done"}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onChange({ type: "due", day: today })}>
+          <Sun /> Today
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onChange({ type: "due", day: addDaysToDayKey(today, 1) })}>
+          <Sunrise /> Tomorrow
+        </Button>
+        <span className="relative inline-flex">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              try {
+                dateInputRef.current?.showPicker();
+              } catch {
+                dateInputRef.current?.focus();
+              }
+            }}
+          >
+            <CalendarClock /> Date…
+          </Button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => {
+              if (event.target.value) onChange({ type: "due", day: event.target.value });
+            }}
+            className="pointer-events-none absolute bottom-0 left-0 size-px opacity-0"
+          />
+        </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+            <Flag /> Priority
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuGroup>
+              {TASK_PRIORITIES.map((priority) => (
+                <DropdownMenuItem key={priority} onClick={() => onChange({ type: "priority", priority })}>
+                  {sentenceCase(priority)}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuItem onClick={() => onChange({ type: "priority", priority: null })}>No priority</DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+            <FileInput /> Move
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-w-72">
+            <DropdownMenuGroup>
+              {targets.map((target) => (
+                <DropdownMenuItem
+                  key={target.id}
+                  onClick={() => onChange({ type: "move", targetDocumentId: target.id, targetTitle: target.title })}
+                >
+                  {target.inbox ? <Inbox /> : <FileText />}
+                  <span className="truncate">{target.title}</span>
+                </DropdownMenuItem>
+              ))}
+              {targets.length > 0 ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuItem onClick={() => requestMoveTasks(tasks)}>
+                <FileSearch /> Other document…
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          onClick={() => onChange({ type: "delete" })}
+        >
+          <Trash2 /> Delete
+        </Button>
+      </div>
+      <Button variant="ghost" size="icon-sm" aria-label="Clear selection" title="Clear selection (Esc)" onClick={onClear}>
+        <X />
+      </Button>
+    </div>
   );
 }
 
 type RowProps = {
   today: string;
-  folderPaths: Map<string, string>;
-  selectedKey: string | null;
-  onSelect: (key: string) => void;
+  folderOf: (folderId: string | null) => string | null;
+  focusKey: string | null;
+  selection: ReadonlySet<string>;
+  editingKey: string | null;
+  moveTargets: TaskMoveTarget[];
+  onEditingChange: (key: string, editing: boolean) => void;
+  onRowClick: (task: ListTask, event: MouseEvent) => void;
   onOpen: (task: TaskRef) => void;
-  onChange: (task: TaskRef, change: TaskChange) => void;
+  onChange: (change: RowChange, row?: ListTask) => void;
 };
 
-function TaskItem({
+function PageRow({
   task,
-  today,
-  folderPaths,
-  selectedKey,
-  onSelect,
-  onOpen,
-  onChange,
   showDue,
   compact = false,
-  draggable = false,
-}: RowProps & { task: PageTask; showDue: boolean; compact?: boolean; draggable?: boolean }) {
+  trailing,
+  ...props
+}: RowProps & { task: ListTask; showDue: boolean; compact?: boolean; trailing?: React.ReactNode }) {
   const key = taskKey(task);
-  const done = task.status === "done";
-  const overdue = !done && task.dueDay !== null && task.dueDay < today;
-  const folder = task.folderId ? folderPaths.get(task.folderId) : null;
+  const folder = props.folderOf(task.folderId);
   const where = `${folder ? `${folder} / ` : ""}${task.documentTitle}${task.heading ? ` › ${task.heading}` : ""}`;
-  const menu = useContextMenu();
 
   return (
-    <div
+    <TaskRow
       id={`task-${key}`}
-      role="option"
-      aria-selected={selectedKey === key}
-      tabIndex={-1}
-      draggable={draggable}
+      task={task}
+      today={props.today}
+      variant={compact ? "compact" : "page"}
+      context={where}
+      showDue={showDue}
+      focused={props.focusKey === key}
+      selected={props.selection.has(key)}
+      editing={props.editingKey === key}
+      onEditingChange={(editing) => props.onEditingChange(key, editing)}
+      onSelect={(event) => props.onRowClick(task, event)}
+      onOpen={() => props.onOpen(task)}
+      onChange={(change) => props.onChange(change, task)}
+      moveTargets={props.moveTargets}
+      draggable={compact}
       onDragStart={(event: DragEvent<HTMLDivElement>) => {
         event.dataTransfer.setData(dragType, key);
         event.dataTransfer.effectAllowed = "move";
       }}
-      onClick={() => onSelect(key)}
-      onDoubleClick={() => onOpen(task)}
-      // Compact (calendar) rows have no actions menu to open.
-      onContextMenu={compact ? undefined : menu.onContextMenu}
-      className={cn(
-        "group grid cursor-default items-start rounded-md py-1.5 transition",
-        compact
-          ? "grid-cols-[0.95rem_minmax(0,1fr)] gap-x-1.5 px-1.5 text-[0.8rem] leading-snug"
-          : "grid-cols-[0.95rem_minmax(0,1fr)_auto_1.5rem] gap-x-2 px-2 text-sm",
-        selectedKey === key ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-muted/50",
-        draggable && "cursor-grab active:cursor-grabbing",
-      )}
-    >
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={done ? "Mark not done" : "Mark done"}
-        onClick={(event) => {
-          event.stopPropagation();
-          onChange(task, { type: "status", status: done ? "open" : "done" });
-        }}
-        className="vault-task-box mt-[0.2rem] cursor-pointer"
-        data-status={task.status}
-        data-overdue={overdue ? "true" : undefined}
-      />
-      <span className="min-w-0">
-        <span className={cn("vault-task-md block", done ? "text-muted-foreground line-through" : "text-foreground")}>
-          {task.text ? (
-            <MarkdownDocument markdown={task.text} contained={false} disableLinks />
-          ) : (
-            <span className="italic text-muted-foreground">Untitled task</span>
-          )}
-        </span>
-        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-          <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} /> {where}
-          {compact && task.dueTime ? ` · ${task.dueTime}` : ""}
-        </span>
-      </span>
-      {compact ? null : (
-        <>
-          <span className={cn("pt-0.5 text-xs tabular-nums text-muted-foreground", overdue && "text-destructive")}>
-            {showDue && task.dueDay ? formatDueLabel(task.dueDay, today) : ""}
-            {task.dueTime ? `${showDue && task.dueDay ? " " : ""}${task.dueTime}` : ""}
-          </span>
-          <span onClick={(event) => event.stopPropagation()}>
-            <TaskActionsMenu
-              task={task}
-              today={today}
-              onChange={(change) => onChange(task, change)}
-              contextMenu={menu}
-              className="opacity-0 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
-            />
-          </span>
-        </>
-      )}
-    </div>
+      trailing={trailing}
+    />
   );
 }
 
-function GroupHeading({ label, detail, tone }: { label: string; detail?: string; tone?: "danger" }) {
+function GroupHeading({
+  label,
+  detail,
+  tone,
+  action,
+}: {
+  label: string;
+  detail?: string;
+  tone?: "danger";
+  action?: React.ReactNode;
+}) {
   return (
     <h2
       className={cn(
@@ -646,6 +870,7 @@ function GroupHeading({ label, detail, tone }: { label: string; detail?: string;
     >
       {label}
       {detail ? <span className="font-normal normal-case tracking-normal">{detail}</span> : null}
+      {action ? <span className="ml-auto font-normal normal-case tracking-normal">{action}</span> : null}
     </h2>
   );
 }
@@ -670,8 +895,13 @@ function shortWeekday(dayKey: string): string {
 function AgendaView({
   groups,
   events,
+  onMoveOverdue,
   ...rowProps
-}: RowProps & { groups: ReturnType<typeof groupAgenda<PageTask>>; events: WorkspaceAgendaEvent[] }) {
+}: RowProps & {
+  groups: ReturnType<typeof groupAgenda<PageTask>>;
+  events: WorkspaceAgendaEvent[];
+  onMoveOverdue: (tasks: PageTask[]) => void;
+}) {
   const byDay = new Map<string, WorkspaceAgendaEvent[]>();
   for (const event of events) {
     const list = byDay.get(event.day) ?? [];
@@ -692,14 +922,14 @@ function AgendaView({
   if (allGroups.length === 0) {
     return (
       <p className="px-2 py-6 text-sm text-muted-foreground">
-        Nothing scheduled. Give a task a date with <code>@</code> in any document, or capture one with{" "}
-        <code>/task</code>.
+        Nothing scheduled. Give a task a date with <code>@</code> in any document, or add one with{" "}
+        <ShortcutKey id="global.quickAddTask" />.
       </p>
     );
   }
 
   return (
-    <div role="listbox" aria-label="Agenda" className="grid gap-5">
+    <div role="listbox" aria-label="Agenda" aria-multiselectable="true" className="grid gap-5">
       {allGroups.map((group) => (
         <section
           key={group.id}
@@ -707,7 +937,19 @@ function AgendaView({
           className="scroll-mt-4"
         >
           {group.kind === "overdue" ? (
-            <GroupHeading label="Overdue" tone="danger" />
+            <GroupHeading
+              label="Overdue"
+              tone="danger"
+              action={
+                <button
+                  type="button"
+                  onClick={() => onMoveOverdue(group.tasks)}
+                  className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                >
+                  Move all to today
+                </button>
+              }
+            />
           ) : group.kind === "inbox" ? (
             <GroupHeading label="Inbox" detail="no date yet" />
           ) : (
@@ -721,7 +963,7 @@ function AgendaView({
               <p className="px-2 py-1.5 text-sm text-muted-foreground">Nothing due.</p>
             ) : (
               group.tasks.map((task) => (
-                <TaskItem key={taskKey(task)} task={task} showDue={group.kind === "overdue"} {...rowProps} />
+                <PageRow key={taskKey(task)} task={task} showDue={group.kind === "overdue"} {...rowProps} />
               ))
             )}
             {(byDay.get(group.dayKey ?? "") ?? []).map((event) => (
@@ -776,7 +1018,7 @@ function WeekView({
         <p className="ml-2 text-sm text-muted-foreground">{range}</p>
       </div>
       <div className="overflow-x-auto pb-2">
-        <div role="listbox" aria-label="Week" className="grid min-w-[66rem] grid-cols-7 gap-1.5">
+        <div role="listbox" aria-label="Week" aria-multiselectable="true" className="grid min-w-[66rem] grid-cols-7 gap-1.5">
           {days.map((day) => {
             const isToday = day === rowProps.today;
             const tasks = byDay.get(day) ?? [];
@@ -810,7 +1052,7 @@ function WeekView({
                 <div className="grid gap-1">
                   {tasks.map((task) => (
                     <div key={taskKey(task)} className="rounded-md border border-border/50 bg-card/40">
-                      <TaskItem task={task} showDue={false} compact draggable {...rowProps} />
+                      <PageRow task={task} showDue={false} compact {...rowProps} />
                     </div>
                   ))}
                 </div>
@@ -819,7 +1061,9 @@ function WeekView({
           })}
         </div>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">Drag a task to another day to reschedule it.</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Drag a task to another day to reschedule it; selected tasks move together.
+      </p>
     </div>
   );
 }
@@ -848,9 +1092,7 @@ function MonthView({
         </NavButton>
         <button
           type="button"
-          onClick={() =>
-            onMonthChange({ year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) })
-          }
+          onClick={() => onMonthChange({ year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) })}
           className="rounded-md border border-border/70 px-2 py-1 text-xs transition hover:bg-muted"
         >
           This month
@@ -921,7 +1163,7 @@ function BacklogView({
   }
 
   return (
-    <div role="listbox" aria-label="Backlog" className="grid gap-5">
+    <div role="listbox" aria-label="Backlog" aria-multiselectable="true" className="grid gap-5">
       <p className="px-2 text-xs text-muted-foreground">
         Tasks with no date, by document. Give one a date to put it on the agenda.
       </p>
@@ -930,7 +1172,49 @@ function BacklogView({
           <GroupHeading label={group.documentTitle} detail={`${group.tasks.length}`} />
           <div className="mt-1 grid gap-0.5">
             {group.tasks.map((task) => (
-              <TaskItem key={taskKey(task)} task={task} showDue={false} {...rowProps} />
+              <PageRow key={taskKey(task)} task={task} showDue={false} {...rowProps} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** Completed tasks by the day they were done, newest first. */
+function groupDone(tasks: CompletedTask[]): Array<{ day: string; tasks: CompletedTask[] }> {
+  const groups = new Map<string, CompletedTask[]>();
+  for (const task of tasks) groups.set(task.doneDay, [...(groups.get(task.doneDay) ?? []), task]);
+  return [...groups.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([day, list]) => ({ day, tasks: list }));
+}
+
+function DoneView({
+  result,
+  groups,
+  ...rowProps
+}: RowProps & { result: CompletedTasksResult | null; groups: ReturnType<typeof groupDone> }) {
+  if (result === null) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!result.ok) return <p className="text-sm text-muted-foreground">{result.error}</p>;
+  if (groups.length === 0) {
+    return <p className="px-2 py-6 text-sm text-muted-foreground">Nothing completed in the last 30 days.</p>;
+  }
+
+  return (
+    <div role="listbox" aria-label="Done" aria-multiselectable="true" className="grid gap-5">
+      <p className="px-2 text-xs text-muted-foreground">
+        Tasks ticked in Vault over the last 30 days. Untick one to reopen it.
+      </p>
+      {groups.map((group) => (
+        <section key={group.day}>
+          <GroupHeading
+            label={formatDueLabel(group.day, rowProps.today)}
+            detail={`${longDay(group.day)} · ${group.tasks.length}`}
+          />
+          <div className="mt-1 grid gap-0.5">
+            {group.tasks.map((task) => (
+              <PageRow key={taskKey(task)} task={task} showDue {...rowProps} />
             ))}
           </div>
         </section>

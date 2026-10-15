@@ -140,3 +140,16 @@ it("reads a valid recurrence precondition on nested and quoted source lines", ()
   expect(readTaskRepeat(">   - [ ] A :repeat[never] :repeat[weekly] `:repeat[daily]`")).toBe("weekly");
   expect(readTaskRepeat("    - [ ] A `:repeat[daily]`")).toBeNull();
 });
+
+describe("planTaskEdit text", () => {
+  it("replaces the words and keeps fields after them", () => {
+    expect(
+      change("  - [/] Old words :due[2026-10-02] here :priority[high]", { type: "text", text: "New  words " }),
+    ).toBe("  - [/] New words :due[2026-10-02] :priority[high]");
+    expect(change("> - [ ] Quoted", { type: "text", text: "Still quoted" })).toBe("> - [ ] Still quoted");
+  });
+
+  it("refuses empty text", () => {
+    expect(change("- [ ] Keep", { type: "text", text: "   " })).toBeNull();
+  });
+});

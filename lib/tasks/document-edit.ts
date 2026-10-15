@@ -9,6 +9,115 @@ import {
 import { parseTasks } from "@/lib/tasks/parse";
 import { anchorRecurrence, nextRecurringDay } from "@/lib/tasks/recurrence";
 
+/** A whole task item cut from its document, with what Undo needs to put it back. */
+export type TaskRemoval = {
+  edit: TextEdit;
+  /** 0-based line the item started on. */
+  lineIndex: number;
+  /** The item's lines (task, note, subtasks), without a trailing newline. */
+  block: string;
+};
+
+/**
+ * Plans deleting a task: the task line plus everything its list item owns —
+ * continuation notes and nested subtasks — the way deleting a bullet in an
+ * outliner takes its children. Null when the task moved (see `locateTaskLine`).
+ */
+export function planTaskRemoval(markdown: string, line: number, rawLine: string): TaskRemoval | null {
+  const located = locateTaskLine(markdown, line, rawLine);
+  if (!located) return null;
+  const task = parseTasks(markdown).find((candidate) => candidate.line === located.lineIndex);
+  if (!task) return null;
+
+  const lines = markdown.split("\n");
+  const endLine = Math.min(Math.max(task.endLine, task.line), lines.length - 1);
+  const block = lines.slice(task.line, endLine + 1).join("\n");
+  const from = located.offset;
+  const to = from + block.length;
+
+  // Take the line break after the block; at the very end of the text, take
+  // the one before it instead, so no blank line is left behind.
+  const edit =
+    to < markdown.length
+      ? { from, to: to + 1, insert: "" }
+      : { from: Math.max(0, from - 1), to, insert: "" };
+
+  return { edit, lineIndex: task.line, block };
+}
+
+/**
+ * Undo for `planTaskRemoval`: reinserts `block` at the start of line
+ * `lineIndex`, or at the end when the document has since grown shorter. Line
+ * based rather than offset based, so edits elsewhere in the meantime do not
+ * shift where it lands by more than they moved that line.
+ */
+export function planTaskRestore(markdown: string, lineIndex: number, block: string): TextEdit {
+  const lines = markdown.split("\n");
+
+  if (lineIndex < lines.length) {
+    const offset = lines.slice(0, lineIndex).reduce((sum, current) => sum + current.length + 1, 0);
+    return { from: offset, to: offset, insert: `${block}\n` };
+  }
+
+  const separator = markdown.length > 0 && !markdown.endsWith("\n") ? "\n" : "";
+  return { from: markdown.length, to: markdown.length, insert: `${separator}${block}\n` };
+}
+
+/** Blockquote markers and indentation ahead of a task's list marker. */
+const blockPrefixPattern = /^(?:[ \t]*>[ \t]?)*[ \t]*/;
+
+/**
+ * A removed task block made top-level for another document: the first line's
+ * quote/indent prefix comes off every line that carries it, so a subtask or a
+ * task inside a callout lands as an ordinary list item, children still nested.
+ */
+export function dedentTaskBlock(block: string): string {
+  const lines = block.split("\n");
+  const prefix = blockPrefixPattern.exec(lines[0] ?? "")?.[0] ?? "";
+  if (!prefix) return block;
+
+  return lines
+    .map((line) => {
+      if (line.startsWith(prefix)) return line.slice(prefix.length);
+      // A shallower line (a lazy continuation): drop what prefix it has.
+      return line.replace(blockPrefixPattern, "");
+    })
+    .join("\n");
+}
+
+/** Appends a block at the end of a document; `lineIndex` is where it starts. */
+export function planBlockAppend(markdown: string, block: string): { edit: TextEdit; lineIndex: number } {
+  const separator = markdown.length > 0 && !markdown.endsWith("\n") ? "\n" : "";
+  const lineIndex = markdown.length === 0 ? 0 : markdown.split("\n").length - (separator ? 0 : 1);
+  return { edit: { from: markdown.length, to: markdown.length, insert: `${separator}${block}\n` }, lineIndex };
+}
+
+/**
+ * Undo for `planBlockAppend`: removes `block` if it still starts at
+ * `lineIndex`, else its only exact occurrence at a line start. Null when it
+ * was edited or appears more than once — Undo then leaves it alone.
+ */
+export function planBlockRemoval(markdown: string, lineIndex: number, block: string): TextEdit | null {
+  const lines = markdown.split("\n");
+  const offsetOf = (index: number) => lines.slice(0, index).reduce((sum, current) => sum + current.length + 1, 0);
+  const blockLines = block.split("\n");
+  const startsAt = (index: number) =>
+    blockLines.every((line, offset) => lines[index + offset]?.replace(/\r$/, "") === line.replace(/\r$/, ""));
+
+  let start = startsAt(lineIndex) ? lineIndex : -1;
+  if (start === -1) {
+    const found = lines.flatMap((_, index) => (startsAt(index) ? [index] : []));
+    if (found.length !== 1) return null;
+    start = found[0];
+  }
+
+  const from = offsetOf(start);
+  const to = from + lines.slice(start, start + blockLines.length).join("\n").length;
+  return to < markdown.length
+    ? { from, to: to + 1, insert: "" }
+    : { from: Math.max(0, from - 1), to, insert: "" };
+}
+
 /** One shared planner for Live, Read, agenda, and agents. Offsets are document-wide. */
 export function planTaskDocumentEdit(
   markdown: string,

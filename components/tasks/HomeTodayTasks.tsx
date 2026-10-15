@@ -1,29 +1,35 @@
 "use client";
 
-import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
-import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
-import { todayDayKey } from "@/lib/tasks/dates";
+import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
+import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
+import { useLiveDocumentTasks } from "@/components/tasks/use-live-tasks";
 import { requestEditorJump } from "@/lib/editor-jump-events";
-import { formatDueLabel } from "@/lib/tasks/dates";
+import { formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
+import { applyTaskPatches } from "@/lib/tasks/optimistic";
+import { inAgenda, liveRow, mergeLiveTasks } from "@/lib/tasks/overlay";
 import { plainTaskText } from "@/lib/tasks/query";
-import { taskKey } from "@/lib/tasks/views";
-import { cn } from "@/lib/utils";
-import { dispatchTasksChanged, subscribeToTasksChanged } from "@/lib/workspace-toast";
-import { updateTaskAction, type TaskAgendaResult } from "@/server/tasks";
-import type { AgendaTask } from "@/server/tasks-data";
 import { loadTaskAgenda } from "@/lib/tasks/shared-agenda";
+import { runTaskWrite, useTaskPatches } from "@/lib/tasks/task-writes";
+import { compareViewTasks, taskKey } from "@/lib/tasks/views";
+import { cn } from "@/lib/utils";
+import { subscribeToTasksChanged } from "@/lib/workspace-toast";
+import type { TaskAgendaResult } from "@/server/tasks";
+import type { AgendaTask } from "@/server/tasks-data";
 
 /**
  * The home page's "Today" section (plan §6.4): what is overdue and due today,
  * tickable in place, above the recent documents. Renders nothing when there is
- * nothing to show, so the new-tab page stays quiet on a clear day.
+ * nothing to show, so the new-tab page stays quiet on a clear day. Same row
+ * pipeline as the sidebar: live editor tasks, then pending writes.
  */
 export function HomeTodayTasks() {
   const [result, setResult] = useState<TaskAgendaResult | null>(null);
+  const live = useLiveDocumentTasks();
+  const patches = useTaskPatches();
 
   useEffect(() => {
     let cancelled = false;
@@ -47,35 +53,23 @@ export function HomeTodayTasks() {
     };
   }, []);
 
-  const tasks = useMemo(() => {
+  const tasks = useMemo<AgendaTask[]>(() => {
     if (!result?.ok) return [];
+    const context = { today: result.today, through: result.through, inboxDocumentId: result.inboxDocumentId };
+    const merged = mergeLiveTasks(result.tasks, live, {
+      ownedOnly: true,
+      include: (task, document) => inAgenda(task, { ...context, documentId: document.documentId }),
+      build: (task, document) => liveRow(task, document),
+    });
     // Overdue and due today, plus anything ticked off today that was due by now.
-    return result.tasks.filter((task) => task.dueDay !== null && task.dueDay <= result.today);
-  }, [result]);
+    return applyTaskPatches(merged, patches, result.today)
+      .filter((task) => inAgenda(task, { ...context, documentId: task.documentId }))
+      .filter((task) => task.dueDay !== null && task.dueDay <= result.today)
+      .sort(compareViewTasks);
+  }, [result, live, patches]);
 
-  const toggle = async (task: AgendaTask) => {
-    const done = task.status === "done";
-    setResult((current) =>
-      current?.ok
-        ? {
-            ...current,
-            tasks: current.tasks.map((candidate) =>
-              taskKey(candidate) === taskKey(task)
-                ? { ...candidate, status: done ? "open" : "done", doneDay: done ? null : current.today }
-                : candidate,
-            ),
-          }
-        : current,
-    );
-    await updateTaskAction({
-      today: todayDayKey(),
-      documentId: task.documentId,
-      line: task.line,
-      rawLine: task.rawLine,
-      change: { type: "status", status: done ? "open" : "done" },
-    }).catch(() => null);
-    dispatchTasksChanged();
-  };
+  const toggle = (task: AgendaTask) =>
+    void runTaskWrite([task], { type: "status", status: task.status === "done" ? "open" : "done" });
 
   if (!result?.ok || tasks.length === 0) {
     return null;
@@ -107,7 +101,7 @@ export function HomeTodayTasks() {
                 role="checkbox"
                 aria-checked={done}
                 aria-label={done ? "Mark not done" : "Mark done"}
-                onClick={() => void toggle(task)}
+                onClick={() => toggle(task)}
                 className="vault-task-box cursor-pointer"
                 data-status={task.status}
                 data-overdue={overdue ? "true" : undefined}

@@ -192,8 +192,15 @@ export type ExtensionAgentTasksApi = {
     change: { type: "status"; status: "open" | "in_progress" | "done" | "cancelled" }
       | { type: "due"; day: string | null; time?: string | null }
       | { type: "priority"; priority: "high" | "medium" | "low" | null }
-      | { type: "repeat"; repeat: string | null };
+      | { type: "repeat"; repeat: string | null }
+      | { type: "text"; text: string };
   }) => Promise<void>;
+  /** Deletes a task with its note and subtasks. */
+  remove?: (input: { documentId: string; ordinal: number; today: string }) => Promise<void>;
+  /** Moves a task (with its note and subtasks) to the end of another document the user can edit. */
+  move?: (input: {
+    documentId: string; ordinal: number; today: string; targetDocumentId: string;
+  }) => Promise<{ targetTitle: string | null }>;
 };
 
 /**

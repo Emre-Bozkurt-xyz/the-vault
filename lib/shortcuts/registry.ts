@@ -26,6 +26,14 @@ export const shortcuts: ShortcutDef[] = [
     scope: "global",
     defaultBinding: "Mod-k",
   },
+  {
+    // Only active while the Tasks extension is on.
+    id: "global.quickAddTask",
+    label: "Quick add task",
+    category: "Global",
+    scope: "global",
+    defaultBinding: "Mod-Alt-t",
+  },
 
   // Editor — inline formatting
   {

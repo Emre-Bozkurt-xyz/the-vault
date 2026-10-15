@@ -1,21 +1,13 @@
 "use client";
 
-import { TaskRepeatBadge } from "@/components/tasks/TaskRepeatBadge";
-import { TaskPriorityBadge } from "@/components/tasks/TaskPriorityBadge";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  CalendarClock,
-  Inbox,
-  ListChecks,
-  Plus,
-  RefreshCw,
-  ArrowUpRight,
-} from "lucide-react";
+import { ArrowUpRight, CalendarClock, ListChecks, RefreshCw } from "lucide-react";
 
-import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
-import { TaskActionsMenu } from "@/components/tasks/TaskActionsMenu";
-import { useContextMenu } from "@/components/ui/use-context-menu";
+import { TaskCaptureInput } from "@/components/tasks/TaskCaptureInput";
+import { TaskRow } from "@/components/tasks/TaskRow";
+import { taskMoveTargets } from "@/components/tasks/TaskActionsMenu";
+import { useLiveDocumentTasks } from "@/components/tasks/use-live-tasks";
 import {
   SidePanel,
   SidePanelAction,
@@ -25,32 +17,26 @@ import {
   SidePanelSection,
   SidePanelToolbar,
 } from "@/components/workspace/SidePanel";
-import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
-import { requestEditorJump } from "@/lib/editor-jump-events";
-import { captureTaskFromClient } from "@/lib/tasks/capture-client";
-import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
-import { readTaskRepeat, type TaskChange } from "@/lib/tasks/edit";
-import { priorityRank } from "@/lib/tasks/views";
-import { cn } from "@/lib/utils";
-import { subscribeToTasksChanged } from "@/lib/workspace-toast";
-import {
-  updateTaskAction,
-  type TaskAgendaResult,
-} from "@/server/tasks";
-import type { AgendaTask } from "@/server/tasks-data";
 import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
+import { subscribeToWorkspaceDocumentChanges } from "@/components/workspace/workspace-events";
+import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
+import { applyTaskPatches } from "@/lib/tasks/optimistic";
+import { inAgenda, liveRow, mergeLiveTasks } from "@/lib/tasks/overlay";
 import { loadTaskAgenda } from "@/lib/tasks/shared-agenda";
+import { runTaskWrite, useTaskPatches } from "@/lib/tasks/task-writes";
+import { priorityRank, taskKey } from "@/lib/tasks/views";
+import { subscribeToTasksChanged } from "@/lib/workspace-toast";
+import type { TaskAgendaResult } from "@/server/tasks";
+import type { AgendaTask } from "@/server/tasks-data";
 
 /**
  * The sidebar agenda (docs/24_TASKS_AND_AGENDA_PLAN.md §6.1): open tasks from
- * the viewer's own documents, bucketed against the viewer's local day. Ticking
- * and rescheduling write back into the source document (slice 2); clicking a
- * task's text opens the document at its line.
+ * the viewer's own documents, bucketed against the viewer's local day.
  *
- * Changes are optimistic. Writes to one document run one at a time, and each
- * looks up its task's *current* line and text when it runs (task fields keep ordinals stable; a recurring completion invalidates later
- * queued writes because inserting an occurrence changes ordinals), so a second
- * click on a row still finds the line the first click rewrote.
+ * Rows are the server's agenda, with any document open in an editor replaced
+ * by its live parse (§5.4) and pending writes applied on top (§5.3), then
+ * filtered by the same rules the server query uses. Writes go through the
+ * shared queue in `lib/tasks/task-writes.ts`.
  */
 
 /**
@@ -59,12 +45,7 @@ import { loadTaskAgenda } from "@/lib/tasks/shared-agenda";
  */
 const refetchAfterSaveMs = 2500;
 
-type OkAgenda = Extract<TaskAgendaResult, { ok: true }>;
 type Section = { id: string; label: string; tasks: AgendaTask[]; overdue?: boolean };
-
-function taskKey(task: Pick<AgendaTask, "documentId" | "ordinal">) {
-  return `${task.documentId}:${task.ordinal}`;
-}
 
 function compareTasks(a: AgendaTask, b: AgendaTask) {
   // Undated (Inbox) tasks sort last.
@@ -80,90 +61,35 @@ function compareTasks(a: AgendaTask, b: AgendaTask) {
   );
 }
 
-/** What the server will return after `change`, applied locally ahead of it. */
-function applyLocally(agenda: OkAgenda, key: string, change: TaskChange): OkAgenda {
-  let laterCount = agenda.laterCount;
-  const tasks = agenda.tasks.flatMap((task) => {
-    if (taskKey(task) !== key) return [task];
-
-    if (change.type === "status") {
-      // Cancelled tasks leave the agenda; done ones stay struck through today.
-      if (change.status === "cancelled") return [];
-      return [
-        {
-          ...task,
-          status: change.status,
-          doneDay: change.status === "done" ? (task.doneDay ?? agenda.today) : null,
-        },
-      ];
-    }
-
-    if (change.type === "repeat") return [{ ...task, repeat: change.repeat }];
-
-    if (change.type === "priority") return [{ ...task, priority: change.priority }];
-
-    // An undated Inbox task still belongs in the Inbox section.
-    if (change.day === null) {
-      return task.documentId === agenda.inboxDocumentId
-        ? [{ ...task, dueDay: null, dueTime: null }]
-        : [];
-    }
-    if (change.day > agenda.through) {
-      laterCount += 1;
-      return [];
-    }
-    return [{ ...task, dueDay: change.day, dueTime: change.time ?? null }];
-  });
-
-  return { ...agenda, tasks: tasks.sort(compareTasks), laterCount };
-}
-
 export function WorkspaceTasksPanel() {
   const [result, setResult] = useState<TaskAgendaResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
-  /** Latest agenda the server returned, for looking up a task's current line. */
-  const serverAgendaRef = useRef<OkAgenda | null>(null);
-  /** Writes in flight; while any are, server responses must not overwrite optimistic rows. */
-  const pendingWritesRef = useRef(0);
-  const documentQueuesRef = useRef(new Map<string, Promise<void>>());
-  const recurrenceVersionsRef = useRef(new Map<string, number>());
-
-  const acceptServerResult = useCallback((next: TaskAgendaResult) => {
-    if (next.ok) serverAgendaRef.current = next;
-    if (pendingWritesRef.current === 0) setResult(next);
-  }, []);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const live = useLiveDocumentTasks();
+  const patches = useTaskPatches();
 
   // Only ever sets state after the request resolves, so calling it from an
   // effect never renders synchronously inside that effect.
   const load = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
     let next: TaskAgendaResult;
-
     try {
       next = await loadTaskAgenda(todayDayKey());
     } catch {
       next = { ok: false, error: "Could not load tasks." };
     }
-
-    if (requestId === requestIdRef.current) {
-      acceptServerResult(next);
-      setRefreshing(false);
-    }
-  }, [acceptServerResult]);
+    setResult(next);
+    setRefreshing(false);
+  }, []);
 
   // While the panel is collapsed these only mark the agenda stale; it reloads
   // once, when the panel is shown again.
-  const requestLoad = useVisibleRefresh(
-    useCallback(() => void load(), [load]),
-  );
+  const requestLoad = useVisibleRefresh(useCallback(() => void load(), [load]));
 
   useEffect(() => {
     requestLoad();
 
-    // A day can roll over, or a document change elsewhere, while the panel
-    // sits open; refocusing the window is a cheap moment to catch up.
+    // A day can roll over while the panel sits open; refocusing the window is
+    // a cheap moment to catch up.
     const onFocus = () => requestLoad();
     window.addEventListener("focus", onFocus);
 
@@ -172,8 +98,7 @@ export function WorkspaceTasksPanel() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(requestLoad, refetchAfterSaveMs);
     });
-    // A capture or undo from anywhere (the palette included) already wrote
-    // through the index, so this refetch needs no delay.
+    // Writes, captures and live server notices; the index is already fresh.
     const unsubscribeTasks = subscribeToTasksChanged(() => requestLoad());
 
     return () => {
@@ -184,76 +109,37 @@ export function WorkspaceTasksPanel() {
     };
   }, [requestLoad]);
 
-  const changeTask = useCallback(
-    (task: AgendaTask, change: TaskChange) => {
-      const key = taskKey(task);
-      const version = recurrenceVersionsRef.current.get(task.documentId) ?? 0;
+  const agenda = result?.ok ? result : null;
 
-      setNotice(null);
-      setResult((current) => (current?.ok ? applyLocally(current, key, change) : current));
-      pendingWritesRef.current += 1;
-
-      const queues = documentQueuesRef.current;
-      const previous = queues.get(task.documentId) ?? Promise.resolve();
-      const run = previous.then(async () => {
-        if ((recurrenceVersionsRef.current.get(task.documentId) ?? 0) !== version) {
-          pendingWritesRef.current -= 1;
-          setNotice("Task structure may have changed. Refresh before changing another task.");
-          if (pendingWritesRef.current === 0) void load();
-          return;
-        }
-        const latest =
-          version > 0 ? task : serverAgendaRef.current?.tasks.find((candidate) => taskKey(candidate) === key) ?? task;
-        let next: TaskAgendaResult;
-
-        try {
-          next = await updateTaskAction({
-            today: todayDayKey(),
-            documentId: latest.documentId,
-            line: latest.line,
-            rawLine: latest.rawLine,
-            change,
-          });
-        } catch {
-          next = { ok: false, error: "Could not change the task." };
-        }
-
-        pendingWritesRef.current -= 1;
-
-        if (next.ok) {
-          if (change.type === "status" && change.status === "done" && readTaskRepeat(latest.rawLine)) recurrenceVersionsRef.current.set(task.documentId, version + 1);
-          acceptServerResult(next);
-        } else {
-          // Drop optimistic state and show what the documents really say.
-          setNotice(next.error);
-          if (pendingWritesRef.current === 0) void load();
-        }
-      });
-
-      queues.set(task.documentId, run);
-      void run.finally(() => {
-        if (queues.get(task.documentId) === run) queues.delete(task.documentId);
-      });
-    },
-    [acceptServerResult, load],
-  );
+  const tasks = useMemo<AgendaTask[]>(() => {
+    if (!agenda) return [];
+    const context = { today: agenda.today, through: agenda.through, inboxDocumentId: agenda.inboxDocumentId };
+    const merged = mergeLiveTasks(agenda.tasks, live, {
+      ownedOnly: true,
+      include: (task, document) => inAgenda(task, { ...context, documentId: document.documentId }),
+      build: (task, document) => liveRow(task, document),
+    });
+    return applyTaskPatches(merged, patches, agenda.today)
+      .filter((task) => inAgenda(task, { ...context, documentId: task.documentId }))
+      .sort(compareTasks);
+  }, [agenda, live, patches]);
 
   const sections = useMemo<Section[]>(() => {
-    if (!result?.ok) return [];
+    if (!agenda) return [];
 
     const overdue: AgendaTask[] = [];
     const today: AgendaTask[] = [];
     const upcoming: AgendaTask[] = [];
     const inbox: AgendaTask[] = [];
 
-    for (const task of result.tasks) {
+    for (const task of tasks) {
       if (task.dueDay === null) {
         inbox.push(task);
       } else if (task.status === "done") {
         // A task finished today counts as today's work, whenever it was due.
-        (task.dueDay > result.today ? upcoming : today).push(task);
-      } else if (task.dueDay < result.today) overdue.push(task);
-      else if (task.dueDay === result.today) today.push(task);
+        (task.dueDay > agenda.today ? upcoming : today).push(task);
+      } else if (task.dueDay < agenda.today) overdue.push(task);
+      else if (task.dueDay === agenda.today) today.push(task);
       else upcoming.push(task);
     }
 
@@ -263,17 +149,19 @@ export function WorkspaceTasksPanel() {
       { id: "upcoming", label: "Next 7 days", tasks: upcoming },
       { id: "inbox", label: "Inbox", tasks: inbox },
     ];
-  }, [result]);
+  }, [agenda, tasks]);
+
+  const moveTargets = useMemo(
+    () => taskMoveTargets(tasks, agenda?.inboxDocumentId ?? null),
+    [tasks, agenda?.inboxDocumentId],
+  );
 
   const refresh = () => {
     setRefreshing(true);
-    setNotice(null);
     void load();
   };
 
-  const openCount = result?.ok
-    ? result.tasks.filter((task) => task.status !== "done").length
-    : null;
+  const openCount = agenda ? tasks.filter((task) => task.status !== "done").length : null;
 
   return (
     <SidePanel>
@@ -296,21 +184,15 @@ export function WorkspaceTasksPanel() {
       />
 
       <SidePanelToolbar>
-        <CaptureBox />
+        <TaskCaptureInput />
       </SidePanelToolbar>
-
-      {notice ? (
-        <p role="status" className="border-b border-border/70 px-3 py-1.5 text-xs text-destructive">
-          {notice}
-        </p>
-      ) : null}
 
       <SidePanelBody>
         {result === null ? (
           <SidePanelEmpty>Loading tasks…</SidePanelEmpty>
         ) : !result.ok ? (
           <SidePanelEmpty>{result.error}</SidePanelEmpty>
-        ) : result.tasks.length === 0 && result.events.length === 0 ? (
+        ) : tasks.length === 0 && result.events.length === 0 ? (
           <EmptyAgenda today={result.today} laterCount={result.laterCount} />
         ) : (
           <>
@@ -322,17 +204,39 @@ export function WorkspaceTasksPanel() {
                   count={section.tasks.filter((task) => task.status !== "done").length}
                   tone={section.overdue ? "danger" : "default"}
                   collapsible
+                  action={
+                    section.overdue ? (
+                      <button
+                        type="button"
+                        title="Move every overdue task to today"
+                        onClick={() =>
+                          void runTaskWrite(
+                            section.tasks.filter((task) => task.status !== "done"),
+                            { type: "due", day: result.today },
+                          )
+                        }
+                        className="rounded px-1.5 py-0.5 text-[0.7rem] text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      >
+                        Move to today
+                      </button>
+                    ) : undefined
+                  }
                 >
-                  {section.tasks.map((task) => (
-                    <TaskRow
-                      key={taskKey(task)}
-                      task={task}
-                      today={result.today}
-                      showDue={section.id !== "today" && section.id !== "inbox"}
-                      overdue={Boolean(section.overdue)}
-                      onChange={(change) => changeTask(task, change)}
-                    />
-                  ))}
+                  {section.tasks.map((task) => {
+                    const key = taskKey(task);
+                    return (
+                      <TaskRow
+                        key={key}
+                        task={task}
+                        today={result.today}
+                        variant="sidebar"
+                        showDue={section.id !== "today" && section.id !== "inbox"}
+                        editing={editingKey === key}
+                        onEditingChange={(editing) => setEditingKey(editing ? key : null)}
+                        moveTargets={moveTargets}
+                      />
+                    );
+                  })}
                 </SidePanelSection>
               ) : null,
             )}
@@ -364,130 +268,6 @@ export function WorkspaceTasksPanel() {
         )}
       </SidePanelBody>
     </SidePanel>
-  );
-}
-
-function TaskRow({
-  task,
-  today,
-  showDue,
-  overdue,
-  onChange,
-}: {
-  task: AgendaTask;
-  today: string;
-  showDue: boolean;
-  overdue: boolean;
-  onChange: (change: TaskChange) => void;
-}) {
-  const done = task.status === "done";
-  const context = task.heading ? `${task.documentTitle} › ${task.heading}` : task.documentTitle;
-  const menu = useContextMenu();
-
-  return (
-    // No "active document" highlight: tasks cluster in a few documents, so
-    // marking every row of the open one would light up most of the list.
-    <div
-      onContextMenu={menu.onContextMenu}
-      className="group relative grid grid-cols-[0.95rem_minmax(0,1fr)_1.5rem] items-start gap-x-2 rounded-[5px] px-2 py-1.5 text-sm transition hover:bg-sidebar-accent">
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={done ? "Mark not done" : "Mark done"}
-        title={done ? "Mark not done" : "Mark done"}
-        onClick={() => onChange({ type: "status", status: done ? "open" : "done" })}
-        className="vault-task-box mt-[0.2rem] cursor-pointer"
-        data-status={task.status}
-        data-overdue={overdue && !done ? "true" : undefined}
-      />
-
-      <Link
-        href={`/docs/${task.documentId}`}
-        onClick={() =>
-          requestEditorJump({ documentId: task.documentId, line: task.line, text: task.rawLine })
-        }
-        className="min-w-0 group-hover:text-sidebar-accent-foreground"
-      >
-        <span
-          className={cn(
-            "vault-task-md block",
-            done ? "text-muted-foreground line-through" : "text-foreground",
-          )}
-        >
-          {task.text ? (
-            <MarkdownDocument markdown={task.text} contained={false} disableLinks />
-          ) : (
-            <span className="italic text-muted-foreground">Untitled task</span>
-          )}
-        </span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <TaskPriorityBadge priority={task.priority} /> <TaskRepeatBadge repeat={task.repeat} />
-          <span className="min-w-0 truncate">{context}</span>
-          {(showDue && task.dueDay) || task.dueTime ? (
-            <span
-              className={cn(
-                "ml-auto shrink-0 tabular-nums",
-                overdue && !done ? "text-destructive" : null,
-              )}
-            >
-              {showDue && task.dueDay ? formatDueLabel(task.dueDay, today) : ""}
-              {task.dueTime ? `${showDue ? " " : ""}${task.dueTime}` : ""}
-            </span>
-          ) : null}
-        </span>
-      </Link>
-
-      <TaskActionsMenu
-        task={task}
-        today={today}
-        onChange={onChange}
-        contextMenu={menu}
-        className="opacity-0 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
-      />
-    </div>
-  );
-}
-
-/**
- * Quick capture into the configured document: "send invoice friday" becomes
- * `- [ ] send invoice :due[<friday>]`. The confirmation (with Undo) is a
- * workspace toast, shared with `/task` in the command palette.
- */
-function CaptureBox() {
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    if (!text.trim() || saving) return;
-    setSaving(true);
-    const result = await captureTaskFromClient(text);
-    setSaving(false);
-    if (result.ok) setText("");
-  };
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <label className="flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background/55 px-2 focus-within:border-foreground/40">
-        <Plus className="size-3.5 shrink-0 text-muted-foreground" />
-        <input
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Add task…"
-          title="Add to your capture document. A date at the end is picked up: “call Sam friday”."
-          aria-label="Add a task"
-          disabled={saving}
-          autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-        />
-        <Inbox className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      </label>
-    </form>
   );
 }
 

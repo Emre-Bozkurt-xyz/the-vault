@@ -35,6 +35,9 @@ import {
 } from "@/components/workspace/WorkspaceCommandPalette";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import { WorkspaceToast } from "@/components/workspace/WorkspaceToast";
+import { LiveTaskEvents } from "@/components/tasks/LiveTaskEvents";
+import { MoveTasksDialogHost } from "@/components/tasks/MoveTasksDialog";
+import { QuickAddTaskDialogHost } from "@/components/tasks/QuickAddTaskDialog";
 import {
   clampWidth,
   leftPanelWidthBounds,
@@ -521,6 +524,13 @@ export function VaultWorkspaceShell({
 
       <WorkspaceCommandPalette />
       <WorkspaceToast />
+      {tasksEnabled ? (
+        <>
+          <LiveTaskEvents />
+          <MoveTasksDialogHost />
+          <QuickAddTaskDialogHost />
+        </>
+      ) : null}
     </div>
   );
 }

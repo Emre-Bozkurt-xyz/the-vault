@@ -14,6 +14,7 @@ import { unified } from "unified";
 import { parseRecurrence } from "@/lib/tasks/recurrence";
 import { isValidDayKey } from "@/lib/tasks/dates";
 import {
+  MAX_TASK_TEXT_LENGTH,
   TASK_MARKER_BY_STATUS,
   TASK_MARKER_PATTERN,
   TASK_REMARK_PLUGINS,
@@ -27,7 +28,9 @@ export type TaskChange =
   | { type: "status"; status: TaskStatus }
   | { type: "due"; day: string | null; time?: string | null }
   | { type: "priority"; priority: TaskPriority | null }
-  | { type: "repeat"; repeat: string | null };
+  | { type: "repeat"; repeat: string | null }
+  /** Replaces the task's words; its marker and `:due`/`:priority`/… fields stay. */
+  | { type: "text"; text: string };
 
 /** Offsets are relative to the start of whatever text the edit is applied to. */
 export type TextEdit = { from: number; to: number; insert: string };
@@ -47,6 +50,8 @@ const linePrefixPattern = /^(?:[ \t]*>[ \t]?)*[ \t]*/;
 type TaskLine = {
   /** Offset of the status character inside `[ ]`. */
   markerOffset: number;
+  /** Offset just past `[ ]`, where the task's words begin (after a space). */
+  bodyOffset: number;
   marker: string;
   fields: LineField[];
 };
@@ -87,6 +92,7 @@ export function readTaskLine(lineText: string): TaskLine | null {
 
   return {
     markerOffset: prefix.length + marker[0].indexOf("[") + 1,
+    bodyOffset: prefix.length + marker[0].length,
     marker: marker[1],
     fields: fields.sort((a, b) => a.from - b.from),
   };
@@ -154,6 +160,14 @@ export function planTaskEdit(
     } else {
       for (const field of doneFields) edits.push(removal(lineText, field));
     }
+  } else if (change.type === "text") {
+    const text = normalizeTaskText(change.text);
+    if (!text) return null;
+    // An explicit rename replaces the words whole; the task's fields keep
+    // their order and move after the new text.
+    const fields = task.fields.map((field) => lineText.slice(field.from, field.to)).join(" ");
+    const end = Math.max(lineText.replace(/\r$/, "").trimEnd().length, task.bodyOffset);
+    edits.push({ from: task.bodyOffset, to: end, insert: ` ${text}${fields ? ` ${fields}` : ""}` });
   } else if (change.type === "repeat") {
     if (change.repeat !== null && !parseRecurrence(change.repeat)) return null;
     const fields = task.fields.filter((field) => field.name === "repeat");
@@ -198,6 +212,12 @@ export function planTaskEdit(
   }
 
   return edits.sort((a, b) => b.from - a.from);
+}
+
+/** One line of task text within the length cap, or null when nothing is left. */
+export function normalizeTaskText(value: string): string | null {
+  const text = value.replace(/\s+/g, " ").trim().slice(0, MAX_TASK_TEXT_LENGTH).trim();
+  return text || null;
 }
 
 export function applyTextEdits(text: string, edits: TextEdit[]): string {
