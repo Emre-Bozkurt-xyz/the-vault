@@ -76,6 +76,7 @@ import {
   splitWikiDocumentEmbeds,
   slugifyMarkdownHeading,
   transformWikiLinks,
+  WIKI_EMBED_RENDER_DEPTH,
   type WikiDocumentEmbedBlock,
   type WikiLinkTarget,
   type WikiLinkResolutionMap,
@@ -122,7 +123,8 @@ type MarkdownDocumentProps = {
   taskSource?: { tasks: Map<number, ParsedTask>; offset: number };
 };
 
-const maxWikiEmbedDepth = 2;
+// Server-side pruning (`pruneWikiEmbedBodies`) keeps bodies to this same depth.
+const maxWikiEmbedDepth = WIKI_EMBED_RENDER_DEPTH;
 
 const allowedLinkProtocol = /^(https?:|mailto:|\/|#)/i;
 const allowedImageProtocol = /^(https?:|\/)/i;

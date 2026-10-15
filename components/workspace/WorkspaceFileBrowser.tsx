@@ -186,7 +186,10 @@ export function WorkspaceFileBrowser({
     const map = new Map<string, WorkspaceFolderItem[]>();
     for (const folder of folders) {
       const key = folder.parentId ?? ROOT;
-      map.set(key, [...(map.get(key) ?? []), folder]);
+      // Push in place: copying the bucket per folder made this quadratic.
+      const bucket = map.get(key);
+      if (bucket) bucket.push(folder);
+      else map.set(key, [folder]);
     }
     return map;
   }, [folders]);

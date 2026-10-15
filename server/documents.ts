@@ -902,18 +902,31 @@ export async function listPublicDocuments(
     userId?: string | null;
     query?: ContentSearchQuery;
     limit?: number;
+    /**
+     * How much of each body to select: the whole document (default), the
+     * first N characters (preview cards only show a faded top slice), or
+     * none for metadata-only listings such as the workspace shell.
+     */
+    body?: "full" | "none" | { previewChars: number };
   } = {},
 ) {
   const where = buildPublicDocumentSearchWhere(options.query);
   const textTerms = options.query?.textTerms ?? [];
   const sort = options.query?.filters.sort;
   const useRelevanceSort = textTerms.length > 0 && sort !== "score" && sort !== "trending";
+  const body = options.body ?? "full";
+  const markdownColumn =
+    body === "full"
+      ? documents.markdown
+      : body === "none"
+        ? sql<string>`''`
+        : sql<string>`left(${documents.markdown}, ${Math.max(0, Math.floor(body.previewChars))})`;
 
   const baseQuery = db
     .select({
       id: documents.id,
       title: documents.title,
-      markdown: documents.markdown,
+      markdown: markdownColumn,
       publicSlug: documents.publicSlug,
       updatedAt: documents.updatedAt,
       ownerName: users.name,
@@ -930,11 +943,13 @@ export async function listPublicDocuments(
       ),
     );
 
-  const rows = await (useRelevanceSort
+  const orderedQuery = useRelevanceSort
     ? baseQuery.orderBy(desc(buildDocumentRelevanceScore(textTerms)), desc(documents.updatedAt))
-    : baseQuery.orderBy(desc(documents.updatedAt)));
-
-  const limitedRows = options.limit ? rows.slice(0, options.limit) : rows;
+    : baseQuery.orderBy(desc(documents.updatedAt));
+  // The limit belongs in SQL: slicing afterwards still reads every public body.
+  const limitedRows = await (options.limit
+    ? orderedQuery.limit(options.limit)
+    : orderedQuery);
 
   const documentIds = limitedRows.map((document) => document.id);
   const [tagMap, statsMap] = await Promise.all([

@@ -18,6 +18,7 @@ import {
 } from "@/server/documents-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
 import { consumeEmbedBootToken } from "@/server/embed";
+import { pruneWikiEmbedBodies } from "@/lib/wiki-links";
 
 // Den Phase 4 (docs/DEN_EMBED_BRIDGE.md §C.5). This route deliberately lives
 // outside `app/(workspace)/` so it inherits only the root layout — no
@@ -130,11 +131,15 @@ export default async function EmbedEditorPage({
         embedSessionToken,
       ),
     ]);
-  const wikiLinks = {
-    ...readableWikiLinks,
-    ...publicWikiLinks,
-    ...guideWikiLinks,
-  };
+  // Only bodies this document transcludes travel with the page.
+  const wikiLinks = pruneWikiEmbedBodies(
+    {
+      ...readableWikiLinks,
+      ...publicWikiLinks,
+      ...guideWikiLinks,
+    },
+    document.markdown,
+  );
 
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
   const collabRole = access.role === "owner" ? "owner" : "editor";

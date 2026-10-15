@@ -34,11 +34,12 @@ import { priorityRank } from "@/lib/tasks/views";
 import { cn } from "@/lib/utils";
 import { subscribeToTasksChanged } from "@/lib/workspace-toast";
 import {
-  getTaskAgendaAction,
   updateTaskAction,
   type TaskAgendaResult,
 } from "@/server/tasks";
 import type { AgendaTask } from "@/server/tasks-data";
+import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
+import { loadTaskAgenda } from "@/lib/tasks/shared-agenda";
 
 /**
  * The sidebar agenda (docs/24_TASKS_AND_AGENDA_PLAN.md §6.1): open tasks from
@@ -141,7 +142,7 @@ export function WorkspaceTasksPanel() {
     let next: TaskAgendaResult;
 
     try {
-      next = await getTaskAgendaAction({ today: todayDayKey() });
+      next = await loadTaskAgenda(todayDayKey());
     } catch {
       next = { ok: false, error: "Could not load tasks." };
     }
@@ -152,22 +153,28 @@ export function WorkspaceTasksPanel() {
     }
   }, [acceptServerResult]);
 
+  // While the panel is collapsed these only mark the agenda stale; it reloads
+  // once, when the panel is shown again.
+  const requestLoad = useVisibleRefresh(
+    useCallback(() => void load(), [load]),
+  );
+
   useEffect(() => {
-    void load();
+    requestLoad();
 
     // A day can roll over, or a document change elsewhere, while the panel
     // sits open; refocusing the window is a cheap moment to catch up.
-    const onFocus = () => void load();
+    const onFocus = () => requestLoad();
     window.addEventListener("focus", onFocus);
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = subscribeToWorkspaceDocumentChanges(() => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void load(), refetchAfterSaveMs);
+      timer = setTimeout(requestLoad, refetchAfterSaveMs);
     });
     // A capture or undo from anywhere (the palette included) already wrote
     // through the index, so this refetch needs no delay.
-    const unsubscribeTasks = subscribeToTasksChanged(() => void load());
+    const unsubscribeTasks = subscribeToTasksChanged(() => requestLoad());
 
     return () => {
       window.removeEventListener("focus", onFocus);
@@ -175,7 +182,7 @@ export function WorkspaceTasksPanel() {
       unsubscribeTasks();
       if (timer) clearTimeout(timer);
     };
-  }, [load]);
+  }, [requestLoad]);
 
   const changeTask = useCallback(
     (task: AgendaTask, change: TaskChange) => {

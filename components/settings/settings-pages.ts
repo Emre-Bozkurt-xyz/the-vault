@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 /**
  * One page of the settings modal.
  *
- * Pages are built on the server (`buildSettingsPages`) and handed to the client
- * modal as data, so the modal renders whatever it is given instead of carrying a
- * prop per page — which is what lets every enabled extension with settings get a
- * page of its own.
+ * Pages are built on the client (`buildSettingsPagesFromData`) from plain data
+ * the server gathers (`loadSettingsData`), and the modal renders whatever it is
+ * given instead of carrying a prop per page — which is what lets every enabled
+ * extension with settings get a page of its own.
  *
  * `icon` is a key rather than a component because icons are functions and do not
  * cross the server/client boundary; the modal resolves the key.

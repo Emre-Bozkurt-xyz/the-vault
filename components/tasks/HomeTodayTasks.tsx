@@ -13,8 +13,9 @@ import { plainTaskText } from "@/lib/tasks/query";
 import { taskKey } from "@/lib/tasks/views";
 import { cn } from "@/lib/utils";
 import { dispatchTasksChanged, subscribeToTasksChanged } from "@/lib/workspace-toast";
-import { getTaskAgendaAction, updateTaskAction, type TaskAgendaResult } from "@/server/tasks";
+import { updateTaskAction, type TaskAgendaResult } from "@/server/tasks";
 import type { AgendaTask } from "@/server/tasks-data";
+import { loadTaskAgenda } from "@/lib/tasks/shared-agenda";
 
 /**
  * The home page's "Today" section (plan §6.4): what is overdue and due today,
@@ -28,7 +29,7 @@ export function HomeTodayTasks() {
     let cancelled = false;
     // State is only set in the promise callback, never synchronously here.
     const load = () => {
-      void getTaskAgendaAction({ today: todayDayKey() }).then(
+      void loadTaskAgenda(todayDayKey()).then(
         (next) => {
           if (!cancelled) setResult(next);
         },

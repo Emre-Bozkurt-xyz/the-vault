@@ -7,6 +7,7 @@ import {
   listAssetsForUser,
   requireAssetUser,
   requireAssetUserFromRequest,
+  summarizeAssetsForUser,
 } from "@/server/assets";
 import {
   canEditDocumentWithOptionalShareLink,
@@ -14,18 +15,26 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
+const summaryRecentCount = 8;
+
+export async function GET(request: Request) {
   try {
     const user = await requireAssetUser();
+    const storage = {
+      usedBytes: user.storageUsedBytes,
+      quotaBytes: user.storageQuotaBytes,
+      unrestrictedUploadsAllowed: user.unrestrictedUploadsAllowed,
+    };
+
+    // `?view=summary`: the sidebar's counts and recent uploads only, so its
+    // payload does not grow with the library.
+    if (new URL(request.url).searchParams.get("view") === "summary") {
+      const summary = await summarizeAssetsForUser(user.id, summaryRecentCount);
+      return NextResponse.json({ ...summary, storage });
+    }
+
     const assets = await listAssetsForUser(user.id);
-    return NextResponse.json({
-      assets,
-      storage: {
-        usedBytes: user.storageUsedBytes,
-        quotaBytes: user.storageQuotaBytes,
-        unrestrictedUploadsAllowed: user.unrestrictedUploadsAllowed,
-      },
-    });
+    return NextResponse.json({ assets, storage });
   } catch (error) {
     return assetErrorResponse(error);
   }

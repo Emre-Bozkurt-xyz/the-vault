@@ -394,6 +394,25 @@ export async function listDocumentsForUser(userId: string) {
     .orderBy(desc(documents.updatedAt));
 }
 
+/**
+ * {@link listDocumentsForUser} without the body, for the workspace shell and
+ * other listings that only show titles. Bodies are the bulk of a vault's bytes,
+ * so callers that never read `markdown` must not select it.
+ */
+export async function listDocumentSummariesForUser(userId: string) {
+  return db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      visibility: documents.visibility,
+      folderId: documents.folderId,
+      updatedAt: documents.updatedAt,
+    })
+    .from(documents)
+    .where(and(eq(documents.ownerId, userId), isNull(documents.deletedAt)))
+    .orderBy(desc(documents.updatedAt));
+}
+
 export async function listDocumentsInOwnedFoldersFromOthers(userId: string) {
   return db
     .select({
@@ -451,11 +470,28 @@ export async function listDocumentsInOwnedFoldersFromOthersWithBody(
 export async function listSharedDocumentsForUser(
   userId: string,
 ): Promise<SharedDocumentRow[]> {
+  return (await querySharedDocuments(userId, true)) as SharedDocumentRow[];
+}
+
+/**
+ * {@link listSharedDocumentsForUser} without the body, for the workspace shell.
+ * Same permission rules (direct shares plus shared-folder inheritance).
+ */
+export async function listSharedDocumentSummariesForUser(
+  userId: string,
+): Promise<SharedDocumentSummaryRow[]> {
+  return querySharedDocuments(userId, false);
+}
+
+async function querySharedDocuments(
+  userId: string,
+  includeBody: boolean,
+): Promise<SharedDocumentSummaryRow[]> {
   const directRows = await db
     .select({
       id: documents.id,
       title: documents.title,
-      markdown: documents.markdown,
+      ...(includeBody ? { markdown: documents.markdown } : {}),
       visibility: documents.visibility,
       updatedAt: documents.updatedAt,
       role: documentPermissions.role,
@@ -478,7 +514,7 @@ export async function listSharedDocumentsForUser(
   const inheritedRows = await db.execute<{
     id: string;
     title: string;
-    markdown: string;
+    markdown?: string;
     visibility: DocumentVisibility;
     updatedAt: Date;
     role: "editor" | "viewer";
@@ -503,7 +539,7 @@ export async function listSharedDocumentsForUser(
     select
       d.id as "id",
       d.title as "title",
-      d.markdown as "markdown",
+      ${includeBody ? sql`d.markdown as "markdown",` : sql``}
       d.visibility as "visibility",
       d.updated_at as "updatedAt",
       sf.role as "role",
@@ -518,7 +554,7 @@ export async function listSharedDocumentsForUser(
     where d.deleted_at is null and d.owner_id <> ${userId}
   `);
 
-  const byId = new Map<string, SharedDocumentRow>();
+  const byId = new Map<string, SharedDocumentSummaryRow>();
 
   for (const row of directRows) {
     byId.set(row.id, { ...row, viaFolderName: null });
@@ -945,10 +981,9 @@ export async function listDefinitionDocumentIds() {
   return new Set(rows.map((row) => row.documentId));
 }
 
-type SharedDocumentRow = {
+type SharedDocumentSummaryRow = {
   id: string;
   title: string;
-  markdown: string;
   visibility: DocumentVisibility;
   updatedAt: Date;
   role: DocumentRole;
@@ -958,6 +993,8 @@ type SharedDocumentRow = {
   ownerUsername: string | null;
   viaFolderName: string | null;
 };
+
+type SharedDocumentRow = SharedDocumentSummaryRow & { markdown: string };
 
 export async function createDocumentVersion(
   tx: DocumentVersionExecutor,

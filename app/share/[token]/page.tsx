@@ -25,6 +25,7 @@ import {
   getViewerStylingPreference,
 } from "@/server/snippets";
 import { getCspNonce } from "@/lib/security/nonce";
+import { pruneWikiEmbedBodies } from "@/lib/wiki-links";
 
 type ShareLinkPageProps = {
   params: Promise<{ token: string }>;
@@ -116,10 +117,14 @@ export default async function ShareLinkPage({ params }: ShareLinkPageProps) {
       userId: null,
     }),
   ]);
-  const wikiLinks = {
-    ...publicWikiLinks,
-    ...guideWikiLinks,
-  };
+  // Only bodies this document transcludes travel with the page.
+  const wikiLinks = pruneWikiEmbedBodies(
+    {
+      ...publicWikiLinks,
+      ...guideWikiLinks,
+    },
+    document.markdown,
+  );
 
   const [applyStyling, nonce] = await Promise.all([
     getViewerStylingPreference(session?.user?.id ?? null),

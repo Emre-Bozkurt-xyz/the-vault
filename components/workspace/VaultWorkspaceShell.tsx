@@ -23,6 +23,11 @@ import {
   subscribeToOpenRightPanel,
 } from "@/lib/document-command-events";
 import { cn } from "@/lib/utils";
+import {
+  PanelVisibilityProvider,
+  useHydrated,
+  useMediaQuery,
+} from "@/components/workspace/panel-visibility";
 import { WorkspaceIconRail, railItems } from "@/components/workspace/WorkspaceIconRail";
 import {
   WorkspaceCommandPalette,
@@ -102,6 +107,20 @@ export function VaultWorkspaceShell({
   );
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileRightPanelOpen, setMobileRightPanelOpen] = useState(false);
+  // The desktop panels are CSS-hidden below `md` (left) and `lg` (right), where
+  // the drawers below render their own copy. Mounting a hidden copy anyway made
+  // phones and tablets run every panel's fetches and refreshes twice. A desktop
+  // copy that has been shown stays mounted, so crossing a breakpoint mid-upload
+  // never cancels work; the server render assumes desktop, as before.
+  const hydrated = useHydrated();
+  const leftPanelFits = useMediaQuery("(min-width: 48rem)", true);
+  const rightPanelFits = useMediaQuery("(min-width: 64rem)", true);
+  const [leftPanelShown, setLeftPanelShown] = useState(false);
+  const [rightPanelShown, setRightPanelShown] = useState(false);
+  if (hydrated && leftPanelFits && !leftPanelShown) setLeftPanelShown(true);
+  if (hydrated && rightPanelFits && !rightPanelShown) setRightPanelShown(true);
+  const mountLeftPanel = leftPanelFits || leftPanelShown;
+  const mountRightPanel = rightPanelFits || rightPanelShown;
 
   // A `/share` or `/history` command needs the context panel visible so its
   // (otherwise unmounted) contents can receive the command.
@@ -284,9 +303,12 @@ export function VaultWorkspaceShell({
         )}
         style={{ width: leftCollapsed ? 0 : leftPanelWidth }}
       >
-        {activePanel}
-        {!activePanel ? (
-          <PlaceholderPanel mode={effectiveMode} />
+        {mountLeftPanel ? (
+          // Collapsing keeps the panel mounted (uploads and drafts live in it)
+          // but tells it to hold refreshes until it is shown again.
+          <PanelVisibilityProvider value={!leftCollapsed}>
+            {activePanel ?? <PlaceholderPanel mode={effectiveMode} />}
+          </PanelVisibilityProvider>
         ) : null}
       </aside>
       {!leftCollapsed ? (
@@ -355,7 +377,7 @@ export function VaultWorkspaceShell({
                     </button>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                    {rightPanel}
+                    {mountRightPanel ? rightPanel : null}
                   </div>
                 </aside>
               </>

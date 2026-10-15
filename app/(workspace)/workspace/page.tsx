@@ -16,7 +16,9 @@ export default async function WorkspacePage() {
         page={{ type: "new", title: "New tab", href: "/workspace" }}
       />
       <WorkspaceNewTab
-        recentDocuments={workspace.recent}
+        recentDocuments={[...workspace.owned, ...workspace.shared]
+          .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+          .slice(0, 8)}
         searchableDocuments={[...workspace.owned, ...workspace.shared]}
         userLabel={userLabel}
         tasksEnabled={workspace.tasksEnabled}

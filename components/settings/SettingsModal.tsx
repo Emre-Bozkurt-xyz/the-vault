@@ -44,6 +44,11 @@ const icons: Record<SettingsIconKey, typeof UserRound> = {
 
 type SettingsModalProps = {
   pages: SettingsPage[];
+  /**
+   * The workspace modal loads its pages on open; until they arrive it shows a
+   * placeholder (or a retry hint) instead of an empty dialog.
+   */
+  status?: "ready" | "loading" | "failed";
   /** The page shown first when the active page is not controlled. */
   defaultPageId?: string;
   /** Controlled active page; pair with `onActivePageChange`. */
@@ -56,6 +61,7 @@ type SettingsModalProps = {
 
 export function SettingsModal({
   pages,
+  status = "ready",
   defaultPageId,
   activePageId: controlledPageId,
   onActivePageChange,
@@ -175,6 +181,17 @@ export function SettingsModal({
                 </SettingsNavigationContext.Provider>
               </div>
             </>
+          ) : status !== "ready" ? (
+            <div className="grid h-full place-items-center px-4 py-10 text-sm text-muted-foreground">
+              <DialogHeader className="items-center text-center">
+                <DialogTitle className="sr-only">Settings</DialogTitle>
+                <DialogDescription>
+                  {status === "failed"
+                    ? "Settings could not be loaded. Close and reopen to try again."
+                    : "Loading settings…"}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
           ) : null}
         </main>
       </DialogContent>

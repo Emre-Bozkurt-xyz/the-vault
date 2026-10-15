@@ -20,7 +20,10 @@ import { WorkspaceAssetsPanel } from "@/components/workspace/WorkspaceAssetsPane
 import { VaultWorkspaceShell } from "@/components/workspace/VaultWorkspaceShell";
 import type { WorkspaceGuideGroup } from "@/components/workspace/workspace-types";
 import { cn } from "@/lib/utils";
-import type { WikiLinkResolutionMap } from "@/lib/wiki-links";
+import {
+  pruneWikiEmbedBodies,
+  type WikiLinkResolutionMap,
+} from "@/lib/wiki-links";
 import { listPublicWikiLinkResolutions } from "@/server/documents";
 import {
   getPublishedOfficialDocBySlug,
@@ -48,14 +51,18 @@ export default async function OfficialDocPage({
     listPublicWikiLinkResolutions(),
     auth(),
   ]);
-  const wikiLinks = {
-    ...publicWikiLinks,
-    ...guideWikiLinks,
-  };
-
   if (!doc) {
     notFound();
   }
+
+  // Only bodies this document transcludes travel with the page.
+  const wikiLinks = pruneWikiEmbedBodies(
+    {
+      ...publicWikiLinks,
+      ...guideWikiLinks,
+    },
+    doc.markdown,
+  );
 
   // Guides carry no extension state; this resolves what their Markdown uses
   // (the FX table for `:calc`) as an anonymous reader.
@@ -119,7 +126,7 @@ export default async function OfficialDocPage({
       >
         <GuideContent doc={doc} wikiLinks={wikiLinks} extensions={documentExtensions} />
       </VaultWorkspaceShell>
-      <WorkspaceSettingsModalMount profile={workspace.profile} />
+      <WorkspaceSettingsModalMount />
       </>
     );
   }

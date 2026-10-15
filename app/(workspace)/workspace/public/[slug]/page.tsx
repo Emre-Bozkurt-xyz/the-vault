@@ -25,6 +25,7 @@ import {
   getViewerStylingPreference,
 } from "@/server/snippets";
 import { getCspNonce } from "@/lib/security/nonce";
+import { pruneWikiEmbedBodies } from "@/lib/wiki-links";
 
 type WorkspacePublicDocumentPageProps = {
   params: Promise<{ slug: string }>;
@@ -64,10 +65,14 @@ export default async function WorkspacePublicDocumentPage({
         userId: null,
       }),
     ]);
-  const wikiLinks = {
-    ...publicWikiLinks,
-    ...guideWikiLinks,
-  };
+  // Only bodies this document transcludes travel with the page.
+  const wikiLinks = pruneWikiEmbedBodies(
+    {
+      ...publicWikiLinks,
+      ...guideWikiLinks,
+    },
+    document.markdown,
+  );
   const ownerName = document.ownerName ?? document.ownerUsername ?? "Vault user";
   const ownerHandle = document.ownerUsername ? `@${document.ownerUsername}` : null;
   const ownerInitial = ownerName.trim().charAt(0).toUpperCase() || "V";

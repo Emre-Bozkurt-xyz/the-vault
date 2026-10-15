@@ -69,6 +69,7 @@ import {
   listDocumentSnippetAttachmentsForOwner,
 } from "@/server/snippets";
 import { getCspNonce } from "@/lib/security/nonce";
+import { pruneWikiEmbedBodies } from "@/lib/wiki-links";
 
 export default async function DocumentPage({
   params,
@@ -160,11 +161,15 @@ export default async function DocumentPage({
   const slashMenuEnabled = buildPreferences(
     editorSetting ? [editorSetting] : [],
   ).editor.slashMenu;
-  const wikiLinks = {
-    ...readableWikiLinks,
-    ...publicWikiLinks,
-    ...guideWikiLinks,
-  };
+  // Only bodies this document transcludes travel with the page.
+  const wikiLinks = pruneWikiEmbedBodies(
+    {
+      ...readableWikiLinks,
+      ...publicWikiLinks,
+      ...guideWikiLinks,
+    },
+    document.markdown,
+  );
   const markdown = document.markdown;
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
   // Attached snippet CSS applies to the rendered read view and to the editor's

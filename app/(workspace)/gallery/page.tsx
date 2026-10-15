@@ -23,6 +23,8 @@ export default async function GalleryPage({
     listPublicDocuments({
       userId: workspace.profile.id,
       query: parsedQuery,
+      // Cards show a faded top slice of each document, never the whole body.
+      body: { previewChars: 4000 },
     }),
     listPublicAssets({
       userId: workspace.profile.id,

@@ -58,6 +58,7 @@ import {
   requestOpenRightPanel,
 } from "@/lib/document-command-events";
 import { signOutAction } from "@/server/auth-actions";
+import { clearOfflinePages } from "@/lib/pwa/offline-pages";
 import {
   archiveDocumentAction,
   createDocumentAction,
@@ -419,7 +420,10 @@ export function WorkspaceCommandPalette() {
       group: "Account",
       keywords: "log out exit",
       icon: LogOut,
-      run: () => signOutAction(),
+      run: () => {
+        clearOfflinePages();
+        return signOutAction();
+      },
     });
 
     return list;

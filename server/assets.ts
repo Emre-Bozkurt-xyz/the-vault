@@ -633,6 +633,52 @@ export async function listAssetsForUser(userId: string) {
   }));
 }
 
+/**
+ * What the assets sidebar shows — per-kind counts and the newest few uploads —
+ * computed in SQL instead of shipping the whole library to count it in the
+ * browser. Same scope as {@link listAssetsForUser}: the user's ready, live assets.
+ */
+export async function summarizeAssetsForUser(userId: string, recentCount: number) {
+  const scope = and(
+    eq(assets.ownerId, userId),
+    eq(assets.status, "ready"),
+    isNull(assets.deletedAt),
+  );
+  const [[counts], recentRows] = await Promise.all([
+    db
+      .select({
+        all: sql<number>`count(*)::int`,
+        image: sql<number>`(count(*) filter (where ${assets.kind} = 'image'))::int`,
+        pdf: sql<number>`(count(*) filter (where ${assets.kind} = 'pdf'))::int`,
+        file: sql<number>`(count(*) filter (where ${assets.kind} = 'file'))::int`,
+        public: sql<number>`(count(*) filter (where ${assets.visibility} = 'public'))::int`,
+      })
+      .from(assets)
+      .where(scope),
+    db
+      .select({
+        id: assets.id,
+        kind: assets.kind,
+        displayName: assets.displayName,
+        sizeBytes: assets.sizeBytes,
+        mimeType: assets.mimeType,
+        createdAt: assets.createdAt,
+      })
+      .from(assets)
+      .where(scope)
+      .orderBy(desc(assets.createdAt), desc(assets.id))
+      .limit(Math.max(0, Math.floor(recentCount))),
+  ]);
+
+  return {
+    counts: counts ?? { all: 0, image: 0, pdf: 0, file: 0, public: 0 },
+    recent: recentRows.map((asset) => ({
+      ...asset,
+      url: buildAssetContentUrl(asset.id),
+    })),
+  };
+}
+
 export async function listPublicAssets(
   options: {
     userId?: string | null;

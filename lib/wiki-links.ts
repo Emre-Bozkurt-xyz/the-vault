@@ -777,6 +777,107 @@ export function buildWikiLinkResolutionMap<
   }
 }
 
+/** How many levels of `![[...]]` the renderer expands (`MarkdownDocument`). */
+export const WIKI_EMBED_RENDER_DEPTH = 2;
+
+const wikiEmbedPattern = /!\[\[([^\]\n]+)\]\]/g;
+
+/**
+ * Lists the resolution keys of every `![[...]]` in `markdown`. Deliberately
+ * looser than the renderer (inline embeds, fenced code and regions all count):
+ * an extra key only keeps one more body, a missing one would blank an embed.
+ */
+export function extractWikiEmbedKeys(markdown: string) {
+  const keys = new Set<string>();
+
+  for (const match of markdown.matchAll(wikiEmbedPattern)) {
+    const parts = parseWikiLinkParts("!", match[1] ?? "");
+
+    if (parts.target && !externalImageMarkdown(parts.target, parts.label)) {
+      keys.add(wikiKeyForTarget(parts.target));
+    }
+  }
+
+  return keys;
+}
+
+/**
+ * Returns `resolutions` with `embedMarkdown` kept only for documents that
+ * `rootMarkdown` actually transcludes, following nested embeds as deep as the
+ * renderer goes. Every other entry keeps its label, href, headings and anchors,
+ * so links and completion behave the same — the map just stops carrying the
+ * body of every readable document in the vault to the browser.
+ */
+export function pruneWikiEmbedBodies(
+  resolutions: WikiLinkResolutionMap,
+  rootMarkdown: string,
+  depth = WIKI_EMBED_RENDER_DEPTH,
+): WikiLinkResolutionMap {
+  return pruneWikiEmbedBodiesForKeys(
+    resolutions,
+    extractWikiEmbedKeys(rootMarkdown),
+    depth,
+  );
+}
+
+/**
+ * {@link pruneWikiEmbedBodies} starting from resolution keys rather than a
+ * document — for a client asking for the bodies of embeds it just gained.
+ */
+export function pruneWikiEmbedBodiesForKeys(
+  resolutions: WikiLinkResolutionMap,
+  rootKeys: Iterable<string>,
+  depth = WIKI_EMBED_RENDER_DEPTH,
+): WikiLinkResolutionMap {
+  // Identify a body by its document (one document claims several keys), and
+  // fall back to the key for resolutions without an id.
+  const bodyId = (key: string, resolution: WikiLinkResolution) =>
+    resolution.documentId ? `id:${resolution.documentId}` : `key:${key}`;
+  const kept = new Set<string>();
+  let frontier: Iterable<string>[] = [rootKeys];
+
+  for (let level = 0; level < depth && frontier.length > 0; level += 1) {
+    const next: Iterable<string>[] = [];
+
+    for (const keys of frontier) {
+      for (const key of keys) {
+        const resolution = resolutions[key];
+
+        if (typeof resolution?.embedMarkdown !== "string") {
+          continue;
+        }
+
+        const id = bodyId(key, resolution);
+
+        if (!kept.has(id)) {
+          kept.add(id);
+          next.push(extractWikiEmbedKeys(resolution.embedMarkdown));
+        }
+      }
+    }
+
+    frontier = next;
+  }
+
+  const pruned: WikiLinkResolutionMap = {};
+
+  for (const [key, resolution] of Object.entries(resolutions)) {
+    if (
+      typeof resolution.embedMarkdown === "string" &&
+      !kept.has(bodyId(key, resolution))
+    ) {
+      // Deleted rather than set to undefined, which RSC still serializes.
+      const withoutBody = { ...resolution };
+      delete withoutBody.embedMarkdown;
+      pruned[key] = withoutBody;
+    } else {
+      pruned[key] = resolution;
+    }
+  }
+
+  return pruned;
+}
+
 function parseStandaloneWikiDocumentEmbed(
   line: string,
   resolutions: WikiLinkResolutionMap,

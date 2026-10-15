@@ -1,21 +1,13 @@
+"use client";
+
 import { OpenExtensionSettingsButton } from "@/components/settings/OpenExtensionSettingsButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { setUserExtensionEnabledAction } from "@/server/user-settings-actions";
-import type { ServerExtensionEntry } from "@/extensions/registry.server";
-import type { ExtensionManifest } from "@/lib/extension-api";
-import type { ExtensionServerModule } from "@/lib/extension-api/server";
-
-type UserExtensionSettingRecord = {
-  extensionId: string;
-  enabled: boolean;
-  settings: Record<string, unknown>;
-  version: number;
-};
+import type { ExtensionCard } from "@/components/settings/settings-data";
 
 type ExtensionBrowserSectionProps = {
-  extensions: readonly ServerExtensionEntry[];
-  userSettings: UserExtensionSettingRecord[];
+  extensions: readonly ExtensionCard[];
 };
 
 /**
@@ -28,19 +20,11 @@ type ExtensionBrowserSectionProps = {
  */
 export function ExtensionBrowserSection({
   extensions,
-  userSettings,
 }: ExtensionBrowserSectionProps) {
-  const userSettingsByExtension = new Map(
-    userSettings.map((setting) => [setting.extensionId, setting]),
-  );
-
   return (
     <div className="grid gap-3">
-      {extensions.map(({ manifest: extension, server }) => {
-        const setting = userSettingsByExtension.get(extension.id);
-        const enabled = setting?.enabled ?? extension.defaultEnabled ?? false;
-        const contributionLabels = getContributionLabels(extension, server);
-        const hasSettings = Boolean(extension.settings?.sections?.length);
+      {extensions.map((extension) => {
+        const { enabled, contributionLabels, hasSettings } = extension;
 
         return (
           <article
@@ -69,7 +53,11 @@ export function ExtensionBrowserSection({
               <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
                 <MetadataList
                   label="Permissions"
-                  items={extension.permissions ?? ["No special permissions"]}
+                  items={
+                    extension.permissions.length
+                      ? extension.permissions
+                      : ["No special permissions"]
+                  }
                 />
                 <MetadataList
                   label="Contributes"
@@ -120,38 +108,4 @@ function MetadataList({ label, items }: { label: string; items: readonly string[
       </div>
     </div>
   );
-}
-
-function getContributionLabels(
-  extension: ExtensionManifest,
-  server: ExtensionServerModule | null,
-) {
-  const labels: string[] = [];
-  const syntax = extension.syntax;
-
-  if (extension.slashCommands?.length) {
-    labels.push("Slash commands");
-  }
-
-  if (syntax?.blocks?.length || syntax?.containers?.length) {
-    labels.push("Markdown blocks");
-  }
-
-  if (syntax?.inline?.length) {
-    labels.push("Inline values");
-  }
-
-  if (extension.overlays?.length) {
-    labels.push("Document overlay");
-  }
-
-  if (extension.commands?.length) {
-    labels.push("Commands");
-  }
-
-  if (server?.actions.some((action) => action.agent !== false)) {
-    labels.push("Agent actions");
-  }
-
-  return labels;
 }

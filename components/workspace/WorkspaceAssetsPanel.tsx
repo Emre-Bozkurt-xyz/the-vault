@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   File as FileIcon,
   FileText,
@@ -29,14 +29,30 @@ import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-eve
 import { requestOpenRightPanel } from "@/lib/document-command-events";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
+import { fetchAssetLibrary } from "@/lib/shared-request";
 
 const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
-const RECENT_COUNT = 8;
 const FILTER_KEYS = ["kind", "visibility"];
 
-type AssetsResponse = {
-  assets?: AssetLibraryItem[];
+type RecentAsset = Pick<
+  AssetLibraryItem,
+  "id" | "kind" | "displayName" | "sizeBytes" | "mimeType" | "createdAt" | "url"
+>;
+
+/** `GET /api/assets?view=summary`. */
+type AssetsSummaryResponse = {
+  counts: { all: number; image: number; pdf: number; file: number; public: number };
+  recent: RecentAsset[];
   storage?: { usedBytes: number; quotaBytes: number; unrestrictedUploadsAllowed: boolean };
+};
+
+const emptyCounts: AssetsSummaryResponse["counts"] = {
+  all: 0,
+  image: 0,
+  pdf: 0,
+  file: 0,
+  public: 0,
 };
 
 /**
@@ -46,53 +62,43 @@ type AssetsResponse = {
  * asset view reports a change.
  */
 export function WorkspaceAssetsPanel() {
-  const [data, setData] = useState<AssetsResponse | null>(null);
+  const [data, setData] = useState<AssetsSummaryResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isActive = useActiveHref();
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      fetch("/api/assets")
-        .then((response) => (response.ok ? (response.json() as Promise<AssetsResponse>) : null))
+  const cancelledRef = useRef(false);
+  // While the panel is collapsed, changes only mark the list stale; it reloads
+  // once, when the panel is shown again.
+  const requestLoad = useVisibleRefresh(
+    useCallback(() => {
+      fetchAssetLibrary("summary")
+        .then((next) => next as AssetsSummaryResponse | null)
         .then((next) => {
-          if (next && !cancelled) setData(next);
+          if (next && !cancelledRef.current) setData(next);
         })
         // Keep whatever we had; the panel is a convenience view.
         .catch(() => undefined);
+    }, []),
+  );
 
-    void load();
-    const unsubscribe = subscribeToAssetsChanged(() => void load());
+  useEffect(() => {
+    cancelledRef.current = false;
+    requestLoad();
+    const unsubscribe = subscribeToAssetsChanged(() => requestLoad());
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       unsubscribe();
     };
-  }, []);
+  }, [requestLoad]);
 
   const uploads = useAssetUploads({
     onSettled: () => dispatchAssetsChanged(),
     autoDismissMs: 3000,
   });
 
-  const assets = useMemo(() => data?.assets ?? [], [data]);
-  const counts = useMemo(
-    () => ({
-      all: assets.length,
-      image: assets.filter((asset) => asset.kind === "image").length,
-      pdf: assets.filter((asset) => asset.kind === "pdf").length,
-      file: assets.filter((asset) => asset.kind === "file").length,
-      public: assets.filter((asset) => asset.visibility === "public").length,
-    }),
-    [assets],
-  );
-  const recent = useMemo(
-    () =>
-      [...assets]
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, RECENT_COUNT),
-    [assets],
-  );
+  const counts = data?.counts ?? emptyCounts;
+  const recent = data?.recent ?? [];
   const storage = data?.storage;
 
   return (
@@ -206,7 +212,7 @@ export function WorkspaceAssetsPanel() {
   );
 }
 
-function AssetThumb({ asset }: { asset: AssetLibraryItem }) {
+function AssetThumb({ asset }: { asset: RecentAsset }) {
   const frame = "grid size-8 shrink-0 place-items-center overflow-hidden rounded border border-border/60 bg-muted/60";
 
   if (asset.kind === "image") {

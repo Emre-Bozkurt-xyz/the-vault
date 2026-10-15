@@ -11,7 +11,7 @@ type SitemapEntry = MetadataRoute.Sitemap[number];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [publicDocuments, officialDocs, termsPage, privacyPage] = await Promise.all([
-    listPublicDocuments(),
+    listPublicDocuments({ body: "none" }),
     listPublishedOfficialDocs(),
     getTermsPage(),
     getPrivacyPage(),

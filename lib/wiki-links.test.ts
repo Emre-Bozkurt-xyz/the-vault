@@ -5,6 +5,8 @@ import {
   countWikiLinkTargets,
   buildWikiLinkResolutionMap,
   hrefWithoutFragment,
+  pruneWikiEmbedBodies,
+  pruneWikiEmbedBodiesForKeys,
   wikiDocKey,
   wikiPublicKey,
   wikiTitleKey,
@@ -324,5 +326,53 @@ describe("countWikiLinkTargets", () => {
     const markdown = "[[A]] [[A]] ![[B]] `[[C]]`";
 
     expect([...countWikiLinkTargets(markdown).keys()]).toEqual(["A"]);
+  });
+});
+
+describe("pruneWikiEmbedBodies", () => {
+  const bodyB = ["Body B", "![[C#Part]]"].join("\n");
+  const bodyC = ["# Part", "![[D]]"].join("\n");
+  const docs = [
+    row({ id: "a", title: "A", markdown: "![[B]]" }),
+    row({ id: "b", title: "B", markdown: bodyB, publicSlug: "b" }),
+    row({ id: "c", title: "C", markdown: bodyC }),
+    row({ id: "d", title: "D", markdown: "Body D" }),
+    row({ id: "e", title: "E", markdown: "Body E" }),
+  ];
+  const map = buildWikiLinkResolutionMap(docs, (doc) => `/docs/${doc.id}`);
+
+  it("keeps bodies only for embeds reachable within the render depth", () => {
+    const pruned = pruneWikiEmbedBodies(map, ["Intro", "![[B]]", "[[E]]"].join("\n"));
+
+    expect(pruned[wikiTitleKey("B")]?.embedMarkdown).toBe(bodyB);
+    expect(pruned[wikiDocKey("b")]?.embedMarkdown).toBe(bodyB);
+    // Every key of a kept document keeps its body, public keys included.
+    expect(pruned[wikiPublicKey("b")]?.embedMarkdown).toBe(bodyB);
+    expect(pruned[wikiTitleKey("C")]?.embedMarkdown).toBe(bodyC);
+    // Third level: beyond what the renderer expands.
+    expect(pruned[wikiTitleKey("D")]?.embedMarkdown).toBeUndefined();
+    // A plain link never needs the body.
+    expect(pruned[wikiTitleKey("E")]?.embedMarkdown).toBeUndefined();
+  });
+
+  it("keeps everything a link needs when it drops a body", () => {
+    const pruned = pruneWikiEmbedBodies(map, "");
+    const resolution = pruned[wikiTitleKey("C")];
+
+    expect(resolution?.embedMarkdown).toBeUndefined();
+    expect(resolution).toMatchObject({
+      status: "resolved",
+      documentId: "c",
+      href: "/docs/c",
+    });
+    expect(resolution?.headings).toEqual(map[wikiTitleKey("C")]?.headings);
+  });
+
+  it("starts from resolution keys for on-demand requests", () => {
+    const pruned = pruneWikiEmbedBodiesForKeys(map, [wikiDocKey("c")]);
+
+    expect(pruned[wikiDocKey("c")]?.embedMarkdown).toBe(bodyC);
+    expect(pruned[wikiTitleKey("D")]?.embedMarkdown).toBe("Body D");
+    expect(pruned[wikiTitleKey("B")]?.embedMarkdown).toBeUndefined();
   });
 });

@@ -9,12 +9,31 @@ import {
   listWikiLinkResolutionsForUser,
 } from "@/server/documents-data";
 import { listOfficialDocWikiLinkResolutions } from "@/server/official-docs";
+import {
+  pruneWikiEmbedBodiesForKeys,
+  type WikiLinkResolutionMap,
+} from "@/lib/wiki-links";
+
+const maxEmbedKeys = 20;
 
 export async function GET(request: Request) {
   const userId = await resolveWikiLinksUserId(request);
 
   if (!userId) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  // `?embed=<key>` (repeatable): bodies for embeds an open editor gained after
+  // its page loaded. Pages only carry bodies their document transcluded then.
+  const embedKeys = new URL(request.url).searchParams
+    .getAll("embed")
+    .slice(0, maxEmbedKeys);
+
+  if (embedKeys.length > 0) {
+    return NextResponse.json(
+      { wikiLinks: await loadEmbedBodies(userId, embedKeys) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   const [readableWikiLinks, guideWikiLinks, publicWikiLinks] =
@@ -43,6 +62,32 @@ export async function GET(request: Request) {
         "Cache-Control": "no-store",
       },
     },
+  );
+}
+
+/**
+ * The entries carrying a body for `embedKeys` and their nested embeds — the
+ * same readable/public/guide maps the document page builds, so this can never
+ * return a body that page would not have rendered.
+ */
+async function loadEmbedBodies(
+  userId: string,
+  embedKeys: string[],
+): Promise<WikiLinkResolutionMap> {
+  const [readableWikiLinks, publicWikiLinks, guideWikiLinks] = await Promise.all([
+    listWikiLinkResolutionsForUser(userId),
+    listPublicWikiLinkResolutions(),
+    listOfficialDocWikiLinkResolutions(),
+  ]);
+  const pruned = pruneWikiEmbedBodiesForKeys(
+    { ...readableWikiLinks, ...publicWikiLinks, ...guideWikiLinks },
+    embedKeys,
+  );
+
+  return Object.fromEntries(
+    Object.entries(pruned).filter(
+      ([, resolution]) => typeof resolution.embedMarkdown === "string",
+    ),
   );
 }
 

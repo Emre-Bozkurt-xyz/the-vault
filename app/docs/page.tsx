@@ -71,7 +71,7 @@ export default async function OfficialDocsIndexPage() {
       >
         <DocsIndexContent docs={docs} groupedDocs={groupedDocs} />
       </VaultWorkspaceShell>
-      <WorkspaceSettingsModalMount profile={workspace.profile} />
+      <WorkspaceSettingsModalMount />
       </>
     );
   }

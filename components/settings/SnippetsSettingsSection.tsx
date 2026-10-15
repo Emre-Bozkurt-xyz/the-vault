@@ -7,9 +7,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { css as cssLanguage } from "@codemirror/lang-css";
-import { EditorView } from "@codemirror/view";
-import CodeMirror from "@uiw/react-codemirror";
+import dynamic from "next/dynamic";
 import {
   AlertTriangle,
   Loader2,
@@ -20,7 +18,6 @@ import {
 } from "lucide-react";
 
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
-import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SnippetDiagnostic } from "@/lib/snippets/compile";
@@ -34,6 +31,24 @@ import {
   setViewerStylingPreferenceAction,
   updateSnippetAction,
 } from "@/server/snippets-actions";
+
+// Both are heavy (CodeMirror; the Markdown/KaTeX/highlighting stack) and only
+// needed once a snippet is opened, so neither ships with the settings modal.
+const SnippetCssEditor = dynamic(
+  () =>
+    import("@/components/settings/SnippetCssEditor").then(
+      (mod) => mod.SnippetCssEditor,
+    ),
+  {
+    ssr: false,
+    loading: () => <div className="h-[320px] bg-muted/20" aria-hidden="true" />,
+  },
+);
+const MarkdownDocument = dynamic(() =>
+  import("@/components/markdown/MarkdownDocument").then(
+    (mod) => mod.MarkdownDocument,
+  ),
+);
 
 const PREVIEW_DOC_ID = "preview";
 
@@ -316,13 +331,7 @@ function SnippetEditor({ snippet, onClose }: SnippetEditorProps) {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="grid gap-2">
           <div className="overflow-hidden rounded-md border border-border/70">
-            <CodeMirror
-              value={source}
-              height="320px"
-              extensions={[cssLanguage(), EditorView.lineWrapping]}
-              onChange={handleChange}
-              theme="dark"
-            />
+            <SnippetCssEditor value={source} onChange={handleChange} />
           </div>
           {errors.length > 0 || warnings.length > 0 ? (
             <div className="grid gap-1 rounded-md border border-border/70 bg-muted/20 p-2 text-xs">

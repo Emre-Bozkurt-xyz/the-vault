@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { db } from "@/db";
 import { documentPermissions, documentTags, documentTaskIndex, documentTasks, documents, tags, users } from "@/db/schema";
+import { createCoalescedRunner } from "@/lib/coalesce";
 import { withDocumentWriteLock } from "@/lib/document-write-lock";
 import { withLiveDocumentText } from "@/lib/collab-write";
 import { getDocumentAccess } from "@/lib/permissions";
@@ -35,8 +36,16 @@ const reindexBatchSize = 25;
 /**
  * Reparses every owned document whose `updated_at` moved past its index stamp
  * (or that was never indexed). Costs one comparison query when nothing changed.
+ *
+ * Concurrent calls for one user are coalesced (`createCoalescedRunner`): the
+ * agenda, Tasks page, panels and query blocks often ask at the same moment, and
+ * N simultaneous reads now cost at most two refreshes in this process — never
+ * one that chose its stale set before a caller's latest save.
  */
-export async function ensureTaskIndexFresh(userId: string): Promise<void> {
+export const ensureTaskIndexFresh: (userId: string) => Promise<void> =
+  createCoalescedRunner((userId) => refreshTaskIndex(userId));
+
+async function refreshTaskIndex(userId: string): Promise<void> {
   const stale = await db
     .select({ id: documents.id })
     .from(documents)
@@ -71,6 +80,7 @@ export async function ensureTaskIndexFresh(userId: string): Promise<void> {
         documentId: row.id,
         markdown: row.markdown,
         sourceUpdatedAt: row.updatedAt,
+        onlyIfStale: true,
       });
     }
   }
@@ -82,12 +92,40 @@ export async function ensureTaskIndexFresh(userId: string): Promise<void> {
  * lock keeps two concurrent reads from interleaving delete and insert; a newer
  * stamp already in place wins, so a slow reindex of older text cannot overwrite
  * a faster one of newer text.
+ *
+ * `onlyIfStale` is for the read-path refresh, whose text is the stored row at
+ * `sourceUpdatedAt`: an index already stamped at that same moment is skipped
+ * too. That index is either from the same stored text or from a live write
+ * (`reindexAfterWrite`), whose Yjs text can be newer than the debounced store
+ * under an equal stamp — so it must not be replaced by the stored text, and
+ * redoing the same parse and rewrite would be wasted work either way. Live
+ * writes leave it off and still replace an equal stamp.
  */
 export async function reindexDocumentTasks(input: {
   documentId: string;
   markdown: string;
   sourceUpdatedAt: string;
+  onlyIfStale?: boolean;
 }): Promise<void> {
+  const supersededBy = (stamp: string) =>
+    input.onlyIfStale
+      ? sql<boolean>`${documentTaskIndex.sourceUpdatedAt} >= ${stamp}::timestamptz`
+      : sql<boolean>`${documentTaskIndex.sourceUpdatedAt} > ${stamp}::timestamptz`;
+  const isSuperseded = async (executor: Executor) => {
+    const [current] = await executor
+      .select({ superseded: supersededBy(input.sourceUpdatedAt) })
+      .from(documentTaskIndex)
+      .where(eq(documentTaskIndex.documentId, input.documentId));
+
+    return current?.superseded === true;
+  };
+
+  // Checked before parsing as well as under the lock: a refresh another
+  // request already finished should not cost a parse of the whole document.
+  if (input.onlyIfStale && (await isSuperseded(db))) {
+    return;
+  }
+
   const tasks = parseTasks(input.markdown);
 
   await db.transaction(async (tx) => {
@@ -95,14 +133,7 @@ export async function reindexDocumentTasks(input: {
       sql`select pg_advisory_xact_lock(hashtext(${`document_tasks:${input.documentId}`}))`,
     );
 
-    const [current] = await tx
-      .select({
-        newer: sql<boolean>`${documentTaskIndex.sourceUpdatedAt} > ${input.sourceUpdatedAt}::timestamptz`,
-      })
-      .from(documentTaskIndex)
-      .where(eq(documentTaskIndex.documentId, input.documentId));
-
-    if (current?.newer) {
+    if (await isSuperseded(tx)) {
       return;
     }
 

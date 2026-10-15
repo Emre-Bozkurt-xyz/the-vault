@@ -90,7 +90,6 @@ export type WorkspaceSharedFolderItem = {
 export type WorkspacePublicDocumentItem = {
   id: string;
   title: string;
-  markdown: string;
   href: string;
   publicSlug: string | null;
   updatedAt: Date;

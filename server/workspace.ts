@@ -1,7 +1,8 @@
-"use server";
+import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import { auth } from "@/auth";
 import {
@@ -9,9 +10,9 @@ import {
 } from "@/server/documents";
 import {
   listArchivedDocumentsForUser,
-  listDocumentsForUser,
+  listDocumentSummariesForUser,
   listDocumentsInOwnedFoldersFromOthers,
-  listSharedDocumentsForUser,
+  listSharedDocumentSummariesForUser,
   purgeExpiredArchivedDocumentsForUser,
 } from "@/server/documents-data";
 import {
@@ -38,7 +39,16 @@ import type {
   WorkspaceSharedFolderItem,
 } from "@/components/workspace/workspace-types";
 
-export async function getWorkspaceData() {
+/**
+ * The workspace shell's bootstrap: profile, layout cookies, settings, and
+ * metadata-only document/folder listings (no bodies — the shell never reads
+ * them). Memoized per request with React `cache`, so the workspace layout and
+ * the page beneath it share one run instead of repeating every query, and the
+ * Bin purge below happens once per request.
+ */
+export const getWorkspaceData = cache(loadWorkspaceData);
+
+async function loadWorkspaceData() {
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -55,8 +65,8 @@ export async function getWorkspaceData() {
   // Resolve the Bin retention preference and lazily purge expired archived
   // documents before listing anything, so purged docs never reach the client.
   const userSettings = await listUserSettings({ userId: session.user.id });
-  const binRetentionDays =
-    buildPreferences(userSettings).filesAssets.binRetentionDays;
+  const preferences = buildPreferences(userSettings);
+  const binRetentionDays = preferences.filesAssets.binRetentionDays;
   await purgeExpiredArchivedDocumentsForUser(session.user.id, binRetentionDays);
 
   const [
@@ -71,10 +81,10 @@ export async function getWorkspaceData() {
     services,
     tasksSetting,
   ] = await Promise.all([
-    listDocumentsForUser(session.user.id),
+    listDocumentSummariesForUser(session.user.id),
     listDocumentsInOwnedFoldersFromOthers(session.user.id),
-    listSharedDocumentsForUser(session.user.id),
-    listPublicDocuments({ userId: session.user.id }),
+    listSharedDocumentSummariesForUser(session.user.id),
+    listPublicDocuments({ userId: session.user.id, body: "none" }),
     listPublishedOfficialDocs(),
     listFoldersForUser(session.user.id),
     listSharedFoldersForUser(session.user.id),
@@ -159,7 +169,6 @@ export async function getWorkspaceData() {
     (document) => ({
       id: document.id,
       title: document.title,
-      markdown: document.markdown,
       href: document.publicSlug
         ? `/workspace/public/${document.publicSlug}`
         : "/gallery",
@@ -191,6 +200,9 @@ export async function getWorkspaceData() {
 
   return {
     profile,
+    // Server-only: the layout reuses these instead of reading settings again.
+    // `WorkspaceChrome` receives an explicit subset, never this whole object.
+    preferences,
     layout,
     tabs,
     owned,
@@ -204,8 +216,5 @@ export async function getWorkspaceData() {
     publicDocuments,
     guideGroups,
     tasksEnabled: tasksSetting?.enabled ?? false,
-    recent: [...owned, ...shared]
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-      .slice(0, 8),
   };
 }

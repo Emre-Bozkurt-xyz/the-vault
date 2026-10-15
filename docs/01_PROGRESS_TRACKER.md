@@ -690,6 +690,23 @@ Plan: `docs/24_TASKS_AND_AGENDA_PLAN.md` (2026-09-28). Slices 1-6 implemented an
 | [~] | Deferred follow-up - Task priority | 2026-10-06 code complete. Portable `:priority[high/medium/low]` (one value), indexed with nullable priority by migration 0026 (applied locally; invalidates index stamps). Task menus/detail controls set or clear it through minimal live writes; badges in task lists and query blocks, Live/Read chips, and `setTaskPriority` SDK action. Equal dates/times sort by priority. Build/typecheck and changed-file lint pass; full lint remains at 26 issues. Full suite has 823 passes and one SDK import timeout; 63 contract checks pass separately. Signed-in browser check pending. |
 | [~] | Deferred follow-up - Recurrence | 2026-10-06 code complete. `:repeat` presets and bounded custom `every`/`after` intervals; one future occurrence with month/year anchors, history and notes/checklists retained. Unfinished children move forward, old copies cancel, and the outer recurring checklist owns nested cadence. Live recurring completions use the serialized, permission-checked server path; shifted ordinals invalidate queued writes. Migration 0027 applied locally; repeat controls, badges and `setTaskRepeat` SDK action. Build/typecheck pass, full suite 839/839 and final focused checks 181/181; changed-file lint matches the editor baseline (six errors), and a real-Postgres lock/index check confirms one successor from competing requests. Live synchronization was simulated for that DB check. Authenticated browser verification remains. |
 
+
+## Phase 27 - Performance and Resource Usage
+
+Plan: `docs/25_PERFORMANCE_AND_RESOURCE_USAGE_PLAN.md` (2026-10-14). First implementation pass done and browser-verified locally; slice 0 baseline and slice 4 not started. Details and evidence in plan §7.
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Investigation and plan | 2026-10-14. Build/manifest entry sizes, synthetic wiki-map/task/editor timings, eight prioritized slices |
+| [ ] | Slice 0 - Production-mode baseline | No authenticated trace, heap snapshot, query plan or deployed RSS sample yet; the local check used a ten-document corpus |
+| [~] | Slice 1 - Data needed for the screen | 2026-10-14. Metadata-only shell DTOs, per-request memoized `getWorkspaceData`, SQL limits for public documents, wiki embed bodies pruned to what the page transcludes plus on-demand `?embed=` fetch. Remaining: server-side body reads for headings/anchors, context-panel data on open, bounded content search |
+| [x] | Slice 2 - Settings and panels | 2026-10-14. Settings data via action on open and section code via client `import()` (`/workspace` entry 690 → 530 KiB gzip); hidden desktop panel copies not mounted below their breakpoint; collapsed panels defer refreshes; shared in-flight asset/agenda requests |
+| [x] | Slice 3 - Runner idle backoff | 2026-10-14. 1s → 2s → 3s cap with jitter (`CODE_RUNNER_IDLE_MAX_MS`); not yet run against a live queue |
+| [ ] | Slice 4 - Editor analysis reuse | Not started (high correctness risk) |
+| [~] | Slice 5 - Task refresh | 2026-10-14. Per-user coalesced `ensureTaskIndexFresh`; read path skips equal-stamp reindex before parsing (also fixes a stored-text-over-live-text race). Remaining: refresh budget, shared query-block snapshots |
+| [~] | Slice 6 - Bounded lists and images | 2026-10-14. SQL asset summary for the sidebar; linear folder grouping. Remaining: thumbnails, pagination, conditional revalidation |
+| [~] | Slice 7 - Resource bounds | 2026-10-14. Service worker caches versioned and bounded, private pages dropped on sign-out. Remaining: pool sizing, asset-cleanup paging, uploads, MCP search, collab persistence, extension startup, packaging |
+
 ---
 
 ## Bugs / Issues

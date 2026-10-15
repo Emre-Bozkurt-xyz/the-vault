@@ -1,3 +1,5 @@
+"use client";
+
 import {
   CheckCircle2,
   KeyRound,
@@ -6,12 +8,17 @@ import {
   UserRoundCog,
 } from "lucide-react";
 
-import { signIn, signOut } from "@/auth";
 import { ProfileSettingsForm } from "@/components/profile-settings-form";
+import { SignOutSubmitButton } from "@/components/pwa/SignOutSubmitButton";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  connectGithubAction,
+  connectGoogleAction,
+  signOutAction,
+} from "@/server/auth-actions";
 
 type AccountSettingsSectionProps = {
   profile: {
@@ -59,15 +66,8 @@ export function AccountSettingsSection({
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/" });
-              }}
-            >
-              <Button type="submit" variant="outline">
-                Sign out
-              </Button>
+            <form action={signOutAction}>
+              <SignOutSubmitButton />
             </form>
           </div>
         </div>
@@ -99,22 +99,12 @@ export function AccountSettingsSection({
             <AuthProviderRow
               providerName="GitHub"
               connected={connectedProviders.github}
-              connectAction={async () => {
-                "use server";
-                await signIn("github", {
-                  redirectTo: "/dashboard/settings?connected=github",
-                });
-              }}
+              connectAction={connectGithubAction}
             />
             <AuthProviderRow
               providerName="Google"
               connected={connectedProviders.google}
-              connectAction={async () => {
-                "use server";
-                await signIn("google", {
-                  redirectTo: "/dashboard/settings?connected=google",
-                });
-              }}
+              connectAction={connectGoogleAction}
             />
           </div>
         </section>

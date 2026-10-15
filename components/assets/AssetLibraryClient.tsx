@@ -53,6 +53,7 @@ import {
 } from "@/components/workspace/ContextPanel";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
+import { fetchAssetLibrary } from "@/lib/shared-request";
 import {
   requestCloseRightPanel,
   requestOpenRightPanel,
@@ -156,9 +157,10 @@ export function AssetLibraryClient({
 
   const refreshAssets = useCallback(async () => {
     try {
-      const response = await fetch("/api/assets");
-      const payload = (await response.json()) as { assets?: AssetLibraryItem[] };
-      if (response.ok && payload.assets) setAssets(payload.assets);
+      const payload = (await fetchAssetLibrary()) as {
+        assets?: AssetLibraryItem[];
+      } | null;
+      if (payload?.assets) setAssets(payload.assets);
     } catch {
       // Keep the list we have.
     }

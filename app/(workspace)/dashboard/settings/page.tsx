@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
-import { buildSettingsPages } from "@/components/settings/buildSettingsPages";
-import { SettingsModal } from "@/components/settings/SettingsModal";
+import { loadSettingsData } from "@/components/settings/loadSettingsData";
+import { SettingsModalFromData } from "@/components/settings/settings-pages-view";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { requireCompletedProfile } from "@/server/profile";
 
@@ -19,7 +19,7 @@ export default async function SettingsPage({
 
   const profile = await requireCompletedProfile();
   const { connected, error, saved } = await searchParams;
-  const pages = await buildSettingsPages({
+  const data = await loadSettingsData({
     profile: {
       id: profile.id,
       email: profile.email,
@@ -38,7 +38,7 @@ export default async function SettingsPage({
       <div className="flex min-h-[calc(100dvh-8rem)] items-center justify-center text-sm text-muted-foreground">
         Settings are open.
       </div>
-      <SettingsModal pages={pages} defaultPageId="account" closeHref="/workspace" />
+      <SettingsModalFromData data={data} defaultPageId="account" closeHref="/workspace" />
     </>
   );
 }

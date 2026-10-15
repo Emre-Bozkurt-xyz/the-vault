@@ -174,6 +174,7 @@ import { sanitizeInlineStyle } from "@/lib/html-style";
 import { cn } from "@/lib/utils";
 import {
   escapeWikiLinkLabel,
+  extractWikiEmbedKeys,
   type WikiLinkAnchor,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
@@ -484,7 +485,9 @@ export function MarkdownEditor({
   const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("live");
-  const [wikiLinkMap] = useState<WikiLinkResolutionMap>(wikiLinks ?? {});
+  const [wikiLinkMap, setWikiLinkMap] = useState<WikiLinkResolutionMap>(
+    wikiLinks ?? {},
+  );
   const [assetLinkMap, setAssetLinkMap] = useState<AssetEmbedResolutionMap>(
     assetLinks ?? {},
   );
@@ -547,6 +550,7 @@ export function MarkdownEditor({
   // Embed ids we've already tried to resolve live (resolved or 404'd) so the
   // effect below doesn't refetch them on every keystroke.
   const resolvedEmbedAttemptsRef = useRef<Set<string>>(new Set());
+  const attemptedWikiEmbedKeysRef = useRef<Set<string>>(new Set());
   const collaborationKey = collaboration
     ? `${documentId}:${collaboration.url}:${collaboration.token}`
     : "local";
@@ -579,18 +583,19 @@ export function MarkdownEditor({
   // pasted from the gallery. The server render already handles these on reload;
   // this fetches each unknown id's resolution so it renders live without one.
   // Only public assets resolve (the endpoint 404s otherwise), and each id is
-  // attempted at most once until the server map changes.
+  // attempted at most once until the server map changes. The scan itself runs
+  // after the debounce, not on every keystroke, and a response is merged even
+  // if typing continued meanwhile (ids are marked attempted when requested).
   useEffect(() => {
-    const unknownIds = [...new Set(extractAssetEmbedIds(markdownValue))].filter(
-      (id) => !assetLinkMap[id] && !resolvedEmbedAttemptsRef.current.has(id),
-    );
-
-    if (unknownIds.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
     const timer = setTimeout(() => {
+      const unknownIds = [...new Set(extractAssetEmbedIds(markdownValue))].filter(
+        (id) => !assetLinkMap[id] && !resolvedEmbedAttemptsRef.current.has(id),
+      );
+
+      if (unknownIds.length === 0) {
+        return;
+      }
+
       for (const id of unknownIds) {
         resolvedEmbedAttemptsRef.current.add(id);
       }
@@ -615,10 +620,6 @@ export function MarkdownEditor({
           }
         }),
       ).then((resolved) => {
-        if (cancelled) {
-          return;
-        }
-
         const found = resolved.filter(
           (asset): asset is AssetEmbedResolutionMap[string] => asset !== null,
         );
@@ -637,11 +638,46 @@ export function MarkdownEditor({
       });
     }, 400);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [markdownValue, assetLinkMap, documentId]);
+
+  // The page only carries bodies for documents it transcluded when it loaded
+  // (`pruneWikiEmbedBodies`). A `![[...]]` added since then fetches its body —
+  // and its nested embeds' — once per key, through the same read-scoped maps.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const missingKeys = [...extractWikiEmbedKeys(markdownValue)].filter(
+        (key) => {
+          const resolution = wikiLinkMap[key];
+
+          return (
+            (!resolution ||
+              (resolution.status === "resolved" &&
+                typeof resolution.embedMarkdown !== "string")) &&
+            !attemptedWikiEmbedKeysRef.current.has(key)
+          );
+        },
+      );
+
+      if (missingKeys.length === 0) {
+        return;
+      }
+
+      for (const key of missingKeys) {
+        attemptedWikiEmbedKeysRef.current.add(key);
+      }
+
+      void fetchWikiEmbedBodies(missingKeys, embedSessionToken).then(
+        (bodies) => {
+          if (Object.keys(bodies).length > 0) {
+            setWikiLinkMap((current) => ({ ...current, ...bodies }));
+          }
+        },
+      );
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [markdownValue, wikiLinkMap, embedSessionToken]);
 
   useEffect(() => {
     setAssetWidthDraft(
@@ -4990,6 +5026,42 @@ async function fetchWikiLinkCompletionMap(
   }
 
   return fallback;
+}
+
+async function fetchWikiEmbedBodies(
+  keys: string[],
+  embedSessionToken?: string | null,
+): Promise<WikiLinkResolutionMap> {
+  try {
+    const query = keys.map((key) => `embed=${encodeURIComponent(key)}`).join("&");
+    const response = await fetch(`/api/documents/wiki-links?${query}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: embedSessionToken
+        ? { Authorization: `Bearer ${embedSessionToken}` }
+        : undefined,
+    });
+
+    if (!response.ok) {
+      return {};
+    }
+
+    const payload: unknown = await response.json();
+
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "wikiLinks" in payload &&
+      typeof payload.wikiLinks === "object" &&
+      payload.wikiLinks !== null
+    ) {
+      return payload.wikiLinks as WikiLinkResolutionMap;
+    }
+  } catch {
+    // Leave the embed showing its unavailable state.
+  }
+
+  return {};
 }
 
 function createWikiLinkCompletionOptions(

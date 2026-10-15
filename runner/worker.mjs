@@ -42,11 +42,33 @@ const ALLOW_UNSANDBOXED = process.env.CODE_RUNNER_ALLOW_UNSANDBOXED === "1";
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const HEARTBEAT_MS = 1_000;
 const IDLE_POLL_MS = 1_000;
+// An idle runner backs off after consecutive empty claims (1s, 2s, then this
+// cap) and snaps back to 1s once it finds work. Each empty claim costs Vault an
+// HTTP request plus a transaction, so a runner that polled every second all day
+// made ~86k of them. The cap is the worst extra wait before an idle runner
+// picks up a new job; a job that arrives while it is busy is claimed at once.
+const IDLE_POLL_MAX_MS = Math.max(
+  IDLE_POLL_MS,
+  Number(process.env.CODE_RUNNER_IDLE_MAX_MS) || 3_000,
+);
 const CONTAINER_PREFIX = "vault-job-";
 const WORKSPACE_PREFIX = "vault-job-";
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The wait after `emptyClaims` consecutive empty claims: doubling from
+ * IDLE_POLL_MS up to IDLE_POLL_MAX_MS, with ±10% jitter so several runners
+ * restarted together do not poll in lockstep.
+ */
+function idleDelayMs(emptyClaims, random = Math.random) {
+  const base = Math.min(
+    IDLE_POLL_MAX_MS,
+    IDLE_POLL_MS * 2 ** Math.max(0, Math.min(emptyClaims - 1, 16)),
+  );
+  return Math.round(base * (0.9 + random() * 0.2));
+}
 
 let stopping = false;
 
@@ -374,6 +396,7 @@ async function main() {
   await reap();
   log(`runner ${RUNNER_ID} up: ${URL_BASE} runtime=${RUNTIME} profiles=${PROFILES.join(",")}`);
 
+  let emptyClaims = 0;
   while (!stopping) {
     let claim;
     try {
@@ -383,12 +406,17 @@ async function main() {
       await sleep(IDLE_POLL_MS * 3);
       continue;
     }
-    if (claim.status === 204) { await sleep(IDLE_POLL_MS); continue; }
+    if (claim.status === 204) {
+      emptyClaims += 1;
+      await sleep(idleDelayMs(emptyClaims));
+      continue;
+    }
     if (claim.status !== 200) {
       log(`claim returned ${claim.status}: ${JSON.stringify(claim.body)}`);
       await sleep(IDLE_POLL_MS * 3);
       continue;
     }
+    emptyClaims = 0;
     await runJob(claim.body);
   }
   log("runner stopped");
