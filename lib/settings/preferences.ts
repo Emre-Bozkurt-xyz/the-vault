@@ -40,6 +40,8 @@ export type Preferences = {
     showPrivatePublishWarning: boolean;
     /** Days an archived document stays in the Bin before permanent deletion; null = keep forever. */
     binRetentionDays: number | null;
+    /** Whether "Move to Bin" asks first. Off once the user ticks "Don't ask again". */
+    confirmMoveToBin: boolean;
   };
   hotkeys: {
     editorShortcutsEnabled: boolean;
@@ -147,6 +149,10 @@ export function buildPreferences(rows: UserSettingRows): Preferences {
       ),
       binRetentionDays: readRetentionDays(
         get("files-assets", "defaults").binRetentionDays,
+      ),
+      confirmMoveToBin: readBoolean(
+        get("files-assets", "defaults").confirmMoveToBin,
+        true,
       ),
     },
     hotkeys: readHotkeys(get("hotkeys", "defaults")),

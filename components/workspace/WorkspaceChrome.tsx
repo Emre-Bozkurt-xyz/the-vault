@@ -54,6 +54,8 @@ type WorkspaceChromeData = {
   published: WorkspaceDocumentItem[];
   archived: WorkspaceArchivedItem[];
   binRetentionDays: number | null;
+  /** Saved "ask before Move to Bin" preference; see `useConfirmMoveToBin`. */
+  confirmMoveToBin: boolean;
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
   services: WorkspaceServiceItem[];
@@ -72,6 +74,7 @@ type WorkspaceChromeContextValue = {
   recentPages: WorkspacePageDescriptor[];
   isAdmin: boolean;
   tasksEnabled: boolean;
+  confirmMoveToBin: boolean;
 };
 
 const WorkspaceChromeContext =
@@ -93,6 +96,11 @@ export function useRecentWorkspacePages(): WorkspacePageDescriptor[] {
 /** Whether the `vault.tasks` extension is on. Gates `/task` in the palette. */
 export function useWorkspaceTasksEnabled(): boolean {
   return useContext(WorkspaceChromeContext)?.tasksEnabled ?? false;
+}
+
+/** The server-rendered "ask before Move to Bin" preference (true outside the workspace). */
+export function useSavedConfirmMoveToBin(): boolean {
+  return useContext(WorkspaceChromeContext)?.confirmMoveToBin ?? true;
 }
 
 /** Whether the signed-in user is an admin. Gates admin-only palette commands. */
@@ -217,6 +225,7 @@ export function WorkspaceChrome({
       recentPages,
       isAdmin,
       tasksEnabled: workspaceState.tasksEnabled,
+      confirmMoveToBin: workspaceState.confirmMoveToBin,
     }),
     [
       handleSetActivePage,
@@ -226,6 +235,7 @@ export function WorkspaceChrome({
       recentPages,
       isAdmin,
       workspaceState.tasksEnabled,
+      workspaceState.confirmMoveToBin,
     ],
   );
 

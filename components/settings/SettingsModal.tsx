@@ -107,7 +107,7 @@ export function SettingsModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="grid h-[min(88dvh,760px)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden rounded-[8px] border border-border/80 bg-background p-0 shadow-2xl sm:max-w-none md:grid-cols-[14rem_minmax(0,1fr)] md:grid-rows-1"
+        className="grid h-[min(88dvh,760px)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden bg-background p-0 sm:max-w-none md:grid-cols-[14rem_minmax(0,1fr)] md:grid-rows-1"
         showCloseButton
       >
         <aside className="min-h-0 min-w-0 border-b border-border/70 bg-sidebar/80 md:border-r md:border-b-0">

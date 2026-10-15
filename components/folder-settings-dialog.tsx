@@ -130,7 +130,7 @@ export function FolderSettingsDialog({
         }
       }}
     >
-      <DialogContent className="max-h-[min(88dvh,42rem)] overflow-hidden rounded-lg border border-border/70 bg-background/95 p-0 shadow-2xl sm:max-w-xl">
+      <DialogContent className="max-h-[min(88dvh,42rem)] overflow-hidden p-0 sm:max-w-xl">
         <DialogHeader className="border-b border-border/60 px-5 pb-4 pt-5">
           <DialogTitle className="flex items-center gap-2">
             <FolderOpen className="size-4 text-muted-foreground" />

@@ -2,22 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 
 import { archiveDocumentAction } from "@/server/documents";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  setConfirmMoveToBin,
+  useConfirmMoveToBin,
+} from "@/components/workspace/move-to-bin-preference";
 import { dispatchWorkspaceDocumentRemoved } from "@/components/workspace/workspace-events";
 
 export function DocumentArchiveForm({ documentId }: { documentId: string }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
+  const confirmMoveToBin = useConfirmMoveToBin();
 
   function archive() {
     setConfirming(false);
@@ -44,41 +43,27 @@ export function DocumentArchiveForm({ documentId }: { documentId: string }) {
         variant="destructive"
         size="sm"
         className="w-full"
-        onClick={() => setConfirming(true)}
+        onClick={() => (confirmMoveToBin ? setConfirming(true) : archive())}
       >
-        Archive document
+        Move to Bin
       </Button>
 
-      <Dialog
+      <ConfirmDialog
         open={confirming}
-        onOpenChange={(open) => {
-          if (!open) {
-            setConfirming(false);
+        onOpenChange={setConfirming}
+        tone="destructive"
+        icon={Trash2}
+        title="Move to Bin?"
+        description="This document can be restored from the Bin in the Files panel until it is automatically deleted."
+        confirmLabel="Move to Bin"
+        rememberLabel="Don't ask again"
+        onConfirm={({ remember }) => {
+          if (remember) {
+            setConfirmMoveToBin(false);
           }
+          archive();
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Archive document</DialogTitle>
-            <DialogDescription>
-              This moves the document to the Bin. You can restore it from the
-              Files panel until it is automatically deleted.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" variant="destructive" onClick={archive}>
-              Move to Bin
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
     </>
   );
 }

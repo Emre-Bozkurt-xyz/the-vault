@@ -22,6 +22,7 @@ import {
   FolderInput,
   FolderOpen,
   FolderPlus,
+  FolderX,
   Globe2,
   Link2,
   MoreHorizontal,
@@ -32,15 +33,7 @@ import {
   Users,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +49,10 @@ import {
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import { copyWithToast } from "@/components/assets/asset-ui";
 import { FolderSettingsDialog } from "@/components/folder-settings-dialog";
+import {
+  setConfirmMoveToBin,
+  useConfirmMoveToBin,
+} from "@/components/workspace/move-to-bin-preference";
 import {
   SidePanel,
   SidePanelAction,
@@ -147,6 +144,7 @@ export function WorkspaceFileBrowser({
   );
   const [pendingArchive, setPendingArchive] =
     useState<WorkspaceDocumentItem | null>(null);
+  const confirmMoveToBin = useConfirmMoveToBin();
   const router = useRouter();
   // The folder whose settings dialog is open, plus which tab it opened on —
   // "Share folder…" and "Folder settings…" are the same dialog, entered at
@@ -389,7 +387,13 @@ export function WorkspaceFileBrowser({
     onCancelRename: () => setRenamingId(null),
     onRename: renameDoc,
     onMove: moveDoc,
-    onRequestArchive: setPendingArchive,
+    onRequestArchive: (doc) => {
+      if (confirmMoveToBin) {
+        setPendingArchive(doc);
+      } else {
+        archiveDoc(doc);
+      }
+    },
   };
 
   function handleDropOn(target: string | null, payload: DragPayload) {
@@ -550,93 +554,64 @@ export function WorkspaceFileBrowser({
           <BinSection items={archived} retentionDays={binRetentionDays} />
         </div>
 
-        <Dialog
+        <ConfirmDialog
           open={pendingDelete !== null}
           onOpenChange={(open) => {
             if (!open) {
               setPendingDelete(null);
             }
           }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete folder</DialogTitle>
-              <DialogDescription>
-                Delete{" "}
-                <span className="font-medium text-foreground">
-                  {pendingDelete?.name}
-                </span>
-                ? Subfolders are removed too. Documents inside are moved out of the
-                folder, not deleted.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setPendingDelete(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => {
-                  if (pendingDelete) {
-                    deleteFolder(pendingDelete.id);
-                  }
-                  setPendingDelete(null);
-                }}
-              >
-                Delete folder
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          tone="destructive"
+          icon={FolderX}
+          title="Delete folder?"
+          description={
+            <>
+              <span className="font-medium text-foreground">
+                {pendingDelete?.name}
+              </span>{" "}
+              and its subfolders will be removed. Documents inside are moved out
+              of the folder, not deleted.
+            </>
+          }
+          confirmLabel="Delete folder"
+          onConfirm={() => {
+            if (pendingDelete) {
+              deleteFolder(pendingDelete.id);
+            }
+            setPendingDelete(null);
+          }}
+        />
 
-        <Dialog
+        <ConfirmDialog
           open={pendingArchive !== null}
           onOpenChange={(open) => {
             if (!open) {
               setPendingArchive(null);
             }
           }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Move to Bin</DialogTitle>
-              <DialogDescription>
-                Move{" "}
-                <span className="font-medium text-foreground">
-                  {pendingArchive?.title}
-                </span>{" "}
-                to the Bin? You can restore it from the Bin below until it is
-                automatically deleted.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setPendingArchive(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => {
-                  if (pendingArchive) {
-                    archiveDoc(pendingArchive);
-                  }
-                  setPendingArchive(null);
-                }}
-              >
-                Move to Bin
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          tone="destructive"
+          icon={Trash2}
+          title="Move to Bin?"
+          description={
+            <>
+              <span className="font-medium text-foreground">
+                {pendingArchive?.title}
+              </span>{" "}
+              can be restored from the Bin until it is automatically deleted.
+            </>
+          }
+          confirmLabel="Move to Bin"
+          rememberLabel="Don't ask again"
+          onConfirm={({ remember }) => {
+            if (remember) {
+              setConfirmMoveToBin(false);
+            }
+            if (pendingArchive) {
+              archiveDoc(pendingArchive);
+            }
+            setPendingArchive(null);
+          }}
+        />
 
         <FolderSettingsDialog
           folder={folderSettings?.folder ?? null}

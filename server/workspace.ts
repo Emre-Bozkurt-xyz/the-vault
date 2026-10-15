@@ -210,6 +210,7 @@ async function loadWorkspaceData() {
     published,
     archived,
     binRetentionDays,
+    confirmMoveToBin: preferences.filesAssets.confirmMoveToBin,
     folders,
     sharedFolders,
     services,

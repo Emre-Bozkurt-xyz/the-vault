@@ -42,6 +42,7 @@ import {
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { WithContextMenu } from "@/components/ui/use-context-menu";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
@@ -471,6 +472,7 @@ function AssetConfigurePanel({
   const [draft, setDraft] = useState<AssetDraft>(() => toDraft(asset));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const dirty = !sameDraft(draft, toDraft(asset));
 
@@ -511,14 +513,7 @@ function AssetConfigurePanel({
   }
 
   async function onDelete() {
-    const confirmed = window.confirm(
-      `Delete "${asset.displayName}"? This removes it from documents, the library, gallery, and storage.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmingDelete(false);
     setDeleting(true);
     setMessage(null);
 
@@ -683,11 +678,29 @@ function AssetConfigurePanel({
             variant="destructive"
             size="sm"
             disabled={deleting}
-            onClick={() => void onDelete()}
+            onClick={() => setConfirmingDelete(true)}
           >
             <Trash2 data-icon="inline-start" />
             {deleting ? "Deleting…" : "Delete asset"}
           </Button>
+          <ConfirmDialog
+            open={confirmingDelete}
+            onOpenChange={setConfirmingDelete}
+            tone="destructive"
+            icon={Trash2}
+            title="Delete asset?"
+            description={
+              <>
+                <span className="font-medium break-words text-foreground">
+                  {asset.displayName}
+                </span>{" "}
+                will be removed from documents, the library, the gallery, and
+                storage. This cannot be undone.
+              </>
+            }
+            confirmLabel="Delete asset"
+            onConfirm={() => void onDelete()}
+          />
         </ContextPanelSection>
       </ContextPanelBody>
 

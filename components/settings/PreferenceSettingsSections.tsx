@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useVaultTheme, type Theme } from "@/components/theme-provider";
 import { dispatchKeybindingsChanged } from "@/components/shortcuts/KeybindingsProvider";
+import { noteConfirmMoveToBinChanged } from "@/components/workspace/move-to-bin-preference";
 import type { Preferences } from "@/lib/settings/preferences";
 import {
   bindingFromKeyboardEvent,
@@ -291,6 +292,9 @@ export function FilesAssetsSettingsSection({
 
   function update(next: Preferences["filesAssets"]) {
     setState(next);
+    if (next.confirmMoveToBin !== state.confirmMoveToBin) {
+      noteConfirmMoveToBinChanged(next.confirmMoveToBin);
+    }
     startTransition(() => void saveFilesAssetsSettingsAction(next));
   }
 
@@ -358,6 +362,15 @@ export function FilesAssetsSettingsSection({
           onChange={(showPrivatePublishWarning) =>
             update({ ...state, showPrivatePublishWarning })
           }
+        />
+      </SettingRow>
+      <SettingRow
+        title="Confirm before moving to Bin"
+        description="Ask before a document goes to the Bin. Binned documents can always be restored."
+      >
+        <ToggleControl
+          checked={state.confirmMoveToBin}
+          onChange={(confirmMoveToBin) => update({ ...state, confirmMoveToBin })}
         />
       </SettingRow>
       <SettingRow

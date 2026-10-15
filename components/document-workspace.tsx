@@ -83,7 +83,7 @@ function MobilePanelDialog({ sidePanel }: { sidePanel: ReactNode }) {
         <SlidersHorizontal className="size-4" />
         Document actions
       </DialogTrigger>
-      <DialogContent className="max-h-[min(86dvh,44rem)] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-0 shadow-2xl sm:max-w-lg">
+      <DialogContent className="max-h-[min(86dvh,44rem)] overflow-hidden p-0 sm:max-w-lg">
         <DialogHeader className="border-b border-border/60 px-4 pb-3 pt-4">
           <DialogTitle>Document actions</DialogTitle>
           <DialogDescription>

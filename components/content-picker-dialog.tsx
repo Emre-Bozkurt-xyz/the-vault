@@ -174,11 +174,11 @@ export function ContentPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[min(90svh,56rem)] w-full max-w-[min(calc(100vw-2rem),54rem)] sm:max-w-[54rem] flex-col gap-0 overflow-hidden p-0 sm:rounded-md"
+        className="flex max-h-[min(90svh,56rem)] w-full max-w-[min(calc(100vw-2rem),54rem)] sm:max-w-[54rem] flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="shrink-0 border-b border-border/60 px-4 py-3">
           <div className="flex items-center gap-3">
-            <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
+            <DialogTitle className="pr-0 text-sm">{title}</DialogTitle>
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <label htmlFor={searchId} className="sr-only">

@@ -12,6 +12,7 @@ import { isShortcutId } from "@/lib/shortcuts/registry";
 import { requireActiveUser } from "@/server/authz";
 import { isOwnedDocumentForUser } from "@/server/extension-documents";
 import {
+  getUserSetting,
   upsertUserSetting,
   getUserExtensionSetting,
   listUserExtensionSettings,
@@ -139,6 +140,7 @@ export async function saveFilesAssetsSettingsAction(input: unknown) {
           z.literal(90),
           z.null(),
         ]),
+      confirmMoveToBin: z.boolean().default(true),
     })
     .parse(input);
 
@@ -150,6 +152,28 @@ export async function saveFilesAssetsSettingsAction(input: unknown) {
   });
 
   revalidatePath("/dashboard/settings");
+}
+
+/**
+ * Flips only `confirmMoveToBin`, merged into the stored files & assets row, so
+ * the Move to Bin prompt's "Don't ask again" box does not need (or clobber) the
+ * rest of that section's values.
+ */
+export async function setConfirmMoveToBinAction(input: unknown) {
+  const user = await requireActiveUser();
+  const confirmMoveToBin = z.boolean().parse(input);
+  const current = await getUserSetting({
+    userId: user.id,
+    namespace: "files-assets",
+    key: "defaults",
+  });
+
+  await upsertUserSetting({
+    userId: user.id,
+    namespace: "files-assets",
+    key: "defaults",
+    value: { ...(current?.value ?? {}), confirmMoveToBin },
+  });
 }
 
 export async function saveHotkeysSettingsAction(input: unknown) {

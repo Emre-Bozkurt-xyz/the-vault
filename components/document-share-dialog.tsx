@@ -103,7 +103,7 @@ export function DocumentShareDialog({
         <Share2 className="size-4" />
         Share
       </DialogTrigger>
-      <DialogContent className="max-h-[min(88dvh,48rem)] overflow-hidden rounded-lg border border-border/70 bg-background/95 p-0 shadow-2xl sm:max-w-2xl">
+      <DialogContent className="max-h-[min(88dvh,48rem)] overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b border-border/60 px-5 pb-4 pt-5">
           <DialogTitle>Share document</DialogTitle>
           <DialogDescription>
