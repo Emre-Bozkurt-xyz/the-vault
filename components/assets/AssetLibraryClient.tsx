@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Code2,
@@ -33,6 +34,7 @@ import {
 } from "lucide-react";
 
 import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
+import { moveAssetsToBin } from "@/components/assets/asset-bin-actions";
 import {
   assetExtensionBadge,
   assetTypeLabel,
@@ -41,8 +43,7 @@ import {
 } from "@/components/assets/asset-ui";
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
-import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { WithContextMenu } from "@/components/ui/use-context-menu";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
@@ -59,6 +60,7 @@ import {
   requestCloseRightPanel,
   requestOpenRightPanel,
 } from "@/lib/document-command-events";
+import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { formatBytes } from "@/lib/format";
 import {
   getContentSearchSummary,
@@ -206,6 +208,39 @@ export function AssetLibraryClient({
     };
   }, []);
 
+  const removeFromLibrary = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setAssets((current) => current.filter((asset) => !ids.includes(asset.id)));
+    const selectedNow = new URLSearchParams(window.location.search).get("asset");
+    if (selectedNow && ids.includes(selectedNow)) updateLibraryUrl({ asset: null });
+  }, []);
+
+  const moveToBin = useCallback(
+    async (asset: AssetLibraryItem) => removeFromLibrary(await moveAssetsToBin([asset])),
+    [removeFromLibrary],
+  );
+
+  // Delete / Backspace moves the selected asset to the Bin, as in a file
+  // manager. Reversible (Undo toast), so no confirmation; ignored while typing.
+  useEffect(() => {
+    if (!selected) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest("input, textarea, select, [role='dialog']"))
+      ) {
+        return;
+      }
+      event.preventDefault();
+      void moveToBin(selected);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [moveToBin, selected]);
+
   function selectAsset(asset: AssetLibraryItem) {
     updateLibraryUrl({ asset: asset.id });
 
@@ -317,6 +352,14 @@ export function AssetLibraryClient({
                 ["size", "Largest"],
               ]}
             />
+            <Link
+              href="/assets?view=bin"
+              className={buttonVariants({ variant: "ghost", size: "icon" })}
+              aria-label="Open the Bin"
+              title="Bin"
+            >
+              <Trash2 />
+            </Link>
             <Button type="button" onClick={openFilePicker}>
               {uploads.hasActive ? (
                 <Loader2 data-icon="inline-start" className="animate-spin" />
@@ -390,6 +433,12 @@ export function AssetLibraryClient({
                       <DropdownMenuItem onClick={() => selectAsset(asset)}>
                         <SlidersHorizontal /> Edit details
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => void moveToBin(asset)}
+                      >
+                        <Trash2 /> Move to Bin
+                      </DropdownMenuItem>
                     </AssetActionsMenu>
                   </div>
                 )}
@@ -437,11 +486,7 @@ export function AssetLibraryClient({
                   );
                   dispatchAssetsChanged();
                 }}
-                onDeleted={(id) => {
-                  setAssets((current) => current.filter((asset) => asset.id !== id));
-                  updateLibraryUrl({ asset: null });
-                  dispatchAssetsChanged();
-                }}
+                onMoveToBin={() => void moveToBin(selected)}
               />
             ) : (
               <div className="grid flex-1 place-content-center gap-2 px-6 py-16 text-center">
@@ -462,17 +507,15 @@ export function AssetLibraryClient({
 function AssetConfigurePanel({
   asset,
   onSaved,
-  onDeleted,
+  onMoveToBin,
 }: {
   asset: AssetLibraryItem;
   onSaved: (asset: AssetLibraryItem) => void;
-  onDeleted: (id: string) => void;
+  onMoveToBin: () => void;
 }) {
   // Keyed by asset id, so switching assets starts a fresh draft.
   const [draft, setDraft] = useState<AssetDraft>(() => toDraft(asset));
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const dirty = !sameDraft(draft, toDraft(asset));
 
@@ -509,26 +552,6 @@ function AssetConfigurePanel({
       setMessage(error instanceof Error ? error.message : "Could not save asset.");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function onDelete() {
-    setConfirmingDelete(false);
-    setDeleting(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
-      const payload = (await response.json()) as { asset?: { id: string }; error?: string };
-
-      if (!response.ok || !payload.asset) {
-        throw new Error(payload.error ?? "Could not delete asset.");
-      }
-
-      onDeleted(asset.id);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not delete asset.");
-      setDeleting(false);
     }
   }
 
@@ -670,37 +693,13 @@ function AssetConfigurePanel({
         <ContextPanelSection
           icon={Trash2}
           tone="danger"
-          title="Delete"
-          description="Removes it from documents, the library, the gallery, and storage."
+          title="Move to Bin"
+          description={`Hidden everywhere it appears, and deleted for good after ${ASSET_LIMITS.binRetentionDays} days unless you restore it. Documents show a placeholder meanwhile.`}
         >
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            disabled={deleting}
-            onClick={() => setConfirmingDelete(true)}
-          >
+          <Button type="button" variant="destructive" size="sm" onClick={onMoveToBin}>
             <Trash2 data-icon="inline-start" />
-            {deleting ? "Deleting…" : "Delete asset"}
+            Move to Bin
           </Button>
-          <ConfirmDialog
-            open={confirmingDelete}
-            onOpenChange={setConfirmingDelete}
-            tone="destructive"
-            icon={Trash2}
-            title="Delete asset?"
-            description={
-              <>
-                <span className="font-medium break-words text-foreground">
-                  {asset.displayName}
-                </span>{" "}
-                will be removed from documents, the library, the gallery, and
-                storage. This cannot be undone.
-              </>
-            }
-            confirmLabel="Delete asset"
-            onConfirm={() => void onDelete()}
-          />
         </ContextPanelSection>
       </ContextPanelBody>
 
@@ -726,7 +725,11 @@ function AssetConfigurePanel({
   );
 }
 
-function AssetThumbnail({ asset }: { asset: AssetLibraryItem }) {
+export function AssetThumbnail({
+  asset,
+}: {
+  asset: Pick<AssetLibraryItem, "kind" | "url" | "altText" | "displayName" | "mimeType">;
+}) {
   if (asset.kind === "image") {
     return (
       <span className="block bg-muted">
@@ -744,7 +747,11 @@ function AssetThumbnail({ asset }: { asset: AssetLibraryItem }) {
   return <FileTile asset={asset} className="aspect-[4/3]" />;
 }
 
-function AssetPreview({ asset }: { asset: AssetLibraryItem }) {
+export function AssetPreview({
+  asset,
+}: {
+  asset: Pick<AssetLibraryItem, "kind" | "url" | "altText" | "displayName" | "mimeType">;
+}) {
   if (asset.kind === "image") {
     return (
       <div className="grid max-h-64 place-items-center overflow-hidden rounded-md border border-border/60 bg-muted/40">
@@ -761,7 +768,13 @@ function AssetPreview({ asset }: { asset: AssetLibraryItem }) {
   return <FileTile asset={asset} className="h-36 rounded-md border border-border/60" />;
 }
 
-function FileTile({ asset, className }: { asset: AssetLibraryItem; className?: string }) {
+function FileTile({
+  asset,
+  className,
+}: {
+  asset: Pick<AssetLibraryItem, "kind" | "displayName" | "mimeType">;
+  className?: string;
+}) {
   return (
     <span
       className={cn(

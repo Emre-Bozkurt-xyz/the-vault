@@ -119,7 +119,7 @@ export async function listUsersForAdmin(options: {
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null)::int`;
+  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} in ('ready', 'trashed') and ${assets.deletedAt} is null)::int`;
 
   const orderBy =
     sort === "joined_asc"

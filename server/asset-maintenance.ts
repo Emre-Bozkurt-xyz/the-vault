@@ -4,6 +4,7 @@ import { and, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { assets, deploymentSettings } from "@/db/schema";
+import { REFERENCED_ASSET_STATUSES, binPurgeCutoff } from "@/lib/asset-lifecycle";
 import {
   ASSET_KEY_PREFIX,
   selectOrphanKeys,
@@ -11,17 +12,19 @@ import {
 } from "@/lib/asset-maintenance";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { deleteAssetObject, listAssetObjects } from "@/lib/storage/r2";
+import { purgeExpiredBinAssets } from "@/server/assets";
 
 /**
- * Daily asset cleanup. Deleting an asset frees its R2 object immediately, but
- * two things are left behind: the soft-deleted row, and any object whose
- * delete failed (or that belonged to a deleted account, or a single-request
- * upload that died after writing). This run:
+ * Daily asset cleanup. This run:
  *
- * 1. hard-deletes `deleted`/`failed` rows past `deletedAssetRetentionDays`
- *    (their tags, links and view counts cascade), and
- * 2. lists the bucket under `users/` and deletes objects that no `ready` or
- *    `pending` asset references and that are older than `orphanGraceMs`.
+ * 1. empties the Bin of anything binned more than `binRetentionDays` ago —
+ *    deleted for good: bytes removed, quota released (`purgeExpiredBinAssets`);
+ * 2. hard-deletes `deleted`/`failed` rows past `deletedAssetRetentionDays`
+ *    (their tags, links and view counts cascade); and
+ * 3. lists the bucket under `users/` and deletes objects that no `ready`,
+ *    `pending` or `trashed` asset references and that are older than
+ *    `orphanGraceMs` — failed deletes, deleted accounts' files, and
+ *    single-request uploads that died after writing.
  *
  * A lease on the `deployment_settings` row keeps it to one process at a time;
  * scheduled runs also skip unless the last run is ~a day old.
@@ -30,6 +33,9 @@ import { deleteAssetObject, listAssetObjects } from "@/lib/storage/r2";
 const RUN_EVERY_MS = 23 * 60 * 60 * 1000;
 const LEASE_MS = 60 * 60 * 1000;
 const DELETE_CONCURRENCY = 8;
+/** Bin purge batch size, and how many batches one run may take. */
+const BIN_PURGE_BATCH = 200;
+const BIN_PURGE_MAX_BATCHES = 50;
 
 export async function runAssetMaintenance(input: {
   trigger: AssetMaintenanceResult["trigger"];
@@ -43,6 +49,7 @@ export async function runAssetMaintenance(input: {
 
   const startedAt = Date.now();
   const result: AssetMaintenanceResult = {
+    binPurged: 0,
     purgedRows: 0,
     scannedObjects: 0,
     deletedObjects: 0,
@@ -52,6 +59,7 @@ export async function runAssetMaintenance(input: {
   };
 
   try {
+    result.binPurged = await purgeExpiredBin(now);
     result.purgedRows = await purgeExpiredRows(now);
 
     // List first, then read references: a row is always inserted before its
@@ -62,7 +70,7 @@ export async function runAssetMaintenance(input: {
     const live = await db
       .select({ storageKey: assets.storageKey })
       .from(assets)
-      .where(inArray(assets.status, ["ready", "pending"]));
+      .where(inArray(assets.status, [...REFERENCED_ASSET_STATUSES]));
     const orphans = selectOrphanKeys({
       objects,
       referencedKeys: new Set(live.map((row) => row.storageKey)),
@@ -136,6 +144,23 @@ async function claimLease(now: Date, force: boolean) {
     .returning({ id: deploymentSettings.id });
 
   return claimed.length > 0;
+}
+
+/**
+ * Deletes for good whatever sat in the Bin past its retention. Bounded per run
+ * so one huge Bin cannot hold the lease for hours; the rest goes tomorrow.
+ */
+async function purgeExpiredBin(now: Date) {
+  const cutoff = binPurgeCutoff(now);
+  let total = 0;
+
+  for (let batch = 0; batch < BIN_PURGE_MAX_BATCHES; batch += 1) {
+    const purged = await purgeExpiredBinAssets({ cutoff, limit: BIN_PURGE_BATCH });
+    total += purged.length;
+    if (purged.length < BIN_PURGE_BATCH) break;
+  }
+
+  return total;
 }
 
 async function purgeExpiredRows(now: Date) {

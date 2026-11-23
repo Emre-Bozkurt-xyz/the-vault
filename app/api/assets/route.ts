@@ -5,6 +5,7 @@ import {
   AssetError,
   createUploadedAsset,
   listAssetsForUser,
+  listBinAssetsForUser,
   requireAssetUser,
   requireAssetUserFromRequest,
   summarizeAssetsForUser,
@@ -26,11 +27,19 @@ export async function GET(request: Request) {
       unrestrictedUploadsAllowed: user.unrestrictedUploadsAllowed,
     };
 
+    const view = new URL(request.url).searchParams.get("view");
+
     // `?view=summary`: the sidebar's counts and recent uploads only, so its
     // payload does not grow with the library.
-    if (new URL(request.url).searchParams.get("view") === "summary") {
+    if (view === "summary") {
       const summary = await summarizeAssetsForUser(user.id, summaryRecentCount);
       return NextResponse.json({ ...summary, storage });
+    }
+
+    // `?view=bin`: binned assets with when each is deleted for good.
+    if (view === "bin") {
+      const assets = await listBinAssetsForUser(user.id);
+      return NextResponse.json({ assets, storage });
     }
 
     const assets = await listAssetsForUser(user.id);

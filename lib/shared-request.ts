@@ -28,7 +28,7 @@ export function shareInFlight<T>(key: string, request: () => Promise<T>): Promis
  * `GET /api/assets` (or its `?view=summary` form), parsed and shared between
  * concurrent callers; null on failure.
  */
-export function fetchAssetLibrary(view?: "summary"): Promise<unknown> {
+export function fetchAssetLibrary(view?: "summary" | "bin"): Promise<unknown> {
   const url = view ? `/api/assets?view=${view}` : "/api/assets";
 
   return shareInFlight(`GET ${url}`, async () => {

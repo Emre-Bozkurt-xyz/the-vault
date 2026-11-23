@@ -29,8 +29,8 @@ export async function getUserStorageForAdmin(
   await requireAdmin();
   const id = userIdSchema.parse(userId);
 
-  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null)::int`;
-  const actualBytes = sql<number>`coalesce(sum(${assets.sizeBytes}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null), 0)`;
+  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} in ('ready', 'trashed') and ${assets.deletedAt} is null)::int`;
+  const actualBytes = sql<number>`coalesce(sum(${assets.sizeBytes}) filter (where ${assets.status} in ('ready', 'trashed') and ${assets.deletedAt} is null), 0)`;
 
   const [row] = await db
     .select({

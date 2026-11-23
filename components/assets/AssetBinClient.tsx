@@ -1,0 +1,362 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Clock3,
+  MoreHorizontal,
+  MousePointerClick,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
+
+import {
+  AssetPreview,
+  AssetThumbnail,
+  type AssetLibraryItem,
+} from "@/components/assets/AssetLibraryClient";
+import {
+  deleteAssetsForever,
+  emptyAssetBin,
+  restoreAssets,
+} from "@/components/assets/asset-bin-actions";
+import { assetTypeLabel } from "@/components/assets/asset-ui";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { WithContextMenu } from "@/components/ui/use-context-menu";
+import {
+  ContextPanelBody,
+  ContextPanelFacts,
+  ContextPanelSection,
+} from "@/components/workspace/ContextPanel";
+import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { requestOpenRightPanel } from "@/lib/document-command-events";
+import { subscribeToAssetsChanged } from "@/lib/asset-events";
+import { binDaysRemaining, formatBinCountdown } from "@/lib/asset-lifecycle";
+import { ASSET_LIMITS } from "@/lib/config/asset-limits";
+import { formatBytes } from "@/lib/format";
+import { fetchAssetLibrary } from "@/lib/shared-request";
+import { cn } from "@/lib/utils";
+
+export type BinAssetItem = AssetLibraryItem & {
+  trashedAt: Date | string;
+  purgeAt: Date | string;
+};
+
+const BIN_PAGE = { type: "assets", title: "Bin", href: "/assets?view=bin" } as const;
+
+/**
+ * `/assets?view=bin`: binned assets, each restorable until it is deleted for
+ * good `binRetentionDays` after it was binned. Binned bytes still count toward
+ * the storage quota, which the header says plainly, and Empty Bin states how
+ * much it frees before it runs.
+ */
+export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[] }) {
+  const [assets, setAssets] = useState(initialAssets);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<BinAssetItem | null>(null);
+  const [confirmingEmpty, setConfirmingEmpty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const selected = assets.find((asset) => asset.id === selectedId) ?? null;
+  const binBytes = useMemo(
+    () => assets.reduce((total, asset) => total + asset.sizeBytes, 0),
+    [assets],
+  );
+
+  const refresh = useCallback(async () => {
+    try {
+      const payload = (await fetchAssetLibrary("bin")) as { assets?: BinAssetItem[] } | null;
+      if (payload?.assets) setAssets(payload.assets);
+    } catch {
+      // Keep what we have.
+    }
+  }, []);
+
+  // Moves to the Bin from other tabs/panels, and Undo, land here too.
+  useEffect(() => subscribeToAssetsChanged(() => void refresh()), [refresh]);
+
+  const drop = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setAssets((current) => current.filter((asset) => !ids.includes(asset.id)));
+    setSelectedId((current) => (current && ids.includes(current) ? null : current));
+  }, []);
+
+  const restore = useCallback(
+    async (asset: BinAssetItem) => drop(await restoreAssets([asset])),
+    [drop],
+  );
+
+  async function confirmDelete() {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (target) drop(await deleteAssetsForever([target]));
+  }
+
+  async function confirmEmpty() {
+    setConfirmingEmpty(false);
+    setBusy(true);
+    if (await emptyAssetBin()) {
+      setAssets([]);
+      setSelectedId(null);
+    }
+    setBusy(false);
+  }
+
+  function select(asset: BinAssetItem) {
+    setSelectedId(asset.id);
+    requestOpenRightPanel();
+  }
+
+  const panel = useMemo(
+    () =>
+      selected ? (
+        <BinDetailsPanel
+          key={selected.id}
+          asset={selected}
+          onRestore={() => void restore(selected)}
+          onDelete={() => setPendingDelete(selected)}
+        />
+      ) : (
+        <div className="grid flex-1 place-content-center gap-2 px-6 py-16 text-center">
+          <MousePointerClick className="mx-auto size-6 text-muted-foreground" />
+          <p className="text-sm font-medium">Nothing selected</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Choose an item to preview it, restore it, or delete it for good.
+          </p>
+        </div>
+      ),
+    [restore, selected],
+  );
+
+  return (
+    <>
+      <WorkspacePageRegistration page={BIN_PAGE} rightPanel={panel} rightPanelTitle="Bin item" />
+
+      <div className="@container grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
+        <header className="flex flex-col gap-5 border-b border-border/70 pb-6 @3xl:flex-row @3xl:items-end @3xl:justify-between">
+          <div className="min-w-0">
+            <Link
+              href="/assets"
+              className="inline-flex items-center gap-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground transition hover:text-foreground"
+            >
+              <ArrowLeft className="size-3" aria-hidden />
+              Asset library
+            </Link>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">Bin</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              Items here are hidden everywhere and deleted for good{" "}
+              {ASSET_LIMITS.binRetentionDays} days after you moved them. Until then they
+              still count toward your storage.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 @3xl:shrink-0">
+            <p className="text-sm text-muted-foreground">
+              {assets.length} {assets.length === 1 ? "item" : "items"} ·{" "}
+              {formatBytes(binBytes)}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={assets.length === 0 || busy}
+              onClick={() => setConfirmingEmpty(true)}
+            >
+              <Trash2 data-icon="inline-start" />
+              {busy ? "Emptying…" : "Empty Bin"}
+            </Button>
+          </div>
+        </header>
+
+        {assets.length > 0 ? (
+          <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
+            {assets.map((asset) => (
+              <WithContextMenu key={asset.id}>
+                {(menu) => (
+                  <div
+                    data-asset-card
+                    onContextMenu={menu.onContextMenu}
+                    className="group relative mb-4 break-inside-avoid"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => select(asset)}
+                      aria-pressed={selected?.id === asset.id}
+                      className={cn(
+                        "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                        selected?.id === asset.id
+                          ? "border-primary/70 ring-1 ring-primary/35"
+                          : "border-border/70",
+                      )}
+                    >
+                      <span className="block opacity-80 grayscale-[35%] transition group-hover:opacity-100 group-hover:grayscale-0">
+                        <AssetThumbnail asset={asset} />
+                      </span>
+                      <span className="block px-3 py-2.5">
+                        <span className="block truncate text-sm font-medium">
+                          {asset.displayName}
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Countdown trashedAt={asset.trashedAt} />
+                          <span aria-hidden>·</span>
+                          <span className="truncate">{formatBytes(asset.sizeBytes)}</span>
+                        </span>
+                      </span>
+                    </button>
+                    <DropdownMenu {...menu.rootProps}>
+                      <DropdownMenuTrigger
+                        ref={menu.triggerRef}
+                        aria-label={`Actions for ${asset.displayName}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="absolute right-2 top-2 grid size-8 place-items-center rounded-md border border-border/70 bg-background/85 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 group-hover:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-44" {...menu.contentProps}>
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem onClick={() => void restore(asset)}>
+                            <RotateCcw /> Restore
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => setPendingDelete(asset)}
+                          >
+                            <Trash2 /> Delete forever
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+              </WithContextMenu>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
+            <Trash2 className="mx-auto size-8 text-muted-foreground" />
+            <h2 className="mt-4 text-lg font-semibold">The Bin is empty</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              Assets you move to the Bin wait here for {ASSET_LIMITS.binRetentionDays} days
+              so you can change your mind.
+            </p>
+            <Link href="/assets" className={cn(buttonVariants({ variant: "outline" }), "mx-auto mt-5")}>
+              <ArrowLeft data-icon="inline-start" />
+              Back to the library
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        tone="destructive"
+        icon={Trash2}
+        title="Delete forever?"
+        description={
+          pendingDelete ? (
+            <>
+              <span className="font-medium break-words text-foreground">
+                {pendingDelete.displayName}
+              </span>{" "}
+              will be removed from storage and {formatBytes(pendingDelete.sizeBytes)} freed.
+              Documents that embed it keep a placeholder. This cannot be undone.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete forever"
+        onConfirm={() => void confirmDelete()}
+      />
+      <ConfirmDialog
+        open={confirmingEmpty}
+        onOpenChange={setConfirmingEmpty}
+        tone="destructive"
+        icon={Trash2}
+        title="Empty the Bin?"
+        description={`All ${assets.length} ${assets.length === 1 ? "item" : "items"} will be removed from storage and ${formatBytes(binBytes)} freed. This cannot be undone.`}
+        confirmLabel="Empty Bin"
+        onConfirm={() => void confirmEmpty()}
+      />
+    </>
+  );
+}
+
+function BinDetailsPanel({
+  asset,
+  onRestore,
+  onDelete,
+}: {
+  asset: BinAssetItem;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <ContextPanelBody>
+      <div className="grid gap-3 border-b border-border/60 p-4">
+        <AssetPreview asset={asset} />
+        <div className="min-w-0">
+          <h2 className="break-words text-base font-semibold leading-snug">{asset.displayName}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button type="button" size="sm" onClick={onRestore}>
+            <RotateCcw data-icon="inline-start" />
+            Restore
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={onDelete}>
+            <Trash2 data-icon="inline-start" />
+            Delete forever
+          </Button>
+        </div>
+      </div>
+      <ContextPanelSection icon={Clock3} title="In the Bin">
+        <ContextPanelFacts
+          items={[
+            { label: "Moved here", value: formatDate(asset.trashedAt) },
+            { label: "Deleted for good", value: formatDate(asset.purgeAt) },
+            { label: "Uploaded", value: formatDate(asset.createdAt) },
+          ]}
+        />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Restoring puts it back exactly as it was: same link, visibility, tags, and
+          document embeds.
+        </p>
+      </ContextPanelSection>
+    </ContextPanelBody>
+  );
+}
+
+function Countdown({ trashedAt }: { trashedAt: Date | string }) {
+  const days = binDaysRemaining(trashedAt);
+  return (
+    // Depends on the clock, so the server's render can differ by a day at midnight.
+    <span
+      suppressHydrationWarning
+      className={cn("shrink-0", days <= 3 ? "text-destructive" : undefined)}
+    >
+      {formatBinCountdown(trashedAt)}
+    </span>
+  );
+}
+
+function formatDate(value: Date | string) {
+  return (value instanceof Date ? value : new Date(value)).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}

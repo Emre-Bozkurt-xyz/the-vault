@@ -8,6 +8,7 @@ import {
   ImageIcon,
   Images,
   Library,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -33,7 +34,8 @@ import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
 import { fetchAssetLibrary } from "@/lib/shared-request";
 
 const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
-const FILTER_KEYS = ["kind", "visibility"];
+// `view` too: the Bin (`?view=bin`) is a separate place, not "All assets".
+const FILTER_KEYS = ["kind", "visibility", "view"];
 
 type RecentAsset = Pick<
   AssetLibraryItem,
@@ -44,6 +46,7 @@ type RecentAsset = Pick<
 type AssetsSummaryResponse = {
   counts: { all: number; image: number; pdf: number; file: number; public: number };
   recent: RecentAsset[];
+  binCount?: number;
   storage?: { usedBytes: number; quotaBytes: number; unrestrictedUploadsAllowed: boolean };
 };
 
@@ -182,6 +185,13 @@ export function WorkspaceAssetsPanel() {
             label="Public"
             trailing={data ? counts.public : null}
             active={isActive("/assets?visibility=public")}
+          />
+          <SidePanelNavItem
+            href="/assets?view=bin"
+            icon={Trash2}
+            label="Bin"
+            trailing={data && data.binCount ? data.binCount : null}
+            active={isActive("/assets?view=bin")}
           />
         </SidePanelSection>
 

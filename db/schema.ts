@@ -39,7 +39,13 @@ export type UserRole = "user" | "admin";
  */
 export type AssetKind = "image" | "pdf" | "file";
 export type AssetVisibility = "private" | "public";
-export type AssetStatus = "pending" | "ready" | "failed" | "deleted";
+/**
+ * Lifecycle (see `lib/asset-lifecycle.ts`): pending -> ready <-> trashed ->
+ * deleted. `trashed` is the Bin: bytes and quota kept, readable by the owner
+ * only. Every read path that gates on `ready` therefore excludes binned
+ * assets without knowing the Bin exists.
+ */
+export type AssetStatus = "pending" | "ready" | "trashed" | "failed" | "deleted";
 export type TagCategory =
   | "general"
   | "topic"
@@ -690,10 +696,13 @@ export const assets = pgTable(
       .notNull()
       .default(sql`now()`),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    /** When the asset entered the Bin; set only while `status = 'trashed'`. */
+    trashedAt: timestamp("trashed_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     index("assets_owner_id_idx").on(table.ownerId),
+    index("assets_status_trashed_at_idx").on(table.status, table.trashedAt),
     index("assets_kind_idx").on(table.kind),
     index("assets_visibility_status_idx").on(table.visibility, table.status),
     index("assets_created_at_idx").on(table.createdAt),

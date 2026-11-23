@@ -67,11 +67,25 @@ To reuse a public asset:
 3. Copy its embed or asset ID from the details panel.
 4. Paste the embed into your document.
 
-## Deleting assets
+## Deleting assets and the Bin
 
-Deleting an owned asset removes it from normal library and gallery views and
-removes the stored object. Documents that still contain its Markdown reference
-will render an unavailable placeholder.
+**Move to Bin** (from an asset's `…` menu, right-click, the details panel, or
+the `Delete` key) hides the asset everywhere: the library, the gallery, search,
+and every document that embeds it, which shows an unavailable placeholder
+instead. A toast offers **Undo** for a few seconds.
+
+Open the Bin from the trash button in the library toolbar or **Bin** in the
+Assets side panel. Each item shows how long it has left:
+
+- **Restore** puts it back exactly as it was: same link, visibility, tags and
+  document embeds.
+- **Delete forever** removes it from storage straight away.
+- **Empty Bin** deletes everything in the Bin for good and says how much space
+  that frees before you confirm.
+
+Anything left in the Bin is deleted for good **30 days** after you moved it
+there. Items in the Bin still count toward your storage until then; deleting
+them for good is what frees the space.
 
 ## Render examples
 

@@ -35,6 +35,11 @@ export const ASSET_LIMITS = {
    * size and at least 5 MiB, and allows at most 10,000 parts.
    */
   multipartPartBytes: 16 * MiB, // 16 MiB
+  /**
+   * Days an asset stays in the Bin before it is deleted for good (bytes
+   * removed from storage, quota released). Deployment-wide on purpose.
+   */
+  binRetentionDays: 30,
   /** Deleted and failed asset rows are purged this long after they ended. */
   deletedAssetRetentionDays: 30,
   /** Objects younger than this are never treated as orphans (race margin). */

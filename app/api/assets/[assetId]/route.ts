@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { parseBulkAssetIds } from "@/lib/asset-lifecycle";
 import {
   AssetError,
+  deleteAssetsForeverForUser,
   getAssetForUser,
   requireAssetUser,
-  softDeleteAssetForUser,
+  trashAssetsForUser,
   updateAssetForUser,
 } from "@/server/assets";
 
@@ -54,16 +56,39 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+/**
+ * Moves the asset to the Bin. `?permanent=1` deletes it for good instead, and
+ * only from the Bin: a live asset is never deleted outright by its owner.
+ * Either way an id that is not in the expected state answers 404.
+ */
+export async function DELETE(request: Request, context: RouteContext) {
   try {
     const user = await requireAssetUser();
     const { assetId } = await context.params;
-    const asset = await softDeleteAssetForUser({
-      userId: user.id,
-      assetId,
-    });
+    const assetIds = parseBulkAssetIds([assetId]);
 
-    return NextResponse.json({ asset });
+    if (!assetIds) {
+      throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
+    }
+
+    const permanent = new URL(request.url).searchParams.get("permanent") === "1";
+
+    if (permanent) {
+      const [deleted] = await deleteAssetsForeverForUser({ userId: user.id, assetIds });
+      if (!deleted) {
+        throw new AssetError("Asset not found in the Bin.", 404, "ASSET_NOT_FOUND");
+      }
+      return NextResponse.json({ asset: { id: deleted.id, status: "deleted" } });
+    }
+
+    const [trashed] = await trashAssetsForUser({ userId: user.id, assetIds });
+    if (!trashed) {
+      throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
+    }
+
+    return NextResponse.json({
+      asset: { id: trashed.id, status: "trashed", trashedAt: trashed.trashedAt },
+    });
   } catch (error) {
     return assetErrorResponse(error);
   }

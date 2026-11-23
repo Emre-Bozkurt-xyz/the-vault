@@ -7,6 +7,11 @@
 export const ASSET_KEY_PREFIX = "users/";
 
 export type AssetMaintenanceResult = {
+  /**
+   * Assets deleted for good because they sat in the Bin past the retention
+   * period. Absent on results stored before the Bin existed.
+   */
+  binPurged?: number;
   /** Deleted/failed asset rows removed after the retention period. */
   purgedRows: number;
   /** Bucket objects examined under `ASSET_KEY_PREFIX`. */
@@ -22,8 +27,9 @@ export type AssetMaintenanceResult = {
 };
 
 /**
- * Bucket keys safe to delete: under Vault's prefix, not referenced by any live
- * (`ready` or `pending`) asset, and older than the grace period. The grace
+ * Bucket keys safe to delete: under Vault's prefix, not referenced by any
+ * asset whose bytes must survive (`ready`, `pending`, or `trashed` — see
+ * `REFERENCED_ASSET_STATUSES`), and older than the grace period. The grace
  * period covers any write that lands between listing the bucket and reading
  * the database, and anything a human is mid-way through restoring.
  */

@@ -42,7 +42,10 @@ try {
     listR2Keys(),
   ]);
   const assetKeys = new Set(assetRows.map((asset) => asset.storage_key));
-  const missingObjects = assetRows.filter((asset) => !r2Keys.has(asset.storage_key));
+  // A pending upload has no object until it completes, so it is never "missing".
+  const missingObjects = assetRows.filter(
+    (asset) => asset.status !== "pending" && !r2Keys.has(asset.storage_key),
+  );
   const orphanedObjects = [...r2Keys].filter((key) => !assetKeys.has(key));
   const quotaDrift = quotaRows.filter(
     (row) => Number(row.storage_used_bytes) !== Number(row.calculated_used_bytes),
@@ -116,9 +119,11 @@ try {
 
 async function readAssetRows() {
   return sql`
-    select id, storage_key, size_bytes
+    select id, status, storage_key, size_bytes
     from assets
-    where status = 'ready' and deleted_at is null
+    -- Binned assets keep their bytes until purge; pending ones are mid-upload.
+    -- Either way their objects are not orphans.
+    where status in ('ready', 'trashed', 'pending') and deleted_at is null
   `;
 }
 
@@ -132,9 +137,10 @@ async function readQuotaRows() {
     left join assets a
       on a.owner_id = u.id
       and a.deleted_at is null
-      -- In-flight direct uploads hold a reservation completion does not re-add.
+      -- Binned bytes count until purge. In-flight direct uploads hold a
+      -- reservation completion does not re-add.
       and (
-        a.status = 'ready'
+        a.status in ('ready', 'trashed')
         or (
           a.status = 'pending'
           and exists (select 1 from asset_uploads au where au.asset_id = a.id)
@@ -169,8 +175,15 @@ async function repairUserQuota() {
       from users u2
       left join assets a
         on a.owner_id = u2.id
-        and a.status = 'ready'
         and a.deleted_at is null
+        -- Must match readQuotaRows and recalculateUserStorage exactly.
+        and (
+          a.status in ('ready', 'trashed')
+          or (
+            a.status = 'pending'
+            and exists (select 1 from asset_uploads au where au.asset_id = a.id)
+          )
+        )
       group by u2.id
     ) calculated
     where calculated.id = u.id

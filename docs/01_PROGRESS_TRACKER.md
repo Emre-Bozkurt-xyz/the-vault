@@ -712,6 +712,21 @@ Plan: `docs/25_PERFORMANCE_AND_RESOURCE_USAGE_PLAN.md` (2026-10-14). First imple
 | [~] | Slice 6 - Bounded lists and images | 2026-10-14. SQL asset summary for the sidebar; linear folder grouping. Remaining: thumbnails, pagination, conditional revalidation |
 | [~] | Slice 7 - Resource bounds | 2026-10-14. Service worker caches versioned and bounded, private pages dropped on sign-out. Remaining: pool sizing, asset-cleanup paging, uploads, MCP search, collab persistence, extension startup, packaging |
 
+## Phase 28 - Media Library, Folders, Bin and Share Links
+
+Plan: `docs/26_MEDIA_LIBRARY_AND_FOLDERS_PLAN.md` (2026-11-23). Separate media folder tree, view formats and a viewer, thumbnails and video, anyone-with-the-link share pages, and a 30-day Bin.
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Plan and decisions | 2026-11-23. Separate media tree (not mixed with document folders); share links are anyone-with-the-link, revocable, optional expiry, download toggle; Bin is a `trashed` status, 30 days, counted against quota |
+| [x] | Slice 1 - Bin | 2026-11-23. `trashed` status + `assets.trashed_at` (migration 0032, applied locally), restore/delete forever/Empty Bin/bulk APIs, 30-day purge in daily maintenance, `/assets?view=bin`, Move to Bin with Undo. Verified with unit, real-Postgres integration and Chromium checks; not yet run against real R2 |
+| [ ] | Slice 2 - Thumbnails and display renditions | `sharp`, rendition keys taught to the orphan sweep first |
+| [ ] | Slice 3 - Folders | `asset_folders`, breadcrumbs, side-panel tree, move, upload/drop into folder |
+| [ ] | Slice 4 - View formats, selection, viewer, pagination | Masonry default; grid, list, details; bulk bar; full-screen viewer |
+| [ ] | Slice 5 - Video | `video` kind and cap, browser-captured posters, inline playback |
+| [ ] | Slice 6 - Share links and `/s/<token>` | Folder and item links, stripped-down page, zip download |
+| [ ] | Slice 7 - Hardening | More integration tests, Playwright smoke, rate limits, user guide |
+
 ---
 
 ## Bugs / Issues

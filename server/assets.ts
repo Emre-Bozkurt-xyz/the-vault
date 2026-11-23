@@ -27,6 +27,12 @@ import {
   type AssetKind,
 } from "@/db/schema";
 import { fileExtensionFromName } from "@/lib/asset-delivery";
+import {
+  STORED_ASSET_STATUSES,
+  binPurgeAt,
+  readableStatusFor,
+  transitionSources,
+} from "@/lib/asset-lifecycle";
 import { extractAssetEmbedIds } from "@/lib/asset-embeds";
 import {
   type ContentSearchQuery,
@@ -644,7 +650,7 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
     eq(assets.status, "ready"),
     isNull(assets.deletedAt),
   );
-  const [[counts], recentRows] = await Promise.all([
+  const [[counts], [bin], recentRows] = await Promise.all([
     db
       .select({
         all: sql<number>`count(*)::int`,
@@ -655,6 +661,12 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
       })
       .from(assets)
       .where(scope),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(assets)
+      .where(
+        and(eq(assets.ownerId, userId), eq(assets.status, "trashed"), isNull(assets.deletedAt)),
+      ),
     db
       .select({
         id: assets.id,
@@ -672,6 +684,7 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
 
   return {
     counts: counts ?? { all: 0, image: 0, pdf: 0, file: 0, public: 0 },
+    binCount: bin?.count ?? 0,
     recent: recentRows.map((asset) => ({
       ...asset,
       url: buildAssetContentUrl(asset.id),
@@ -969,102 +982,224 @@ async function listTagsForAssetIds(assetIds: string[]) {
   return tagMap;
 }
 
-export async function softDeleteAssetForUser(input: {
-  userId: string;
-  assetId: string;
-}) {
-  const [asset] = await db
+/**
+ * Moves the user's live assets to the Bin. Bytes, quota, tags, document links
+ * and stored visibility are all kept, so a restore puts everything back; while
+ * binned, every `ready`-gated read path (embeds, gallery, search, completions,
+ * MCP) simply stops seeing them. Ids that are not the user's live assets are
+ * skipped, so repeating the call is harmless.
+ */
+export async function trashAssetsForUser(input: { userId: string; assetIds: string[] }) {
+  if (input.assetIds.length === 0) return [];
+  const now = new Date();
+
+  return db
     .update(assets)
-    .set({
-      status: "deleted",
-      visibility: "private",
-      deletedAt: new Date(),
-      updatedAt: new Date(),
-    })
+    .set({ status: "trashed", trashedAt: now, updatedAt: now })
     .where(
       and(
-        eq(assets.id, input.assetId),
+        inArray(assets.id, input.assetIds),
         eq(assets.ownerId, input.userId),
-        eq(assets.status, "ready"),
+        inArray(assets.status, [...transitionSources("trash", "owner")]),
         isNull(assets.deletedAt),
       ),
     )
-    .returning({
-      id: assets.id,
-      storageKey: assets.storageKey,
-      sizeBytes: assets.sizeBytes,
-    });
-
-  if (!asset) {
-    throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
-  }
-
-  await db
-    .delete(documentAssets)
-    .where(eq(documentAssets.assetId, input.assetId));
-  await releaseUserStorage(input.userId, asset.sizeBytes);
-
-  try {
-    await deleteAssetObject(asset.storageKey);
-  } catch (error) {
-    console.error("Failed to delete R2 asset object", {
-      assetId: input.assetId,
-      storageKey: asset.storageKey,
-      error,
-    });
-  }
-
-  return { id: asset.id };
+    .returning({ id: assets.id, trashedAt: assets.trashedAt });
 }
 
-export async function adminDeleteAsset(assetId: string) {
-  const [asset] = await db
+/** Takes the user's assets back out of the Bin. No quota change: binned bytes still counted. */
+export async function restoreAssetsForUser(input: { userId: string; assetIds: string[] }) {
+  if (input.assetIds.length === 0) return [];
+
+  return db
     .update(assets)
-    .set({
-      status: "deleted",
-      visibility: "private",
-      deletedAt: new Date(),
-      updatedAt: new Date(),
-    })
+    .set({ status: "ready", trashedAt: null, updatedAt: new Date() })
     .where(
       and(
-        eq(assets.id, assetId),
-        eq(assets.status, "ready"),
+        inArray(assets.id, input.assetIds),
+        eq(assets.ownerId, input.userId),
+        inArray(assets.status, [...transitionSources("restore", "owner")]),
         isNull(assets.deletedAt),
       ),
     )
-    .returning({
-      id: assets.id,
-      ownerId: assets.ownerId,
-      storageKey: assets.storageKey,
-      sizeBytes: assets.sizeBytes,
-    });
+    .returning({ id: assets.id });
+}
 
-  if (!asset) {
+/** "Delete forever" from the Bin. Only binned assets are affected. */
+export async function deleteAssetsForeverForUser(input: { userId: string; assetIds: string[] }) {
+  if (input.assetIds.length === 0) return [];
+
+  return permanentlyDeleteAssets(
+    and(inArray(assets.id, input.assetIds), eq(assets.ownerId, input.userId)),
+    "owner",
+  );
+}
+
+/** Empty Bin: every binned asset the user owns, deleted for good. */
+export async function emptyAssetBinForUser(userId: string) {
+  return permanentlyDeleteAssets(eq(assets.ownerId, userId), "owner");
+}
+
+/**
+ * The Bin purge: deletes up to `limit` assets binned before `cutoff`. The
+ * maintenance run calls it until it returns fewer than `limit`.
+ */
+export async function purgeExpiredBinAssets(input: { cutoff: Date; limit: number }) {
+  return permanentlyDeleteAssets(
+    // Raw fragments bypass Drizzle's column mapping: bind text and cast.
+    sql`${assets.trashedAt} < ${input.cutoff.toISOString()}::timestamptz`,
+    "system",
+    input.limit,
+  );
+}
+
+/** Admin moderation delete: skips the Bin, from either a live or a binned asset. */
+export async function adminDeleteAsset(assetId: string) {
+  const [deleted] = await permanentlyDeleteAssets(eq(assets.id, assetId), "admin");
+
+  if (!deleted) {
     throw new AssetError("Asset not found.", 404, "ASSET_NOT_FOUND");
   }
 
-  await db
-    .delete(documentAssets)
-    .where(eq(documentAssets.assetId, assetId));
-  await releaseUserStorage(asset.ownerId, asset.sizeBytes);
+  return { id: deleted.id };
+}
 
-  try {
-    await deleteAssetObject(asset.storageKey);
-  } catch (error) {
-    console.error("Failed to delete R2 asset object", {
-      assetId,
-      storageKey: asset.storageKey,
-      error,
+const OBJECT_DELETE_CONCURRENCY = 8;
+
+/**
+ * The one way an asset is deleted for good. The status update is conditional
+ * on the actor's allowed source statuses, and quota is released only for the
+ * rows that update returned, inside the same transaction — so two concurrent
+ * deletes (or a delete racing a restore) can never release quota twice or
+ * delete something that was just restored. Storage objects are removed after
+ * commit, best effort: the daily orphan sweep retries anything that fails.
+ */
+async function permanentlyDeleteAssets(
+  scope: SQL | undefined,
+  actor: "owner" | "admin" | "system",
+  limit?: number,
+) {
+  const sources = [...transitionSources("delete", actor)];
+  const now = new Date();
+
+  const deleted = await db.transaction(async (tx) => {
+    const target = and(scope, inArray(assets.status, sources), isNull(assets.deletedAt));
+    // UPDATE has no LIMIT in Postgres; bound it through an id subquery.
+    const bounded = limit
+      ? inArray(
+          assets.id,
+          tx
+            .select({ id: assets.id })
+            .from(assets)
+            .where(target)
+            .orderBy(assets.trashedAt)
+            .limit(limit),
+        )
+      : target;
+
+    const rows = await tx
+      .update(assets)
+      .set({
+        status: "deleted",
+        visibility: "private",
+        trashedAt: null,
+        deletedAt: now,
+        updatedAt: now,
+      })
+      // Re-state the source check on the update itself: under concurrency the
+      // subquery's snapshot can be older than the row this update locks.
+      .where(and(bounded, inArray(assets.status, sources), isNull(assets.deletedAt)))
+      .returning({
+        id: assets.id,
+        ownerId: assets.ownerId,
+        storageKey: assets.storageKey,
+        sizeBytes: assets.sizeBytes,
+      });
+
+    if (rows.length === 0) return rows;
+
+    await tx.delete(documentAssets).where(
+      inArray(
+        documentAssets.assetId,
+        rows.map((row) => row.id),
+      ),
+    );
+
+    const releasedByOwner = new Map<string, number>();
+    for (const row of rows) {
+      releasedByOwner.set(row.ownerId, (releasedByOwner.get(row.ownerId) ?? 0) + row.sizeBytes);
+    }
+    for (const [ownerId, bytes] of releasedByOwner) {
+      await tx
+        .update(users)
+        .set({
+          storageUsedBytes: sql`greatest(${users.storageUsedBytes} - ${bytes}, 0)`,
+          updatedAt: now,
+        })
+        .where(eq(users.id, ownerId));
+    }
+
+    return rows;
+  });
+
+  for (let index = 0; index < deleted.length; index += OBJECT_DELETE_CONCURRENCY) {
+    const batch = deleted.slice(index, index + OBJECT_DELETE_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map((row) => deleteAssetObject(row.storageKey)),
+    );
+    settled.forEach((outcome, offset) => {
+      if (outcome.status === "rejected") {
+        console.error("Failed to delete R2 asset object", {
+          assetId: batch[offset].id,
+          storageKey: batch[offset].storageKey,
+          error: outcome.reason,
+        });
+      }
     });
   }
 
-  return { id: asset.id };
+  return deleted.map((row) => ({ id: row.id, sizeBytes: row.sizeBytes }));
+}
+
+/** The user's Bin, most recently binned first, with when each item goes for good. */
+export async function listBinAssetsForUser(userId: string) {
+  const rows = await db
+    .select({
+      id: assets.id,
+      kind: assets.kind,
+      displayName: assets.displayName,
+      description: assets.description,
+      altText: assets.altText,
+      mimeType: assets.mimeType,
+      sizeBytes: assets.sizeBytes,
+      visibility: assets.visibility,
+      createdAt: assets.createdAt,
+      trashedAt: assets.trashedAt,
+    })
+    .from(assets)
+    .where(
+      and(eq(assets.ownerId, userId), eq(assets.status, "trashed"), isNull(assets.deletedAt)),
+    )
+    .orderBy(desc(assets.trashedAt), desc(assets.id));
+
+  return rows.map((asset) => {
+    const trashedAt = asset.trashedAt ?? asset.createdAt;
+    return {
+      ...asset,
+      trashedAt,
+      purgeAt: binPurgeAt(trashedAt),
+      tags: [] as string[],
+      // The content route lets the owner read binned bytes, so previews work.
+      url: buildAssetContentUrl(asset.id),
+      markdown: buildAssetMarkdown(asset.id, asset.displayName),
+    };
+  });
 }
 
 export async function recalculateUserStorage(userId: string) {
   // In-flight direct uploads (pending, with an `asset_uploads` row) hold a
-  // quota reservation that completion does not re-add, so they count too.
+  // quota reservation that completion does not re-add, so they count too, as
+  // do binned assets (their bytes are kept until purge).
   const [row] = await db
     .select({
       total: sql<number>`coalesce(sum(${assets.sizeBytes}), 0)`,
@@ -1075,7 +1210,8 @@ export async function recalculateUserStorage(userId: string) {
         eq(assets.ownerId, userId),
         isNull(assets.deletedAt),
         or(
-          eq(assets.status, "ready"),
+          // Binned bytes still exist in storage until they are purged.
+          inArray(assets.status, [...STORED_ASSET_STATUSES]),
           and(
             eq(assets.status, "pending"),
             sql`exists (select 1 from ${assetUploads} where ${assetUploads.assetId} = ${assets.id})`,
@@ -1252,11 +1388,24 @@ export async function getReadableAsset(input: {
     .where(eq(assets.id, input.assetId))
     .limit(1);
 
-  if (!asset || asset.status !== "ready" || asset.deletedAt) {
+  if (!asset || asset.deletedAt) {
     return null;
   }
 
-  if (asset.visibility === "public" || asset.ownerId === input.userId) {
+  const isOwner = input.userId !== null && asset.ownerId === input.userId;
+  const readable = readableStatusFor(asset.status, isOwner);
+
+  if (readable === "none") {
+    return null;
+  }
+
+  if (readable === "owner-only") {
+    // A binned asset is the owner's alone, whatever its stored visibility:
+    // never let a shared cache keep it around for anyone else.
+    return { ...asset, visibility: "private" as const };
+  }
+
+  if (asset.visibility === "public" || isOwner) {
     return asset;
   }
 

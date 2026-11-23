@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -12,6 +12,7 @@ import {
   type AssetKind,
   type AssetVisibility,
 } from "@/db/schema";
+import { STORED_ASSET_STATUSES } from "@/lib/asset-lifecycle";
 import { uploadLimitMiBSchema } from "@/lib/upload-limits";
 import { runAssetMaintenance } from "@/server/asset-maintenance";
 import {
@@ -81,10 +82,12 @@ export async function getAssetStorageOverview(): Promise<AssetStorageOverview> {
       imageCount: sql<number>`count(*) filter (where ${assets.kind} = 'image')::int`,
       pdfCount: sql<number>`count(*) filter (where ${assets.kind} = 'pdf')::int`,
       fileCount: sql<number>`count(*) filter (where ${assets.kind} = 'file')::int`,
-      publicCount: sql<number>`count(*) filter (where ${assets.visibility} = 'public')::int`,
+      // A binned asset keeps its stored visibility but is not public.
+      publicCount: sql<number>`count(*) filter (where ${assets.visibility} = 'public' and ${assets.status} = 'ready')::int`,
     })
     .from(assets)
-    .where(and(eq(assets.status, "ready"), isNull(assets.deletedAt)));
+    // Stored bytes: live and binned assets (the Bin still counts toward quota).
+    .where(and(inArray(assets.status, [...STORED_ASSET_STATUSES]), isNull(assets.deletedAt)));
 
   const [userStats] = await db
     .select({
@@ -142,8 +145,8 @@ export async function listUserStorageForAdmin(options: {
     conditions.push(sql`${users.storageUsedBytes} >= ${minBytes}`);
   }
 
-  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null)::int`;
-  const actualBytes = sql<number>`coalesce(sum(${assets.sizeBytes}) filter (where ${assets.status} = 'ready' and ${assets.deletedAt} is null), 0)`;
+  const assetCount = sql<number>`count(${assets.id}) filter (where ${assets.status} in ('ready', 'trashed') and ${assets.deletedAt} is null)::int`;
+  const actualBytes = sql<number>`coalesce(sum(${assets.sizeBytes}) filter (where ${assets.status} in ('ready', 'trashed') and ${assets.deletedAt} is null), 0)`;
 
   const orderBy =
     sort === "usage_asc"
