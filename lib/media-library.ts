@@ -172,6 +172,41 @@ export function isPhotoView(view: MediaView) {
   return view === "masonry" || view === "grid";
 }
 
+// ── Masonry ────────────────────────────────────────────────────────────────
+
+/**
+ * Masonry column count for a container width in px: the Tailwind container
+ * steps the other views use (@2xl 42rem, @5xl 64rem, @7xl 80rem).
+ */
+export function masonryColumnCount(widthPx: number) {
+  if (widthPx >= 1280) return 5;
+  if (widthPx >= 1024) return 4;
+  if (widthPx >= 672) return 3;
+  return 2;
+}
+
+/**
+ * Deal items into columns in list order, each into the column that is
+ * currently shortest (ties go left), so the list reads left to right across
+ * the top and folders, which come first, sit in the first row like any other
+ * item. Returns the item indexes per column. Appending items never moves
+ * earlier ones, so progressive rendering keeps cards where they are.
+ */
+export function packMasonry(heights: readonly number[], columns: number, gap = 0): number[][] {
+  const count = Math.max(1, Math.floor(columns));
+  const packed: number[][] = Array.from({ length: count }, () => []);
+  const filled = new Array<number>(count).fill(0);
+  heights.forEach((height, index) => {
+    let shortest = 0;
+    for (let column = 1; column < count; column += 1) {
+      if (filled[column] < filled[shortest] - 1e-6) shortest = column;
+    }
+    packed[shortest].push(index);
+    filled[shortest] += Math.max(0, height) + gap;
+  });
+  return packed;
+}
+
 // ── Places ─────────────────────────────────────────────────────────────────
 
 /**

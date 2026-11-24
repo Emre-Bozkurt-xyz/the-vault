@@ -5,6 +5,8 @@ import {
   applySelectionClick,
   folderPreviewThumbs,
   isPhotoView,
+  masonryColumnCount,
+  packMasonry,
   parseLibraryPlace,
   parseMediaLibraryPrefs,
   resolveContextTarget,
@@ -17,6 +19,31 @@ import {
   sortMediaAssets,
   stepIndex,
 } from "@/lib/media-library";
+
+describe("masonry", () => {
+  it("steps column counts with the container width", () => {
+    expect(masonryColumnCount(400)).toBe(2);
+    expect(masonryColumnCount(672)).toBe(3);
+    expect(masonryColumnCount(1100)).toBe(4);
+    expect(masonryColumnCount(1600)).toBe(5);
+  });
+
+  it("fills the first row in order, then the shortest column", () => {
+    // A folder (1) and three photos: the first row takes items 0..2 left to
+    // right, and item 3 goes under the shortest of them.
+    expect(packMasonry([1, 2, 0.5, 1], 3)).toEqual([[0], [1], [2, 3]]);
+    // Ties go to the leftmost column.
+    expect(packMasonry([1, 1, 1, 1], 2)).toEqual([[0, 2], [1, 3]]);
+  });
+
+  it("counts the gap and never moves earlier items when more are appended", () => {
+    const first = packMasonry([1, 1.2, 0.3, 0.3], 2, 0.1);
+    const more = packMasonry([1, 1.2, 0.3, 0.3, 0.8, 0.5], 2, 0.1);
+    expect(first).toEqual([[0, 2], [1, 3]]);
+    expect(more.map((column, index) => column.slice(0, first[index].length))).toEqual(first);
+    expect(packMasonry([1, 2], 0)).toEqual([[0, 1]]);
+  });
+});
 
 describe("parsers", () => {
   it("falls back to masonry and newest", () => {

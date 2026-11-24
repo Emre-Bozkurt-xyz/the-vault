@@ -2,6 +2,8 @@
 
 import {
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -33,7 +35,7 @@ import {
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetExtensionBadge, assetTypeLabel } from "@/components/assets/asset-ui";
 import { formatBytes } from "@/lib/format";
-import type { MediaSort, MediaView } from "@/lib/media-library";
+import { masonryColumnCount, packMasonry, type MediaSort, type MediaView } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,10 +68,12 @@ export type MediaItemHandlers = {
   showNames: boolean;
 };
 
-// Masonry columns and the folder row above them share counts and gaps, so
-// the folders line up with the photos as one grid.
-const MASONRY_COLUMNS = "columns-2 gap-3 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5";
-const MASONRY_FOLDERS = "grid grid-cols-2 gap-3 @2xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5";
+// Only until the masonry has measured its width (server render, first paint
+// of a hard load): plain CSS columns with the same counts.
+const MASONRY_FALLBACK = "columns-2 gap-3 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5";
+const MASONRY_GAP = 12;
+// The name and meta lines under a masonry card (px-3 py-2.5, two lines).
+const MASONRY_CAPTION = 58;
 const SQUARE_GRID = "grid grid-cols-3 gap-2 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6 @7xl:grid-cols-8";
 
 export function MediaItemView({
@@ -139,20 +143,7 @@ export function MediaItemView({
         ))}
       </div>
     ) : (
-      <div className="min-w-0">
-        {folders.length > 0 ? (
-          <div className={cn(MASONRY_FOLDERS, shown.length > 0 && "mb-3")}>
-            {folders.map((folder) => (
-              <FolderCard key={folder.id} folder={folder} handlers={folderHandlers} />
-            ))}
-          </div>
-        ) : null}
-        <div className={MASONRY_COLUMNS}>
-          {shown.map((asset) => (
-            <PhotoCard key={asset.id} asset={asset} square={false} {...handlers} />
-          ))}
-        </div>
-      </div>
+      <Masonry assets={shown} folders={folders} folderHandlers={folderHandlers} handlers={handlers} />
     );
 
   return (
@@ -165,6 +156,86 @@ export function MediaItemView({
       ) : null}
     </>
   );
+}
+
+/**
+ * Masonry with folders as ordinary items: one list (folders first, then
+ * files) dealt left to right into the shortest column (`packMasonry`), so a
+ * lone folder takes one card's place in the first row rather than a row of
+ * its own. Card heights are estimated from stored dimensions, so nothing
+ * waits on images loading.
+ */
+function Masonry({
+  assets,
+  folders,
+  folderHandlers,
+  handlers,
+}: {
+  assets: AssetLibraryItem[];
+  folders: FolderTileData[];
+  folderHandlers: FolderItemHandlers;
+  handlers: MediaItemHandlers;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    // The first callback arrives before paint, so client navigations never
+    // see the fallback. Rounded so sub-pixel jitter doesn't re-pack.
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width / 8) * 8));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const folderCards = folders.map((folder) => (
+    <div key={`folder:${folder.id}`} className="mb-3 break-inside-avoid">
+      <FolderCard folder={folder} handlers={folderHandlers} />
+    </div>
+  ));
+  const assetCards = assets.map((asset) => (
+    <PhotoCard key={asset.id} asset={asset} square={false} {...handlers} />
+  ));
+  const cards = [...folderCards, ...assetCards];
+
+  const columns = width === null ? null : masonryColumnCount(width);
+  const packed = useMemo(() => {
+    if (width === null || columns === null) return null;
+    const columnWidth = (width - MASONRY_GAP * (columns - 1)) / columns;
+    const heights = [
+      ...folders.map(() => columnWidth),
+      ...assets.map((asset) => masonryCardHeight(asset, columnWidth, handlers.showNames)),
+    ];
+    return packMasonry(heights, columns, MASONRY_GAP);
+  }, [width, columns, folders, assets, handlers.showNames]);
+
+  return (
+    <div ref={ref} className="min-w-0">
+      {packed === null ? (
+        <div className={MASONRY_FALLBACK}>{cards}</div>
+      ) : (
+        <div className="flex items-start gap-3">
+          {packed.map((column, index) => (
+            <div key={index} className="min-w-0 flex-1">
+              {column.map((cardIndex) => cards[cardIndex])}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A masonry card's height in px, as `PhotoCard`/`MasonryThumb` will draw it. */
+function masonryCardHeight(asset: AssetLibraryItem, columnWidth: number, showNames: boolean) {
+  const visual = (asset.kind === "image" || asset.kind === "video") && asset.thumbUrl !== null;
+  const ratio =
+    visual && asset.width && asset.height && asset.width > 0 && asset.height > 0
+      ? asset.height / asset.width
+      : 3 / 4;
+  const caption = showNames || !visual ? MASONRY_CAPTION : 0;
+  return columnWidth * ratio + caption;
 }
 
 /** Shared item wiring: click with modifiers, Enter opens, double-click opens, drag. */
