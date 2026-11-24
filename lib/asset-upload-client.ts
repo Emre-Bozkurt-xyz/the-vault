@@ -29,6 +29,8 @@ export type UploadProgress = {
 
 export type UploadOptions = {
   documentId?: string | null;
+  /** Media library folder to upload into; null/absent = the library root. */
+  folderId?: string | null;
   shareLinkId?: string | null;
   /** Embed session token; the embed editor has no Vault cookie. */
   bearerToken?: string | null;
@@ -59,6 +61,7 @@ async function uploadSingle(file: File, options: UploadOptions): Promise<Uploade
   formData.set("file", file);
   if (options.documentId) formData.set("documentId", options.documentId);
   if (options.shareLinkId) formData.set("shareLinkId", options.shareLinkId);
+  if (options.folderId) formData.set("folderId", options.folderId);
 
   const total = file.size;
   options.onProgress?.({ phase: "uploading", loadedBytes: 0, totalBytes: total });
@@ -94,6 +97,7 @@ async function uploadDirect(file: File, options: UploadOptions): Promise<Uploade
   startForm.set("type", file.type);
   if (options.documentId) startForm.set("documentId", options.documentId);
   if (options.shareLinkId) startForm.set("shareLinkId", options.shareLinkId);
+  if (options.folderId) startForm.set("folderId", options.folderId);
 
   const started = await requestJson<{
     uploadId: string;

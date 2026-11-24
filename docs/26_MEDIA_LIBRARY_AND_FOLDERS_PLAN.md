@@ -4,7 +4,7 @@ Date: 2026-11-23. Tracker: Phase 28. Builds on
 `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` (storage, access model, embeds),
 which stays authoritative for everything this plan does not change.
 
-**Status: plan agreed 2026-11-23; slices 1 (Bin) and 2 (renditions) implemented — see §12.**
+**Status: plan agreed 2026-11-23; slices 1 (Bin), 2 (renditions) and 3 (folders) implemented — see §12.**
 
 ## 1. Goal
 
@@ -85,27 +85,40 @@ is public. Everyone else gets the same 404 as a missing asset.
 
 ### 4.2 `asset_folders` (slice 3)
 
+As shipped in slice 3 (migration `0034`):
+
 ```txt
 id uuid pk
 owner_id uuid → users (cascade)
 parent_id uuid → asset_folders (cascade) null = root
-name text (1–120 chars, trimmed, no `/`)
+name text (1–120 chars, trimmed, no `/` `\` or control characters)
 status text 'active' | 'trashed'
 trashed_at timestamptz
-trashed_parent_id uuid  -- where to restore to
+trashed_via_folder_id uuid → asset_folders (set null)  -- binned along with
 created_at, updated_at
-unique (owner_id, parent_id, lower(name)) where status = 'active'
+unique (owner_id, coalesce(parent_id, nil), lower(name)) where status = 'active'
 ```
 
-- `assets.folder_id uuid → asset_folders (set null)`.
+- `assets.folder_id` and `assets.trashed_via_folder_id`, both `→ asset_folders
+  (set null)`.
 - **Trashing a folder trashes its subtree eagerly**: every descendant folder and
   asset moves to `trashed` with `trashed_via_folder_id = <top folder>`. Only
   the top folder is listed in the Bin; restoring it restores exactly the rows
   carrying its marker, so items binned individually before stay binned. This
   keeps the fail-closed property: nothing inside a binned folder is `ready`.
-- Moves check ownership of both ends and reject cycles (walk the target's
-  ancestors in one recursive CTE). Max depth 32.
-- Restore goes back to `trashed_parent_id` if it is still active, else root.
+- Every tree mutation (create, rename, move, bin, restore, delete) runs in a
+  transaction holding a per-user `pg_advisory_xact_lock` and re-checks the
+  pure rules in `lib/asset-folders.ts` (`checkFolderMove`: no cycles, depth
+  ≤ 32, no sibling name clash) against the tree as it is inside the lock.
+  Moves are all or nothing.
+- A binned folder keeps its `parent_id`, so restore goes back there if that
+  folder is still live, else to the root, taking a "(2)" suffix if its name was
+  reused meanwhile. An asset restored on its own, or an upload finishing, into
+  a folder that is no longer live lands at the root (`liveFolderOrRoot`), so
+  nothing `ready` ever sits inside a binned folder.
+- Deleting a folder for good (or its purge) deletes the assets binned with it
+  first, then the folder rows; anything binned on its own inside it keeps its
+  Bin entry and moves to the root.
 
 ### 4.3 `asset_share_links` (slice 6)
 
@@ -270,7 +283,7 @@ The suite today is pure unit tests (vitest, no database). This plan adds:
 |---|---|---|
 | 1 | Bin: `trashed` status, API, purge in maintenance, Bin view, Undo | Implemented 2026-11-23 |
 | 2 | Thumbnails and display renditions; sweep-aware keys | Implemented 2026-11-23 |
-| 3 | Folders: schema, API, breadcrumbs, side-panel tree, move, upload into folder, folder drop | Not started |
+| 3 | Folders: schema, API, breadcrumbs, side-panel tree, move, upload into folder, folder drop | Implemented 2026-11-23 |
 | 4 | View formats, selection and bulk bar, full-screen viewer, pagination | Not started |
 | 5 | Video kind, posters, playback | Not started |
 | 6 | Share links, `/s/<token>` page, zip download | Not started |

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -20,10 +21,16 @@ import {
   ExternalLink,
   File as FileIcon,
   FileText,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  FolderUp,
+  FolderX,
   Globe2,
   ImageIcon,
   Loader2,
   Lock,
+  MoreHorizontal,
   MousePointerClick,
   PenLine,
   Search,
@@ -36,6 +43,27 @@ import {
 import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { moveAssetsToBin } from "@/components/assets/asset-bin-actions";
+import { FolderNameDialog, MoveToFolderDialog, type MoveSelection } from "@/components/assets/FolderDialogs";
+import {
+  FolderBreadcrumbs,
+  FolderTile,
+  isFileDrag,
+  isMediaDrag,
+  startMediaDrag,
+  type MediaDragPayload,
+} from "@/components/assets/FolderTiles";
+import {
+  createMediaFolder,
+  moveFolderToBin,
+  moveMediaItems,
+  renameMediaFolder,
+  type MediaFolder,
+} from "@/components/assets/folder-actions";
+import {
+  collectDroppedFiles,
+  filesFromDirectoryInput,
+  uploadDroppedTree,
+} from "@/components/assets/folder-drop";
 import {
   assetExtensionBadge,
   assetTypeLabel,
@@ -45,7 +73,12 @@ import {
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { WithContextMenu } from "@/components/ui/use-context-menu";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Input } from "@/components/ui/input";
@@ -61,6 +94,7 @@ import {
   requestCloseRightPanel,
   requestOpenRightPanel,
 } from "@/lib/document-command-events";
+import { childFolders, folderPath } from "@/lib/asset-folders";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { formatBytes } from "@/lib/format";
 import {
@@ -72,6 +106,8 @@ import { cn } from "@/lib/utils";
 
 export type AssetLibraryItem = {
   id: string;
+  /** Media library folder; null = the library root. */
+  folderId: string | null;
   kind: "image" | "pdf" | "file";
   displayName: string;
   description: string | null;
@@ -111,27 +147,44 @@ const ASSETS_PAGE = { type: "assets", title: "Assets", href: "/assets" } as cons
 
 export function AssetLibraryClient({
   initialAssets,
+  initialFolders,
+  storageUsedBytes,
   storageQuotaBytes,
   unrestrictedUploads = false,
 }: {
   initialAssets: AssetLibraryItem[];
+  initialFolders: MediaFolder[];
+  /** Tracked quota use (includes the Bin, which still occupies storage). */
+  storageUsedBytes: number;
   storageQuotaBytes: number;
   /** Admin grant: the picker offers every file type, not just media. */
   unrestrictedUploads?: boolean;
 }) {
   const [assets, setAssets] = useState(initialAssets);
+  const [folders, setFolders] = useState(initialFolders);
+  const [usedBytes, setUsedBytes] = useState(storageUsedBytes);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Filters and the selected asset live in the URL, so the assets side panel
-  // and links can open the library in a given view (`?kind=image`,
-  // `?visibility=public`, `?asset=<id>`). Search text and sort stay local.
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  // The folder, filters and the selected asset live in the URL, so the side
+  // panel and links can open the library in a given place and view
+  // (`?folder=<id>`, `?kind=image`, `?asset=<id>`). Search and sort stay local.
   const searchParams = useSearchParams();
   const kindFilter = parseKindFilter(searchParams.get("kind"));
   const visibilityFilter = parseVisibilityFilter(searchParams.get("visibility"));
   const selectedId = searchParams.get("asset");
   const selected = assets.find((asset) => asset.id === selectedId) ?? null;
+  const requestedFolderId = searchParams.get("folder");
+  const currentFolder = folders.find((folder) => folder.id === requestedFolderId) ?? null;
+  const currentFolderId = currentFolder?.id ?? null;
+  const missingFolder = requestedFolderId !== null && currentFolder === null;
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
-  const storage = useMemo(() => summarizeStorage(assets), [assets]);
+  const [nameDialog, setNameDialog] = useState<
+    { mode: "create" } | { mode: "rename"; folder: MediaFolder } | null
+  >(null);
+  const [moveSelection, setMoveSelection] = useState<MoveSelection | null>(null);
+  const [fileDropActive, setFileDropActive] = useState(false);
+  const fileDropDepth = useRef(0);
 
   // The configure panel lives in the workspace's right panel (resizable and
   // collapsible like a document's). The page registers an empty host there and
@@ -158,23 +211,59 @@ export function AssetLibraryClient({
     onSettled: () => dispatchAssetsChanged(),
     autoDismissMs: 4000,
   });
+
+  // Searching or filtering looks across every folder, like Drive; otherwise
+  // the page shows one folder: its subfolders, then its files.
+  const searching =
+    query.trim().length > 0 || kindFilter !== "all" || visibilityFilter !== "all";
+  const folderNames = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.name])),
+    [folders],
+  );
+  const breadcrumbs = useMemo(
+    () => folderPath(folders, currentFolderId),
+    [folders, currentFolderId],
+  );
+  const folderTiles = useMemo(() => {
+    if (searching) return [];
+    const files = new Map<string, number>();
+    for (const asset of assets) {
+      if (asset.folderId) files.set(asset.folderId, (files.get(asset.folderId) ?? 0) + 1);
+    }
+    return childFolders(folders, currentFolderId).map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      files: files.get(folder.id) ?? 0,
+      folders: folders.filter((child) => child.parentId === folder.id).length,
+    }));
+  }, [assets, currentFolderId, folders, searching]);
   const visibleAssets = useMemo(
     () =>
-      filterAndSortAssets(assets, {
-        query: parsedQuery,
-        kind: kindFilter,
-        visibility: visibilityFilter,
-        sort: sortMode,
-      }),
-    [assets, kindFilter, parsedQuery, sortMode, visibilityFilter],
+      filterAndSortAssets(
+        searching ? assets : assets.filter((asset) => (asset.folderId ?? null) === currentFolderId),
+        {
+          query: parsedQuery,
+          kind: kindFilter,
+          visibility: visibilityFilter,
+          sort: sortMode,
+        },
+      ),
+    [assets, currentFolderId, kindFilter, parsedQuery, searching, sortMode, visibilityFilter],
   );
+  const libraryEmpty = assets.length === 0 && folders.length === 0;
+  const rootLabel = "Content";
+  const here = currentFolder?.name ?? rootLabel;
 
   const refreshAssets = useCallback(async () => {
     try {
       const payload = (await fetchAssetLibrary()) as {
         assets?: AssetLibraryItem[];
+        folders?: MediaFolder[];
+        storage?: { usedBytes: number };
       } | null;
       if (payload?.assets) setAssets(payload.assets);
+      if (payload?.folders) setFolders(payload.folders);
+      if (payload?.storage) setUsedBytes(payload.storage.usedBytes);
     } catch {
       // Keep the list we have.
     }
@@ -261,6 +350,15 @@ export function AssetLibraryClient({
     }
   }
 
+  /** Opens a folder as a new history entry, so Back goes up again. */
+  function openFolder(folderId: string | null) {
+    updateLibraryUrl({ folder: folderId, asset: null }, { push: true });
+  }
+
+  function enqueueInto(files: File[], folderId: string | null) {
+    if (files.length > 0) uploads.enqueue(files, undefined, { folderId });
+  }
+
   function openFilePicker() {
     fileInputRef.current?.click();
   }
@@ -268,11 +366,101 @@ export function AssetLibraryClient({
   function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = "";
-
-    if (files.length > 0) {
-      uploads.enqueue(files);
-    }
+    enqueueInto(files, currentFolderId);
   }
+
+  function handleFolderSelected(event: ChangeEvent<HTMLInputElement>) {
+    const dropped = filesFromDirectoryInput(event.target.files);
+    event.target.value = "";
+    void uploadDroppedTree({ dropped, parentFolderId: currentFolderId, enqueue: enqueueInto });
+  }
+
+  /** OS files dropped onto the page or a folder tile: plain files, or whole folders. */
+  function uploadDrop(dataTransfer: DataTransfer, folderId: string | null) {
+    // Read synchronously, inside the drop event; the tree is walked afterwards.
+    const pending = collectDroppedFiles(dataTransfer);
+    void pending.then((dropped) => {
+      if (dropped.some((item) => item.relativePath.includes("/"))) {
+        void uploadDroppedTree({ dropped, parentFolderId: folderId, enqueue: enqueueInto });
+      } else {
+        enqueueInto(
+          dropped.map((item) => item.file),
+          folderId,
+        );
+      }
+    });
+  }
+
+  function moveDropped(payload: MediaDragPayload, targetId: string | null, targetName: string) {
+    void moveMediaItems({
+      assetIds: payload.assetIds,
+      folderIds: payload.folderIds,
+      targetFolderId: targetId,
+      targetName,
+    });
+  }
+
+  // The whole page accepts files from the OS; Vault items dragged around it
+  // are handled by the folder tiles and breadcrumbs instead.
+  const pageDrop = {
+    onDragEnter: (event: DragEvent) => {
+      if (!isFileDrag(event) || isMediaDrag(event)) return;
+      event.preventDefault();
+      fileDropDepth.current += 1;
+      setFileDropActive(true);
+    },
+    onDragOver: (event: DragEvent) => {
+      if (!isFileDrag(event) || isMediaDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    onDragLeave: (event: DragEvent) => {
+      if (!isFileDrag(event) || isMediaDrag(event)) return;
+      fileDropDepth.current = Math.max(0, fileDropDepth.current - 1);
+      if (fileDropDepth.current === 0) setFileDropActive(false);
+    },
+    onDrop: (event: DragEvent) => {
+      if (!isFileDrag(event) || isMediaDrag(event)) return;
+      event.preventDefault();
+      fileDropDepth.current = 0;
+      setFileDropActive(false);
+      if (!missingFolder) uploadDrop(event.dataTransfer, currentFolderId);
+    },
+  };
+
+  // One group, so the three never wrap apart in a narrow toolbar.
+  const uploadButtons = (
+    <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        onClick={() => setNameDialog({ mode: "create" })}
+        aria-label="New folder"
+        title="New folder"
+      >
+        <FolderPlus />
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        onClick={() => folderInputRef.current?.click()}
+        aria-label="Upload a folder"
+        title="Upload a folder"
+      >
+        <FolderUp />
+      </Button>
+      <Button type="button" onClick={openFilePicker}>
+        {uploads.hasActive ? (
+          <Loader2 data-icon="inline-start" className="animate-spin" />
+        ) : (
+          <Upload data-icon="inline-start" />
+        )}
+        Upload
+      </Button>
+    </div>
+  );
 
   return (
     <>
@@ -288,23 +476,60 @@ export function AssetLibraryClient({
           never shrinks below its content's min-content width, and the
           multi-column card grid reports that as roughly (columns × the
           longest unbroken filename), which pushed the page past its column. */}
-      <div className="@container grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
+      <div
+        className="@container relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6"
+        {...pageDrop}
+      >
+        {fileDropActive ? (
+          <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg border-2 border-dashed border-primary bg-primary/8 backdrop-blur-[1px]">
+            <p className="rounded-md bg-background/90 px-4 py-2 text-sm font-medium shadow">
+              Drop to upload to {searching ? rootLabel : here}
+            </p>
+          </div>
+        ) : null}
+
         <header className="flex flex-col gap-5 border-b border-border/70 pb-6 @3xl:flex-row @3xl:items-end @3xl:justify-between">
           <div className="min-w-0">
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground">
-              Asset library
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">
-              Content
-            </h1>
+            {currentFolder ? (
+              <FolderBreadcrumbs
+                rootLabel={rootLabel}
+                trail={breadcrumbs}
+                onNavigate={openFolder}
+                onDropItems={moveDropped}
+              />
+            ) : (
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground">
+                Asset library
+              </p>
+            )}
+            <div className="mt-3 flex min-w-0 items-center gap-2">
+              <h1 className="min-w-0 truncate text-3xl font-semibold tracking-tight vault-display">
+                {here}
+              </h1>
+              {currentFolder ? (
+                <CurrentFolderMenu
+                  onRename={() => setNameDialog({ mode: "rename", folder: currentFolder })}
+                  onMove={() =>
+                    setMoveSelection({ assets: [], folderIds: [currentFolder.id] })
+                  }
+                  onBin={() => {
+                    const parent = currentFolder.parentId;
+                    void moveFolderToBin(currentFolder).then((moved) => {
+                      if (moved) openFolder(parent);
+                    });
+                  }}
+                />
+              ) : null}
+            </div>
             <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              Private uploads used by your documents. Publish an asset only when
-              it should be visible outside private docs.
+              {currentFolder
+                ? describeFolderContents(folderTiles.length, visibleAssets.length)
+                : "Private uploads used by your documents. Publish an asset only when it should be visible outside private docs."}
             </p>
           </div>
           <div className="grid w-full grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-2 text-sm @3xl:w-[22rem] @3xl:shrink-0">
             <Metric label="Assets" value={String(assets.length)} />
-            <StorageBar used={storage.bytes} quota={storageQuotaBytes} />
+            <StorageBar used={usedBytes} quota={storageQuotaBytes} />
           </div>
         </header>
 
@@ -316,8 +541,16 @@ export function AssetLibraryClient({
           className="sr-only"
           onChange={handleFilesSelected}
         />
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          onChange={handleFolderSelected}
+          {...{ webkitdirectory: "", directory: "" }}
+        />
 
-        {assets.length > 0 ? (
+        {!libraryEmpty ? (
           <div className="flex flex-wrap items-center gap-2">
             <label className="relative min-w-[10rem] flex-1 basis-40">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -325,7 +558,7 @@ export function AssetLibraryClient({
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search title, tags, kind:image…"
+                placeholder="Search all folders…"
                 className="pl-9"
               />
             </label>
@@ -371,14 +604,7 @@ export function AssetLibraryClient({
             >
               <Trash2 />
             </Link>
-            <Button type="button" onClick={openFilePicker}>
-              {uploads.hasActive ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Upload data-icon="inline-start" />
-              )}
-              Upload
-            </Button>
+            {uploadButtons}
           </div>
         ) : null}
 
@@ -389,8 +615,9 @@ export function AssetLibraryClient({
           className="@xl:grid-cols-2 @5xl:grid-cols-3"
         />
 
-        {querySummary.length > 0 ? (
-          <div className="-mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+        {searching ? (
+          <div className="-mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>Showing matches from every folder.</span>
             {querySummary.map((summary) => (
               <span
                 key={summary}
@@ -402,88 +629,179 @@ export function AssetLibraryClient({
           </div>
         ) : null}
 
-        {assets.length > 0 && visibleAssets.length > 0 ? (
-          <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
-            {visibleAssets.map((asset) => (
-              <WithContextMenu key={asset.id}>
-                {(menu) => (
-                  <div
-                    data-asset-card
-                    onContextMenu={menu.onContextMenu}
-                    className="group relative mb-4 break-inside-avoid"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => selectAsset(asset)}
-                      aria-pressed={selected?.id === asset.id}
-                      className={cn(
-                        "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                        selected?.id === asset.id
-                          ? "border-primary/70 ring-1 ring-primary/35"
-                          : "border-border/70",
-                      )}
-                    >
-                      <AssetThumbnail asset={asset} />
-                      <span className="flex items-center gap-2 px-3 py-2.5">
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
-                            {asset.displayName}
-                          </span>
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                            {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
-                          </span>
-                        </span>
-                        <VisibilityIcon visibility={asset.visibility} />
-                      </span>
-                    </button>
-                    <AssetActionsMenu
-                      asset={asset}
-                      contextMenu={menu}
-                      className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
-                    >
-                      <DropdownMenuItem onClick={() => selectAsset(asset)}>
-                        <SlidersHorizontal /> Edit details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => void moveToBin(asset)}
-                      >
-                        <Trash2 /> Move to Bin
-                      </DropdownMenuItem>
-                    </AssetActionsMenu>
-                  </div>
-                )}
-              </WithContextMenu>
-            ))}
-          </div>
-        ) : assets.length > 0 ? (
-          <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
-            <Search className="mx-auto size-8 text-muted-foreground" />
-            <h2 className="mt-4 text-lg font-semibold">No matching assets</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              Clear the search or filters to see the rest of your library.
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
-            <ImageIcon className="mx-auto size-8 text-muted-foreground" />
-            <h2 className="mt-4 text-lg font-semibold">No assets yet</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              Upload {unrestrictedUploads ? "any file" : "an image or PDF"} to get
-              started, or add one from the image upload button in a
-              document&apos;s Markdown toolbar.
-            </p>
-            <Button type="button" onClick={openFilePicker} className="mx-auto mt-5">
-              {uploads.hasActive ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Upload data-icon="inline-start" />
-              )}
-              Upload asset
+        {missingFolder ? (
+          <EmptyState
+            icon={FolderX}
+            title="This folder isn't here"
+            body="It may have been moved to the Bin, deleted, or it belongs to someone else."
+          >
+            <Button type="button" variant="outline" onClick={() => openFolder(null)}>
+              Back to {rootLabel}
             </Button>
-          </div>
+          </EmptyState>
+        ) : libraryEmpty ? (
+          <EmptyState
+            icon={ImageIcon}
+            title="No assets yet"
+            body={`Upload ${unrestrictedUploads ? "any file" : "images or PDFs"}, drop a whole folder from a camera card onto this page, or add one from the upload button in a document's toolbar.`}
+          >
+            <div className="flex flex-wrap justify-center gap-2">{uploadButtons}</div>
+          </EmptyState>
+        ) : (
+          <>
+            {folderTiles.length > 0 ? (
+              <section aria-label="Folders" className="grid gap-2 @md:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-4">
+                {folderTiles.map((tile) => {
+                  const folder = folders.find((candidate) => candidate.id === tile.id)!;
+                  return (
+                    <FolderTile
+                      key={tile.id}
+                      folder={tile}
+                      onOpen={() => openFolder(tile.id)}
+                      onRename={() => setNameDialog({ mode: "rename", folder })}
+                      onMove={() => setMoveSelection({ assets: [], folderIds: [tile.id] })}
+                      onBin={() => void moveFolderToBin(folder)}
+                      onDropItems={(payload) => moveDropped(payload, tile.id, tile.name)}
+                      onDropFiles={(dataTransfer) => uploadDrop(dataTransfer, tile.id)}
+                    />
+                  );
+                })}
+              </section>
+            ) : null}
+
+            {visibleAssets.length > 0 ? (
+              <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
+                {visibleAssets.map((asset) => (
+                  <WithContextMenu key={asset.id}>
+                    {(menu) => (
+                      <div
+                        data-asset-card
+                        onContextMenu={menu.onContextMenu}
+                        className="group relative mb-4 break-inside-avoid"
+                      >
+                        <button
+                          type="button"
+                          draggable
+                          onDragStart={(event) =>
+                            startMediaDrag(event, { assetIds: [asset.id], folderIds: [] })
+                          }
+                          onClick={() => selectAsset(asset)}
+                          aria-pressed={selected?.id === asset.id}
+                          className={cn(
+                            "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                            selected?.id === asset.id
+                              ? "border-primary/70 ring-1 ring-primary/35"
+                              : "border-border/70",
+                          )}
+                        >
+                          <AssetThumbnail asset={asset} />
+                          <span className="flex items-center gap-2 px-3 py-2.5">
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {asset.displayName}
+                              </span>
+                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
+                                {searching
+                                  ? ` · ${asset.folderId ? (folderNames.get(asset.folderId) ?? rootLabel) : rootLabel}`
+                                  : ""}
+                              </span>
+                            </span>
+                            <VisibilityIcon visibility={asset.visibility} />
+                          </span>
+                        </button>
+                        <AssetActionsMenu
+                          asset={asset}
+                          contextMenu={menu}
+                          className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
+                        >
+                          <DropdownMenuItem onClick={() => selectAsset(asset)}>
+                            <SlidersHorizontal /> Edit details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setMoveSelection({
+                                assets: [{ id: asset.id, folderId: asset.folderId }],
+                                folderIds: [],
+                              })
+                            }
+                          >
+                            <FolderInput /> Move to…
+                          </DropdownMenuItem>
+                          {searching && asset.folderId ? (
+                            <DropdownMenuItem onClick={() => openFolder(asset.folderId)}>
+                              <FolderOpen /> Show in folder
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => void moveToBin(asset)}
+                          >
+                            <Trash2 /> Move to Bin
+                          </DropdownMenuItem>
+                        </AssetActionsMenu>
+                      </div>
+                    )}
+                  </WithContextMenu>
+                ))}
+              </div>
+            ) : searching ? (
+              <EmptyState
+                icon={Search}
+                title="No matching assets"
+                body="Clear the search or filters to see the rest of your library."
+              />
+            ) : folderTiles.length === 0 ? (
+              <EmptyState
+                icon={FolderOpen}
+                title={currentFolder ? "This folder is empty" : "No files here yet"}
+                body="Drop photos or a whole folder onto this page, or use Upload."
+              >
+                <div className="flex flex-wrap justify-center gap-2">{uploadButtons}</div>
+              </EmptyState>
+            ) : null}
+          </>
         )}
       </div>
+
+      <FolderNameDialog
+        open={nameDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setNameDialog(null);
+        }}
+        title={nameDialog?.mode === "rename" ? "Rename folder" : "New folder"}
+        description={
+          nameDialog?.mode === "create" ? `Inside ${here}.` : undefined
+        }
+        confirmLabel={nameDialog?.mode === "rename" ? "Rename" : "Create"}
+        initialName={nameDialog?.mode === "rename" ? nameDialog.folder.name : "Untitled folder"}
+        onSubmit={async (name) => {
+          if (nameDialog?.mode === "rename") {
+            await renameMediaFolder(nameDialog.folder.id, name);
+          } else {
+            await createMediaFolder({ name, parentId: currentFolderId });
+          }
+          setNameDialog(null);
+        }}
+      />
+      <MoveToFolderDialog
+        open={moveSelection !== null}
+        onOpenChange={(open) => {
+          if (!open) setMoveSelection(null);
+        }}
+        folders={folders}
+        selection={moveSelection ?? { assets: [], folderIds: [] }}
+        onMove={async (targetFolderId, targetName) => {
+          if (!moveSelection) return;
+          const moved = await moveMediaItems({
+            assetIds: moveSelection.assets.map((asset) => asset.id),
+            folderIds: moveSelection.folderIds,
+            targetFolderId,
+            targetName,
+          });
+          if (moved) setMoveSelection(null);
+        }}
+      />
 
       {panelHost
         ? createPortal(
@@ -493,7 +811,7 @@ export function AssetLibraryClient({
                 asset={selected}
                 onSaved={(saved) => {
                   setAssets((current) =>
-                    current.map((asset) => (asset.id === saved.id ? saved : asset)),
+                    current.map((asset) => (asset.id === saved.id ? { ...saved, folderId: asset.folderId } : asset)),
                   );
                   dispatchAssetsChanged();
                 }}
@@ -512,6 +830,68 @@ export function AssetLibraryClient({
           )
         : null}
     </>
+  );
+}
+
+function describeFolderContents(folderCount: number, fileCount: number) {
+  if (folderCount === 0 && fileCount === 0) return "Empty.";
+  const parts = [
+    folderCount > 0 ? `${folderCount} ${folderCount === 1 ? "folder" : "folders"}` : null,
+    `${fileCount} ${fileCount === 1 ? "file" : "files"}`,
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+function CurrentFolderMenu({
+  onRename,
+  onMove,
+  onBin,
+}: {
+  onRename: () => void;
+  onMove: () => void;
+  onBin: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Folder actions"
+        className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+      >
+        <MoreHorizontal className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-44">
+        <DropdownMenuItem onClick={onRename}>
+          <PenLine /> Rename
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onMove}>
+          <FolderInput /> Move to…
+        </DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onClick={onBin}>
+          <Trash2 /> Move to Bin
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  body,
+  children,
+}: {
+  icon: typeof ImageIcon;
+  title: string;
+  body: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
+      <Icon className="mx-auto size-8 text-muted-foreground" />
+      <h2 className="mt-4 text-lg font-semibold">{title}</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{body}</p>
+      {children ? <div className="mt-5">{children}</div> : null}
+    </div>
   );
 }
 
@@ -965,9 +1345,12 @@ function parseVisibilityFilter(value: string | null): VisibilityFilter {
  */
 /** Targets a background click must not treat as "empty space". */
 const backgroundClickIgnore =
-  "[data-asset-card], a, button, input, select, textarea, label, summary, [role='button'], [role='menuitem'], [role='option'], [role='combobox'], [role='listbox']";
+  "[data-asset-card], [data-folder-tile], a, button, input, select, textarea, label, summary, [role='button'], [role='menuitem'], [role='option'], [role='combobox'], [role='listbox']";
 
-function updateLibraryUrl(changes: Record<string, string | null>) {
+function updateLibraryUrl(
+  changes: Record<string, string | null>,
+  options: { push?: boolean } = {},
+) {
   const params = new URLSearchParams(window.location.search);
 
   for (const [key, value] of Object.entries(changes)) {
@@ -978,11 +1361,9 @@ function updateLibraryUrl(changes: Record<string, string | null>) {
   const query = params.toString();
   // `null` state, not `history.state`: Next marks its own entries there, and a
   // call carrying those markers is treated as internal and never synced.
-  window.history.replaceState(
-    null,
-    "",
-    `${window.location.pathname}${query ? `?${query}` : ""}`,
-  );
+  const url = `${window.location.pathname}${query ? `?${query}` : ""}`;
+  if (options.push) window.history.pushState(null, "", url);
+  else window.history.replaceState(null, "", url);
 }
 
 function sameDraft(a: AssetDraft, b: AssetDraft) {
@@ -1010,12 +1391,6 @@ function toDraft(asset: AssetLibraryItem | null): AssetDraft {
     description: asset?.description ?? "",
     visibility: asset?.visibility ?? "private",
     tags: asset?.tags?.join(" ") ?? "",
-  };
-}
-
-function summarizeStorage(assets: AssetLibraryItem[]) {
-  return {
-    bytes: assets.reduce((total, asset) => total + asset.sizeBytes, 0),
   };
 }
 

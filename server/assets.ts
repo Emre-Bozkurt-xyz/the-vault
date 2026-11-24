@@ -18,6 +18,7 @@ import { fileTypeFromBuffer } from "file-type";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import {
+  assetFolders,
   assetTags,
   assetUploads,
   assets,
@@ -67,6 +68,14 @@ export class AssetError extends Error {
     super(message);
   }
 }
+
+/**
+ * `folder_id` kept only if that folder is still live, else the root. Used
+ * wherever an asset becomes `ready` again (upload completion, restore): the
+ * folder may have been binned meanwhile, and a ready asset inside a binned
+ * folder would be invisible and outside the Bin.
+ */
+export const liveFolderOrRoot = sql`(select live.id from asset_folders live where live.id = "assets"."folder_id" and live.status = 'active')`;
 
 export type ActiveAssetUser = {
   id: string;
@@ -364,6 +373,8 @@ export async function createUploadedAsset(input: {
   userId: string;
   file: File;
   documentId?: string | null;
+  /** Media library folder, already checked live and owned by the caller. */
+  folderId?: string | null;
   /** From the uploader's `users.unrestricted_uploads_allowed` grant. */
   allowAnyFileType?: boolean;
 }) {
@@ -399,6 +410,7 @@ export async function createUploadedAsset(input: {
       kind: validation.kind,
       status: "pending",
       checksumSha256,
+      folderId: input.folderId ?? null,
     });
 
     await putAssetObject({
@@ -410,7 +422,7 @@ export async function createUploadedAsset(input: {
 
     await db
       .update(assets)
-      .set({ status: "ready", updatedAt: new Date() })
+      .set({ status: "ready", folderId: liveFolderOrRoot, updatedAt: new Date() })
       .where(eq(assets.id, assetId));
 
     if (validation.kind === "image") {
@@ -666,6 +678,7 @@ export async function listAssetsForUser(userId: string) {
   const rows = await db
     .select({
       id: assets.id,
+      folderId: assets.folderId,
       kind: assets.kind,
       displayName: assets.displayName,
       description: assets.description,
@@ -716,11 +729,15 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
       .from(assets)
       .where(scope),
     db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(assets)
-      .where(
-        and(eq(assets.ownerId, userId), eq(assets.status, "trashed"), isNull(assets.deletedAt)),
-      ),
+      .select({
+        count: sql<number>`(
+          (select count(*) from ${assets} where ${assets.ownerId} = ${userId}
+            and ${assets.status} = 'trashed' and ${assets.trashedViaFolderId} is null)
+          + (select count(*) from ${assetFolders} where ${assetFolders.ownerId} = ${userId}
+            and ${assetFolders.status} = 'trashed' and ${assetFolders.trashedViaFolderId} is null)
+        )::int`,
+      })
+      .from(sql`(select 1) as one`),
     db
       .select({
         id: assets.id,
@@ -1075,13 +1092,21 @@ export async function restoreAssetsForUser(input: { userId: string; assetIds: st
 
   return db
     .update(assets)
-    .set({ status: "ready", trashedAt: null, updatedAt: new Date() })
+    .set({
+      status: "ready",
+      trashedAt: null,
+      folderId: liveFolderOrRoot,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         inArray(assets.id, input.assetIds),
         eq(assets.ownerId, input.userId),
         inArray(assets.status, [...transitionSources("restore", "owner")]),
         isNull(assets.deletedAt),
+        // Something binned along with a folder comes back with that folder,
+        // never on its own into a binned folder.
+        isNull(assets.trashedViaFolderId),
       ),
     )
     .returning({ id: assets.id });
@@ -1097,7 +1122,17 @@ export async function deleteAssetsForeverForUser(input: { userId: string; assetI
   );
 }
 
-/** Empty Bin: every binned asset the user owns, deleted for good. */
+/** Deletes for good the assets binned along with these Bin folders. */
+export async function deleteFolderBinAssetsForever(userId: string, folderIds: string[]) {
+  if (folderIds.length === 0) return [];
+
+  return permanentlyDeleteAssets(
+    and(eq(assets.ownerId, userId), inArray(assets.trashedViaFolderId, folderIds)),
+    "owner",
+  );
+}
+
+/** Every binned asset the user owns, deleted for good (Empty Bin's asset half). */
 export async function emptyAssetBinForUser(userId: string) {
   return permanentlyDeleteAssets(eq(assets.ownerId, userId), "owner");
 }
@@ -1165,6 +1200,7 @@ async function permanentlyDeleteAssets(
         status: "deleted",
         visibility: "private",
         trashedAt: null,
+        trashedViaFolderId: null,
         deletedAt: now,
         updatedAt: now,
       })
@@ -1240,6 +1276,7 @@ export async function listBinAssetsForUser(userId: string) {
   const rows = await db
     .select({
       id: assets.id,
+      folderId: assets.folderId,
       kind: assets.kind,
       displayName: assets.displayName,
       description: assets.description,
@@ -1253,7 +1290,13 @@ export async function listBinAssetsForUser(userId: string) {
     })
     .from(assets)
     .where(
-      and(eq(assets.ownerId, userId), eq(assets.status, "trashed"), isNull(assets.deletedAt)),
+      and(
+        eq(assets.ownerId, userId),
+        eq(assets.status, "trashed"),
+        isNull(assets.deletedAt),
+        // Assets binned with a folder are shown inside that folder's entry.
+        isNull(assets.trashedViaFolderId),
+      ),
     )
     .orderBy(desc(assets.trashedAt), desc(assets.id));
 

@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { assetErrorResponse } from "@/server/asset-route-errors";
-import { emptyAssetBinForUser, requireAssetUser } from "@/server/assets";
+import { emptyMediaBinForUser } from "@/server/asset-folders";
+import { requireAssetUser } from "@/server/assets";
 
 export const runtime = "nodejs";
 
-/** Empty Bin: deletes every binned asset the user owns, for good. */
+/** Empty Bin: deletes every binned asset and folder the user owns, for good. */
 export async function DELETE() {
   try {
     const user = await requireAssetUser();
-    const deleted = await emptyAssetBinForUser(user.id);
+    const { deletedAssets, deletedFolders } = await emptyMediaBinForUser(user.id);
 
     return NextResponse.json({
-      deleted: deleted.length,
-      freedBytes: deleted.reduce((total, row) => total + row.sizeBytes, 0),
+      deleted: deletedAssets.length + deletedFolders,
+      freedBytes: deletedAssets.reduce((total, row) => total + row.sizeBytes, 0),
     });
   } catch (error) {
     return assetErrorResponse(error);

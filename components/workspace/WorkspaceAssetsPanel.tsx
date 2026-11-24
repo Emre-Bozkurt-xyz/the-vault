@@ -1,8 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
+  ChevronRight,
   File as FileIcon,
+  Folder,
+  FolderOpen,
   FileText,
   Globe2,
   ImageIcon,
@@ -32,10 +37,12 @@ import { requestOpenRightPanel } from "@/lib/document-command-events";
 import { formatBytes } from "@/lib/format";
 import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
 import { fetchAssetLibrary } from "@/lib/shared-request";
+import { childFolders, folderPath, type FolderNode } from "@/lib/asset-folders";
+import { cn } from "@/lib/utils";
 
 const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
-// `view` too: the Bin (`?view=bin`) is a separate place, not "All assets".
-const FILTER_KEYS = ["kind", "visibility", "view"];
+// `view` and `folder` too: the Bin and folders are places, not "All assets".
+const FILTER_KEYS = ["kind", "visibility", "view", "folder"];
 
 type RecentAsset = Pick<
   AssetLibraryItem,
@@ -47,6 +54,7 @@ type AssetsSummaryResponse = {
   counts: { all: number; image: number; pdf: number; file: number; public: number };
   recent: RecentAsset[];
   binCount?: number;
+  folders?: FolderNode[];
   storage?: { usedBytes: number; quotaBytes: number; unrestrictedUploadsAllowed: boolean };
 };
 
@@ -103,6 +111,14 @@ export function WorkspaceAssetsPanel() {
   const counts = data?.counts ?? emptyCounts;
   const recent = data?.recent ?? [];
   const storage = data?.storage;
+  const folders = useMemo(() => data?.folders ?? [], [data?.folders]);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Uploading from the panel while a folder is open puts files in that folder.
+  const openFolderId =
+    pathname === "/assets"
+      ? (folders.find((folder) => folder.id === searchParams.get("folder"))?.id ?? null)
+      : null;
 
   return (
     <SidePanel>
@@ -134,7 +150,7 @@ export function WorkspaceAssetsPanel() {
         onChange={(event) => {
           const files = event.target.files ? Array.from(event.target.files) : [];
           event.target.value = "";
-          if (files.length > 0) uploads.enqueue(files);
+          if (files.length > 0) uploads.enqueue(files, undefined, { folderId: openFolderId });
         }}
       />
 
@@ -195,6 +211,16 @@ export function WorkspaceAssetsPanel() {
           />
         </SidePanelSection>
 
+        <SidePanelSection title="Folders" count={data ? folders.length : undefined}>
+          {data === null ? null : folders.length === 0 ? (
+            <SidePanelEmpty>
+              No folders yet. Create one from the library, or drop a folder onto it.
+            </SidePanelEmpty>
+          ) : (
+            <FolderTreeNav folders={folders} activeId={openFolderId} />
+          )}
+        </SidePanelSection>
+
         <SidePanelSection title="Recent uploads" count={data ? recent.length : undefined}>
           {data === null ? (
             <SidePanelEmpty>Loading…</SidePanelEmpty>
@@ -220,6 +246,69 @@ export function WorkspaceAssetsPanel() {
       </SidePanelBody>
     </SidePanel>
   );
+}
+
+/**
+ * The media folder tree as navigation. A branch is open when it leads to the
+ * open folder, unless the user toggled it; their choice wins.
+ */
+function FolderTreeNav({ folders, activeId }: { folders: FolderNode[]; activeId: string | null }) {
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const onActivePath = useMemo(
+    () => new Set(folderPath(folders, activeId).map((folder) => folder.id)),
+    [activeId, folders],
+  );
+
+  function renderLevel(parentId: string | null) {
+    return childFolders(folders, parentId).map((folder) => {
+      const hasChildren = folders.some((child) => child.parentId === folder.id);
+      const open = overrides[folder.id] ?? onActivePath.has(folder.id);
+      const active = folder.id === activeId;
+
+      return (
+        <li key={folder.id}>
+          <div
+            className={cn(
+              "group flex h-8 min-w-0 items-center rounded-md text-sm transition",
+              active
+                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <button
+              type="button"
+              aria-label={open ? `Collapse ${folder.name}` : `Expand ${folder.name}`}
+              aria-expanded={hasChildren ? open : undefined}
+              disabled={!hasChildren}
+              onClick={() => setOverrides((current) => ({ ...current, [folder.id]: !open }))}
+              className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground disabled:invisible"
+            >
+              <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+            </button>
+            <Link
+              href={`/assets?folder=${folder.id}`}
+              aria-current={active ? "page" : undefined}
+              className="flex min-w-0 flex-1 items-center gap-2 pr-2"
+            >
+              {active ? (
+                <FolderOpen className="size-4 shrink-0 text-foreground" aria-hidden />
+              ) : (
+                <Folder className="size-4 shrink-0" aria-hidden />
+              )}
+              <span className={cn("truncate", active ? "text-foreground" : "text-foreground/90")}>
+                {folder.name}
+              </span>
+            </Link>
+          </div>
+          {open && hasChildren ? (
+            <ul className="ml-3 border-l border-border/50 pl-1">{renderLevel(folder.id)}</ul>
+          ) : null}
+        </li>
+      );
+    });
+  }
+
+  return <ul>{renderLevel(null)}</ul>;
 }
 
 function AssetThumb({ asset }: { asset: RecentAsset }) {

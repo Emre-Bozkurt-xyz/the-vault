@@ -11,6 +11,11 @@ import {
   summarizeAssetsForUser,
 } from "@/server/assets";
 import {
+  listBinFoldersForUser,
+  listFoldersForUser,
+  requireLiveFolder,
+} from "@/server/asset-folders";
+import {
   canEditDocumentWithOptionalShareLink,
 } from "@/server/documents-data";
 
@@ -32,18 +37,27 @@ export async function GET(request: Request) {
     // `?view=summary`: the sidebar's counts and recent uploads only, so its
     // payload does not grow with the library.
     if (view === "summary") {
-      const summary = await summarizeAssetsForUser(user.id, summaryRecentCount);
-      return NextResponse.json({ ...summary, storage });
+      const [summary, folders] = await Promise.all([
+        summarizeAssetsForUser(user.id, summaryRecentCount),
+        listFoldersForUser(user.id),
+      ]);
+      return NextResponse.json({ ...summary, folders, storage });
     }
 
     // `?view=bin`: binned assets with when each is deleted for good.
     if (view === "bin") {
-      const assets = await listBinAssetsForUser(user.id);
-      return NextResponse.json({ assets, storage });
+      const [assets, folders] = await Promise.all([
+        listBinAssetsForUser(user.id),
+        listBinFoldersForUser(user.id),
+      ]);
+      return NextResponse.json({ assets, folders, storage });
     }
 
-    const assets = await listAssetsForUser(user.id);
-    return NextResponse.json({ assets, storage });
+    const [assets, folders] = await Promise.all([
+      listAssetsForUser(user.id),
+      listFoldersForUser(user.id),
+    ]);
+    return NextResponse.json({ assets, folders, storage });
   } catch (error) {
     return assetErrorResponse(error);
   }
@@ -58,6 +72,7 @@ export async function POST(request: Request) {
     const file = formData.get("file");
     const documentId = formStringOrNull(formData.get("documentId"));
     const shareLinkId = formStringOrNull(formData.get("shareLinkId"));
+    const folderId = await requireLiveFolder(user.id, formStringOrNull(formData.get("folderId")));
 
     if (!(file instanceof File)) {
       throw new AssetError("Upload a file.", 400, "MISSING_FILE");
@@ -79,6 +94,7 @@ export async function POST(request: Request) {
       userId: user.id,
       file,
       documentId,
+      folderId,
       allowAnyFileType: user.unrestrictedUploadsAllowed,
     });
 

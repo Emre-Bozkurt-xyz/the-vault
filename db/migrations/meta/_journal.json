@@ -239,6 +239,13 @@
       "when": 1795477560722,
       "tag": "0033_rapid_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795479912512,
+      "tag": "0034_steep_plazm",
+      "breakpoints": true
     }
   ]
 }

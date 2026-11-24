@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Clock3,
+  Folder,
   MoreHorizontal,
   MousePointerClick,
   RotateCcw,
@@ -22,6 +23,7 @@ import {
   restoreAssets,
 } from "@/components/assets/asset-bin-actions";
 import { assetTypeLabel } from "@/components/assets/asset-ui";
+import { deleteFolderForever, restoreFolder } from "@/components/assets/folder-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -52,6 +54,21 @@ export type BinAssetItem = AssetLibraryItem & {
   purgeAt: Date | string;
 };
 
+/** A folder in the Bin, with what was binned along with it. */
+export type BinFolderItem = {
+  id: string;
+  name: string;
+  trashedAt: Date | string;
+  purgeAt: Date | string;
+  assetCount: number;
+  folderCount: number;
+  sizeBytes: number;
+};
+
+type PendingDelete =
+  | { kind: "asset"; item: BinAssetItem }
+  | { kind: "folder"; item: BinFolderItem };
+
 const BIN_PAGE = { type: "assets", title: "Bin", href: "/assets?view=bin" } as const;
 
 /**
@@ -60,22 +77,36 @@ const BIN_PAGE = { type: "assets", title: "Bin", href: "/assets?view=bin" } as c
  * the storage quota, which the header says plainly, and Empty Bin states how
  * much it frees before it runs.
  */
-export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[] }) {
+export function AssetBinClient({
+  initialAssets,
+  initialFolders,
+}: {
+  initialAssets: BinAssetItem[];
+  initialFolders: BinFolderItem[];
+}) {
   const [assets, setAssets] = useState(initialAssets);
+  const [folders, setFolders] = useState(initialFolders);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<BinAssetItem | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [confirmingEmpty, setConfirmingEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
   const selected = assets.find((asset) => asset.id === selectedId) ?? null;
   const binBytes = useMemo(
-    () => assets.reduce((total, asset) => total + asset.sizeBytes, 0),
-    [assets],
+    () =>
+      assets.reduce((total, asset) => total + asset.sizeBytes, 0) +
+      folders.reduce((total, folder) => total + folder.sizeBytes, 0),
+    [assets, folders],
   );
+  const itemCount = assets.length + folders.length;
 
   const refresh = useCallback(async () => {
     try {
-      const payload = (await fetchAssetLibrary("bin")) as { assets?: BinAssetItem[] } | null;
+      const payload = (await fetchAssetLibrary("bin")) as {
+        assets?: BinAssetItem[];
+        folders?: BinFolderItem[];
+      } | null;
       if (payload?.assets) setAssets(payload.assets);
+      if (payload?.folders) setFolders(payload.folders);
     } catch {
       // Keep what we have.
     }
@@ -95,10 +126,21 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
     [drop],
   );
 
+  async function restoreBinFolder(folder: BinFolderItem) {
+    if (await restoreFolder(folder)) {
+      setFolders((current) => current.filter((candidate) => candidate.id !== folder.id));
+    }
+  }
+
   async function confirmDelete() {
     const target = pendingDelete;
     setPendingDelete(null);
-    if (target) drop(await deleteAssetsForever([target]));
+    if (!target) return;
+    if (target.kind === "asset") {
+      drop(await deleteAssetsForever([target.item]));
+    } else if (await deleteFolderForever(target.item)) {
+      setFolders((current) => current.filter((folder) => folder.id !== target.item.id));
+    }
   }
 
   async function confirmEmpty() {
@@ -106,6 +148,7 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
     setBusy(true);
     if (await emptyAssetBin()) {
       setAssets([]);
+      setFolders([]);
       setSelectedId(null);
     }
     setBusy(false);
@@ -123,7 +166,7 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
           key={selected.id}
           asset={selected}
           onRestore={() => void restore(selected)}
-          onDelete={() => setPendingDelete(selected)}
+          onDelete={() => setPendingDelete({ kind: "asset", item: selected })}
         />
       ) : (
         <div className="grid flex-1 place-content-center gap-2 px-6 py-16 text-center">
@@ -160,13 +203,13 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
           </div>
           <div className="flex items-center gap-3 @3xl:shrink-0">
             <p className="text-sm text-muted-foreground">
-              {assets.length} {assets.length === 1 ? "item" : "items"} ·{" "}
+              {itemCount} {itemCount === 1 ? "item" : "items"} ·{" "}
               {formatBytes(binBytes)}
             </p>
             <Button
               type="button"
               variant="outline"
-              disabled={assets.length === 0 || busy}
+              disabled={itemCount === 0 || busy}
               onClick={() => setConfirmingEmpty(true)}
             >
               <Trash2 data-icon="inline-start" />
@@ -174,6 +217,57 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
             </Button>
           </div>
         </header>
+
+        {folders.length > 0 ? (
+          <section aria-label="Folders in the Bin" className="grid gap-2 @md:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-4">
+            {folders.map((folder) => (
+              <WithContextMenu key={folder.id}>
+                {(menu) => (
+                  <div
+                    data-folder-tile
+                    onContextMenu={menu.onContextMenu}
+                    className="group relative flex items-center gap-3 rounded-md border border-border/70 bg-card px-3 py-2.5 pr-11 shadow-sm"
+                  >
+                    <Folder className="size-5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{folder.name}</span>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Countdown trashedAt={folder.trashedAt} />
+                        <span aria-hidden>·</span>
+                        <span className="truncate">{describeBinFolder(folder)}</span>
+                      </span>
+                    </span>
+                    <DropdownMenu {...menu.rootProps}>
+                      <DropdownMenuTrigger
+                        ref={menu.triggerRef}
+                        aria-label={`Actions for folder ${folder.name}`}
+                        className="absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-44" {...menu.contentProps}>
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem onClick={() => void restoreBinFolder(folder)}>
+                            <RotateCcw /> Restore
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => setPendingDelete({ kind: "folder", item: folder })}
+                          >
+                            <Trash2 /> Delete forever
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+              </WithContextMenu>
+            ))}
+          </section>
+        ) : null}
 
         {assets.length > 0 ? (
           <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
@@ -229,7 +323,7 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
                         <DropdownMenuGroup>
                           <DropdownMenuItem
                             variant="destructive"
-                            onClick={() => setPendingDelete(asset)}
+                            onClick={() => setPendingDelete({ kind: "asset", item: asset })}
                           >
                             <Trash2 /> Delete forever
                           </DropdownMenuItem>
@@ -241,7 +335,7 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
               </WithContextMenu>
             ))}
           </div>
-        ) : (
+        ) : folders.length > 0 ? null : (
           <div className="rounded-md border border-dashed border-border/80 bg-card/45 px-5 py-12 text-center">
             <Trash2 className="mx-auto size-8 text-muted-foreground" />
             <h2 className="mt-4 text-lg font-semibold">The Bin is empty</h2>
@@ -266,13 +360,22 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
         icon={Trash2}
         title="Delete forever?"
         description={
-          pendingDelete ? (
+          pendingDelete?.kind === "asset" ? (
             <>
               <span className="font-medium break-words text-foreground">
-                {pendingDelete.displayName}
+                {pendingDelete.item.displayName}
               </span>{" "}
-              will be removed from storage and {formatBytes(pendingDelete.sizeBytes)} freed.
+              will be removed from storage and {formatBytes(pendingDelete.item.sizeBytes)} freed.
               Documents that embed it keep a placeholder. This cannot be undone.
+            </>
+          ) : pendingDelete?.kind === "folder" ? (
+            <>
+              <span className="font-medium break-words text-foreground">
+                {pendingDelete.item.name}
+              </span>{" "}
+              and {describeBinFolder(pendingDelete.item)} inside it will be removed from
+              storage and {formatBytes(pendingDelete.item.sizeBytes)} freed. This cannot be
+              undone.
             </>
           ) : null
         }
@@ -285,7 +388,7 @@ export function AssetBinClient({ initialAssets }: { initialAssets: BinAssetItem[
         tone="destructive"
         icon={Trash2}
         title="Empty the Bin?"
-        description={`All ${assets.length} ${assets.length === 1 ? "item" : "items"} will be removed from storage and ${formatBytes(binBytes)} freed. This cannot be undone.`}
+        description={`Everything in the Bin (${itemCount} ${itemCount === 1 ? "item" : "items"}, including what's inside binned folders) will be removed from storage and ${formatBytes(binBytes)} freed. This cannot be undone.`}
         confirmLabel="Empty Bin"
         onConfirm={() => void confirmEmpty()}
       />
@@ -338,6 +441,16 @@ function BinDetailsPanel({
       </ContextPanelSection>
     </ContextPanelBody>
   );
+}
+
+function describeBinFolder(folder: BinFolderItem) {
+  const parts = [
+    folder.folderCount > 0
+      ? `${folder.folderCount} ${folder.folderCount === 1 ? "folder" : "folders"}`
+      : null,
+    `${folder.assetCount} ${folder.assetCount === 1 ? "file" : "files"}`,
+  ];
+  return parts.filter(Boolean).join(", ");
 }
 
 function Countdown({ trashedAt }: { trashedAt: Date | string }) {

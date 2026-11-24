@@ -52,6 +52,8 @@ export type AssetStatus = "pending" | "ready" | "trashed" | "failed" | "deleted"
  * were made with, so bumping `RENDITION_VERSION` regenerates everything.
  */
 export type AssetRenditionStatus = "none" | "ready" | "failed";
+/** `trashed` mirrors the asset Bin; see `lib/asset-folders.ts`. */
+export type AssetFolderStatus = "active" | "trashed";
 export type TagCategory =
   | "general"
   | "topic"
@@ -668,6 +670,60 @@ export const userExtensionSettings = pgTable(
   ],
 );
 
+/**
+ * The media library's folder tree (docs/26_MEDIA_LIBRARY_AND_FOLDERS_PLAN.md
+ * §4.2), separate from document `folders`. Owner-only for now; share links
+ * (slice 6) reach a folder's live subtree.
+ *
+ * Binning a folder bins its whole live subtree at once: every descendant
+ * folder and asset becomes `trashed` with `trashed_via_folder_id` = the binned
+ * folder. Only rows with no marker are listed in the Bin, and restoring a
+ * folder restores exactly the rows carrying its marker. So nothing inside a
+ * binned folder is ever `active`/`ready`, and every read path that gates on
+ * those statuses stays correct without walking the tree.
+ */
+export const assetFolders = pgTable(
+  "asset_folders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references((): AnyPgColumn => assetFolders.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+    status: text("status").$type<AssetFolderStatus>().notNull().default("active"),
+    trashedAt: timestamp("trashed_at", { withTimezone: true }),
+    /** The binned folder whose trash took this one along; null for a Bin entry. */
+    trashedViaFolderId: uuid("trashed_via_folder_id").references(
+      (): AnyPgColumn => assetFolders.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("asset_folders_owner_id_idx").on(table.ownerId),
+    index("asset_folders_parent_id_idx").on(table.parentId),
+    index("asset_folders_trashed_via_idx").on(table.trashedViaFolderId),
+    index("asset_folders_status_trashed_at_idx").on(table.status, table.trashedAt),
+    // Sibling names are unique among live folders, case-insensitively. Root
+    // folders have no parent; coalesce so NULLs collide too.
+    uniqueIndex("asset_folders_live_sibling_name_unique")
+      .on(
+        table.ownerId,
+        sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        sql`lower(${table.name})`,
+      )
+      .where(sql`${table.status} = 'active'`),
+  ],
+);
+
 export const assets = pgTable(
   "assets",
   {
@@ -698,6 +754,15 @@ export const assets = pgTable(
       .notNull()
       .default("none"),
     renditionVersion: integer("rendition_version"),
+    /** Media library folder; null = the library root. */
+    folderId: uuid("folder_id").references(() => assetFolders.id, {
+      onDelete: "set null",
+    }),
+    /** Set when binned along with a folder (see `assetFolders`); null otherwise. */
+    trashedViaFolderId: uuid("trashed_via_folder_id").references(
+      () => assetFolders.id,
+      { onDelete: "set null" },
+    ),
     visibility: text("visibility").$type<AssetVisibility>().notNull().default("private"),
     status: text("status").$type<AssetStatus>().notNull().default("pending"),
     checksumSha256: text("checksum_sha256"),
@@ -715,6 +780,8 @@ export const assets = pgTable(
   (table) => [
     index("assets_owner_id_idx").on(table.ownerId),
     index("assets_status_trashed_at_idx").on(table.status, table.trashedAt),
+    index("assets_folder_id_idx").on(table.folderId),
+    index("assets_trashed_via_folder_id_idx").on(table.trashedViaFolderId),
     index("assets_kind_idx").on(table.kind),
     index("assets_visibility_status_idx").on(table.visibility, table.status),
     index("assets_created_at_idx").on(table.createdAt),

@@ -29,7 +29,13 @@ export type UploadItem = {
   bytesPerSecond: number | null;
 };
 
-type QueuedUpload<Context> = { id: string; file: File; context: Context };
+type QueuedUpload<Context> = {
+  id: string;
+  file: File;
+  context: Context;
+  /** Media library folder for this file; null = root. */
+  folderId: string | null;
+};
 
 type Options<Context> = {
   documentId?: string | null;
@@ -104,7 +110,7 @@ export function useAssetUploads<Context = void>(options: Options<Context> = {}) 
         next !== undefined;
         next = queueRef.current.shift()
       ) {
-        const { id, file, context } = next;
+        const { id, file, context, folderId } = next;
         const controller = new AbortController();
         controllersRef.current.set(id, controller);
         const meter = createRateMeter();
@@ -114,6 +120,7 @@ export function useAssetUploads<Context = void>(options: Options<Context> = {}) 
           const { documentId, shareLinkId, bearerToken } = optionsRef.current;
           const asset = await uploadAsset(file, {
             documentId,
+            folderId,
             shareLinkId,
             bearerToken,
             signal: controller.signal,
@@ -160,8 +167,13 @@ export function useAssetUploads<Context = void>(options: Options<Context> = {}) 
   }, [patch, queueProgress]);
 
   const enqueue = useCallback(
-    (files: File[], context: Context) => {
-      const queued = files.map((file) => ({ id: crypto.randomUUID(), file, context }));
+    (files: File[], context: Context, target: { folderId?: string | null } = {}) => {
+      const queued = files.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        context,
+        folderId: target.folderId ?? null,
+      }));
 
       setItems((current) => [
         ...current,

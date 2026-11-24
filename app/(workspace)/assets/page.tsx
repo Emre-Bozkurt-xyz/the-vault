@@ -5,6 +5,10 @@ import { AssetBinClient } from "@/components/assets/AssetBinClient";
 import { AssetLibraryClient } from "@/components/assets/AssetLibraryClient";
 import { WorkspacePage } from "@/components/workspace/WorkspacePage";
 import {
+  listBinFoldersForUser,
+  listFoldersForUser,
+} from "@/server/asset-folders";
+import {
   getUserStorageSummary,
   listAssetsForUser,
   listBinAssetsForUser,
@@ -24,17 +28,21 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
   const { view } = await searchParams;
 
   if (view === "bin") {
-    const binAssets = await listBinAssetsForUser(session.user.id);
+    const [binAssets, binFolders] = await Promise.all([
+      listBinAssetsForUser(session.user.id),
+      listBinFoldersForUser(session.user.id),
+    ]);
 
     return (
       <WorkspacePage width="full" className="max-w-[96rem]">
-        <AssetBinClient initialAssets={binAssets} />
+        <AssetBinClient initialAssets={binAssets} initialFolders={binFolders} />
       </WorkspacePage>
     );
   }
 
-  const [assets, storage] = await Promise.all([
+  const [assets, folders, storage] = await Promise.all([
     listAssetsForUser(session.user.id),
+    listFoldersForUser(session.user.id),
     getUserStorageSummary(session.user.id),
   ]);
 
@@ -44,6 +52,8 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
       <WorkspacePage width="full" className="max-w-[96rem]">
         <AssetLibraryClient
           initialAssets={assets}
+          initialFolders={folders}
+          storageUsedBytes={storage.usedBytes}
           storageQuotaBytes={storage.quotaBytes}
           unrestrictedUploads={storage.unrestrictedUploadsAllowed}
         />

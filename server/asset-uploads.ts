@@ -33,6 +33,7 @@ import {
   type ActiveAssetUser,
 } from "@/server/assets";
 import { scheduleRenditionsAfterUpload } from "@/server/asset-renditions";
+import { liveFolderOrRoot } from "@/server/assets";
 import { canEditDocumentWithOptionalShareLink } from "@/server/documents-data";
 
 /**
@@ -67,6 +68,8 @@ export async function startDirectUpload(input: {
   head: Buffer;
   documentId: string | null;
   shareLinkId: string | null;
+  /** Media library folder, already checked live and owned by the caller. */
+  folderId?: string | null;
 }): Promise<DirectUploadPlan> {
   if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes <= 0) {
     throw new AssetError("Choose a non-empty file.", 400, "EMPTY_FILE");
@@ -131,6 +134,7 @@ export async function startDirectUpload(input: {
       // Hashing would mean reading the whole object back; parts carry their
       // own integrity checks in R2.
       checksumSha256: null,
+      folderId: input.folderId ?? null,
     });
 
     multipartUploadId = await createAssetMultipartUpload({
@@ -246,7 +250,8 @@ export async function completeDirectUpload(input: { userId: string; uploadId: st
 
     await db
       .update(assets)
-      .set({ status: "ready", updatedAt: new Date() })
+      // The folder may have been binned during the upload: then the root.
+      .set({ status: "ready", folderId: liveFolderOrRoot, updatedAt: new Date() })
       .where(eq(assets.id, upload.assetId));
   } catch (error) {
     if (completed) {

@@ -12,6 +12,7 @@ import {
 } from "@/lib/asset-maintenance";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { deleteAssetObject, listAssetObjects } from "@/lib/storage/r2";
+import { purgeExpiredBinFolders } from "@/server/asset-folders";
 import { purgeExpiredBinAssets } from "@/server/assets";
 import { backfillRenditions } from "@/server/asset-renditions";
 
@@ -181,6 +182,9 @@ async function purgeExpiredBin(now: Date) {
     total += purged.length;
     if (purged.length < BIN_PURGE_BATCH) break;
   }
+
+  // Folder rows go after their assets (binned together, same `trashed_at`).
+  await purgeExpiredBinFolders(cutoff);
 
   return total;
 }

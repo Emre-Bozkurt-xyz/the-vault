@@ -6,6 +6,7 @@ import {
   startDirectUpload,
 } from "@/server/asset-uploads";
 import { AssetError, requireAssetUserFromRequest } from "@/server/assets";
+import { requireLiveFolder } from "@/server/asset-folders";
 import { canEditDocumentWithOptionalShareLink } from "@/server/documents-data";
 
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
     const declaredMimeType = formStringOrNull(formData.get("type")) ?? "";
     const documentId = formStringOrNull(formData.get("documentId"));
     const shareLinkId = formStringOrNull(formData.get("shareLinkId"));
+    const folderId = await requireLiveFolder(user.id, formStringOrNull(formData.get("folderId")));
 
     if (!(head instanceof Blob) || head.size > DIRECT_UPLOAD_HEAD_BYTES) {
       throw new AssetError("Upload a file.", 400, "MISSING_FILE");
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
       head: Buffer.from(await head.arrayBuffer()),
       documentId,
       shareLinkId,
+      folderId,
     });
 
     return NextResponse.json(plan, { status: 201 });

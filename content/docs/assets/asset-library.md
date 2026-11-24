@@ -67,6 +67,27 @@ To reuse a public asset:
 3. Copy its embed or asset ID from the details panel.
 4. Paste the embed into your document.
 
+## Folders
+
+Folders organise the library the way a file manager does. They are separate
+from the folders in your document file browser.
+
+- **New folder** (the folder-plus button in the toolbar) creates one inside the
+  folder you are in. Names must be unique within a folder.
+- Click a folder to open it; the path at the top (`Content › Events › Lisbon`)
+  takes you back up, and so does your browser's Back button.
+- **Upload** puts files in the open folder. **Upload a folder**, or dropping a
+  folder from your computer onto the page (a camera card's `DCIM`, say),
+  recreates its folders and uploads everything into them.
+- Move things with **Move to…** in a file's or folder's `…` menu, or drag a
+  file or folder onto another folder or onto a part of the path at the top.
+- Searching or filtering looks through every folder, and each result shows
+  which folder it is in. **Show in folder** jumps there.
+- The **Folders** list in the Assets side panel shows the whole tree.
+
+Moving a folder to the Bin takes everything inside it along, as one Bin entry.
+Restoring it brings back exactly what was in it.
+
 ## Deleting assets and the Bin
 
 **Move to Bin** (from an asset's `…` menu, right-click, the details panel, or
