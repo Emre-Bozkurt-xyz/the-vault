@@ -32,6 +32,10 @@ import type {
   ExtensionStateVisibility,
   JsonValue,
 } from "@/lib/extension-api";
+import {
+  consumeExtensionReveal,
+  subscribeToExtensionReveals,
+} from "@/lib/extension-host/reveal-requests";
 import { subscribeSessionEvent } from "@/lib/extension-host/session-events";
 import {
   runExtensionActionAction,
@@ -232,6 +236,37 @@ export function useSessionEvent(
       ),
     [documentId, extensionId, name],
   );
+}
+
+/**
+ * Receives "show this item" requests for this extension on this document: the
+ * `locator` your state's `assetIds` returned (the delete warning links to it).
+ * Pass `ready` once the items can be found (state loaded); a request made
+ * while navigating here is held until then. Scroll the item into view and
+ * make it noticeable.
+ */
+export function useRevealRequest(
+  ctx: Pick<ExtensionRenderContext, "extensionId" | "documentId">,
+  handler: (locator: string) => void,
+  ready = true,
+): void {
+  const handlerRef = useRef(handler);
+  useEffect(() => {
+    handlerRef.current = handler;
+  }, [handler]);
+
+  const { extensionId, documentId } = ctx;
+  useEffect(() => {
+    if (!ready || !documentId) return;
+    const pending = consumeExtensionReveal(documentId, extensionId);
+    if (pending) handlerRef.current(pending);
+    return subscribeToExtensionReveals((request) => {
+      if (request.documentId !== documentId || request.extensionId !== extensionId) return;
+      // Claim it, so it isn't replayed when this layer mounts again.
+      consumeExtensionReveal(documentId, extensionId);
+      handlerRef.current(request.locator);
+    });
+  }, [documentId, extensionId, ready]);
 }
 
 /**

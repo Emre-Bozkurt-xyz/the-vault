@@ -50,6 +50,9 @@ export type ExtensionAction<
   permissions?: ReadonlyArray<M["permissions"][number]>;
 };
 
+/** One file a piece of extension state uses, and (optionally) which item uses it. */
+export type ExtensionAssetUse = { assetId: string; locator?: string };
+
 export type ExtensionStateDeclaration<S extends ExtensionStateValue = ExtensionStateValue> = {
   /** Exact state key; omitted for the extension's default/only state. */
   key?: string;
@@ -62,8 +65,12 @@ export type ExtensionStateDeclaration<S extends ExtensionStateValue = ExtensionS
    * image, say) is found alongside files embedded in the document text.
    * Required, or `noAssetIds`, for extensions with the `asset:read`
    * permission (the contract test checks).
+   *
+   * Return `{ assetId, locator }` instead of a bare id to make the warning's
+   * link reveal the item: `locator` is your own handle for it (a sticker id),
+   * handed back to your layer through `useRevealRequest`.
    */
-  assetIds?(state: S): readonly string[];
+  assetIds?(state: S): readonly (string | ExtensionAssetUse)[];
   /** This state never refers to files: the explicit opt-out from `assetIds`. */
   noAssetIds?: true;
 };

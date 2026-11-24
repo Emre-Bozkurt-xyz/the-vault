@@ -218,10 +218,23 @@ state: [
     key: "layout",
     version: 1,
     schema: stickersStateSchema,
-    assetIds: (state) => Object.values(state.items).map((item) => item.assetId),
+    assetIds: (state) =>
+      Object.entries(state.items).map(([id, item]) => ({ assetId: item.assetId, locator: id })),
   }),
 ],
 ```
+
+Return bare ids, or `{ assetId, locator }` to make the warning's link show the
+item: `locator` is your own handle for it (Stickers uses the sticker id). When
+someone follows the link, your layer receives it once it is ready:
+
+```ts
+useRevealRequest(ctx, (stickerId) => revealSticker(stickerId), status !== "loading");
+```
+
+Scroll the item into view and make it noticeable (`extensions/stickers/reveal.ts`
+keeps re-checking for a few seconds, since the document text that gives the page
+its height can load after your state).
 
 `defineState` only types `assetIds` with your schema; a plain object works too.
 An extension with the `asset:read` permission must give every state either

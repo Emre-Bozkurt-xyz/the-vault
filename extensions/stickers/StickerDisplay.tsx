@@ -1,8 +1,9 @@
 "use client";
 
 import type { OverlayProps } from "@/lib/extension-api";
-import { OverlayItem, useExtensionState } from "@/lib/extension-api/react";
+import { OverlayItem, useExtensionState, useRevealRequest } from "@/lib/extension-api/react";
 
+import { revealSticker } from "./reveal";
 import { stickersStateSchema, type PublicStickerItem } from "./state";
 
 /**
@@ -16,9 +17,11 @@ import { stickersStateSchema, type PublicStickerItem } from "./state";
  */
 export default function StickerDisplay({ ctx }: OverlayProps) {
   const fromState = ctx.surface === "workspace";
-  const { value } = useExtensionState(ctx, fromState ? "layout" : null, {
+  const { value, status } = useExtensionState(ctx, fromState ? "layout" : null, {
     schema: stickersStateSchema,
   });
+  // "Used in … · Stickers" links land here for readers who don't edit.
+  useRevealRequest(ctx, revealSticker, !fromState || status !== "loading");
 
   const items: PublicStickerItem[] = fromState
     ? Object.entries(value?.items ?? {}).map(([id, item]) => ({ id, ...item }))
@@ -33,6 +36,7 @@ export default function StickerDisplay({ ctx }: OverlayProps) {
           style={{ left: item.left, top: item.top, width: item.width }}
         >
           <div
+            data-sticker-id={item.id}
             style={{
               transform: `rotate(${item.rotation ?? 0}deg)`,
               transformOrigin: "center center",

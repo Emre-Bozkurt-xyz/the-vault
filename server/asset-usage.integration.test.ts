@@ -111,9 +111,17 @@ describe.skipIf(!databaseUrl)("asset usage (database)", () => {
     const [entry] = await usage.getAssetUsageForOwner(ownerId, { assetIds: [photo] });
     expect(entry.name).toBe("harbour.jpg");
     expect(entry.documents).toEqual([
-      { id: docs.mine, title: "Trip notes", line: 3, text: `![[asset:${photo}|Harbour]]`, via: null },
-      // The same document again, through the Stickers extension: no line to jump to.
-      { id: docs.mine, title: "Trip notes", line: null, text: null, via: "Stickers" },
+      { id: docs.mine, title: "Trip notes", line: 3, text: `![[asset:${photo}|Harbour]]`, via: null, reveal: null },
+      // The same document again, through the Stickers extension: no line, but
+      // the sticker to reveal.
+      {
+        id: docs.mine,
+        title: "Trip notes",
+        line: null,
+        text: null,
+        via: "Stickers",
+        reveal: { extensionId: "vault.stickers", locator: "s0" },
+      },
     ]);
     // Someone else's private document: counted, not named. A binned document: skipped.
     expect(entry.hidden).toBe(1);
@@ -122,7 +130,16 @@ describe.skipIf(!databaseUrl)("asset usage (database)", () => {
   it("finds files used only through extension state, by the extension's own declaration", async () => {
     const [entry] = await usage.getAssetUsageForOwner(ownerId, { assetIds: [stickerOnly] });
     expect(entry).toMatchObject({ assetId: stickerOnly, name: "cat-sticker.png", hidden: 0 });
-    expect(entry.documents).toEqual([{ id: docs.mine, title: "Trip notes", line: null, text: null, via: "Stickers" }]);
+    expect(entry.documents).toEqual([
+      {
+        id: docs.mine,
+        title: "Trip notes",
+        line: null,
+        text: null,
+        via: "Stickers",
+        reveal: { extensionId: "vault.stickers", locator: "s1" },
+      },
+    ]);
   });
 
   it("returns nothing for unused files or other people's files", async () => {

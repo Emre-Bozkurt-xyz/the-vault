@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FileText } from "lucide-react";
 
 import { requestEditorJump } from "@/lib/editor-jump-events";
+import { requestExtensionReveal } from "@/lib/extension-host/reveal-requests";
 import type { AssetUsage } from "@/server/asset-usage";
 
 export type { AssetUsage };
@@ -61,7 +62,8 @@ const PER_FILE = 6;
 
 /**
  * The documents as links. Each opens the document and, when the embed's line
- * is known, jumps to it and flashes it (the task agenda's jump). With several
+ * is known, jumps to it and flashes it (the task agenda's jump); a use through
+ * an extension asks that extension to show its item instead. With several
  * files, each gets its own heading. Documents the user can't open are only
  * counted.
  */
@@ -88,7 +90,9 @@ export function AssetUsageList({
                 <Link
                   href={`/docs/${document.id}`}
                   onClick={() => {
-                    if (document.line !== null) {
+                    if (document.reveal) {
+                      requestExtensionReveal({ documentId: document.id, ...document.reveal });
+                    } else if (document.line !== null) {
                       requestEditorJump({
                         documentId: document.id,
                         line: document.line,

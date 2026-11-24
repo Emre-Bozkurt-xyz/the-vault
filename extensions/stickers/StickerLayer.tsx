@@ -7,10 +7,12 @@ import type { OverlayProps, PickedAsset } from "@/lib/extension-api";
 import {
   OverlayItem,
   useExtensionState,
+  useRevealRequest,
   useSessionEvent,
 } from "@/lib/extension-api/react";
 import { cn } from "@/lib/utils";
 
+import { revealSticker } from "./reveal";
 import {
   STICKER_MAX_SIZE as MAX_SIZE,
   STICKER_MIN_SIZE as MIN_SIZE,
@@ -63,6 +65,16 @@ export default function StickerLayer({ ctx }: OverlayProps) {
     }
   });
   useSessionEvent(ctx, "toggle-layer", () => setHidden((current) => !current));
+  // "Used in … · Stickers": show the layer, select the sticker, bring it into view.
+  useRevealRequest(
+    ctx,
+    (stickerId) => {
+      setHidden(false);
+      setSelectedId(stickerId);
+      revealSticker(stickerId);
+    },
+    status !== "loading",
+  );
 
   const onPendingAssetPlaced = () => setPendingAsset(null);
 

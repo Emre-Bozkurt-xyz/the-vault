@@ -213,8 +213,16 @@ describe("every extension", () => {
               const parsed = declaration!.schema.safeParse(row.state);
               expect(parsed.success, `${file}: "${stateKey}" ${parsed.error?.message ?? ""}`).toBe(true);
               if (parsed.success && declaration!.assetIds) {
-                const ids = declaration!.assetIds(parsed.data);
-                expect(Array.isArray(ids) && ids.every((id) => typeof id === "string"), `${file}: assetIds returns strings`).toBe(true);
+                const uses = declaration!.assetIds(parsed.data);
+                expect(
+                  Array.isArray(uses) &&
+                    uses.every(
+                      (use) =>
+                        typeof use === "string" ||
+                        (typeof use?.assetId === "string" && (use.locator === undefined || typeof use.locator === "string")),
+                    ),
+                  `${file}: assetIds returns ids or { assetId, locator }`,
+                ).toBe(true);
               }
             }
           }

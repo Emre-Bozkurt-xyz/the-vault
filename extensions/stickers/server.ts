@@ -71,7 +71,9 @@ export default defineServer(manifest, {
       schema: stickersStateSchema,
       // Each sticker shows one of its placer's files: binning that file would
       // leave an empty sticker, so the warning lists this document.
-      assetIds: (state) => Object.values(state.items).map((item) => item.assetId),
+      // The sticker id lets the warning's link reveal that very sticker.
+      assetIds: (state) =>
+        Object.entries(state.items).map(([id, item]) => ({ assetId: item.assetId, locator: id })),
     }),
   ],
   actions: [

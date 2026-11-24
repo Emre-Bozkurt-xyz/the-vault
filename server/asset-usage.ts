@@ -34,6 +34,8 @@ export type AssetUsageDocument = {
   text: string | null;
   /** The extension using the file here (its name), or null for an embed in the text. */
   via: string | null;
+  /** For an extension use: what to ask its layer to show (`useRevealRequest`). */
+  reveal: { extensionId: string; locator: string } | null;
 };
 
 export type AssetUsage = {
@@ -82,7 +84,13 @@ async function resolveAssetIds(ownerId: string, assetIds: string[], folderIds: s
   return [...ids];
 }
 
-type UsageRef = { assetId: string; documentId: string; title: string; via: string | null };
+type UsageRef = {
+  assetId: string;
+  documentId: string;
+  title: string;
+  via: string | null;
+  reveal: { extensionId: string; locator: string } | null;
+};
 
 /** Extension state declarations that can say which files they use. */
 function assetStateSources() {
@@ -130,17 +138,28 @@ async function extensionRefs(ids: string[]): Promise<UsageRef[]> {
     for (const row of rows) {
       const parsed = source.declaration.schema.safeParse(row.state);
       if (!parsed.success) continue;
-      let used: readonly string[] = [];
+      let used: ReturnType<NonNullable<typeof source.declaration.assetIds>> = [];
       try {
         used = source.declaration.assetIds!(parsed.data);
       } catch {
         // A broken extractor must not break deleting files.
         continue;
       }
-      for (const assetId of new Set(used)) {
-        if (wanted.has(assetId)) {
-          refs.push({ assetId, documentId: row.documentId, title: row.title, via: source.name });
-        }
+      // The first use of each file in this document is the one to reveal.
+      const found = new Map<string, string | null>();
+      for (const entry of used) {
+        const use = typeof entry === "string" ? { assetId: entry } : entry;
+        if (typeof use?.assetId !== "string" || !wanted.has(use.assetId) || found.has(use.assetId)) continue;
+        found.set(use.assetId, typeof use.locator === "string" ? use.locator : null);
+      }
+      for (const [assetId, locator] of found) {
+        refs.push({
+          assetId,
+          documentId: row.documentId,
+          title: row.title,
+          via: source.name,
+          reveal: locator ? { extensionId: source.extensionId, locator } : null,
+        });
       }
     }
   }
@@ -169,7 +188,10 @@ export async function getAssetUsageForOwner(
     // A document in its Bin doesn't show the file to anyone.
     .where(and(inArray(documentAssets.assetId, ids), isNull(documents.deletedAt)))
     .limit(MAX_DOCUMENTS * 4);
-  const refs: UsageRef[] = [...embeds.map((embed) => ({ ...embed, via: null })), ...(await extensionRefs(ids))];
+  const refs: UsageRef[] = [
+    ...embeds.map((embed) => ({ ...embed, via: null, reveal: null })),
+    ...(await extensionRefs(ids)),
+  ];
   if (refs.length === 0) return [];
 
   const names = new Map<string, string>();
@@ -216,6 +238,7 @@ export async function getAssetUsageForOwner(
       line: found?.line ?? null,
       text: found?.text ?? null,
       via: ref.via,
+      reveal: ref.reveal,
     });
   }
 
