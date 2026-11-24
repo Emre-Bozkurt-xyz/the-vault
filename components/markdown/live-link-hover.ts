@@ -9,6 +9,7 @@ import { EditorView } from "@codemirror/view";
 
 import type { WikiLinkInfo } from "@/lib/extension-api";
 import {
+  documentExcerpt,
   parseWikiLinkParts,
   wikiKeyForTarget,
   type WikiLinkResolutionMap,
@@ -52,7 +53,7 @@ const cardClass = "vault-md-definition-card";
 export function findWikiLinkAt(
   lineText: string,
   offset: number,
-): { target: string; label: string } | null {
+): { target: string; label: string; fragment: string | null } | null {
   for (const match of lineText.matchAll(/(?<!!)\[\[([^\]\n]+)\]\]/g)) {
     if (match.index === undefined) {
       continue;
@@ -63,7 +64,7 @@ export function findWikiLinkAt(
     }
 
     const parts = parseWikiLinkParts("", match[1]);
-    return parts.target ? { target: parts.target, label: parts.label } : null;
+    return parts.target ? { target: parts.target, label: parts.label, fragment: parts.fragment } : null;
   }
 
   return null;
@@ -123,21 +124,29 @@ export function findLinkAtNode(
             resolved: false,
             isDefinition: false,
             preview: null,
+            excerpt: null,
             occurrence: 0,
           },
         }
       : null;
   }
 
+  // `[[Doc#Section]]` points into the document: the card and "Open" go there.
+  const href =
+    resolution.href && found.fragment
+      ? `${resolution.href.split("#")[0]}#${encodeURIComponent(found.fragment)}`
+      : (resolution.href ?? null);
+
   return {
     anchor,
     link: {
       target: found.target,
       label: resolution.label ?? found.label,
-      href: resolution.href ?? null,
+      href,
       resolved: true,
       isDefinition: Boolean(resolution.isDefinition),
       preview: resolution.preview ?? null,
+      excerpt: documentExcerpt(resolution.embedMarkdown, href),
       occurrence: 0,
     },
   };

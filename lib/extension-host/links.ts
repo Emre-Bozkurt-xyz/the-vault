@@ -24,11 +24,19 @@ const linkContributions = renderModules.flatMap((renderModule) =>
 
 /** Whether any installed extension previews links at all. */
 export const hasLinkPreviews = linkContributions.length > 0;
+// (Links to documents always can: the host previews their excerpt.)
 
 export type ResolvedLinkPreview = {
   extensionId: string;
   preview: LinkPreview;
+  /**
+   * The host's own card for a link to a document: its excerpt, loaded when
+   * the card opens if the page doesn't have the text (`DocumentExcerptPreview`).
+   */
+  core?: boolean;
 };
+
+const workspaceDocumentHref = /^\/docs\/[0-9a-f-]{36}(?:[?#]|$)/i;
 
 /**
  * The first installed extension's preview for `link`, or null. A preview
@@ -46,6 +54,10 @@ export function resolveLinkPreview(
     } catch (cause) {
       console.error(`Link preview from "${extensionId}" failed`, cause);
     }
+  }
+  // No extension previews it: a link to a document shows the document's start.
+  if (link.resolved && link.href && (link.excerpt || workspaceDocumentHref.test(link.href))) {
+    return { extensionId: "vault.core", preview: { title: link.label, markdown: link.excerpt }, core: true };
   }
   return null;
 }

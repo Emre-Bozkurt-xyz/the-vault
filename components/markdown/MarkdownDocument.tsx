@@ -76,6 +76,7 @@ import {
   normalizeWikiFragmentForHref,
   splitWikiDocumentEmbeds,
   slugifyMarkdownHeading,
+  documentExcerpt,
   transformWikiLinks,
   WIKI_EMBED_RENDER_DEPTH,
   type WikiDocumentEmbedBlock,
@@ -681,6 +682,7 @@ function createMarkdownComponents(
             resolved: true,
             isDefinition: wikiTarget.isDefinition,
             preview: wikiTarget.preview,
+            excerpt: documentExcerpt(wikiTarget.markdown, safeHref),
             occurrence,
           }}
           extensions={extensions}

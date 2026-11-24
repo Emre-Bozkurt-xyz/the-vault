@@ -352,6 +352,11 @@ export type WikiLinkInfo = {
   isDefinition: boolean;
   /** Bounded Markdown the target offers for previews, when it has any. */
   preview: string | null;
+  /**
+   * The start of the linked document (or the linked section), when the page
+   * has its text. Without an extension's preview, the host shows this.
+   */
+  excerpt: string | null;
   /** How many earlier links in this document point at the same target (Read mode). */
   occurrence: number;
 };

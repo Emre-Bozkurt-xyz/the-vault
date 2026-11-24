@@ -16,6 +16,7 @@ describe("findWikiLinkAt", () => {
       expect(findWikiLinkAt(line, offset)).toEqual({
         target: "Idempotence",
         label: "idempotent",
+        fragment: null,
       });
     }
   });
@@ -30,6 +31,7 @@ describe("findWikiLinkAt", () => {
     expect(findWikiLinkAt("See [[Retry Policy]].", 8)).toEqual({
       target: "Retry Policy",
       label: "Retry Policy",
+      fragment: null,
     });
   });
 
@@ -37,6 +39,7 @@ describe("findWikiLinkAt", () => {
     expect(findWikiLinkAt("See [[Idempotence#Formal statement]].", 10)).toEqual({
       target: "Idempotence",
       label: "Idempotence",
+      fragment: "Formal statement",
     });
   });
 

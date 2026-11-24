@@ -67,6 +67,8 @@ export type WikiLinkTarget = {
   isDefinition: boolean;
   /** Bounded Markdown for hover previews (definitions only, today). */
   preview: string | null;
+  /** The linked document's Markdown, where the page has it, for an excerpt card. */
+  markdown: string | null;
 };
 export type WikiDocumentEmbedBlock =
   | {
@@ -586,6 +588,7 @@ export function buildWikiLinkTargetsByHref(
       href: resolution.href,
       isDefinition: Boolean(resolution.isDefinition),
       preview: resolution.preview ?? null,
+      markdown: resolution.embedMarkdown ?? null,
     });
   }
 
@@ -1291,4 +1294,49 @@ function escapeHtml(value: string) {
 
 function escapeHtmlAttribute(value: string) {
   return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
+const excerptMaxLines = 12;
+const excerptMaxChars = 900;
+
+/**
+ * The start of what a link points at, for its hover card: the linked section
+ * (`[[Doc#Heading]]`, `#^block`, `#@region`) or the document's opening, without
+ * frontmatter or a leading title heading. Null when there is nothing to show.
+ */
+export function documentExcerpt(markdown: string | null | undefined, href: string | null): string | null {
+  if (!markdown) return null;
+  const hash = href?.indexOf("#") ?? -1;
+  let fragment: string | null = null;
+  if (href && hash >= 0) {
+    try {
+      fragment = decodeURIComponent(href.slice(hash + 1)) || null;
+    } catch {
+      fragment = href.slice(hash + 1) || null;
+    }
+  }
+  const body = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "");
+  const target = extractMarkdownTarget(body, fragment) ?? "";
+  const lines = target.replace(/\r\n/g, "\n").split("\n");
+  // A whole document usually opens with its own title.
+  if (!fragment) {
+    while (lines.length && !lines[0].trim()) lines.shift();
+    if (/^#\s/.test(lines[0] ?? "")) lines.shift();
+  }
+
+  const kept: string[] = [];
+  let chars = 0;
+  let inFence = false;
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) inFence = !inFence;
+    if (!kept.length && !line.trim()) continue;
+    kept.push(line);
+    chars += line.length;
+    // Finish a code block if it's short, but never run on past twice the cap.
+    const over = kept.length >= excerptMaxLines || chars >= excerptMaxChars;
+    if ((over && !inFence) || kept.length >= excerptMaxLines * 2 || chars >= excerptMaxChars * 2) break;
+  }
+  if (inFence) kept.push("```");
+  const excerpt = kept.join("\n").trim();
+  return excerpt ? excerpt : null;
 }

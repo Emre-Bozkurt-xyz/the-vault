@@ -179,6 +179,15 @@ function parseSimpleYamlFields(raw: string) {
     const key = match[1].trim();
     const inlineValue = stripYamlQuotes(match[2].trim());
 
+    // A flow list, `aliases: [Lisbon, "Lisboa, PT"]`, is a list like the
+    // block form below.
+    const flowList = inlineValue.match(/^\[(.*)\]$/);
+    if (flowList) {
+      fields.set(key, splitYamlFlowList(flowList[1]));
+      index += 1;
+      continue;
+    }
+
     if (inlineValue) {
       fields.set(key, inlineValue);
       index += 1;
@@ -208,6 +217,28 @@ function parseSimpleYamlFields(raw: string) {
 
 function stripYamlQuotes(value: string) {
   return value.replace(/^["']|["']$/g, "");
+}
+
+/** The items of a YAML flow list's inside (`a, "b, c"`), quotes removed. */
+function splitYamlFlowList(inside: string): string[] {
+  const items: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const char of inside) {
+    if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === ",") {
+      items.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  items.push(current.trim());
+  return items.filter(Boolean);
 }
 
 function preserveUnknownFrontmatterLines(raw: string) {

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import type { ReactNode } from "react";
 
+import { DocumentExcerptPreview } from "@/components/markdown/DocumentExcerptPreview";
 import { LinkPreviewCard } from "@/components/markdown/LinkPreviewCard";
 import type { DocumentExtensions, WikiLinkInfo } from "@/lib/extension-api";
 import { resolveLinkPreview } from "@/lib/extension-host/links";
@@ -43,6 +44,11 @@ export function ExtensionLinkHost({
   }
 
   const { preview } = resolved;
+  // `disableLinks` is also what caps preview depth at zero: every link inside
+  // a card renders as plain text, so no card can open another.
+  const renderMarkdown = (markdown: string) => (
+    <MarkdownDocument markdown={markdown} disableLinks compact contained={false} />
+  );
 
   return (
     <LinkPreviewCard
@@ -50,7 +56,9 @@ export function ExtensionLinkHost({
       title={preview.title}
       quiet={preview.quiet}
       preview={
-        preview.markdown ? (
+        resolved.core ? (
+          <DocumentExcerptPreview href={link.href} initial={preview.markdown} renderMarkdown={renderMarkdown} />
+        ) : preview.markdown ? (
           // `disableLinks` is also what caps preview depth at zero: every link
           // inside a card renders as plain text, so no card can open another.
           <MarkdownDocument

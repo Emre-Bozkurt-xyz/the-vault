@@ -753,7 +753,11 @@ gone from the core action context. As built:
   the same resolver. `DefinitionPreviewCard` became the generic
   `LinkPreviewCard` / `LinkHoverCard`; `lib/wiki-links.ts` builds
   `WikiLinkTarget`s for every resolved link, not only definitions. A separate
-  `live` contribution was not needed.
+  `live` contribution was not needed. (2026-11-24) `WikiLinkInfo` also carries
+  `excerpt` (the linked document's opening or linked section, when the page
+  has its text), and when no extension previews a link to a document the host
+  shows its own card with that excerpt, loading it on open when the page
+  doesn't have it (`DocumentExcerptPreview`).
 - **Dialogs**: `defineEditor({ dialogs })` and `editor.openDialog(id, props)`
   resolve with the dialog's `close(result)`. `MarkdownEditor` renders one
   extension dialog at a time. Also new on the handle: `openLinkCompletion({

@@ -253,13 +253,13 @@ describe("buildWikiLinkTargetsByHref", () => {
   it("indexes each resolved target by its href, once, whatever key reached it", () => {
     const targets = buildWikiLinkTargetsByHref(resolutions);
 
-    expect(targets.get("/docs/def")).toEqual({
+    expect(targets.get("/docs/def")).toMatchObject({
       label: "Idempotence",
       href: "/docs/def",
       isDefinition: true,
       preview: "Repeating it changes nothing.",
     });
-    expect(targets.get("/docs/plain")).toEqual({
+    expect(targets.get("/docs/plain")).toMatchObject({
       label: "Plain",
       href: "/docs/plain",
       isDefinition: false,

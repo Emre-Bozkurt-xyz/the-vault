@@ -15,6 +15,7 @@ function link(overrides: Partial<WikiLinkInfo>): WikiLinkInfo {
     resolved: true,
     isDefinition: true,
     preview: "Repeating it changes nothing.",
+    excerpt: null,
     occurrence: 0,
     ...overrides,
   };

@@ -21,6 +21,7 @@ import { DocumentRestorePoints } from "@/components/document-restore-points";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import { DocumentSnippetsPanel } from "@/components/markdown/DocumentSnippetsPanel";
 import { DocumentTasksSection } from "@/components/tasks/DocumentTasksSection";
+import { DocumentBacklinksSection } from "@/components/markdown/DocumentBacklinks";
 import { DocumentReadingFrame } from "@/components/markdown/DocumentReadingFrame";
 import { DocumentStyling } from "@/components/markdown/DocumentStyling";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
@@ -391,6 +392,8 @@ function DocumentContextPanel({
       </div>
 
       {tasksEnabled ? <DocumentTasksSection documentId={documentId} /> : null}
+
+      <DocumentBacklinksSection documentId={documentId} />
 
       {canShare ? (
         <ContextPanelSection

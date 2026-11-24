@@ -89,6 +89,10 @@ import {
   toExtensionSlashCommands,
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
+import { BacklinksChip } from "@/components/markdown/DocumentBacklinks";
+import { linkSelectionWithPastedUrl } from "@/components/markdown/paste-link";
+import { DocumentExcerptPreview } from "@/components/markdown/DocumentExcerptPreview";
+import { showWorkspaceToast } from "@/lib/workspace-toast";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import {
   LinkCardOpenLink,
@@ -178,10 +182,14 @@ import { usePublishLiveTasks } from "@/components/tasks/use-live-tasks";
 import {
   escapeWikiLinkLabel,
   extractWikiEmbedKeys,
+  wikiDocKey,
+  wikiTitleKey,
   type WikiLinkAnchor,
+  type WikiLinkResolution,
   type WikiLinkResolutionMap,
 } from "@/lib/wiki-links";
 import {
+  createDocumentFromLinkAction,
   saveDocumentTitleAction,
   saveMarkdownDocumentAction,
 } from "@/server/documents";
@@ -564,6 +572,43 @@ export function MarkdownEditor({
   const wikiLinkMapStore = useMemo(
     () => createWikiLinkMapStore(wikiLinks ?? {}),
     [wikiLinks],
+  );
+  // "Create “…”" in `[[` completions: make the document, then let this
+  // editor (and the Files panel) know it exists so the link resolves at once.
+  const createLinkedDocument = useCallback(
+    async (newTitle: string) => {
+      const created = await createDocumentFromLinkAction({ title: newTitle, folderId: folderId ?? null }).catch(() => null);
+      if (!created) {
+        showWorkspaceToast({ message: "Couldn't create the document", tone: "error" });
+        return null;
+      }
+      const href = `/docs/${created.id}`;
+      const resolution: WikiLinkResolution = {
+        status: "resolved",
+        source: "document",
+        documentId: created.id,
+        label: created.title,
+        href,
+        embedMarkdown: "",
+        headings: [],
+        anchors: [],
+      };
+      const added = { [wikiDocKey(created.id)]: resolution, [wikiTitleKey(created.title)]: resolution };
+      wikiLinkMapStore.set({ ...wikiLinkMapStore.get(), ...added });
+      setWikiLinkMap((current) => ({ ...current, ...added }));
+      dispatchWorkspaceDocumentChanged({
+        id: created.id,
+        title: created.title,
+        href,
+        folderId: created.folderId,
+        role: "owner",
+        visibility: "private",
+        updatedAt: created.updatedAt,
+      });
+      showWorkspaceToast({ message: `Created “${created.title}”` });
+      return created;
+    },
+    [folderId, wikiLinkMapStore],
   );
   const titleValueRef = useRef(title);
   const markdownValueRef = useRef(markdown);
@@ -1007,7 +1052,13 @@ export function MarkdownEditor({
           const file = firstSupportedAssetFile(event.clipboardData?.files);
 
           if (!file) {
-            return false;
+            // A URL pasted over selected words links them: `[words](url)`.
+            const linked = linkSelectionWithPastedUrl(
+              view,
+              event.clipboardData?.getData("text/plain") ?? "",
+            );
+            if (linked) event.preventDefault();
+            return linked;
           }
 
           event.preventDefault();
@@ -1350,6 +1401,7 @@ export function MarkdownEditor({
               wikiLinkMapStore,
               wikiCompletionDismissal,
               embedSessionToken,
+              embedSessionToken ? undefined : createLinkedDocument,
             ),
             createAssetCompletionSource({
               documentId,
@@ -1413,6 +1465,7 @@ export function MarkdownEditor({
       toggleReadTask,
       liveContributions,
       anchorSurface,
+      createLinkedDocument,
     ],
   );
 
@@ -1864,7 +1917,11 @@ export function MarkdownEditor({
             onChangeAttributes={updateSelectedAssetGroupAttributes}
           />
         ) : null}
-        <DocumentFolderPath path={folderPath} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <DocumentFolderPath path={folderPath} />
+          {/* Signed-in workspace only: an embed session has no user to ask as. */}
+          {!embedSessionToken ? <BacklinksChip documentId={documentId} /> : null}
+        </div>
         {editorMode === "read" ? (
           <h1 className="vault-editor-title w-full text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl vault-display">
             {titleValue || "Untitled document"}
@@ -4689,6 +4746,7 @@ function createWikiLinkCompletionSource(
   wikiLinkMapStore: WikiLinkMapStore,
   wikiCompletionDismissal: WikiCompletionDismissalStore,
   embedSessionToken?: string | null,
+  createDocument?: (title: string) => Promise<{ id: string; title: string } | null>,
 ) {
   return async (context: CompletionContext) => {
     const region = getOpenWikiLinkCompletionRegion(context.state, context.pos);
@@ -4718,15 +4776,37 @@ function createWikiLinkCompletionSource(
     // author can reach.
     const linkFilter = linkCompletionFilterAt(context.state, region.markerFrom);
 
+    const options = createWikiLinkCompletionOptions(
+      freshWikiLinks,
+      region.hasClosingMarker,
+      region.query,
+      linkFilter,
+    );
+    // Nothing called that yet: offer to make it, last in the list.
+    const newTitle = region.query.trim();
+    if (
+      createDocument &&
+      !linkFilter &&
+      newTitle &&
+      region.headingFrom === null &&
+      !/[#|[\]]/.test(newTitle) &&
+      !/^(doc|guide|public|asset):/i.test(newTitle) &&
+      !options.some((option) => (option.displayLabel ?? option.label).trim().toLowerCase() === newTitle.toLowerCase())
+    ) {
+      options.push({
+        label: region.query,
+        displayLabel: `Create “${newTitle}”`,
+        detail: "New document",
+        type: "keyword",
+        boost: -99,
+        apply: createNewDocumentLinkApply(newTitle, region.hasClosingMarker, createDocument),
+      });
+    }
+
     return {
       from: region.headingFrom ?? region.markerTo,
       to: region.contentTo,
-      options: createWikiLinkCompletionOptions(
-        freshWikiLinks,
-        region.hasClosingMarker,
-        region.query,
-        linkFilter,
-      ),
+      options,
       validFor: (text: string) =>
         /^[^\[\]\n]*$/.test(text) &&
         text.includes("#") === region.query.includes("#"),
@@ -5131,6 +5211,7 @@ function createWikiLinkCompletionOptions(
           resolved: true,
           isDefinition: Boolean(resolution.isDefinition),
           preview: resolution.preview ?? null,
+          excerpt: null,
           occurrence: 0,
         })) ||
       !matchesWikiResolutionCompletionQuery(key, resolution, query)
@@ -5254,6 +5335,31 @@ function wikiCompletionAnchorInfo(anchor: WikiLinkAnchor) {
   }
 
   return "Link to an Obsidian-style block anchor inside this document";
+}
+
+/**
+ * "Create “…”": links the title at once, then, when the document exists,
+ * points the link at its id (so a later rename keeps it) if the text is
+ * still there.
+ */
+function createNewDocumentLinkApply(
+  title: string,
+  hasClosingMarker: boolean,
+  createDocument: (title: string) => Promise<{ id: string; title: string } | null>,
+) {
+  return (view: EditorView, completion: Completion, from: number, to: number) => {
+    view.dispatch({
+      changes: { from, to, insert: hasClosingMarker ? title : `${title}]]` },
+      selection: EditorSelection.cursor(from + title.length + 2),
+      annotations: pickedCompletion.of(completion),
+    });
+    void createDocument(title).then((created) => {
+      if (!created || view.state.sliceDoc(from, from + title.length) !== title) return;
+      view.dispatch({
+        changes: { from, to: from + title.length, insert: `doc:${created.id}|${escapeWikiLinkLabel(title)}` },
+      });
+    });
+  };
 }
 
 function createWikiCompletionApply(insertText: string, hasClosingMarker: boolean) {
@@ -6104,7 +6210,15 @@ function ExtensionLinkHoverCard({
       }
       onClose={onClose}
     >
-      {preview.markdown ? (
+      {resolved.core && hover.link.href ? (
+        <DocumentExcerptPreview
+          href={hover.link.href}
+          initial={preview.markdown}
+          renderMarkdown={(markdown) => (
+            <MarkdownDocument markdown={markdown} disableLinks compact contained={false} />
+          )}
+        />
+      ) : preview.markdown ? (
         <MarkdownDocument
           markdown={preview.markdown}
           disableLinks

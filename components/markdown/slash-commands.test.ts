@@ -529,3 +529,13 @@ describe("registry contributions reaching the menu", () => {
     );
   });
 });
+
+describe("recent slash items", () => {
+  it("leads an empty menu with the most recent and nudges them in a search", async () => {
+    const { recentSlashBoost } = await import("@/components/markdown/slash-commands");
+    const recent = ["table", "callout"];
+    expect(recentSlashBoost("table", recent, true)).toBeGreaterThan(recentSlashBoost("callout", recent, true));
+    expect(recentSlashBoost("math", recent, true)).toBe(0);
+    expect(recentSlashBoost("table", recent, false)).toBeLessThan(10);
+  });
+});

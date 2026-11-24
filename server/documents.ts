@@ -52,6 +52,7 @@ import {
   VersionableDocument,
   archiveDocumentForUser,
   canEditDocumentWithOptionalShareLink,
+  createDocumentForUser,
   createDocumentVersion,
   documentIdSchema,
   listDefinitionDocumentIds,
@@ -140,6 +141,29 @@ export async function createDocumentAction() {
   });
 
   redirect(`/docs/${document.id}`);
+}
+
+/**
+ * A new, empty document named by a `[[link]]` being written (the link
+ * completion's "Create “…”"). Filed beside the linking document when the user
+ * may add to that folder, else at the root. Returns what the editor needs to
+ * resolve the link at once.
+ */
+export async function createDocumentFromLinkAction(
+  input: unknown,
+): Promise<{ id: string; title: string; folderId: string | null; updatedAt: string } | null> {
+  const user = await requireActiveUser();
+  const parsed = z
+    .object({ title: z.string().trim().min(1).max(200), folderId: documentIdSchema.nullable() })
+    .safeParse(input);
+  if (!parsed.success) return null;
+
+  const folderId =
+    parsed.data.folderId && (await canEditFolderContents(user.id, parsed.data.folderId))
+      ? parsed.data.folderId
+      : null;
+  const created = await createDocumentForUser(user.id, { title: parsed.data.title, folderId, markdown: "" });
+  return { ...created, folderId, updatedAt: new Date().toISOString() };
 }
 
 export async function createDocumentInFolderAction(formData: FormData) {

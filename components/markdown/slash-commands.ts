@@ -348,6 +348,39 @@ function buildItems(options: InsertionMenuOptions): SlashItem[] {
   ];
 }
 
+// The slash items this browser used last, most recent first: they lead an
+// empty `/` menu and get a nudge among close matches. Per browser, like a
+// remembered tab; a convenience that is fine to lose.
+const recentSlashKey = "vault.slash-recent";
+const recentSlashMax = 6;
+
+export function readRecentSlashItems(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(globalThis.localStorage?.getItem(recentSlashKey) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string").slice(0, recentSlashMax)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberSlashItem(id: string) {
+  try {
+    const next = [id, ...readRecentSlashItems().filter((recent) => recent !== id)].slice(0, recentSlashMax);
+    globalThis.localStorage?.setItem(recentSlashKey, JSON.stringify(next));
+  } catch {
+    // Storage blocked: the menu keeps its usual order.
+  }
+}
+
+/** Ranking boost for a slash item: high for recent ones on an empty query, a nudge otherwise. */
+export function recentSlashBoost(id: string, recent: readonly string[], emptyQuery: boolean): number {
+  const index = recent.indexOf(id);
+  if (index < 0) return 0;
+  return emptyQuery ? 90 - index * 5 : 6 - index;
+}
+
 /**
  * Slash menu completion source. Registered alongside the html/wiki-link/asset
  * sources in the editor's `autocompletion({ override })`. Returns null (so the
@@ -377,6 +410,8 @@ export function createSlashCommandCompletionSource(
       return null;
     }
 
+    const recent = readRecentSlashItems();
+
     return {
       // `from` sits just after the slash, so CodeMirror filters the typed query
       // (not the leading `/`) against each option's label natively — which keeps
@@ -387,7 +422,11 @@ export function createSlashCommandCompletionSource(
       from: slash.from + 1,
       to: context.pos,
       validFor: /^[\w-]*$/,
-      options: items.map((item) => toCompletion(item, actions)),
+      options: items.map((item) => {
+        const completion = toCompletion(item, actions);
+        const boost = recentSlashBoost(item.id, recent, context.pos === slash.from + 1);
+        return boost ? { ...completion, boost } : completion;
+      }),
     };
   };
 }
@@ -501,6 +540,7 @@ function toCompletion(
         changes: { from: from - 1, to },
         selection: EditorSelection.cursor(from - 1),
       });
+      rememberSlashItem(item.id);
       item.run(view, actions);
     },
   };
