@@ -1,5 +1,5 @@
 import type { AssetKind } from "@/db/schema";
-import { ASSET_LIMITS } from "@/lib/config/asset-limits";
+import { isLargeUpload } from "@/lib/upload-queue";
 import { multipartPartRange } from "@/lib/upload-limits";
 
 /**
@@ -51,7 +51,7 @@ const PART_ATTEMPTS = 4;
 const URL_BATCH = 16;
 
 export function uploadAsset(file: File, options: UploadOptions = {}) {
-  return file.size > ASSET_LIMITS.directUploadThresholdBytes
+  return isLargeUpload(file.size)
     ? uploadDirect(file, options)
     : uploadSingle(file, options);
 }

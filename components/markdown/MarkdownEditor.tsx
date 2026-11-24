@@ -1427,6 +1427,8 @@ export function MarkdownEditor({
     shareLinkId,
     bearerToken: embedSessionToken,
     autoDismissMs: 2500,
+    // Each file lands at the cursor when it finishes: keep them in order.
+    concurrency: 1,
     onUploaded: (asset) => {
       setAssetLinkMap((current) => ({
         ...current,

@@ -8,6 +8,12 @@ import {
   type UploadedAsset,
   type UploadProgress,
 } from "@/lib/asset-upload-client";
+import {
+  LARGE_UPLOAD_CONCURRENCY,
+  UPLOAD_CONCURRENCY,
+  isLargeUpload,
+  nextUploadIndex,
+} from "@/lib/upload-queue";
 import { attachVideoPoster } from "@/lib/video-poster";
 
 export type UploadItemStatus =
@@ -47,6 +53,12 @@ type Options<Context> = {
   onSettled?: () => void;
   /** Remove finished items after this long; failures stay until dismissed. */
   autoDismissMs?: number;
+  /**
+   * Files uploading at once (default {@link UPLOAD_CONCURRENCY}). The editor
+   * uses 1: it inserts each file where the cursor is when it finishes, so
+   * finishing order must be the order they were added.
+   */
+  concurrency?: number;
 };
 
 const ACTIVE: UploadItemStatus[] = ["queued", "starting", "uploading", "finishing"];
@@ -56,15 +68,19 @@ export function isUploadActive(item: UploadItem) {
 }
 
 /**
- * Upload queue with live progress. Files upload one at a time (a large file
- * already sends four parts in parallel); `enqueue` returns immediately.
+ * Upload queue with live progress. A few files upload at once (three by
+ * default, at most one large file, which already sends four parts in
+ * parallel; see `lib/upload-queue.ts`), so files may finish out of order;
+ * the list keeps the order they were added. `enqueue` returns immediately.
  */
 export function useAssetUploads<Context = void>(options: Options<Context> = {}) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const optionsRef = useRef(options);
   const queueRef = useRef<QueuedUpload<Context>[]>([]);
   const controllersRef = useRef(new Map<string, AbortController>());
-  const runningRef = useRef(false);
+  /** Uploads in flight: id → whether it is a large (multipart) upload. */
+  const runningRef = useRef(new Map<string, boolean>());
+  const workersRef = useRef(0);
   const pendingProgressRef = useRef(new Map<string, Partial<UploadItem>>());
   const frameRef = useRef<number | null>(null);
   const timersRef = useRef(new Set<number>());
@@ -101,79 +117,113 @@ export function useAssetUploads<Context = void>(options: Options<Context> = {}) 
     });
   }, []);
 
-  const run = useCallback(async () => {
-    if (runningRef.current) return;
-    runningRef.current = true;
+  /** Takes the next upload allowed to start now off the queue, marking it running. */
+  const take = useCallback((): QueuedUpload<Context> | undefined => {
+    const running = runningRef.current;
+    let runningLarge = 0;
+    for (const large of running.values()) if (large) runningLarge += 1;
+    const index = nextUploadIndex(
+      queueRef.current.map((queued) => ({ sizeBytes: queued.file.size })),
+      { running: running.size, runningLarge },
+      {
+        total: optionsRef.current.concurrency ?? UPLOAD_CONCURRENCY,
+        large: LARGE_UPLOAD_CONCURRENCY,
+      },
+    );
+    if (index < 0) return undefined;
+    const [next] = queueRef.current.splice(index, 1);
+    running.set(next.id, isLargeUpload(next.file.size));
+    return next;
+  }, []);
 
-    try {
-      for (
-        let next = queueRef.current.shift();
-        next !== undefined;
-        next = queueRef.current.shift()
-      ) {
-        const { id, file, context, folderId } = next;
-        const controller = new AbortController();
-        controllersRef.current.set(id, controller);
-        const meter = createRateMeter();
-        patch(id, { status: "starting" });
+  const uploadOne = useCallback(
+    async (next: QueuedUpload<Context>) => {
+      const { id, file, context, folderId } = next;
+      const controller = new AbortController();
+      controllersRef.current.set(id, controller);
+      const meter = createRateMeter();
+      patch(id, { status: "starting" });
 
-        try {
-          const { documentId, shareLinkId, bearerToken } = optionsRef.current;
-          const asset = await uploadAsset(file, {
-            documentId,
-            folderId,
-            shareLinkId,
-            bearerToken,
-            signal: controller.signal,
-            onProgress: (progress: UploadProgress) =>
-              queueProgress(id, {
-                status: progress.phase,
-                loadedBytes: progress.loadedBytes,
-                bytesPerSecond: meter(progress.loadedBytes),
-              }),
+      try {
+        const { documentId, shareLinkId, bearerToken } = optionsRef.current;
+        const asset = await uploadAsset(file, {
+          documentId,
+          folderId,
+          shareLinkId,
+          bearerToken,
+          signal: controller.signal,
+          onProgress: (progress: UploadProgress) =>
+            queueProgress(id, {
+              status: progress.phase,
+              loadedBytes: progress.loadedBytes,
+              bytesPerSecond: meter(progress.loadedBytes),
+            }),
+        });
+
+        pendingProgressRef.current.delete(id);
+        patch(id, { status: "done", loadedBytes: file.size, bytesPerSecond: null });
+        optionsRef.current.onUploaded?.(asset, context);
+
+        // Videos get a poster from this browser, after the upload (never
+        // holding it up); views refresh once it lands.
+        if (asset.kind === "video") {
+          void attachVideoPoster(asset.id, file, { bearerToken }).then((stored) => {
+            if (stored) optionsRef.current.onSettled?.();
           });
-
-          pendingProgressRef.current.delete(id);
-          patch(id, { status: "done", loadedBytes: file.size, bytesPerSecond: null });
-          optionsRef.current.onUploaded?.(asset, context);
-
-          // Videos get a poster from this browser, after the upload (never
-          // holding it up); views refresh once it lands.
-          if (asset.kind === "video") {
-            void attachVideoPoster(asset.id, file, { bearerToken }).then((stored) => {
-              if (stored) optionsRef.current.onSettled?.();
-            });
-          }
-
-          const dismissAfter = optionsRef.current.autoDismissMs;
-          if (dismissAfter) {
-            const timer = window.setTimeout(() => {
-              timersRef.current.delete(timer);
-              setItems((current) => current.filter((item) => item.id !== id));
-            }, dismissAfter);
-            timersRef.current.add(timer);
-          }
-        } catch (error) {
-          pendingProgressRef.current.delete(id);
-          patch(
-            id,
-            error instanceof UploadCancelledError
-              ? { status: "cancelled", bytesPerSecond: null }
-              : {
-                  status: "error",
-                  bytesPerSecond: null,
-                  error: error instanceof Error ? error.message : "Upload failed.",
-                },
-          );
-        } finally {
-          controllersRef.current.delete(id);
-          optionsRef.current.onSettled?.();
         }
+
+        const dismissAfter = optionsRef.current.autoDismissMs;
+        if (dismissAfter) {
+          const timer = window.setTimeout(() => {
+            timersRef.current.delete(timer);
+            setItems((current) => current.filter((item) => item.id !== id));
+          }, dismissAfter);
+          timersRef.current.add(timer);
+        }
+      } catch (error) {
+        pendingProgressRef.current.delete(id);
+        patch(
+          id,
+          error instanceof UploadCancelledError
+            ? { status: "cancelled", bytesPerSecond: null }
+            : {
+                status: "error",
+                bytesPerSecond: null,
+                error: error instanceof Error ? error.message : "Upload failed.",
+              },
+        );
+      } finally {
+        controllersRef.current.delete(id);
+        runningRef.current.delete(id);
+        optionsRef.current.onSettled?.();
       }
-    } finally {
-      runningRef.current = false;
+    },
+    [patch, queueProgress],
+  );
+
+  /**
+   * Tops the pool up to the concurrency limit. Each worker keeps taking
+   * uploads until none may start; it only stops while the queue holds
+   * nothing but large files waiting for the large slot, and the worker
+   * running that slot picks them up as it frees.
+   */
+  const run = useCallback(() => {
+    const limit = Math.max(1, optionsRef.current.concurrency ?? UPLOAD_CONCURRENCY);
+    while (workersRef.current < limit) {
+      const first = take();
+      if (!first) return;
+      workersRef.current += 1;
+      void (async () => {
+        try {
+          for (let next: QueuedUpload<Context> | undefined = first; next; next = take()) {
+            await uploadOne(next);
+          }
+        } finally {
+          workersRef.current -= 1;
+        }
+      })();
     }
-  }, [patch, queueProgress]);
+  }, [take, uploadOne]);
 
   const enqueue = useCallback(
     (files: File[], context: Context, target: { folderId?: string | null } = {}) => {
@@ -197,7 +247,7 @@ export function useAssetUploads<Context = void>(options: Options<Context> = {}) 
         })),
       ]);
       queueRef.current.push(...queued);
-      void run();
+      run();
     },
     [run],
   );
