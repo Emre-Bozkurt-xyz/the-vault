@@ -236,7 +236,10 @@ export function WorkspaceTabBar({
   }
 
   return (
-    <div className="flex h-10 shrink-0 min-w-0 items-end overflow-x-auto border-b border-border/70 bg-background/95">
+    <div
+      data-tab-strip
+      className="flex h-10 shrink-0 min-w-0 items-end overflow-x-auto border-b border-border/70 bg-background/95"
+    >
       <DndContext
         // Without an explicit id, dnd-kit derives `aria-describedby` from a
         // module-level counter (`useUniqueId`, not React's `useId`). That
@@ -307,9 +310,36 @@ function SortableTab({
     isDragging,
   } = useSortable({ id: tab.href });
 
+  // The active tab is always on screen in the strip, however it was opened
+  // (Ctrl+K, a link, Back): scroll the strip, never the page, just enough to
+  // show it whole. Instantly when the bar first renders, smoothly after.
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+  const revealedOnceRef = useRef(false);
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!isActive || !node) return;
+    const strip = node.closest<HTMLElement>("[data-tab-strip]");
+    if (!strip) return;
+    const gutter = 24;
+    const tabLeft = node.getBoundingClientRect().left - strip.getBoundingClientRect().left + strip.scrollLeft;
+    const tabRight = tabLeft + node.offsetWidth;
+    const viewLeft = strip.scrollLeft;
+    const viewRight = viewLeft + strip.clientWidth;
+    let target: number | null = null;
+    if (tabLeft - gutter < viewLeft) target = tabLeft - gutter;
+    else if (tabRight + gutter > viewRight) target = tabRight + gutter - strip.clientWidth;
+    if (target !== null) {
+      strip.scrollTo({ left: Math.max(0, target), behavior: revealedOnceRef.current ? "smooth" : "auto" });
+    }
+    revealedOnceRef.current = true;
+  }, [isActive, tab.href]);
+
   return (
     <div
-      ref={setNodeRef}
+      ref={(element) => {
+        setNodeRef(element);
+        nodeRef.current = element;
+      }}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,

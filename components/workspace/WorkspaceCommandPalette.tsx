@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Archive,
   Blocks,
@@ -440,7 +440,14 @@ export function WorkspaceCommandPalette() {
     return list;
   }, [router, setTheme, activeDocument, isAdmin, tasksEnabled]);
 
-  const recentPages = useRecentWorkspacePages();
+  // The page you're on isn't a place to go: leaving it out makes Ctrl+K,
+  // Enter jump straight back to the previous page.
+  const allRecentPages = useRecentWorkspacePages();
+  const pathname = usePathname();
+  const recentPages = useMemo(
+    () => allRecentPages.filter((page) => (page.href.split("?")[0] ?? page.href) !== pathname),
+    [allRecentPages, pathname],
+  );
 
   // Empty search field → recent tabs; `/...` → commands; otherwise content search.
   const mode: "command" | "recent" | "search" = isCommandMode
