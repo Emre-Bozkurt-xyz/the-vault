@@ -321,3 +321,47 @@ function trimBlankEdges(lines: string[]) {
 
   return next;
 }
+
+/** A page's look from its frontmatter: `icon:` (an emoji or a short mark) and `cover:` (an asset). */
+export type DocumentAppearance = { icon: string | null; coverAssetId: string | null };
+
+const maxIconLength = 16;
+const coverAssetPattern = /^(?:asset:)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+export function parseDocumentAppearance(markdown: string): DocumentAppearance {
+  const frontmatter = extractFrontmatter(markdown);
+  if (!frontmatter) return { icon: null, coverAssetId: null };
+  const fields = parseSimpleYamlFields(frontmatter);
+  const icon = normalizeOptionalString(fields.get("icon"), maxIconLength);
+  const cover = normalizeOptionalString(fields.get("cover"), 80);
+  return {
+    icon,
+    coverAssetId: cover?.match(coverAssetPattern)?.[1].toLowerCase() ?? null,
+  };
+}
+
+/**
+ * Sets (or with `null` removes) one top-level frontmatter field, keeping every
+ * other line as written; adds a frontmatter block when there is none and drops
+ * one left empty.
+ */
+export function setFrontmatterField(markdown: string, key: string, value: string | null): string {
+  const existing = markdown.match(frontmatterPattern);
+  const lines = existing ? existing[1].split(/\r?\n/) : [];
+  const body = existing ? markdown.slice(existing[0].length) : markdown;
+  // `key` is a plain field name (`icon`, `cover`): its line starts with it and a colon.
+  const isKeyLine = (line: string) => line.startsWith(key) && /^\s*:/.test(line.slice(key.length));
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!isKeyLine(lines[index])) {
+      kept.push(lines[index]);
+      continue;
+    }
+    // Skip the field's own block-list lines too.
+    while (index + 1 < lines.length && /^\s+-\s/.test(lines[index + 1])) index += 1;
+  }
+  if (value !== null) kept.push(`${key}: ${/^[\s"'[{>|*&!%@`#-]|:\s|\s$/.test(value) ? JSON.stringify(value) : value}`);
+  const frontmatter = kept.filter((line, index) => line.trim() || index < kept.length - 1);
+  if (frontmatter.every((line) => !line.trim())) return existing ? body.replace(/^\r?\n/, "") : markdown;
+  return `---\n${frontmatter.join("\n")}\n---\n${existing ? body : `\n${body}`}`;
+}

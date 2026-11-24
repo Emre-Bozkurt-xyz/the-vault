@@ -8,6 +8,7 @@ import { HomeTodayTasks } from "@/components/tasks/HomeTodayTasks";
 import { Button } from "@/components/ui/button";
 import { formatShortDate } from "@/lib/format";
 import { createDocumentAction } from "@/server/documents";
+import { hasNewDocumentDialog, openNewDocumentDialog } from "@/lib/new-document-events";
 import type { WorkspaceDocumentItem } from "@/components/workspace/workspace-types";
 
 type WorkspaceNewTabProps = {
@@ -70,7 +71,16 @@ export function WorkspaceNewTab({
               className="h-9 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/70 sm:h-10 sm:text-xl"
             />
           </label>
-          <form action={createDocumentAction}>
+          <form
+            action={createDocumentAction}
+            onSubmit={(event) => {
+              // The New document dialog (templates) where one is mounted.
+              if (hasNewDocumentDialog()) {
+                event.preventDefault();
+                openNewDocumentDialog();
+              }
+            }}
+          >
             <Button
               type="submit"
               variant="ghost"

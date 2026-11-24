@@ -359,7 +359,9 @@ async function maybeCreateAutomaticDocumentVersion(documentId, nextMarkdown) {
 }
 
 async function reconcileDocumentAssetLinks(tx, documentId, markdown) {
-  const embeddedAssetIds = extractAssetEmbedIds(markdown);
+  // The page cover (frontmatter `cover:`) is the document's file too.
+  const coverAssetId = parseDocumentMetadata(markdown).coverAssetId;
+  const embeddedAssetIds = [...new Set([...extractAssetEmbedIds(markdown), ...(coverAssetId ? [coverAssetId] : [])])];
 
   if (embeddedAssetIds.length === 0) {
     await tx`
@@ -393,20 +395,26 @@ async function syncDocumentMetadata(tx, documentId, markdown) {
       aliases,
       summary,
       status,
-      project
+      project,
+      icon,
+      cover_asset_id
     )
     values (
       ${documentId},
       ${JSON.stringify(metadata.aliases)}::jsonb,
       ${metadata.summary},
       ${metadata.status},
-      ${metadata.project}
+      ${metadata.project},
+      ${metadata.icon},
+      ${metadata.coverAssetId}
     )
     on conflict (document_id) do update
     set aliases = excluded.aliases,
         summary = excluded.summary,
         status = excluded.status,
         project = excluded.project,
+        icon = excluded.icon,
+        cover_asset_id = excluded.cover_asset_id,
         updated_at = now()
   `;
 
@@ -468,6 +476,12 @@ function parseDocumentMetadata(markdown) {
     summary: normalizeOptionalString(fields.get("summary"), 500),
     status: normalizeOptionalString(fields.get("status"), 80),
     project: normalizeOptionalString(fields.get("project"), 80),
+    // Mirrors parseDocumentAppearance in lib/content-metadata.ts.
+    icon: normalizeOptionalString(fields.get("icon"), 16),
+    coverAssetId:
+      normalizeOptionalString(fields.get("cover"), 80)
+        ?.match(/^(?:asset:)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i)?.[1]
+        .toLowerCase() ?? null,
   };
 }
 
@@ -478,6 +492,8 @@ function emptyDocumentMetadata() {
     summary: null,
     status: null,
     project: null,
+    icon: null,
+    coverAssetId: null,
   };
 }
 

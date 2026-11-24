@@ -90,6 +90,7 @@ import {
   type ExtensionSlashCommand,
 } from "@/components/markdown/slash-commands";
 import { BacklinksChip } from "@/components/markdown/DocumentBacklinks";
+import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
 import { linkSelectionWithPastedUrl } from "@/components/markdown/paste-link";
 import { DocumentExcerptPreview } from "@/components/markdown/DocumentExcerptPreview";
 import { showWorkspaceToast } from "@/lib/workspace-toast";
@@ -172,7 +173,9 @@ import {
 import { getSlashCommandContributions } from "@/lib/extension-host/manifests";
 import {
   formatTagInput,
+  parseDocumentAppearance,
   parseDocumentMetadata,
+  setFrontmatterField,
   updateDocumentMetadataFrontmatter,
   type ParsedDocumentMetadata,
 } from "@/lib/content-metadata";
@@ -946,6 +949,51 @@ export function MarkdownEditor({
     },
     [],
   );
+
+  // The page's icon and cover (frontmatter `icon:` / `cover:`), edited above
+  // the title. Only the changed lines are rewritten, so collaborators' edits
+  // elsewhere are untouched.
+  const pageArt = useMemo(() => parseDocumentAppearance(markdownValue), [markdownValue]);
+  const setFrontmatterValue = useCallback(
+    (key: "icon" | "cover", value: string | null) => {
+      const current = markdownValueRef.current;
+      const next = setFrontmatterField(current, key, value);
+      if (next === current) return;
+      const view = viewRef.current;
+      if (view && view.state.doc.toString() === current) {
+        let start = 0;
+        while (start < current.length && start < next.length && current[start] === next[start]) start += 1;
+        let endCurrent = current.length;
+        let endNext = next.length;
+        while (endCurrent > start && endNext > start && current[endCurrent - 1] === next[endNext - 1]) {
+          endCurrent -= 1;
+          endNext -= 1;
+        }
+        view.dispatch({ changes: { from: start, to: endCurrent, insert: next.slice(start, endNext) } });
+      } else {
+        markdownValueRef.current = next;
+        setMarkdownValue(next);
+        setDirty(true);
+      }
+      if (key === "icon") dispatchWorkspaceDocumentChanged({ id: documentId, href: `/docs/${documentId}`, icon: value });
+    },
+    [documentId],
+  );
+  const pickCover = useCallback(async () => {
+    const asset = await pickAsset({ kinds: ["image"], title: "Choose a cover" });
+    if (!asset) return;
+    // The cover is one of the document's files, so its readers can see it.
+    const linked = await fetch(`/api/assets/${asset.id}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentId, shareLinkId }),
+    }).catch(() => null);
+    if (!linked?.ok) {
+      showWorkspaceToast({ message: "Couldn't use that image as the cover.", tone: "error" });
+      return;
+    }
+    setFrontmatterValue("cover", `asset:${asset.id}`);
+  }, [documentId, pickAsset, setFrontmatterValue, shareLinkId]);
 
   useEffect(() => {
     if (editorMode !== "read" || !isCollaborative || !collabSession) {
@@ -1917,6 +1965,20 @@ export function MarkdownEditor({
             onChangeAttributes={updateSelectedAssetGroupAttributes}
           />
         ) : null}
+        <DocumentPageArt
+          documentId={documentId}
+          icon={pageArt.icon}
+          coverAssetId={pageArt.coverAssetId}
+          editing={
+            embedSessionToken
+              ? null
+              : {
+                  onSetIcon: (icon) => setFrontmatterValue("icon", icon),
+                  onPickCover: () => void pickCover(),
+                  onRemoveCover: () => setFrontmatterValue("cover", null),
+                }
+          }
+        />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <DocumentFolderPath path={folderPath} />
           {/* Signed-in workspace only: an embed session has no user to ask as. */}

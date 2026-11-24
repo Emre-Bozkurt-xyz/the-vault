@@ -997,6 +997,11 @@ export const documentMetadata = pgTable(
     summary: text("summary"),
     status: text("status"),
     project: text("project"),
+    // The page's look, from frontmatter `icon:` (an emoji) and `cover:` (an
+    // asset). Kept here so listings (Files, tabs, search) show the icon
+    // without reading bodies.
+    icon: text("icon"),
+    coverAssetId: uuid("cover_asset_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

@@ -1,3 +1,5 @@
+import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
+import { parseDocumentAppearance } from "@/lib/content-metadata";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -92,6 +94,8 @@ export default async function PublicDocumentPage({
     notFound();
   }
 
+  const pageArt = parseDocumentAppearance(document.markdown);
+
   const viewedStats = await recordContentView({
     target: { kind: "document", id: document.id },
     viewer,
@@ -145,6 +149,7 @@ export default async function PublicDocumentPage({
         </header>
 
         <article className="vault-fade-up vault-delay-1 mt-8 text-card-foreground sm:mt-10">
+          <div className="mb-6"><DocumentPageArt documentId={document.id} icon={pageArt.icon} coverAssetId={pageArt.coverAssetId} /></div>
           <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground sm:text-xs sm:tracking-[0.3em]">
             Published with Vault
           </p>

@@ -1,3 +1,5 @@
+import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
+import { parseDocumentAppearance } from "@/lib/content-metadata";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -43,6 +45,8 @@ export default async function WorkspacePublicDocumentPage({
   if (!document) {
     notFound();
   }
+
+  const pageArt = parseDocumentAppearance(document.markdown);
 
   const viewedStats = await recordContentView({
     target: { kind: "document", id: document.id },
@@ -109,6 +113,7 @@ export default async function WorkspacePublicDocumentPage({
       />
       <article className="vault-fade-up mx-auto grid min-h-full w-full max-w-[56rem] content-start gap-7 px-4 py-8 md:px-8 md:py-12">
         <header className="grid gap-5">
+          <DocumentPageArt documentId={document.id} icon={pageArt.icon} coverAssetId={pageArt.coverAssetId} />
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
             Public note
           </p>

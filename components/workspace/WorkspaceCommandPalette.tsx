@@ -1,5 +1,6 @@
 "use client";
 
+import { openNewDocumentDialog } from "@/lib/new-document-events";
 import {
   useEffect,
   useMemo,
@@ -62,7 +63,6 @@ import { signOutAction } from "@/server/auth-actions";
 import { clearOfflinePages } from "@/lib/pwa/offline-pages";
 import {
   archiveDocumentAction,
-  createDocumentAction,
   createManualDocumentVersionAction,
   publishDocumentAction,
   unpublishDocumentAction,
@@ -162,7 +162,7 @@ export function WorkspaceCommandPalette() {
         keywords: "create note doc",
         icon: FilePlus,
         run: () => {
-          void createDocumentAction();
+          openNewDocumentDialog();
         },
       },
       {

@@ -23,6 +23,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import {
   documentCollabStates,
+  documentMetadata,
   documentPermissions,
   documentShareLinks,
   documentTags,
@@ -407,8 +408,10 @@ export async function listDocumentSummariesForUser(userId: string) {
       visibility: documents.visibility,
       folderId: documents.folderId,
       updatedAt: documents.updatedAt,
+      icon: documentMetadata.icon,
     })
     .from(documents)
+    .leftJoin(documentMetadata, eq(documentMetadata.documentId, documents.id))
     .where(and(eq(documents.ownerId, userId), isNull(documents.deletedAt)))
     .orderBy(desc(documents.updatedAt));
 }
@@ -421,9 +424,11 @@ export async function listDocumentsInOwnedFoldersFromOthers(userId: string) {
       visibility: documents.visibility,
       folderId: documents.folderId,
       updatedAt: documents.updatedAt,
+      icon: documentMetadata.icon,
     })
     .from(documents)
     .innerJoin(folders, eq(documents.folderId, folders.id))
+    .leftJoin(documentMetadata, eq(documentMetadata.documentId, documents.id))
     .where(
       and(
         eq(folders.ownerId, userId),
@@ -499,10 +504,12 @@ async function querySharedDocuments(
       ownerId: documents.ownerId,
       ownerName: users.name,
       ownerUsername: users.username,
+      icon: documentMetadata.icon,
     })
     .from(documentPermissions)
     .innerJoin(documents, eq(documentPermissions.documentId, documents.id))
     .innerJoin(users, eq(documents.ownerId, users.id))
+    .leftJoin(documentMetadata, eq(documentMetadata.documentId, documents.id))
     .where(
       and(
         eq(documentPermissions.userId, userId),
@@ -523,6 +530,7 @@ async function querySharedDocuments(
     ownerName: string | null;
     ownerUsername: string | null;
     viaFolderName: string | null;
+    icon: string | null;
   }>(sql`
     with recursive shared_folders as (
       select f.id, fp.role::text as role, f.name as via_name
@@ -547,10 +555,12 @@ async function querySharedDocuments(
       d.owner_id as "ownerId",
       u.name as "ownerName",
       u.username as "ownerUsername",
-      sf.via_name as "viaFolderName"
+      sf.via_name as "viaFolderName",
+      m.icon as "icon"
     from shared_folders sf
     join ${documents} d on d.folder_id = sf.id
     join ${users} u on u.id = d.owner_id
+    left join ${documentMetadata} m on m.document_id = d.id
     where d.deleted_at is null and d.owner_id <> ${userId}
   `);
 
@@ -992,6 +1002,7 @@ type SharedDocumentSummaryRow = {
   ownerName: string | null;
   ownerUsername: string | null;
   viaFolderName: string | null;
+  icon: string | null;
 };
 
 type SharedDocumentRow = SharedDocumentSummaryRow & { markdown: string };

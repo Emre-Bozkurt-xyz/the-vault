@@ -2,6 +2,8 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { parseDocumentAppearance } from "@/lib/content-metadata";
+
 import {
   and,
   desc,
@@ -484,7 +486,11 @@ export async function reconcileDocumentAssetLinks(input: {
   documentId: string;
   markdown: string;
 }) {
-  const embeddedAssetIds = [...new Set(extractAssetEmbedIds(input.markdown))];
+  // The page cover (frontmatter `cover:`) is the document's file too.
+  const coverAssetId = parseDocumentAppearance(input.markdown).coverAssetId;
+  const embeddedAssetIds = [
+    ...new Set([...extractAssetEmbedIds(input.markdown), ...(coverAssetId ? [coverAssetId] : [])]),
+  ];
 
   if (embeddedAssetIds.length === 0) {
     await db
@@ -507,7 +513,11 @@ export async function listPrivateEmbeddedAssetsForPublish(input: {
   documentId: string;
   markdown: string;
 }): Promise<PrivateEmbeddedAsset[]> {
-  const embeddedAssetIds = [...new Set(extractAssetEmbedIds(input.markdown))];
+  // The cover is shown on the public page too.
+  const coverAssetId = parseDocumentAppearance(input.markdown).coverAssetId;
+  const embeddedAssetIds = [
+    ...new Set([...extractAssetEmbedIds(input.markdown), ...(coverAssetId ? [coverAssetId] : [])]),
+  ];
 
   if (embeddedAssetIds.length === 0) {
     return [];

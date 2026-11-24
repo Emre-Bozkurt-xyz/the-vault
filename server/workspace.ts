@@ -101,6 +101,7 @@ async function loadWorkspaceData() {
     visibility: document.visibility,
     role: "owner",
     folderId: document.folderId,
+    icon: document.icon,
   }));
 
   // Documents collaborators created inside the user's folders. The user can edit
@@ -115,6 +116,7 @@ async function loadWorkspaceData() {
       visibility: document.visibility,
       role: "editor",
       folderId: document.folderId,
+      icon: document.icon,
     }),
   );
 
@@ -151,6 +153,7 @@ async function loadWorkspaceData() {
     ownerName: document.ownerName,
     ownerUsername: document.ownerUsername,
     viaFolderName: document.viaFolderName,
+    icon: document.icon,
   }));
 
   const archived: WorkspaceArchivedItem[] = archivedDocuments.map(
@@ -211,6 +214,7 @@ async function loadWorkspaceData() {
     archived,
     binRetentionDays,
     confirmMoveToBin: preferences.filesAssets.confirmMoveToBin,
+    pinnedDocumentIds: readPinnedDocumentIds(userSettings),
     folders,
     sharedFolders,
     services,
@@ -218,4 +222,11 @@ async function loadWorkspaceData() {
     guideGroups,
     tasksEnabled: tasksSetting?.enabled ?? false,
   };
+}
+
+/** The `workspace/pinned` setting's document ids, in order (`setPinnedDocumentsAction`). */
+function readPinnedDocumentIds(rows: { namespace: string; key: string; value: unknown }[]): string[] {
+  const row = rows.find((setting) => setting.namespace === "workspace" && setting.key === "pinned");
+  const ids = (row?.value as { documentIds?: unknown } | undefined)?.documentIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
 }

@@ -56,9 +56,12 @@ export function WorkspaceTabBar({
   activePage,
   initialTabs,
   folderPathByHref,
+  iconByHref,
 }: {
   activePage: WorkspacePageDescriptor;
   initialTabs?: WorkspaceTab[];
+  /** Query-free document href -> its page icon (frontmatter `icon:`). */
+  iconByHref?: Map<string, string>;
   /**
    * Query-free document href -> the display path of the folder holding it.
    * Derived live from the sidebar tree rather than stored on the tab, because
@@ -269,6 +272,7 @@ export function WorkspaceTabBar({
                 folderPath={folderPathByHref?.get(
                   tab.href.split("?")[0] ?? tab.href,
                 )}
+                pageIcon={iconByHref?.get(tab.href.split("?")[0] ?? tab.href)}
                 justDraggedRef={justDraggedRef}
                 onClose={closeTab}
               />
@@ -291,12 +295,14 @@ function SortableTab({
   tab,
   isActive,
   folderPath,
+  pageIcon,
   justDraggedRef,
   onClose,
 }: {
   tab: WorkspaceTab;
   isActive: boolean;
   folderPath?: string;
+  pageIcon?: string;
   justDraggedRef: RefObject<boolean>;
   onClose: (tab: WorkspaceTab) => void;
 }) {
@@ -389,7 +395,13 @@ function SortableTab({
         }}
         className="flex min-w-0 flex-1 items-center gap-2"
       >
-        <Icon className="size-3.5 shrink-0" />
+        {pageIcon ? (
+          <span aria-hidden="true" className="w-3.5 shrink-0 text-center text-[0.8rem] leading-none">
+            {pageIcon}
+          </span>
+        ) : (
+          <Icon className="size-3.5 shrink-0" />
+        )}
         <span className="truncate">{tab.title}</span>
       </Link>
       <button

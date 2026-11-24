@@ -42,6 +42,23 @@ function whenHistorySettled(run: () => void) {
   else run();
 }
 
+let navigatingAway = false;
+
+/**
+ * Navigate away from an overlay in code (a dialog that creates a document,
+ * then opens it): overlays closing meanwhile leave their history entry alone,
+ * as for a followed link, because taking it off with `history.back()` would
+ * cancel the navigation.
+ */
+export function navigateFromOverlay(navigate: () => void) {
+  navigatingAway = true;
+  navigate();
+  // Long enough for a closing overlay's exit animation and clean-up.
+  window.setTimeout(() => {
+    navigatingAway = false;
+  }, 1500);
+}
+
 export function useCloseOnBack(onBack: () => void, enabled = true) {
   const onBackRef = useRef(onBack);
   useEffect(() => {
@@ -101,6 +118,7 @@ export function useCloseOnBack(onBack: () => void, enabled = true) {
         pushed &&
         !closedByBack &&
         !navigating &&
+        !navigatingAway &&
         (window.history.state as { vaultOverlay?: string } | null)?.vaultOverlay === token
       ) {
         backInFlight = true;

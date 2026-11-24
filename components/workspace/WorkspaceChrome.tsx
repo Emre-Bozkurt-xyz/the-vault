@@ -1,5 +1,6 @@
 "use client";
 
+import { NewDocumentDialog } from "@/components/workspace/NewDocumentDialog";
 import {
   createContext,
   useCallback,
@@ -56,6 +57,8 @@ type WorkspaceChromeData = {
   binRetentionDays: number | null;
   /** Saved "ask before Move to Bin" preference; see `useConfirmMoveToBin`. */
   confirmMoveToBin: boolean;
+  /** Documents pinned to the top of the Files panel (`workspace/pinned`). */
+  pinnedDocumentIds: string[];
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
   services: WorkspaceServiceItem[];
@@ -181,6 +184,14 @@ export function WorkspaceChrome({
     ],
   );
 
+  const iconByHref = useMemo(() => {
+    const icons = new Map<string, string>();
+    for (const doc of [...workspaceState.owned, ...workspaceState.shared]) {
+      if (doc.icon) icons.set(doc.href.split("?")[0] ?? doc.href, doc.icon);
+    }
+    return icons;
+  }, [workspaceState.owned, workspaceState.shared]);
+
   useEffect(() => {
     setWorkspaceState(workspace);
   }, [workspace]);
@@ -250,6 +261,7 @@ export function WorkspaceChrome({
         initialLayout={workspace.layout}
         initialTabs={workspace.tabs}
         folderPathByHref={folderPathByHref}
+        iconByHref={iconByHref}
         contentClassName="max-w-none px-0 py-0 md:px-0 md:py-0"
         filePanel={
           <WorkspaceFileBrowser
@@ -261,6 +273,7 @@ export function WorkspaceChrome({
             folders={workspaceState.folders}
             sharedFolders={workspaceState.sharedFolders}
             services={workspaceState.services}
+            pinnedDocumentIds={workspaceState.pinnedDocumentIds}
             activeHref={currentHref.split("?")[0]}
           />
         }
@@ -292,6 +305,7 @@ export function WorkspaceChrome({
       >
         {children}
       </VaultWorkspaceShell>
+      <NewDocumentDialog folders={workspaceState.folders} documents={workspaceState.owned} />
     </WorkspaceChromeContext.Provider>
   );
 }
@@ -392,6 +406,8 @@ function applyDocumentChange(
     updatedAt?: string;
     visibility?: "private" | "public";
     role?: "owner" | "editor" | "viewer";
+    folderId?: string | null;
+    icon?: string | null;
   },
 ): WorkspaceChromeData {
   const updateList = (items: WorkspaceDocumentItem[]) => {
@@ -474,6 +490,8 @@ function mergeDocumentItem(
     updatedAt?: string;
     visibility?: "private" | "public";
     role?: "owner" | "editor" | "viewer";
+    folderId?: string | null;
+    icon?: string | null;
   },
 ): WorkspaceDocumentItem {
   return {
@@ -483,6 +501,8 @@ function mergeDocumentItem(
     updatedAt: detail.updatedAt ? new Date(detail.updatedAt) : item.updatedAt,
     visibility: detail.visibility ?? item.visibility,
     role: detail.role ?? item.role,
+    folderId: detail.folderId !== undefined ? detail.folderId : item.folderId,
+    icon: detail.icon !== undefined ? detail.icon : item.icon,
   };
 }
 
@@ -493,6 +513,8 @@ function createDocumentItemFromChange(detail: {
   updatedAt?: string;
   visibility?: "private" | "public";
   role?: "owner" | "editor" | "viewer";
+  folderId?: string | null;
+  icon?: string | null;
 }): WorkspaceDocumentItem {
   return {
     id: detail.id,
@@ -501,6 +523,8 @@ function createDocumentItemFromChange(detail: {
     updatedAt: detail.updatedAt ? new Date(detail.updatedAt) : new Date(),
     visibility: detail.visibility ?? "private",
     role: detail.role ?? "owner",
+    folderId: detail.folderId ?? null,
+    icon: detail.icon ?? null,
   };
 }
 

@@ -15,6 +15,7 @@ import {
 import {
   Boxes,
   ChevronRight,
+  Copy,
   FilePlus2,
   Files,
   FileText,
@@ -27,6 +28,8 @@ import {
   Link2,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   RotateCcw,
   SlidersHorizontal,
   Trash2,
@@ -65,6 +68,7 @@ import {
 import {
   archiveDocumentAction,
   createDocumentInFolderAction,
+  duplicateDocumentAction,
   restoreArchivedDocumentAction,
   saveDocumentTitleAction,
 } from "@/server/documents";
@@ -77,6 +81,8 @@ import {
 } from "@/server/folders";
 import { cn } from "@/lib/utils";
 import { showWorkspaceToast } from "@/lib/workspace-toast";
+import { setPinnedDocumentsAction } from "@/server/user-settings-actions";
+import { hasNewDocumentDialog, openNewDocumentDialog } from "@/lib/new-document-events";
 import type {
   WorkspaceArchivedItem,
   WorkspaceDocumentItem,
@@ -94,6 +100,8 @@ type WorkspaceFileBrowserProps = {
   folders: WorkspaceFolderItem[];
   sharedFolders: WorkspaceSharedFolderItem[];
   services: WorkspaceServiceItem[];
+  /** Documents pinned to the top of the panel, in order. */
+  pinnedDocumentIds: string[];
   activeHref?: string;
 };
 
@@ -119,6 +127,9 @@ type DocActions = {
   onRename: (doc: WorkspaceDocumentItem, title: string) => void;
   onMove: (documentId: string, folderId: string | null) => void;
   onRequestArchive: (doc: WorkspaceDocumentItem) => void;
+  pinnedIds: ReadonlySet<string>;
+  onTogglePin: (doc: WorkspaceDocumentItem) => void;
+  onDuplicate: (doc: WorkspaceDocumentItem) => void;
 };
 
 const DocActionsContext = createContext<DocActions | null>(null);
@@ -132,9 +143,15 @@ export function WorkspaceFileBrowser({
   folders,
   sharedFolders,
   services,
+  pinnedDocumentIds,
   activeHref,
 }: WorkspaceFileBrowserProps) {
   const [isPending, startTransition] = useTransition();
+  // Pins change here at once and are saved behind; a new list from the server
+  // (another tab, a refresh) replaces them.
+  const [pins, setPins] = useState({ from: pinnedDocumentIds, ids: pinnedDocumentIds });
+  if (pins.from !== pinnedDocumentIds) setPins({ from: pinnedDocumentIds, ids: pinnedDocumentIds });
+  const pinnedIds = new Set(pins.ids);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [creatingIn, setCreatingIn] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -325,6 +342,12 @@ export function WorkspaceFileBrowser({
   }
 
   function newDocInFolder(folderId: string | null) {
+    // The New document dialog (templates, title, folder) where the workspace
+    // chrome mounts one; a plain blank document elsewhere.
+    if (hasNewDocumentDialog()) {
+      openNewDocumentDialog({ folderId });
+      return;
+    }
     runAction(() => {
       const fd = new FormData();
       fd.set("folderId", folderId ?? "");
@@ -380,9 +403,45 @@ export function WorkspaceFileBrowser({
     });
   }
 
+  function togglePin(doc: WorkspaceDocumentItem) {
+    const next = pins.ids.includes(doc.id)
+      ? pins.ids.filter((id) => id !== doc.id)
+      : [...pins.ids, doc.id];
+    setPins((current) => ({ ...current, ids: next }));
+    void setPinnedDocumentsAction(next).catch(() => {
+      showWorkspaceToast({ message: "Couldn't save your pins.", tone: "error" });
+    });
+  }
+
+  function duplicateDoc(doc: WorkspaceDocumentItem) {
+    void duplicateDocumentAction(doc.id)
+      .catch(() => null)
+      .then((created) => {
+        if (!created) {
+          showWorkspaceToast({ message: "Couldn't duplicate that document.", tone: "error" });
+          return;
+        }
+        const href = `/docs/${created.id}`;
+        dispatchWorkspaceDocumentChanged({
+          id: created.id,
+          title: created.title,
+          href,
+          folderId: created.folderId,
+          role: "owner",
+          visibility: "private",
+          updatedAt: created.updatedAt,
+        });
+        router.push(href);
+        showWorkspaceToast({ message: `Duplicated as “${created.title}”` });
+      });
+  }
+
   const docActions: DocActions = {
     renamingId,
     moveTargets,
+    pinnedIds,
+    onTogglePin: togglePin,
+    onDuplicate: duplicateDoc,
     onStartRename: setRenamingId,
     onCancelRename: () => setRenamingId(null),
     onRename: renameDoc,
@@ -411,6 +470,12 @@ export function WorkspaceFileBrowser({
 
   const rootFolders = childFolders.get(ROOT) ?? [];
   const rootDocs = docsByFolder.get(ROOT) ?? [];
+  // Pinned documents the panel still has, in pin order.
+  const docsById = new Map([...shared, ...owned].map((doc) => [doc.id, doc]));
+  const pinnedDocs = pins.ids.flatMap((id) => {
+    const doc = docsById.get(id);
+    return doc ? [doc] : [];
+  });
 
   return (
     <DocActionsContext.Provider value={docActions}>
@@ -438,6 +503,19 @@ export function WorkspaceFileBrowser({
         />
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+          {pinnedDocs.length > 0 ? (
+            <section className="mb-3" aria-label="Pinned">
+              <div className="flex h-7 items-center px-2 text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <span>Pinned</span>
+              </div>
+              <div className="grid gap-0.5">
+                {pinnedDocs.map((doc) => (
+                  <DocRow key={doc.id} doc={doc} depth={0} activeHref={activeHref} draggable={false} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           {/* The whole Folders section is a drop zone for the root level; nested
               folder zones stop propagation so the deepest folder under the cursor
               wins (VS Code-style). */}
@@ -943,7 +1021,13 @@ function DocRow({
         style={{ paddingLeft }}
         className="flex min-w-0 flex-1 items-center gap-2 py-1.5"
       >
-        <FileText className="size-3.5 shrink-0 opacity-70" />
+        {doc.icon ? (
+          <span aria-hidden="true" className="w-3.5 shrink-0 text-center text-[0.8rem] leading-none">
+            {doc.icon}
+          </span>
+        ) : (
+          <FileText className="size-3.5 shrink-0 opacity-70" />
+        )}
         <span className="min-w-0 flex-1 truncate">{doc.title}</span>
         {doc.visibility === "public" ? (
           <Globe2 className="size-3 shrink-0 opacity-60" />
@@ -1005,6 +1089,22 @@ function DocRow({
             <Link2 className="size-4" />
             Copy link
           </DropdownMenuItem>
+          {actions ? (
+            <>
+              <DropdownMenuItem onClick={() => actions.onTogglePin(doc)}>
+                {actions.pinnedIds.has(doc.id) ? (
+                  <PinOff className="size-4" />
+                ) : (
+                  <Pin className="size-4" />
+                )}
+                {actions.pinnedIds.has(doc.id) ? "Unpin" : "Pin to top"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => actions.onDuplicate(doc)}>
+                <Copy className="size-4" />
+                Duplicate
+              </DropdownMenuItem>
+            </>
+          ) : null}
           {isOwner && actions ? (
             <>
               <DropdownMenuSeparator />

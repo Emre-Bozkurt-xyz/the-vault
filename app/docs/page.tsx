@@ -49,6 +49,7 @@ export default async function OfficialDocsIndexPage() {
             folders={workspace.folders}
             sharedFolders={workspace.sharedFolders}
             services={workspace.services}
+            pinnedDocumentIds={workspace.pinnedDocumentIds}
             activeHref="/docs"
           />
         }

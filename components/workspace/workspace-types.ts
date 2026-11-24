@@ -62,6 +62,8 @@ export type WorkspaceDocumentItem = {
   ownerName?: string | null;
   ownerUsername?: string | null;
   viaFolderName?: string | null;
+  /** The page's icon (frontmatter `icon:`), shown in place of the file glyph. */
+  icon?: string | null;
 };
 
 export type WorkspaceArchivedItem = {

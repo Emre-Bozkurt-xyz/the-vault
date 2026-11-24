@@ -69,6 +69,8 @@ type VaultWorkspaceShellProps = {
   initialLayout?: Partial<WorkspaceLayoutState>;
   initialTabs?: WorkspaceTab[];
   folderPathByHref?: Map<string, string>;
+  /** Document href -> its page icon, for the tab strip. */
+  iconByHref?: Map<string, string>;
   contentClassName?: string;
   children: ReactNode;
   rightPanel?: ReactNode;
@@ -92,6 +94,7 @@ export function VaultWorkspaceShell({
   initialLayout,
   initialTabs,
   folderPathByHref,
+  iconByHref,
   contentClassName,
   children,
   rightPanel,
@@ -348,6 +351,7 @@ export function VaultWorkspaceShell({
           activePage={activePage}
           initialTabs={initialTabs}
           folderPathByHref={folderPathByHref}
+          iconByHref={iconByHref}
         />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">

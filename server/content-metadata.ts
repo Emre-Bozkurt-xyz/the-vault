@@ -15,8 +15,10 @@ import {
 import {
   normalizeTagList,
   normalizeTagSlug,
+  parseDocumentAppearance,
   parseDocumentMetadata,
   tagDisplayName,
+  type DocumentAppearance,
 } from "@/lib/content-metadata";
 import { reservedTagCategory } from "@/lib/definitions";
 import {
@@ -47,6 +49,7 @@ export async function syncDocumentMetadata(input: {
       input.documentId,
       metadata,
       inheritedTags,
+      parseDocumentAppearance(input.markdown),
     );
   });
 }
@@ -73,7 +76,10 @@ export async function syncDocumentMetadataWithExecutor(
    * `document_tags` instead of the document's frontmatter.
    */
   inheritedTags: string[] = [],
+  /** The page's icon and cover; left as stored when the caller doesn't pass them. */
+  appearance?: DocumentAppearance,
 ) {
+  const look = appearance ? { icon: appearance.icon, coverAssetId: appearance.coverAssetId } : {};
   await tx
     .insert(documentMetadata)
     .values({
@@ -82,6 +88,7 @@ export async function syncDocumentMetadataWithExecutor(
       summary: metadata.summary,
       status: metadata.status,
       project: metadata.project,
+      ...look,
     })
     .onConflictDoUpdate({
       target: documentMetadata.documentId,
@@ -90,6 +97,7 @@ export async function syncDocumentMetadataWithExecutor(
         summary: metadata.summary,
         status: metadata.status,
         project: metadata.project,
+        ...look,
         updatedAt: sql`now()`,
       },
     });

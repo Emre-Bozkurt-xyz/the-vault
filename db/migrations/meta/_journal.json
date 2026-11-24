@@ -281,6 +281,13 @@
       "when": 1795498643186,
       "tag": "0039_drop_user_allowance_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795561199020,
+      "tag": "0040_document_icon_cover",
+      "breakpoints": true
     }
   ]
 }

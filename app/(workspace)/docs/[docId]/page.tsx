@@ -1,3 +1,5 @@
+import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
+import { parseDocumentAppearance } from "@/lib/content-metadata";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import {
@@ -172,6 +174,7 @@ export default async function DocumentPage({
     document.markdown,
   );
   const markdown = document.markdown;
+  const pageArt = parseDocumentAppearance(markdown);
   const collabUrl = process.env.NEXT_PUBLIC_COLLAB_URL ?? null;
   // Attached snippet CSS applies to the rendered read view and to the editor's
   // Read mode (so owners can preview their styling). The global viewer opt-out
@@ -304,6 +307,7 @@ export default async function DocumentPage({
         ) : (
           <article className="mx-auto grid min-h-full w-full max-w-[56rem] gap-8 px-4 py-10 md:px-8 md:py-14">
             <div className="grid gap-2">
+              <DocumentPageArt documentId={document.id} icon={pageArt.icon} coverAssetId={pageArt.coverAssetId} />
               <DocumentFolderPath path={folderPath} />
               <h1 className="text-4xl font-semibold tracking-tight vault-display sm:text-5xl">
                 {document.title}

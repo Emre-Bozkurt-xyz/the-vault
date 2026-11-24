@@ -100,6 +100,7 @@ export default async function OfficialDocPage({
             folders={workspace.folders}
             sharedFolders={workspace.sharedFolders}
             services={workspace.services}
+            pinnedDocumentIds={workspace.pinnedDocumentIds}
             activeHref={`/docs/guides/${doc.slug}`}
           />
         }

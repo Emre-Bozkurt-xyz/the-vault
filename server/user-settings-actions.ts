@@ -380,3 +380,25 @@ function validateExtensionSettings(
     ...settings,
   });
 }
+
+/** Most documents a Pinned section holds; older pins fall off the end. */
+const maxPinnedDocuments = 30;
+
+/**
+ * The documents pinned to the top of the Files panel, in order. Stored as one
+ * `workspace/pinned` row; ids of documents the user can no longer see are
+ * simply not shown (the panel only lists documents it has).
+ */
+export async function setPinnedDocumentsAction(input: unknown) {
+  const user = await requireActiveUser();
+  const documentIds = [...new Set(z.array(z.string().uuid()).max(200).parse(input))].slice(
+    0,
+    maxPinnedDocuments,
+  );
+  await upsertUserSetting({
+    userId: user.id,
+    namespace: "workspace",
+    key: "pinned",
+    value: { documentIds },
+  });
+}

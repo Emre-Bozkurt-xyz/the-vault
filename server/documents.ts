@@ -19,6 +19,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import {
   documentCollabStates,
+  documentExtensionStates,
   documentMetadata,
   documentPermissions,
   documentShareLinks,
@@ -41,6 +42,7 @@ import {
   contentSearchIsEmpty,
 } from "@/lib/content-search-query";
 import { normalizeTagSlug } from "@/lib/content-metadata";
+import { fillTemplate, findBuiltInTemplate } from "@/lib/document-templates";
 import { slugify } from "@/lib/slug";
 import { buildWikiLinkResolutionMap } from "@/lib/wiki-links";
 import { requireActiveUser } from "@/server/authz";
@@ -141,6 +143,109 @@ export async function createDocumentAction() {
   });
 
   redirect(`/docs/${document.id}`);
+}
+
+/**
+ * The New document dialog: a document from a built-in template (`blank`,
+ * `meeting`, …) or from one of the user's own template documents
+ * (`doc:<id>`, any document they can read), with its placeholders filled in
+ * the creator's local time (passed in, since the server's clock isn't theirs).
+ * Filed in `folderId` when they may add to it, else at the root.
+ */
+export async function createDocumentFromTemplateAction(
+  input: unknown,
+): Promise<{ id: string; title: string; folderId: string | null; updatedAt: string } | null> {
+  const user = await requireActiveUser();
+  const parsed = z
+    .object({
+      title: z.string().trim().max(200),
+      folderId: documentIdSchema.nullable(),
+      template: z.string().min(1).max(80),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      time: z.string().regex(/^\d{2}:\d{2}$/),
+      weekday: z.string().max(20),
+    })
+    .safeParse(input);
+  if (!parsed.success) return null;
+  const { template, date, time, weekday } = parsed.data;
+  const title = parsed.data.title || "Untitled document";
+
+  let markdown: string;
+  if (template.startsWith("doc:")) {
+    const templateId = documentIdSchema.safeParse(template.slice(4));
+    if (!templateId.success || !(await getDocumentAccess(user.id, templateId.data)).canRead) return null;
+    const [source] = await db
+      .select({ markdown: documents.markdown })
+      .from(documents)
+      .where(and(eq(documents.id, templateId.data), isNull(documents.deletedAt)))
+      .limit(1);
+    if (!source) return null;
+    markdown = source.markdown;
+  } else {
+    const builtIn = findBuiltInTemplate(template);
+    if (!builtIn) return null;
+    markdown = builtIn.markdown;
+  }
+
+  const folderId =
+    parsed.data.folderId && (await canEditFolderContents(user.id, parsed.data.folderId))
+      ? parsed.data.folderId
+      : null;
+  const created = await createDocumentForUser(user.id, {
+    title,
+    folderId,
+    markdown: fillTemplate(markdown, { title, date, time, weekday }),
+  });
+  return { ...created, folderId, updatedAt: new Date().toISOString() };
+}
+
+/**
+ * A copy of a document the user can read, owned by them: "Title (copy)", the
+ * same text, filed beside the original when they may add to its folder (else
+ * at the root). Extension state (stickers, a calendar) comes along when the
+ * user owns the original; someone else's state may point at files the copier
+ * can't see.
+ */
+export async function duplicateDocumentAction(
+  input: unknown,
+): Promise<{ id: string; title: string; folderId: string | null; updatedAt: string } | null> {
+  const user = await requireActiveUser();
+  const parsed = documentIdSchema.safeParse(input);
+  if (!parsed.success) return null;
+  const access = await getDocumentAccess(user.id, parsed.data);
+  if (!access.canRead) return null;
+
+  const [source] = await db
+    .select({ title: documents.title, markdown: documents.markdown, folderId: documents.folderId })
+    .from(documents)
+    .where(and(eq(documents.id, parsed.data), isNull(documents.deletedAt)))
+    .limit(1);
+  if (!source) return null;
+
+  const folderId =
+    source.folderId && (await canEditFolderContents(user.id, source.folderId)) ? source.folderId : null;
+  const title = `${source.title.trim() || "Untitled document"} (copy)`.slice(0, 200);
+  const created = await createDocumentForUser(user.id, { title, folderId, markdown: source.markdown });
+
+  if (access.role === "owner") {
+    const states = await db
+      .select({
+        extensionId: documentExtensionStates.extensionId,
+        stateKey: documentExtensionStates.stateKey,
+        state: documentExtensionStates.state,
+        version: documentExtensionStates.version,
+        visibility: documentExtensionStates.visibility,
+      })
+      .from(documentExtensionStates)
+      .where(and(eq(documentExtensionStates.documentId, parsed.data), isNull(documentExtensionStates.deletedAt)));
+    if (states.length > 0) {
+      await db.insert(documentExtensionStates).values(
+        states.map((row) => ({ ...row, documentId: created.id, createdBy: user.id, updatedBy: user.id })),
+      );
+    }
+  }
+
+  return { ...created, folderId, updatedAt: new Date().toISOString() };
 }
 
 /**
