@@ -35,7 +35,8 @@ export function UploadTray({
   return (
     <section
       aria-label="Uploads"
-      className="fixed bottom-20 right-4 z-40 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border/80 bg-popover text-popover-foreground shadow-xl md:bottom-4"
+      // Phones: above the floating New button and the nav bar.
+      className="fixed bottom-[calc(9rem+env(safe-area-inset-bottom))] right-4 z-40 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border/80 bg-popover text-popover-foreground shadow-xl sm:bottom-20 md:bottom-4"
     >
       <header className="flex h-10 items-center gap-1 border-b border-border/70 pl-3.5 pr-1.5">
         <p className="min-w-0 flex-1 truncate text-sm font-medium" aria-live="polite">

@@ -45,7 +45,7 @@ import {
   type LibraryMenuActions,
 } from "@/components/assets/LibraryMenus";
 import { LibraryShortcutsDialog } from "@/components/assets/LibraryShortcutsDialog";
-import { KIND_LABELS, LibraryToolbar, type KindFilter } from "@/components/assets/LibraryToolbar";
+import { KIND_LABELS, LibraryToolbar, NewFloatingButton, type KindFilter } from "@/components/assets/LibraryToolbar";
 import { MediaItemView } from "@/components/assets/MediaItemViews";
 import { MediaViewer } from "@/components/assets/MediaViewer";
 import { ShareLinkDialog, type ShareTarget } from "@/components/assets/ShareLinkDialog";
@@ -1062,6 +1062,14 @@ export function AssetLibraryClient({
         ) : null}
       </div>
 
+      {canAdd && !selecting ? (
+        <NewFloatingButton
+          uploading={uploads.hasActive}
+          onUploadFiles={actions.uploadFiles}
+          onUploadFolder={actions.uploadFolder}
+          onNewFolder={actions.newFolder}
+        />
+      ) : null}
       <UploadTray items={uploads.items} onCancel={uploads.cancel} onDismiss={uploads.dismiss} />
 
       <FolderNameDialog

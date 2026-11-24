@@ -14,6 +14,7 @@ import {
   Plus,
   Rows3,
   Search,
+  SlidersHorizontal,
   Upload,
   X,
 } from "lucide-react";
@@ -30,6 +31,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -64,9 +68,72 @@ const menuButton = cn(
   "h-9 gap-1.5 px-2.5 data-[popup-open]:bg-muted",
 );
 
+/** What "New" offers, from the toolbar button or the phone's floating button. */
+function NewMenuItems({
+  onUploadFiles,
+  onUploadFolder,
+  onNewFolder,
+}: {
+  onUploadFiles: () => void;
+  onUploadFolder: () => void;
+  onNewFolder: () => void;
+}) {
+  return (
+    <>
+      <DropdownMenuGroup>
+        <DropdownMenuItem onClick={onUploadFiles}>
+          <Upload /> Upload files
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onUploadFolder}>
+          <FolderUp /> Upload folder
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuItem onClick={onNewFolder}>
+          <FolderPlus /> New folder
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+    </>
+  );
+}
+
+/**
+ * New on a phone: a floating button bottom-right, above the nav bar, where a
+ * thumb rests (the toolbar's own New is hidden there). The page hides it
+ * while selecting, so the selection bar gets the full width.
+ */
+export function NewFloatingButton({
+  uploading,
+  onUploadFiles,
+  onUploadFolder,
+  onNewFolder,
+}: {
+  uploading: boolean;
+  onUploadFiles: () => void;
+  onUploadFolder: () => void;
+  onNewFolder: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="New"
+        className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-30 grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-black/30 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 sm:hidden"
+      >
+        {uploading ? <Loader2 className="size-6 animate-spin" /> : <Plus className="size-6" />}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="end" className="min-w-48">
+        <NewMenuItems onUploadFiles={onUploadFiles} onUploadFolder={onUploadFolder} onNewFolder={onNewFolder} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /**
  * One row: search, then how you're looking (Filter, Sort, View), the Details
- * toggle, and New. Active filters show as removable chips underneath.
+ * toggle, and New. On a phone that's search, one "View options" menu holding
+ * Filter, Sort and View, and Details; New floats bottom-right instead
+ * (`NewFloatingButton`). Active filters show as removable chips underneath.
  */
 export function LibraryToolbar({
   query,
@@ -113,7 +180,7 @@ export function LibraryToolbar({
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-[11rem] flex-1 basis-48">
+        <label className="relative min-w-0 flex-1 basis-40 sm:min-w-[11rem] sm:basis-48">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <span className="sr-only">Search the library</span>
           <Input
@@ -132,8 +199,86 @@ export function LibraryToolbar({
         </label>
 
         <div className="flex items-center gap-1.5">
+          {/* Phones: one button for how you're looking. */}
           <DropdownMenu>
-            <DropdownMenuTrigger className={cn(menuButton, kind !== "all" && "border-primary/50 text-foreground")} aria-label="Filter">
+            <DropdownMenuTrigger
+              aria-label="View options"
+              className={cn(menuButton, "relative size-9 px-0 sm:hidden", kind !== "all" && "border-primary/50")}
+            >
+              <SlidersHorizontal className="size-4" />
+              {kind !== "all" ? (
+                <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
+              ) : null}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuGroup>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Filter /> Type
+                    <span className="ml-auto pl-3 text-xs text-muted-foreground">{KIND_LABELS[kind]}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-40">
+                    <DropdownMenuRadioGroup value={kind} onValueChange={(value) => onKindChange(value as KindFilter)}>
+                      {(Object.keys(KIND_LABELS) as KindFilter[]).map((option) => (
+                        <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                          {KIND_LABELS[option]}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <ArrowDownUp /> Sort
+                    <span className="ml-auto pl-3 text-xs text-muted-foreground">{SORT_LABELS[sort]}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-40">
+                    <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as MediaSort)}>
+                      {MEDIA_SORTS.map((option) => (
+                        <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                          {SORT_LABELS[option]}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <ViewIcon /> View
+                    <span className="ml-auto pl-3 text-xs text-muted-foreground">{VIEW_LABELS[view]}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-40">
+                    <DropdownMenuRadioGroup value={view} onValueChange={(value) => onViewChange(value as MediaView)}>
+                      {MEDIA_VIEWS.map((option) => {
+                        const Icon = VIEW_ICONS[option];
+                        return (
+                          <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                            <Icon /> {VIEW_LABELS[option]}
+                          </DropdownMenuRadioItem>
+                        );
+                      })}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuCheckboxItem
+                  checked={showNames}
+                  disabled={!isPhotoView(view)}
+                  onCheckedChange={(checked) => onShowNamesChange(checked)}
+                >
+                  Show names
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(menuButton, "max-sm:hidden", kind !== "all" && "border-primary/50 text-foreground")}
+              aria-label="Filter"
+            >
               <Filter className="size-4" />
               <span className="hidden @2xl:inline">{kind === "all" ? "Filter" : KIND_LABELS[kind]}</span>
             </DropdownMenuTrigger>
@@ -152,7 +297,7 @@ export function LibraryToolbar({
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger className={menuButton} aria-label={`Sort: ${SORT_LABELS[sort]}`}>
+            <DropdownMenuTrigger className={cn(menuButton, "max-sm:hidden")} aria-label={`Sort: ${SORT_LABELS[sort]}`}>
               <ArrowDownUp className="size-4" />
               <span className="hidden @2xl:inline">{SORT_LABELS[sort]}</span>
             </DropdownMenuTrigger>
@@ -171,7 +316,7 @@ export function LibraryToolbar({
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger className={menuButton} aria-label={`View: ${VIEW_LABELS[view]}`}>
+            <DropdownMenuTrigger className={cn(menuButton, "max-sm:hidden")} aria-label={`View: ${VIEW_LABELS[view]}`}>
               <ViewIcon className="size-4" />
               <ChevronDown className="size-3.5 text-muted-foreground" />
             </DropdownMenuTrigger>
@@ -219,25 +364,12 @@ export function LibraryToolbar({
 
           {canAdd ? (
             <DropdownMenu>
-              <DropdownMenuTrigger className={cn(buttonVariants({ size: "sm" }), "h-9 gap-1.5 pl-2.5 pr-3")}>
+              <DropdownMenuTrigger className={cn(buttonVariants({ size: "sm" }), "h-9 gap-1.5 pl-2.5 pr-3 max-sm:hidden")}>
                 {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
                 New
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-44">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={onUploadFiles}>
-                    <Upload /> Upload files
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onUploadFolder}>
-                    <FolderUp /> Upload folder
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={onNewFolder}>
-                    <FolderPlus /> New folder
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
+                <NewMenuItems onUploadFiles={onUploadFiles} onUploadFolder={onUploadFolder} onNewFolder={onNewFolder} />
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}

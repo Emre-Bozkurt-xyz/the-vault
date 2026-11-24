@@ -312,7 +312,7 @@ export function FolderRow({ folder, handlers }: { folder: FolderTileData; handle
       <button
         {...item.buttonProps}
         className={cn(
-          "flex w-full items-center gap-3 rounded-md border px-2 py-1.5 pl-10 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          "flex w-full min-w-0 items-center gap-3 rounded-md border px-2 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
           item.drop.active
             ? "border-primary bg-primary/10"
             : item.selected
@@ -320,34 +320,38 @@ export function FolderRow({ folder, handlers }: { folder: FolderTileData; handle
               : "border-transparent hover:border-border/70 hover:bg-muted/50",
         )}
       >
-        <span className="grid size-8 shrink-0 place-items-center rounded bg-muted text-muted-foreground">
+        <span className="grid size-9 shrink-0 place-items-center rounded bg-muted text-muted-foreground">
           {item.drop.active ? <FolderOpen className="size-4" /> : <Folder className="size-4" />}
         </span>
         <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
         {item.shared ? <Link2 className="size-3.5 shrink-0 text-primary" aria-label="Shared by link" /> : null}
-        <span className="w-36 shrink-0 truncate text-right text-xs text-muted-foreground">
+        <span className="shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
           {item.drop.active ? "Drop to move here" : folderSummary(folder)}
         </span>
       </button>
+      {/* Over the folder mark, so the row needs no gutter for it. */}
       <FolderSelectCircle
         folder={folder}
         selected={item.selected}
         handlers={handlers}
-        className="absolute left-2 top-1/2 -translate-y-1/2 border-border bg-background/80"
+        className="absolute left-3.5 top-1/2 -translate-y-1/2"
       />
     </div>
   );
 }
 
-/** A folder in the details table; `columns` is how many cells follow the name. */
+/**
+ * A folder in the details table. `cells` renders the cells after the name
+ * (the table owns its columns and which of them show), given the summary.
+ */
 export function FolderTableRow({
   folder,
   handlers,
-  columns,
+  cells,
 }: {
   folder: FolderTileData;
   handlers: FolderItemHandlers;
-  columns: number;
+  cells: (summary: string) => ReactNode;
 }) {
   const item = useFolderItem(folder, handlers);
 
@@ -359,10 +363,7 @@ export function FolderTableRow({
         item.drop.active || item.selected ? "bg-primary/10" : "hover:bg-muted/40",
       )}
     >
-      <td className="px-2 py-1.5">
-        <FolderSelectCircle folder={folder} selected={item.selected} handlers={handlers} className="border-border bg-background/80" />
-      </td>
-      <td className="max-w-0 py-1.5 pr-3">
+      <td className="relative max-w-0 py-1.5 pl-2 pr-3">
         <button
           {...item.buttonProps}
           className="flex w-full min-w-0 items-center gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -371,11 +372,17 @@ export function FolderTableRow({
             <Folder className="size-4" />
           </span>
           <span className="truncate font-medium">{folder.name}</span>
-          {item.shared ? <Link2 className="size-3.5 shrink-0 text-primary" aria-label="Shared by link" /> : null}
         </button>
+        <FolderSelectCircle
+          folder={folder}
+          selected={item.selected}
+          handlers={handlers}
+          className="absolute left-4 top-1/2 -translate-y-1/2"
+        />
       </td>
-      <td colSpan={columns} className="py-1.5 pr-3 text-xs text-muted-foreground">
-        {item.drop.active ? "Drop to move here" : `Folder · ${folderSummary(folder)}`}
+      {cells(item.drop.active ? "Drop to move here" : folderSummary(folder))}
+      <td className="py-1.5 pr-2">
+        {item.shared ? <Link2 className="size-3.5 text-primary" aria-label="Shared by link" /> : null}
       </td>
     </tr>
   );

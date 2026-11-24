@@ -69,7 +69,21 @@ export type MediaItemHandlers = {
   dragDisabled?: boolean;
 };
 
-const SQUARE_GRID = "grid grid-cols-3 gap-2 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6 @7xl:grid-cols-8";
+// Square cells with the mosaic's hairline gaps (2px on phones, 4px wider).
+const SQUARE_GRID = "grid grid-cols-3 gap-0.5 sm:gap-1 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6 @7xl:grid-cols-8";
+
+/**
+ * Details columns after Name, shown as the container allows: a phone gets
+ * Name, Size and sharing; Added, Type, Folder and Taken join as it widens.
+ */
+export const DETAILS_COLUMNS = {
+  location: "hidden @2xl:table-cell",
+  type: "hidden @xl:table-cell",
+  size: "",
+  taken: "hidden @3xl:table-cell",
+  added: "hidden @lg:table-cell",
+  sharing: "",
+} as const;
 
 export function MediaItemView({
   view,
@@ -120,7 +134,9 @@ export function MediaItemView({
         {...handlers}
       />
     ) : view === "list" ? (
-      <div role="list" className="grid gap-1">
+      // One column that may shrink below its content, so a long name truncates
+      // instead of widening the page.
+      <div role="list" className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
         {folders.map((folder) => (
           <FolderRow key={folder.id} folder={folder} handlers={folderHandlers} />
         ))}
@@ -131,10 +147,14 @@ export function MediaItemView({
     ) : view === "grid" ? (
       <div className={cn("min-w-0", SQUARE_GRID)}>
         {folders.map((folder) => (
-          <FolderCard key={folder.id} folder={folder} handlers={folderHandlers} />
+          <div key={folder.id} className="relative aspect-square min-w-0">
+            <FolderCard folder={folder} handlers={folderHandlers} fill />
+          </div>
         ))}
         {shown.map((asset) => (
-          <PhotoCard key={asset.id} asset={asset} layout="square" {...handlers} />
+          <div key={asset.id} className="relative aspect-square min-w-0">
+            <PhotoCard asset={asset} {...handlers} />
+          </div>
         ))}
       </div>
     ) : (
@@ -178,7 +198,7 @@ function Masonry({
     ...assets.map((asset) => ({
       key: asset.id,
       aspect: tileAspect({ width: asset.width, height: asset.height, pictured: isPictured(asset) }),
-      node: <PhotoCard asset={asset} layout="tile" {...handlers} />,
+      node: <PhotoCard asset={asset} {...handlers} />,
     })),
   ];
 
@@ -267,108 +287,54 @@ function ExposureBadges({
 }
 
 /**
- * A card in the photo views. `square`: the grid view's fixed squares.
- * `tile`: the mosaic, where the grid sizes the box and the picture fills it
- * edge to edge with barely rounded corners. Names fade in on hover unless
- * names are switched on; files without a picture always show theirs.
+ * A card in the photo views (mosaic and grid): the picture fills the box the
+ * view gives it, edge to edge with barely rounded corners. Names fade in on
+ * hover (or keyboard focus) unless names are switched on; files without a
+ * picture always show theirs.
  */
-function PhotoCard({
-  asset,
-  layout,
-  ...handlers
-}: MediaItemHandlers & { asset: AssetLibraryItem; layout: "square" | "tile" }) {
+function PhotoCard({ asset, ...handlers }: MediaItemHandlers & { asset: AssetLibraryItem }) {
   const selected = handlers.selectedIds.has(asset.id);
   const location = handlers.locationOf?.(asset);
   const visual = isPictured(asset);
-  const tile = layout === "tile";
-  const meta = `${assetTypeLabel(asset)} · ${formatBytes(asset.sizeBytes)}${location ? ` · ${location}` : ""}`;
 
-  if (tile) {
-    return (
-      <div data-asset-card data-asset-id={asset.id} className="group relative size-full select-none">
-        <button
-          {...itemButtonProps(asset, handlers)}
-          className="relative block size-full overflow-hidden rounded-[3px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_img]:pointer-events-none"
-        >
-          <Thumb asset={asset} className="size-full object-cover" />
-          {asset.kind === "video" ? (
-            <VideoBadge
-              durationMs={asset.durationMs ?? null}
-              className={visual && !handlers.showNames ? "transition-opacity group-hover:opacity-0" : undefined}
-            />
-          ) : null}
-          {visual ? (
-            <span
-              className={cn(
-                "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-1.5 pt-8 text-white transition-opacity",
-                handlers.showNames ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
-              )}
-            >
-              <span className="block truncate text-xs font-medium sm:text-sm">{asset.displayName}</span>
-              {location ? <span className="block truncate text-[0.7rem] text-white/75">{location}</span> : null}
-            </span>
-          ) : (
-            // A file without a picture keeps its name on the tile.
-            <span className="absolute inset-x-0 bottom-0 truncate bg-background/85 px-2 py-1 text-xs font-medium backdrop-blur">
-              {asset.displayName}
-            </span>
-          )}
-          {selected ? (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-[3px] bg-primary/15 ring-[3px] ring-inset ring-primary"
-            />
-          ) : null}
-        </button>
-        <SelectCircle asset={asset} handlers={handlers} className="absolute left-1.5 top-1.5" />
-        <ExposureBadges asset={asset} handlers={handlers} className="absolute right-1.5 top-1.5" />
-      </div>
-    );
-  }
-
-  const hoverCaption = !handlers.showNames && visual;
   return (
-    <div data-asset-card data-asset-id={asset.id} className="group relative">
+    <div data-asset-card data-asset-id={asset.id} className="group relative size-full select-none">
       <button
         {...itemButtonProps(asset, handlers)}
-        className={cn(
-          "relative block w-full overflow-hidden rounded-md text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-          handlers.showNames ? "border bg-card shadow-sm hover:shadow-md" : "bg-muted",
-          selected
-            ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
-            : handlers.showNames
-              ? "border-border/70 hover:border-primary/50"
-              : "",
-        )}
+        className="relative block size-full overflow-hidden rounded-[3px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_img]:pointer-events-none"
       >
-        <span className="relative block aspect-square bg-muted">
-          <Thumb asset={asset} className="size-full object-cover" />
-        </span>
+        <Thumb asset={asset} className="size-full object-cover" />
         {asset.kind === "video" ? (
           <VideoBadge
             durationMs={asset.durationMs ?? null}
-            className={hoverCaption ? "transition-opacity group-hover:opacity-0" : undefined}
+            className={visual && !handlers.showNames ? "transition-opacity group-hover:opacity-0" : undefined}
           />
         ) : null}
-
-        {hoverCaption ? (
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-3 pb-2 pt-10 text-white opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
-            <span className="block truncate text-sm font-medium">{asset.displayName}</span>
+        {visual ? (
+          <span
+            className={cn(
+              "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-1.5 pt-8 text-white transition-opacity",
+              handlers.showNames ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+            )}
+          >
+            <span className="block truncate text-xs font-medium sm:text-sm">{asset.displayName}</span>
+            {location ? <span className="block truncate text-[0.7rem] text-white/75">{location}</span> : null}
           </span>
-        ) : !handlers.showNames ? (
-          // A file in the square grid keeps its name inside the square.
+        ) : (
+          // A file without a picture keeps its name on the tile.
           <span className="absolute inset-x-0 bottom-0 truncate bg-background/85 px-2 py-1 text-xs font-medium backdrop-blur">
             {asset.displayName}
           </span>
-        ) : (
-          <span className="block px-2 py-1.5" title={meta}>
-            <span className="block truncate text-xs font-medium">{asset.displayName}</span>
-          </span>
         )}
-        {selected ? <span aria-hidden className="pointer-events-none absolute inset-0 bg-primary/12" /> : null}
+        {selected ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-[3px] bg-primary/15 ring-[3px] ring-inset ring-primary"
+          />
+        ) : null}
       </button>
-      <SelectCircle asset={asset} handlers={handlers} className="absolute left-2 top-2" />
-      <ExposureBadges asset={asset} handlers={handlers} className="absolute right-2 top-2" />
+      <SelectCircle asset={asset} handlers={handlers} className="absolute left-1.5 top-1.5" />
+      <ExposureBadges asset={asset} handlers={handlers} className="absolute right-1.5 top-1.5" />
     </div>
   );
 }
@@ -405,13 +371,13 @@ function ListRow({ asset, ...handlers }: MediaItemHandlers & { asset: AssetLibra
       <button
         {...itemButtonProps(asset, handlers)}
         className={cn(
-          "flex w-full items-center gap-3 rounded-md border px-2 py-1.5 pl-10 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          "flex w-full min-w-0 items-center gap-3 rounded-md border px-2 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
           selected
             ? "border-primary/60 bg-primary/10"
             : "border-transparent hover:border-border/70 hover:bg-muted/50",
         )}
       >
-        <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded bg-muted">
+        <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded bg-muted">
           <Thumb asset={asset} className="size-full object-cover" />
         </span>
         <span className="min-w-0 flex-1 truncate font-medium">{asset.displayName}</span>
@@ -431,11 +397,8 @@ function ListRow({ asset, ...handlers }: MediaItemHandlers & { asset: AssetLibra
           {formatDay(asset.takenAt ?? asset.createdAt, Boolean(asset.takenAt))}
         </span>
       </button>
-      <SelectCircle
-        asset={asset}
-        handlers={handlers}
-        className="absolute left-2 top-1/2 -translate-y-1/2 border-border bg-background/80"
-      />
+      {/* Over the thumbnail, so the row needs no gutter for it. */}
+      <SelectCircle asset={asset} handlers={handlers} className="absolute left-3.5 top-1/2 -translate-y-1/2" />
     </div>
   );
 }
@@ -458,22 +421,21 @@ function DetailsTable({
 
   return (
     <div className="overflow-x-auto rounded-md border border-border/70">
-      <table className="w-full min-w-[40rem] text-left text-sm">
+      <table className="w-full text-left text-sm">
         <thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground">
           <tr>
-            <th className="w-10 px-2 py-2" aria-label="Selection" />
-            <th className="py-2 pr-3 font-medium">
+            <th className="w-full py-2 pl-2 pr-3 font-medium">
               <SortHeader label="Name" active={sort === "name"} onClick={() => onSortChange("name")} />
             </th>
-            {showLocation ? <th className="py-2 pr-3 font-medium">Folder</th> : null}
-            <th className="py-2 pr-3 font-medium">Type</th>
+            {showLocation ? <th className={cn("py-2 pr-3 font-medium", DETAILS_COLUMNS.location)}>Folder</th> : null}
+            <th className={cn("py-2 pr-3 font-medium", DETAILS_COLUMNS.type)}>Type</th>
             <th className="py-2 pr-3 text-right font-medium">
               <SortHeader label="Size" active={sort === "size"} direction="down" onClick={() => onSortChange("size")} />
             </th>
-            <th className="py-2 pr-3 font-medium">
+            <th className={cn("py-2 pr-3 font-medium", DETAILS_COLUMNS.taken)}>
               <SortHeader label="Taken" active={sort === "taken"} direction="up" onClick={() => onSortChange("taken")} />
             </th>
-            <th className="py-2 pr-3 font-medium">
+            <th className={cn("py-2 pr-3 font-medium", DETAILS_COLUMNS.added)}>
               <SortHeader
                 label="Added"
                 active={sort === "newest" || sort === "oldest"}
@@ -481,7 +443,7 @@ function DetailsTable({
                 onClick={() => onSortChange(sort === "newest" ? "oldest" : "newest")}
               />
             </th>
-            <th className="w-14 py-2 pr-3" aria-label="Sharing" />
+            <th className="w-10 py-2 pr-2" aria-label="Sharing" />
           </tr>
         </thead>
         <tbody>
@@ -490,7 +452,17 @@ function DetailsTable({
               key={folder.id}
               folder={folder}
               handlers={folderHandlers}
-              columns={showLocation ? 6 : 5}
+              cells={(summary) => (
+                <>
+                  {showLocation ? <td className={DETAILS_COLUMNS.location} /> : null}
+                  <td className={cn("whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground", DETAILS_COLUMNS.type)}>
+                    Folder
+                  </td>
+                  <td className="whitespace-nowrap py-1.5 pr-3 text-right text-xs text-muted-foreground">{summary}</td>
+                  <td className={DETAILS_COLUMNS.taken} />
+                  <td className={DETAILS_COLUMNS.added} />
+                </>
+              )}
             />
           ))}
           {assets.map((asset) => (
@@ -518,10 +490,7 @@ function DetailsRow({
         selected ? "bg-primary/10" : "hover:bg-muted/40",
       )}
     >
-      <td className="px-2 py-1.5">
-        <SelectCircle asset={asset} handlers={handlers} className="border-border bg-background/80" />
-      </td>
-      <td className="max-w-0 py-1.5 pr-3">
+      <td className="relative max-w-0 py-1.5 pl-2 pr-3">
         <button
           {...itemButtonProps(asset, handlers)}
           className="flex w-full min-w-0 items-center gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -531,23 +500,33 @@ function DetailsRow({
           </span>
           <span className="truncate font-medium">{asset.displayName}</span>
         </button>
+        {/* Over the thumbnail: no column of its own. */}
+        <SelectCircle asset={asset} handlers={handlers} className="absolute left-4 top-1/2 -translate-y-1/2" />
       </td>
       {showLocation ? (
-        <td className="max-w-40 truncate py-1.5 pr-3 text-xs text-muted-foreground">
+        <td className={cn("max-w-40 truncate py-1.5 pr-3 text-xs text-muted-foreground", DETAILS_COLUMNS.location)}>
           {handlers.locationOf?.(asset)}
         </td>
       ) : null}
-      <td className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">{assetTypeLabel(asset)}</td>
+      <td className={cn("whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground", DETAILS_COLUMNS.type)}>
+        {assetTypeLabel(asset)}
+      </td>
       <td className="whitespace-nowrap py-1.5 pr-3 text-right text-xs tabular-nums text-muted-foreground">
         {formatBytes(asset.sizeBytes)}
       </td>
-      <td suppressHydrationWarning className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">
+      <td
+        suppressHydrationWarning
+        className={cn("whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground", DETAILS_COLUMNS.taken)}
+      >
         {asset.takenAt ? formatDay(asset.takenAt, true) : "—"}
       </td>
-      <td suppressHydrationWarning className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">
+      <td
+        suppressHydrationWarning
+        className={cn("whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground", DETAILS_COLUMNS.added)}
+      >
         {formatDay(asset.createdAt, false)}
       </td>
-      <td className="py-1.5 pr-3">
+      <td className="py-1.5 pr-2">
         <ExposureIcons asset={asset} handlers={handlers} />
       </td>
     </tr>
