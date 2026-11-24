@@ -31,6 +31,7 @@ export function ConfirmDialog({
   icon: Icon,
   rememberLabel,
   onConfirm,
+  body,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,6 +44,8 @@ export function ConfirmDialog({
   /** When set, shows a checkbox with this label; its value is passed to `onConfirm`. */
   rememberLabel?: string;
   onConfirm: (options: { remember: boolean }) => void;
+  /** Block content under the description (lists, links): the description is a paragraph. */
+  body?: ReactNode;
 }) {
   const [remember, setRemember] = useState(false);
   const rememberId = useId();
@@ -73,12 +76,15 @@ export function ConfirmDialog({
               <Icon className="size-[1.05rem]" />
             </span>
           ) : null}
-          <DialogHeader className="min-w-0 pt-0.5">
-            <DialogTitle>{title}</DialogTitle>
-            {description ? (
-              <DialogDescription>{description}</DialogDescription>
-            ) : null}
-          </DialogHeader>
+          <div className="grid min-w-0 flex-1 gap-3">
+            <DialogHeader className="min-w-0 pt-0.5">
+              <DialogTitle>{title}</DialogTitle>
+              {description ? (
+                <DialogDescription>{description}</DialogDescription>
+              ) : null}
+            </DialogHeader>
+            {body}
+          </div>
         </div>
         <DialogFooter className={cn(rememberLabel && "sm:justify-between")}>
           {rememberLabel ? (

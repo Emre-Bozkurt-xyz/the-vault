@@ -26,6 +26,12 @@ import {
 } from "lucide-react";
 
 import { AssetDetails, FolderDetails, SelectionDetails } from "@/components/assets/AssetDetailsPanel";
+import {
+  AssetUsageList,
+  fetchAssetUsage,
+  usageDocumentCount,
+  type AssetUsage,
+} from "@/components/assets/AssetUsage";
 import { FolderNameDialog, MoveToFolderDialog, type MoveSelection } from "@/components/assets/FolderDialogs";
 import {
   FolderBreadcrumbs,
@@ -63,9 +69,11 @@ import {
 import { collectDroppedFiles, filesFromDirectoryInput, uploadDroppedTree } from "@/components/assets/folder-drop";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
 import { useMediaQuery } from "@/components/workspace/panel-visibility";
+import { useCloseOnBack } from "@/components/ui/use-close-on-back";
 import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
 import { childFolders, descendantFolderIds, folderPath } from "@/lib/asset-folders";
 import {
@@ -462,6 +470,25 @@ export function AssetLibraryClient({
     [assets, clearSelection, folders],
   );
 
+  // Binning something documents embed asks first (they'd show a placeholder).
+  // `run` does the binning (the folder on screen also goes up a level).
+  const [binWarning, setBinWarning] = useState<{
+    items: Items;
+    usage: AssetUsage[];
+    run: () => Promise<unknown>;
+  } | null>(null);
+  const requestBin = useCallback(
+    async (items: Items, run: () => Promise<unknown> = () => binItems(items)) => {
+      const usage = await fetchAssetUsage({ assetIds: items.assetIds, folderIds: items.folderIds });
+      if (usageDocumentCount(usage) === 0) {
+        await run();
+      } else {
+        setBinWarning({ items, usage, run });
+      }
+    },
+    [binItems],
+  );
+
   const mergeSaved = useCallback((saved: AssetLibraryItem) => {
     setAssets((current) =>
       current.map((asset) =>
@@ -570,7 +597,7 @@ export function AssetLibraryClient({
     renameAsset: (asset) => setNameDialog({ mode: "rename-asset", asset }),
     renameFolder: (folder) => setNameDialog({ mode: "rename", folder }),
     move: (items) => setMoveSelection(itemsFor(items)),
-    bin: (items) => void binItems(items),
+    bin: (items) => void requestBin(items),
     openFolder,
     showInFolder: spansFolders ? showInFolder : undefined,
     showDetails: () => changeDetails(true),
@@ -606,6 +633,9 @@ export function AssetLibraryClient({
       setTicking(true);
     },
   };
+
+  // On a phone, Back leaves selection mode rather than the page.
+  useCloseOnBack(clearSelection, selecting && coarsePointer);
 
   /** A finger resting on an item selects it, like a phone gallery. */
   function handleItemLongPress(clicked: { kind: "asset" | "folder"; id: string }) {
@@ -648,7 +678,7 @@ export function AssetLibraryClient({
         clearSelection();
       } else if ((event.key === "Delete" || event.key === "Backspace") && selectedCount > 0) {
         event.preventDefault();
-        void binItems(liveSelection);
+        void requestBin(liveSelection);
       } else if (event.key === "Enter" && !onItem && selectedCount === 1) {
         event.preventDefault();
         if (selected) openViewer(selected);
@@ -1040,7 +1070,7 @@ export function AssetLibraryClient({
           <SelectionBar
             count={selectedCount}
             onMove={() => actions.move(liveSelection)}
-            onBin={() => void binItems(liveSelection)}
+            onBin={() => void requestBin(liveSelection)}
             onSelectAll={actions.selectAll}
             onClear={clearSelection}
             menu={
@@ -1130,6 +1160,32 @@ export function AssetLibraryClient({
         }}
       />
       <LibraryShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ConfirmDialog
+        open={binWarning !== null}
+        onOpenChange={(open) => {
+          if (!open) setBinWarning(null);
+        }}
+        tone="destructive"
+        icon={Trash2}
+        title={(() => {
+          const count = binWarning ? usageDocumentCount(binWarning.usage) : 0;
+          return `Used in ${count} ${count === 1 ? "document" : "documents"}`;
+        })()}
+        description={
+          binWarning
+            ? binWarning.items.assetIds.length + binWarning.items.folderIds.length === 1
+              ? "In the Bin it stops showing for everyone else straight away, and documents that embed it show a placeholder until you restore it. Open one to see where:"
+              : "In the Bin they stop showing for everyone else straight away, and documents that embed them show a placeholder until you restore them. Open one to see where:"
+            : null
+        }
+        body={binWarning ? <AssetUsageList usage={binWarning.usage} onNavigate={() => setBinWarning(null)} /> : null}
+        confirmLabel="Move to Bin anyway"
+        onConfirm={() => {
+          const run = binWarning?.run;
+          setBinWarning(null);
+          if (run) void run();
+        }}
+      />
 
       {viewerIndex !== -1 ? (
         <MediaViewer
@@ -1169,10 +1225,13 @@ export function AssetLibraryClient({
   /** Binning the folder on screen goes up to its parent. */
   function binCurrentFolder() {
     if (!currentFolder) return;
-    const parent = currentFolder.parentId;
-    void moveFolderToBin(currentFolder).then((moved) => {
-      if (moved) openFolder(parent);
-    });
+    const folder = currentFolder;
+    const parent = folder.parentId;
+    void requestBin({ assetIds: [], folderIds: [folder.id] }, () =>
+      moveFolderToBin(folder).then((moved) => {
+        if (moved) openFolder(parent);
+      }),
+    );
   }
 
   function folderStats(folderId: string | null) {

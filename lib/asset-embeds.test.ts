@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { transformAssetEmbeds, type AssetEmbedResolution } from "@/lib/asset-embeds";
+import { transformAssetEmbeds, type AssetEmbedResolution, findEmbedLine } from "@/lib/asset-embeds";
 
 const id = "0b6f2a5e-2f0c-4a8e-9a43-1d2f3c4b5a69";
 const base: AssetEmbedResolution = {
@@ -42,5 +42,18 @@ describe("image embeds", () => {
     });
     expect(html).not.toContain("<img");
     expect(html).toContain("Video");
+  });
+});
+
+describe("findEmbedLine", () => {
+  const id = "3f2a6c1e-0000-4000-8000-000000000001";
+  it("finds the first line embedding the file, with its text", () => {
+    const markdown = ["# Trip", "", "Some words.", `![[asset:${id}|Harbour]]{width=50%}`, `again ![[asset:${id}]]`].join("\n");
+    expect(findEmbedLine(markdown, id)).toEqual({ line: 3, text: `![[asset:${id}|Harbour]]{width=50%}` });
+  });
+
+  it("matches regardless of case and returns null when absent", () => {
+    expect(findEmbedLine(`![[asset:${id.toUpperCase()}]]`, id)).toEqual({ line: 0, text: `![[asset:${id.toUpperCase()}]]` });
+    expect(findEmbedLine("no embeds here", id)).toBeNull();
   });
 });

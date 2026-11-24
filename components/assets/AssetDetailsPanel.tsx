@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronRight, Folder, Loader2, MoreHorizontal, MousePointerClick, X } from "lucide-react";
 
+import { AssetUsageList, useAssetUsage } from "@/components/assets/AssetUsage";
+
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { AssetPreview } from "@/components/assets/AssetPreviews";
 import { folderSummary } from "@/components/assets/FolderTiles";
@@ -209,6 +211,8 @@ export function AssetDetails({
         ]}
       />
 
+      <UsedIn assetId={asset.id} />
+
       <section className="grid gap-2" aria-label="Tags">
         <h3 className="text-xs font-medium text-muted-foreground">Tags</h3>
         {tags.length > 0 ? (
@@ -399,6 +403,23 @@ function Mosaic({ previews }: { previews: string[] }) {
         <RenditionImage key={src} src={src} alt="" className="size-full object-cover" fallback={<span className="block size-full bg-muted" />} />
       ))}
     </div>
+  );
+}
+
+/** The documents that embed this file, each a link that jumps to the embed. */
+function UsedIn({ assetId }: { assetId: string }) {
+  const { loading, usage } = useAssetUsage(assetId);
+  return (
+    <section className="grid gap-1.5" aria-label="Used in">
+      <h3 className="text-xs font-medium text-muted-foreground">Used in</h3>
+      {loading ? (
+        <p className="px-1.5 text-sm text-muted-foreground">Checking…</p>
+      ) : usage && (usage.documents.length > 0 || usage.hidden > 0) ? (
+        <AssetUsageList usage={[usage]} showFileNames={false} />
+      ) : (
+        <p className="px-1.5 text-sm text-muted-foreground">No documents</p>
+      )}
+    </section>
   );
 }
 

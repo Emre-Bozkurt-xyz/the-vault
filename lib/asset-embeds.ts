@@ -480,3 +480,16 @@ function formatAssetFileSize(sizeBytes: number) {
 
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
+
+/**
+ * The first line of a document's Markdown that embeds `assetId` (0-based,
+ * with its text), for jumping to where a file is used; null if none does.
+ */
+export function findEmbedLine(markdown: string, assetId: string): { line: number; text: string } | null {
+  const needle = `asset:${assetId.toLowerCase()}`;
+  const lines = markdown.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].toLowerCase().includes(needle)) return { line: index, text: lines[index] };
+  }
+  return null;
+}

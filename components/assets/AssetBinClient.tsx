@@ -21,6 +21,7 @@ import {
   restoreAssets,
 } from "@/components/assets/asset-bin-actions";
 import { assetTypeLabel } from "@/components/assets/asset-ui";
+import { AssetUsageList, fetchAssetUsage, usageDocumentCount, type AssetUsage } from "@/components/assets/AssetUsage";
 import { deleteFolderForever, restoreFolder } from "@/components/assets/folder-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -85,7 +86,19 @@ export function AssetBinClient({
   const [assets, setAssets] = useState(initialAssets);
   const [folders, setFolders] = useState(initialFolders);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [pendingDelete, setPendingDeleteState] = useState<PendingDelete | null>(null);
+  // What still embeds the item about to be deleted (null while checking).
+  const [deleteUsage, setDeleteUsage] = useState<{ key: string; usage: AssetUsage[] } | null>(null);
+  const setPendingDelete = useCallback((next: PendingDelete | null) => {
+    setPendingDeleteState(next);
+    if (!next) return;
+    const key = `${next.kind}:${next.item.id}`;
+    void fetchAssetUsage(next.kind === "asset" ? { assetIds: [next.item.id] } : { folderIds: [next.item.id] }).then(
+      (usage) => setDeleteUsage({ key, usage }),
+    );
+  }, []);
+  const pendingUsage =
+    pendingDelete && deleteUsage?.key === `${pendingDelete.kind}:${pendingDelete.item.id}` ? deleteUsage.usage : [];
   const [confirmingEmpty, setConfirmingEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
   const selected = assets.find((asset) => asset.id === selectedId) ?? null;
@@ -175,7 +188,7 @@ export function AssetBinClient({
           </p>
         </div>
       ),
-    [restore, selected],
+    [restore, selected, setPendingDelete],
   );
 
   return (
@@ -363,6 +376,7 @@ export function AssetBinClient({
               </span>{" "}
               will be removed from storage and {formatBytes(pendingDelete.item.sizeBytes)} freed.
               Documents that embed it keep a placeholder. This cannot be undone.
+              {usageDocumentCount(pendingUsage) > 0 ? " It's still embedded in:" : null}
             </>
           ) : pendingDelete?.kind === "folder" ? (
             <>
@@ -372,7 +386,13 @@ export function AssetBinClient({
               and {describeBinFolder(pendingDelete.item)} inside it will be removed from
               storage and {formatBytes(pendingDelete.item.sizeBytes)} freed. This cannot be
               undone.
+              {usageDocumentCount(pendingUsage) > 0 ? " Files in it are still embedded in:" : null}
             </>
+          ) : null
+        }
+        body={
+          usageDocumentCount(pendingUsage) > 0 ? (
+            <AssetUsageList usage={pendingUsage} onNavigate={() => setPendingDelete(null)} />
           ) : null
         }
         confirmLabel="Delete forever"
