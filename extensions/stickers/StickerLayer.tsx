@@ -7,6 +7,7 @@ import type { OverlayProps, PickedAsset } from "@/lib/extension-api";
 import {
   OverlayItem,
   useExtensionState,
+  useOverlayAnchors,
   useRevealRequest,
   useSessionEvent,
 } from "@/lib/extension-api/react";
@@ -22,6 +23,10 @@ import {
 } from "./state";
 
 const MARGIN = 200;
+// How long the editor's layout must stay still before old stickers (placed
+// before anchoring) are anchored where they are: images and late-measured
+// lines move text around while a document opens.
+const BACKFILL_QUIET_MS = 1200;
 const ROTATION_SNAP_DEG = 90;
 const ROTATION_SNAP_THRESHOLD = 12;
 
@@ -80,22 +85,53 @@ export default function StickerLayer({ ctx }: OverlayProps) {
 
   const stickersState: StickersState = value ?? { items: {} };
 
+  // Stickers sit beside a line of text (`anchor`), so they land by the same
+  // words here and on read/public pages and move with their text; `top` is
+  // the fallback.
+  const anchors = useOverlayAnchors();
+  const topOf = (item: StickerItem) => (item.anchor ? anchors.resolve(item.anchor) : null) ?? item.top;
+  const withAnchor = (item: StickerItem): StickerItem => ({
+    ...item,
+    anchor: anchors.anchorAt(item.top) ?? undefined,
+  });
+
   const stickers: LiveStickerItem[] = Object.entries(stickersState.items).map(
-    ([id, item]) => ({ id, ...item }),
+    ([id, item]) => ({ id, ...item, top: topOf(item) }),
   );
+
+  // Stickers from before anchoring were placed by eye in the editor: anchor
+  // each where it shows there, once the layout around it is final.
+  useEffect(() => {
+    if (!canEdit || status === "loading" || anchors.surface !== "editor" || !value) return;
+    if (Object.values(value.items).every((item) => item.anchor)) return;
+    const timer = window.setTimeout(() => {
+      let changed = false;
+      const items = { ...value.items };
+      for (const [id, item] of Object.entries(items)) {
+        if (item.anchor || !anchors.measuredAt(item.top)) continue;
+        const anchored = withAnchor(item);
+        if (!anchored.anchor) continue;
+        items[id] = anchored;
+        changed = true;
+      }
+      if (changed) setState({ ...value, items });
+    }, BACKFILL_QUIET_MS);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchors, canEdit, status, value]);
 
   useEffect(() => {
     if (!pendingAsset || !canEdit || status === "loading") return;
 
     const id = `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     const offset = stickers.length * 18;
-    const newItem: StickerItem = {
+    const newItem: StickerItem = withAnchor({
       assetId: pendingAsset.id,
       left: 60 + (offset % 120),
       top: 220 + (offset % 80),
       width: 120,
       rotation: 0,
-    };
+    });
 
     setState({
       ...stickersState,
@@ -107,11 +143,13 @@ export default function StickerLayer({ ctx }: OverlayProps) {
   }, [pendingAsset, status]);
 
   function updateSticker(id: string, patch: Partial<StickerItem>) {
+    const next = { ...stickersState.items[id]!, ...patch };
     setState({
       ...stickersState,
       items: {
         ...stickersState.items,
-        [id]: { ...stickersState.items[id]!, ...patch },
+        // A new position is re-anchored to the line it now sits beside.
+        [id]: patch.top === undefined ? next : withAnchor(next),
       },
     });
   }

@@ -21,7 +21,10 @@ import {
 } from "react";
 import type { ZodType } from "zod";
 
-import { DocumentOverlayItem } from "@/components/extensions/DocumentOverlayHost";
+import {
+  DocumentOverlayItem,
+  useOverlayAnchorContext,
+} from "@/components/extensions/DocumentOverlayHost";
 import { useDocumentExtensionState } from "@/components/extensions/use-document-extension-state";
 import { MarkdownDocument } from "@/components/markdown/MarkdownDocument";
 import type {
@@ -33,6 +36,11 @@ import type {
   JsonValue,
 } from "@/lib/extension-api";
 import {
+  anchorText,
+  resolveAnchorLine,
+  type OverlayAnchor,
+} from "@/lib/extension-api/anchors";
+import {
   consumeExtensionReveal,
   subscribeToExtensionReveals,
 } from "@/lib/extension-host/reveal-requests";
@@ -43,6 +51,8 @@ import {
 } from "@/server/extension-actions";
 
 export type { ExtensionActionOutcome } from "@/server/extension-actions";
+export type { OverlayAnchor } from "@/lib/extension-api/anchors";
+export { isOverlayAnchor } from "@/lib/extension-api/anchors";
 
 /**
  * Calls one of this extension's own server actions (plan §8). Document-scoped
@@ -294,4 +304,94 @@ export function OverlayItem({
       {children}
     </DocumentOverlayItem>
   );
+}
+
+export type OverlayAnchors = {
+  /**
+   * What the document is laid out by here: `editor` (the source editor, where
+   * hand-placed positions from before anchoring were set), `page` (a read or
+   * public page), or null when nothing can anchor (the item then keeps its
+   * stored position).
+   */
+  surface: "editor" | "page" | null;
+  /** The anchor for an item whose top is at `top` (overlay px), or null. */
+  anchorAt(top: number): OverlayAnchor | null;
+  /** Where an anchored item's top is now (overlay px), or null when unknown. */
+  resolve(anchor: OverlayAnchor): number | null;
+  /**
+   * Whether the layout at `top` is final: false while the editor has only
+   * estimated lines above it or images are loading. Take anchors from
+   * stored positions only once it is.
+   */
+  measuredAt(top: number): boolean;
+  /** Increases whenever the layout changes; resolved positions are recomputed. */
+  version: number;
+};
+
+/**
+ * Anchors overlay items to the document's text, so an item (a sticker) sits
+ * beside the same words in the editor and on read and public pages, whose
+ * spacing differs, and moves with its text as lines are added above it.
+ *
+ * Store `anchorAt(top)` with the item when it is placed or moved, and render
+ * at `resolve(anchor) ?? storedTop`. The component re-renders as the layout
+ * changes (typing, resizing, images loading).
+ */
+export function useOverlayAnchors(): OverlayAnchors {
+  const { surface, layer } = useOverlayAnchorContext();
+  const version = useSyncExternalStore(
+    surface?.subscribe ?? noSubscription,
+    () => surface?.version() ?? 0,
+    () => 0,
+  );
+
+  return useMemo(() => {
+    const layerTop = () => layer?.getBoundingClientRect().top ?? null;
+    const lineAtTop = (top: number) => {
+      const origin = layerTop();
+      if (!surface || origin === null) return null;
+      return surface.lineAt(origin + top);
+    };
+
+    return {
+      surface: surface && layer ? surface.kind : null,
+      version,
+      anchorAt(top) {
+        const origin = layerTop();
+        const containing = lineAtTop(top);
+        if (!surface || origin === null || containing === null) return null;
+        const y = origin + top;
+        // The nearest line top wins: the line the point is in, or the next
+        // non-blank line when the item starts just above it. A small offset
+        // survives other layouts (a phone's narrower column rewraps the line
+        // before, which would carry a large offset with it).
+        const lines = surface.lines();
+        let next = containing + 1;
+        while (next <= lines.length && next - containing < 50 && !lines[next - 1]?.trim()) next += 1;
+        let line = containing;
+        let lineTop = surface.lineTop(containing);
+        const nextTop = next <= lines.length ? surface.lineTop(next) : null;
+        if (nextTop !== null && (lineTop === null || Math.abs(nextTop - y) < Math.abs(y - lineTop))) {
+          line = next;
+          lineTop = nextTop;
+        }
+        if (lineTop === null) return null;
+        return {
+          line,
+          text: anchorText(lines[line - 1] ?? ""),
+          dy: Math.round((y - lineTop) * 100) / 100,
+        };
+      },
+      resolve(anchor) {
+        const origin = layerTop();
+        if (!surface || origin === null) return null;
+        const lineTop = surface.lineTop(resolveAnchorLine(surface.lines(), anchor));
+        return lineTop === null ? null : lineTop - origin + anchor.dy;
+      },
+      measuredAt(top) {
+        const line = lineAtTop(top);
+        return Boolean(surface && line !== null && surface.measured(line));
+      },
+    };
+  }, [layer, surface, version]);
 }

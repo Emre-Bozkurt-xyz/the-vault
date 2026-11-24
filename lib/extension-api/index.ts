@@ -50,6 +50,14 @@ export {
   wikiTitleKey,
 } from "@/lib/wiki-links";
 
+// Anchoring overlay items to text (`useOverlayAnchors` in `./react`): the
+// stored shape, for an extension's state schema.
+export {
+  isOverlayAnchor,
+  overlayAnchorSchema,
+  type OverlayAnchor,
+} from "@/lib/extension-api/anchors";
+
 // Directive grammar is core; extensions read their own blocks with the same
 // scanner the host uses, so the two cannot disagree about where one ends.
 export {

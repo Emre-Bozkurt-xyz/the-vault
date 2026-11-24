@@ -119,15 +119,18 @@ export function ExtensionOverlayLayer({
 /**
  * A read view's document wrapped with its overlays: the layer is positioned
  * over `children`. Renders `children` untouched when no overlay applies, so
- * documents without overlays keep their exact markup.
+ * documents without overlays keep their exact markup. Pass the document's
+ * `markdown` so overlay items anchored to text find their lines.
  */
 export function ExtensionOverlaySurface({
   extensions,
   links = {},
+  markdown,
   children,
 }: {
   extensions: DocumentExtensions;
   links?: ExtensionLinks;
+  markdown?: string;
   children: ReactNode;
 }) {
   if (!hasExtensionOverlays(extensions) || !extensions.documentId) {
@@ -137,6 +140,7 @@ export function ExtensionOverlaySurface({
   return (
     <DocumentOverlayHost
       documentId={extensions.documentId}
+      markdown={markdown}
       overlays={<ExtensionOverlayLayer extensions={extensions} links={links} />}
     >
       {children}

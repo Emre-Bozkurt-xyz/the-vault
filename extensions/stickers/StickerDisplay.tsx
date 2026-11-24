@@ -1,7 +1,12 @@
 "use client";
 
 import type { OverlayProps } from "@/lib/extension-api";
-import { OverlayItem, useExtensionState, useRevealRequest } from "@/lib/extension-api/react";
+import {
+  OverlayItem,
+  useExtensionState,
+  useOverlayAnchors,
+  useRevealRequest,
+} from "@/lib/extension-api/react";
 
 import { revealSticker } from "./reveal";
 import { stickersStateSchema, type PublicStickerItem } from "./state";
@@ -20,6 +25,8 @@ export default function StickerDisplay({ ctx }: OverlayProps) {
   const { value, status } = useExtensionState(ctx, fromState ? "layout" : null, {
     schema: stickersStateSchema,
   });
+  // Beside the line of text each sticker was anchored to (StickerLayer).
+  const anchors = useOverlayAnchors();
   // "Used in … · Stickers" links land here for readers who don't edit.
   useRevealRequest(ctx, revealSticker, !fromState || status !== "loading");
 
@@ -33,7 +40,11 @@ export default function StickerDisplay({ ctx }: OverlayProps) {
         <OverlayItem
           key={item.id}
           interactive={false}
-          style={{ left: item.left, top: item.top, width: item.width }}
+          style={{
+            left: item.left,
+            top: (item.anchor ? anchors.resolve(item.anchor) : null) ?? item.top,
+            width: item.width,
+          }}
         >
           <div
             data-sticker-id={item.id}

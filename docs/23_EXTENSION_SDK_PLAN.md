@@ -702,7 +702,8 @@ types.
   and the workspace read view use the surface; `MarkdownEditor` passes the
   layer to its existing `DocumentOverlayHost`.
 - SDK: `OverlayProps`, `overlays` in `defineRender`/`defineEditor`,
-  `OverlayItem` and `useSessionEvent` in `@/lib/extension-api/react`,
+  `OverlayItem`, `useSessionEvent` and `useOverlayAnchors` in
+  `@/lib/extension-api/react`,
   `editor.pickAsset()` and `context.emit()` for commands.
   `lib/extension-host/session-events.ts` is the per-document,
   per-extension event bus. `MarkdownEditor` owns one generic asset picker.
@@ -712,6 +713,16 @@ types.
   interactive, placed via a `place` session event), `editor.tsx` (the add
   command picks an image and emits `place`; toggle-layer, previously declared
   but never implemented, hides the layer), and a fixture.
+  Overlay anchoring (2026-11-24): an item can be pinned to a source line
+  (`OverlayAnchor` = line + its text + dy, `lib/extension-api/anchors.ts`) so
+  it lands beside the same words in the editor and on read/public pages.
+  `DocumentOverlayHost` provides an anchor surface: the editor's
+  (`components/markdown/editor-anchor-surface.ts`, CodeMirror's height map)
+  or, given the document's `markdown`, a page surface
+  (`components/extensions/page-anchor-surface.ts`) reading the
+  `data-source-line`/`data-source-end` tags `MarkdownDocument` puts on a
+  document's top-level render (mapped back through asset-group expansion by
+  `lib/markdown/source-line-map.ts`). Stickers store `anchor` beside `top`.
   `PublicStickerDisplay`, the sticker toolbar group, picker state and palette
   entry, `stickersEnabled` and `stickerItems` are gone from core.
 - Tests: SDK hooks' server actions are aliased to stubs under vitest

@@ -178,6 +178,7 @@ export default async function PublicDocumentPage({
               <ExtensionOverlaySurface
                 extensions={documentExtensions}
                 links={{ wikiLinks, assetLinks }}
+                markdown={document.markdown}
               >
                 <DocumentStyling
                   documentId={document.id}

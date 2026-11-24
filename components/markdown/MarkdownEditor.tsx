@@ -63,6 +63,7 @@ import { yCollab } from "y-codemirror.next";
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { DocumentOverlayHost } from "@/components/extensions/DocumentOverlayHost";
+import { createEditorAnchorSurface } from "@/components/markdown/editor-anchor-surface";
 import { ExtensionOverlayLayer } from "@/components/extensions/ExtensionOverlays";
 import { ContentPickerDialog } from "@/components/content-picker-dialog";
 import { DocumentCanvas } from "@/components/markdown/DocumentCanvas";
@@ -527,6 +528,9 @@ export function MarkdownEditor({
   const viewRef = useRef<EditorView | null>(null);
   const readPreviewRef = useRef<HTMLDivElement | null>(null);
   const [viewEpoch, setViewEpoch] = useState(0);
+  // Where overlay items anchored to text (stickers) find their lines while
+  // the source editor is showing (`useOverlayAnchors`).
+  const [anchorSurface] = useState(createEditorAnchorSurface);
   const assetInputRef = useRef<HTMLInputElement | null>(null);
   const assetUploadHandlerRef = useRef<
     ((file: File, view: EditorView | null) => Promise<void>) | null
@@ -997,6 +1001,7 @@ export function MarkdownEditor({
         ),
       ),
       createBlockAnchorMarkerExtension(),
+      anchorSurface.extension,
       EditorView.domEventHandlers({
         paste(event, view) {
           const file = firstSupportedAssetFile(event.clipboardData?.files);
@@ -1407,6 +1412,7 @@ export function MarkdownEditor({
       tasksEnabled,
       toggleReadTask,
       liveContributions,
+      anchorSurface,
     ],
   );
 
@@ -1894,6 +1900,10 @@ export function MarkdownEditor({
             above it. */}
         <DocumentOverlayHost
           documentId={documentId}
+          // The source editor measures lines itself; the Read preview is a
+          // rendered page the host reads its tags from.
+          anchorSurface={editorMode !== "read" ? anchorSurface : null}
+          markdown={markdownValue}
           overlays={
             documentExtensions ? (
               <ExtensionOverlayLayer
@@ -1938,6 +1948,7 @@ export function MarkdownEditor({
                   }}
                   onCreateEditor={(view) => {
                     viewRef.current = view;
+                    anchorSurface.attach(view);
                     setViewEpoch((epoch) => epoch + 1);
                     setSelectedAssetEmbed(
                       findAssetEmbedAtSelection(view, assetLinkMap),

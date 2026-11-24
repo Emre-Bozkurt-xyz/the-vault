@@ -20,6 +20,7 @@ import {
   Children,
   type ChangeEvent,
   cloneElement,
+  createElement,
   isValidElement,
   type CSSProperties,
   type ReactElement,
@@ -90,6 +91,7 @@ import {
   remarkTasks,
 } from "@/lib/markdown/task-directives";
 import type { ParsedTask } from "@/lib/tasks/parse";
+import { mapRenderedLinesToSource } from "@/lib/markdown/source-line-map";
 import { mapReadTaskSources } from "@/lib/tasks/read-source";
 
 type ReadTaskToggle = (task: Pick<ParsedTask, "line" | "rawLine">, checked: boolean) => void;
@@ -341,6 +343,53 @@ function normalizeSelfClosingIframes(markdown: string) {
   return markdown.replace(/<iframe\b([^>]*)\/>/gi, "<iframe$1></iframe>");
 }
 
+/**
+ * A segment's line (1-based, as remark counts it) to the absolute 1-based line
+ * of the document's Markdown, frontmatter included.
+ */
+type SourceLineOf = (segmentLine: number) => number;
+
+function offsetSourceLine(sourceLine: SourceLineOf | null, offset: number): SourceLineOf | null {
+  return sourceLine === null ? null : (line) => sourceLine(offset + line);
+}
+
+/** Block elements that mark where a source line sits on the page. */
+const SOURCE_LINE_TAGS = [
+  "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "ul", "ol", "blockquote", "pre",
+  "table", "hr", "div", "figure", "details", "dl", "section", "aside",
+] as const;
+
+/**
+ * Tags block elements with `data-source-line` and `data-source-end` (their
+ * first and last absolute 1-based lines in
+ * the document's Markdown), so overlays can be anchored to text and land in
+ * the same place here as in the editor. Wraps each block component: elements
+ * a component renders itself get the attribute; components that render
+ * another component (code blocks) are simply left untagged.
+ */
+function withSourceLines(sourceLine: SourceLineOf | null, components: Components): Components {
+  if (sourceLine === null) return components;
+  const tagged: Components = { ...components };
+  for (const tag of SOURCE_LINE_TAGS) {
+    const original = components[tag] as ((props: Record<string, unknown>) => ReactNode) | undefined;
+    const SourceLined = (
+      props: Record<string, unknown> & { node?: { position?: { start?: { line?: number }; end?: { line?: number } } } },
+    ) => {
+      const { node, ...rest } = props;
+      const rendered = original ? original(props) : createElement(tag, rest);
+      const line = node?.position?.start?.line;
+      const endLine = node?.position?.end?.line ?? line;
+      if (!line || !isValidElement(rendered) || typeof rendered.type !== "string") return rendered;
+      return cloneElement(rendered as ReactElement<Record<string, unknown>>, {
+        "data-source-line": sourceLine(line),
+        "data-source-end": sourceLine(endLine ?? line),
+      });
+    };
+    (tagged as Record<string, unknown>)[tag] = SourceLined;
+  }
+  return tagged;
+}
+
 function createMarkdownComponents(
   disableLinks: boolean,
   headingIds: Map<string, number>,
@@ -359,6 +408,13 @@ function createMarkdownComponents(
   startLine: number,
   readTasks: Map<number, ParsedTask> | null,
   onTaskToggle?: ReadTaskToggle,
+  /**
+   * Maps this segment's lines to the document's source lines, or null when
+   * this render isn't the document itself (an embed, a region). Blocks then
+   * carry `data-source-line`, which overlay anchoring uses to find a line on
+   * the page (`DocumentOverlayHost`).
+   */
+  sourceLine: SourceLineOf | null = null,
 ): Components {
   const headingProps = (
     children: ReactNode,
@@ -376,7 +432,7 @@ function createMarkdownComponents(
     };
   };
 
-  return {
+  return withSourceLines(sourceLine, {
   h1({ children, className, style }) {
     return <h1 {...headingProps(children, "vault-md-h1", className, style)}>{children}</h1>;
   },
@@ -674,7 +730,7 @@ function createMarkdownComponents(
   [EXTENSION_INLINE_ELEMENT]: (props: Record<string, string | undefined>) => (
     <ExtensionInlineHost occurrenceKey={props[EXTENSION_INLINE_KEY_ATTRIBUTE]} />
   ),
-  } as Components;
+  } as Components);
 }
 
 const taskItemBlockTags = new Set([
@@ -1075,6 +1131,21 @@ export function MarkdownDocument({
     ? (markdown.slice(0, markdown.length - stripDocumentFrontmatter(markdown).length).match(/\n/g)?.length ?? 0)
     : 0;
   const sourceOffset = (taskSource?.offset ?? 0) + strippedLineCount;
+  // Only a document's own top-level render (the one handed `extensions`) is
+  // tagged with source lines; embedded notes, regions and text inside blocks
+  // render other Markdown. Lines count from the top of the full Markdown,
+  // frontmatter included, through the asset expansion above.
+  const sourceLine: SourceLineOf | null = (() => {
+    if (embedDepth !== 0 || taskSource || !extensions) return null;
+    const full = markdown || "";
+    const prefixLines = full.slice(0, full.length - stripDocumentFrontmatter(full).length).split("\n").length - 1;
+    const map = mapRenderedLinesToSource(
+      bodyMarkdown.split("\n"),
+      sourceMarkdown.split("\n"),
+      (line) => transformAssetEmbeds(normalizeSelfClosingIframes(line), assetLinks),
+    );
+    return (line) => prefixLines + (map[Math.min(Math.max(line, 1), map.length) - 1] ?? line - 1) + 1;
+  })();
 
   // Extension directives are planned once, here, before anything renders: an
   // extension's `analyze` (calc binding names top to bottom) needs every
@@ -1112,6 +1183,7 @@ export function MarkdownDocument({
             readTasks={readTasks}
             onTaskToggle={onTaskToggle}
             startLine={sourceOffset + block.startLine}
+            sourceLine={offsetSourceLine(sourceLine, block.startLine)}
           />
         ) : block.type === "region" ? (
           <VaultRegion
@@ -1251,6 +1323,7 @@ function MarkdownBlock({
   readTasks,
   onTaskToggle,
   startLine,
+  sourceLine,
 }: {
   parts: DirectivePart[];
   disableLinks: boolean;
@@ -1263,6 +1336,7 @@ function MarkdownBlock({
   readTasks: Map<number, ParsedTask> | null;
   onTaskToggle?: ReadTaskToggle;
   startLine: number;
+  sourceLine: SourceLineOf | null;
 }) {
   return (
     <>
@@ -1306,6 +1380,7 @@ function MarkdownBlock({
             readTasks={readTasks}
             onTaskToggle={onTaskToggle}
             startLine={startLine + part.startLine}
+            sourceLine={offsetSourceLine(sourceLine, part.startLine)}
           />
         );
       })}
@@ -1325,6 +1400,7 @@ function MarkdownSegment({
   readTasks,
   onTaskToggle,
   startLine,
+  sourceLine,
 }: {
   markdown: string;
   disableLinks: boolean;
@@ -1337,6 +1413,7 @@ function MarkdownSegment({
   readTasks: Map<number, ParsedTask> | null;
   onTaskToggle?: ReadTaskToggle;
   startLine: number;
+  sourceLine: SourceLineOf | null;
 }) {
   const renderedMarkdown = transformWikiLinks(
     transformAssetEmbeds(markdown, assetLinks),
@@ -1376,6 +1453,7 @@ function MarkdownSegment({
         startLine,
         readTasks,
         onTaskToggle,
+        sourceLine,
       )}
     >
       {renderedMarkdown}

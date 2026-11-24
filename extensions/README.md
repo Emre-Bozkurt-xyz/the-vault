@@ -166,6 +166,16 @@ Both receive `{ ctx, links }`. Position things with `OverlayItem` from
 selectable). The read-only overlay renders wherever the document has your
 state, for readers who never enabled the extension too.
 
+The editor and read/public pages space text differently, so a fixed `top`
+lands beside different words on each. To keep an item beside its text, anchor
+it with `useOverlayAnchors()`: store `anchorAt(top)` (an `OverlayAnchor`, the
+line plus an offset; `overlayAnchorSchema` from `@/lib/extension-api` for your
+state schema) whenever the item is placed or moved, and render at
+`resolve(anchor) ?? top`. The anchor follows its line when text is added above
+it. Stickers do this (`extensions/stickers/StickerLayer.tsx`), including
+anchoring items saved before anchors existed, once the editor's layout has
+settled (`surface === "editor"`, `measuredAt(top)`).
+
 ### 5. Commands and toolbar
 
 ```tsx
