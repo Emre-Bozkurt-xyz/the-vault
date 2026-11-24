@@ -83,15 +83,38 @@ export const SORT_LABELS: Record<MediaSort, string> = {
   size: "Largest",
 };
 
+/** Closes a menu shown from the selection bar: the selection's own controls. */
+function SelectionControls({ actions }: { actions: LibraryMenuActions }) {
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuItem onClick={actions.selectAll}>
+          <CheckSquare /> Select all <DropdownMenuShortcut>Ctrl A</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={actions.clearSelection}>
+          <X /> Clear selection <DropdownMenuShortcut>Esc</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+    </>
+  );
+}
+
 export function AssetMenuItems({
   asset,
   actions,
   inPanel = false,
+  inSelection = false,
 }: {
   asset: AssetLibraryItem;
   actions: LibraryMenuActions;
   /** The panel already shows the details. */
   inPanel?: boolean;
+  /**
+   * Shown from the selection bar (the touch way to an item's menu: long-press,
+   * then More): no "Select", and the selection's own controls at the end.
+   */
+  inSelection?: boolean;
 }) {
   const one = { assetIds: [asset.id], folderIds: [] };
   return (
@@ -100,7 +123,7 @@ export function AssetMenuItems({
         <DropdownMenuItem onClick={() => actions.view(asset)}>
           <Maximize2 /> View <DropdownMenuShortcut>Enter</DropdownMenuShortcut>
         </DropdownMenuItem>
-        {inPanel ? null : (
+        {inPanel || inSelection ? null : (
           <DropdownMenuItem onClick={() => actions.select({ kind: "asset", id: asset.id })}>
             <CircleCheck /> Select
           </DropdownMenuItem>
@@ -143,6 +166,7 @@ export function AssetMenuItems({
           <Trash2 /> Move to Bin <DropdownMenuShortcut>Del</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuGroup>
+      {inSelection ? <SelectionControls actions={actions} /> : null}
     </>
   );
 }
@@ -152,12 +176,15 @@ export function FolderMenuItems({
   actions,
   inPanel = false,
   current = false,
+  inSelection = false,
 }: {
   folder: MediaFolder;
   actions: LibraryMenuActions;
   inPanel?: boolean;
   /** The folder the page is showing: no "Open". */
   current?: boolean;
+  /** Shown from the selection bar: no "Select", selection controls at the end. */
+  inSelection?: boolean;
 }) {
   const one = { assetIds: [], folderIds: [folder.id] };
   return (
@@ -168,7 +195,7 @@ export function FolderMenuItems({
             <FolderOpen /> Open <DropdownMenuShortcut>Enter</DropdownMenuShortcut>
           </DropdownMenuItem>
         )}
-        {current || inPanel ? null : (
+        {current || inPanel || inSelection ? null : (
           <DropdownMenuItem onClick={() => actions.select({ kind: "folder", id: folder.id })}>
             <CircleCheck /> Select
           </DropdownMenuItem>
@@ -197,6 +224,7 @@ export function FolderMenuItems({
           <Trash2 /> Move to Bin {current ? null : <DropdownMenuShortcut>Del</DropdownMenuShortcut>}
         </DropdownMenuItem>
       </DropdownMenuGroup>
+      {inSelection ? <SelectionControls actions={actions} /> : null}
     </>
   );
 }

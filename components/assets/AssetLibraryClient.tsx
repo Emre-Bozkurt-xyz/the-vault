@@ -92,6 +92,7 @@ import {
   type MediaView,
 } from "@/lib/media-library";
 import { fetchAssetLibrary } from "@/lib/shared-request";
+import { cn } from "@/lib/utils";
 import { attachVideoPoster, requestServerPoster } from "@/lib/video-poster";
 import { setMediaLibraryViewAction } from "@/server/user-settings-actions";
 
@@ -1043,11 +1044,19 @@ export function AssetLibraryClient({
             onSelectAll={actions.selectAll}
             onClear={clearSelection}
             menu={
-              <SelectionMenuItems
-                assetIds={liveSelection.assetIds}
-                folderIds={liveSelection.folderIds}
-                actions={actions}
-              />
+              // One item: its whole menu (on touch, long-press then More is
+              // how you reach it). Several: what applies to all of them.
+              selectedCount === 1 && selected ? (
+                <AssetMenuItems asset={selected} actions={actions} inSelection />
+              ) : selectedCount === 1 && selectedFolder ? (
+                <FolderMenuItems folder={selectedFolder} actions={actions} inSelection />
+              ) : (
+                <SelectionMenuItems
+                  assetIds={liveSelection.assetIds}
+                  folderIds={liveSelection.folderIds}
+                  actions={actions}
+                />
+              )
             }
           />
         ) : null}
@@ -1262,8 +1271,10 @@ export function AssetLibraryClient({
 }
 
 /**
- * The bar while selecting: the count, the common actions, every other action
- * for the selection in "⋯", and close. With nothing ticked yet (selection mode
+ * The bar while selecting: the count, the common actions, everything else in
+ * More (an item's whole menu when one is selected), and close. On a phone it
+ * spans the width with thumb-sized buttons labelled under their icons; on
+ * wider screens it is a compact pill. With nothing ticked yet (selection mode
  * entered from a menu) it says what to do and offers Select all.
  */
 function SelectionBar({
@@ -1285,58 +1296,71 @@ function SelectionBar({
     <div
       role="toolbar"
       aria-label="Selection"
-      className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-full items-center gap-0.5 rounded-full border border-border/80 bg-popover/95 py-1 pl-4 pr-1 text-sm shadow-lg backdrop-blur sm:gap-1"
+      className="sticky bottom-3 z-30 mx-auto flex w-full items-center gap-1 rounded-2xl border border-border/80 bg-popover/95 p-1.5 text-sm shadow-lg backdrop-blur sm:bottom-4 sm:w-fit sm:max-w-full sm:rounded-full sm:py-1 sm:pl-4 sm:pr-1"
     >
-      <span className="mr-1 whitespace-nowrap font-medium tabular-nums sm:mr-2" aria-live="polite">
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Clear selection (Esc)"
+        title="Clear selection (Esc)"
+        className="order-first grid size-12 shrink-0 place-items-center rounded-xl text-muted-foreground transition hover:bg-muted hover:text-foreground active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 sm:order-last sm:size-8 sm:rounded-full"
+      >
+        <X className="size-5 sm:size-4" />
+      </button>
+      <span
+        className="min-w-0 flex-1 truncate whitespace-nowrap px-1 text-base font-semibold tabular-nums sm:mr-2 sm:flex-none sm:px-0 sm:text-sm sm:font-medium"
+        aria-live="polite"
+      >
         {count > 0 ? `${count} selected` : "Tap items to select"}
       </span>
       {count === 0 ? (
-        <Button type="button" variant="ghost" size="sm" onClick={onSelectAll}>
-          <CheckSquare data-icon="inline-start" />
-          Select all
-        </Button>
+        <BarButton icon={CheckSquare} label="Select all" onClick={onSelectAll} />
       ) : (
         <>
-          <Button type="button" variant="ghost" size="sm" onClick={onMove} aria-label="Move to…" title="Move to…">
-            <FolderInput data-icon="inline-start" />
-            <span className="hidden sm:inline">Move to…</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onBin}
-            className="text-destructive"
-            aria-label="Move to Bin"
-            title="Move to Bin"
-          >
-            <Trash2 data-icon="inline-start" />
-            <span className="hidden sm:inline">Move to Bin</span>
-          </Button>
+          <BarButton icon={FolderInput} label="Move" title="Move to…" onClick={onMove} />
+          <BarButton icon={Trash2} label="Bin" title="Move to Bin" onClick={onBin} destructive />
           <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label="More actions for the selection"
-              className="grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 data-[popup-open]:bg-muted"
-            >
-              <MoreHorizontal className="size-4" />
+            <DropdownMenuTrigger aria-label="More actions" title="More actions" className={barButtonClass}>
+              <MoreHorizontal className="size-5 sm:size-4" />
+              <span>More</span>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" className="min-w-52">
+            <DropdownMenuContent align="end" side="top" className="min-w-56">
               {menu}
             </DropdownMenuContent>
           </DropdownMenu>
         </>
       )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        onClick={onClear}
-        aria-label="Clear selection (Esc)"
-        title="Clear selection (Esc)"
-      >
-        <X />
-      </Button>
     </div>
+  );
+}
+
+const barButtonClass =
+  "flex h-12 min-w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[0.7rem] font-medium text-foreground transition hover:bg-muted active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 data-[popup-open]:bg-muted sm:h-8 sm:min-w-0 sm:flex-row sm:gap-1.5 sm:rounded-full sm:px-3 sm:text-sm";
+
+function BarButton({
+  icon: Icon,
+  label,
+  title,
+  onClick,
+  destructive = false,
+}: {
+  icon: typeof X;
+  label: string;
+  title?: string;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title ?? label}
+      aria-label={title ?? label}
+      className={cn(barButtonClass, destructive && "text-destructive")}
+    >
+      <Icon className="size-5 sm:size-4" />
+      <span>{label}</span>
+    </button>
   );
 }
 
