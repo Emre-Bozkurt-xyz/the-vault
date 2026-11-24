@@ -251,18 +251,24 @@ export function FolderCard({
         )}
       >
         <FolderPreview previews={previews} />
-        <span className="absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-2.5 pt-10 text-white">
-          {item.drop.active ? (
-            <FolderOpen className="mb-0.5 size-4 shrink-0" aria-hidden />
-          ) : (
-            <Folder className="mb-0.5 size-4 shrink-0 fill-white/25" aria-hidden />
+        {/* What it is, top-left: the select circle takes this spot on hover and while selecting. */}
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute left-2 top-2 grid size-6 place-items-center rounded-full bg-black/45 text-white shadow-sm backdrop-blur transition-opacity",
+            handlers.selecting || item.selected ? "opacity-0" : "group-hover:opacity-0",
           )}
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{folder.name}</span>
-            <span className="block truncate text-xs text-white/75">
-              {item.drop.active ? "Drop to move here" : folderSummary(folder)}
-            </span>
-          </span>
+        >
+          {item.drop.active ? (
+            <FolderOpen className="size-3.5" />
+          ) : (
+            <Folder className="size-3.5 fill-white/30" />
+          )}
+        </span>
+        {/* Just the name; counts live in Details. */}
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-3 pb-2 pt-8 text-white">
+          <span className="block truncate text-sm font-semibold tracking-tight">{folder.name}</span>
+          {item.drop.active ? <span className="block truncate text-xs text-white/80">Drop to move here</span> : null}
         </span>
         {item.selected ? <span aria-hidden className="pointer-events-none absolute inset-0 bg-primary/12" /> : null}
       </button>
@@ -276,7 +282,7 @@ export function FolderCard({
 function FolderPreview({ previews }: { previews: string[] }) {
   if (previews.length === 0) {
     return (
-      <span className="grid size-full place-items-center pb-8 text-muted-foreground/60">
+      <span className="grid size-full place-items-center pb-6 text-muted-foreground/60">
         <Folder className="size-14 stroke-[1.25]" aria-hidden />
       </span>
     );

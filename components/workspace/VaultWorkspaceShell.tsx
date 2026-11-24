@@ -10,11 +10,13 @@ import {
   PanelRightOpen,
   Search,
   Settings,
+  X,
 } from "lucide-react";
 
 import { openWorkspaceSettings } from "@/components/settings/SettingsModalController";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -531,9 +533,18 @@ export function VaultWorkspaceShell({
             showCloseButton={false}
             className="w-[min(24rem,90vw)] max-w-none gap-0 border-border/70 bg-card p-0 pr-safe pt-safe text-card-foreground"
           >
-            <SheetTitle className="flex h-12 shrink-0 items-center border-b border-border/70 px-4 font-sans text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {rightPanelTitle}
-            </SheetTitle>
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-2">
+              <SheetTitle className="min-w-0 flex-1 truncate font-sans text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {rightPanelTitle}
+              </SheetTitle>
+              {/* The sheet covers nearly the whole phone screen: a tap outside is no way out. */}
+              <SheetClose
+                aria-label={`Close ${rightPanelTitle ?? "panel"}`}
+                className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              >
+                <X className="size-4" />
+              </SheetClose>
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
               {rightPanel}
             </div>
