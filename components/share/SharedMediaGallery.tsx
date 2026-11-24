@@ -1,27 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ChevronRight, Download, File as FileIcon, FileText, Film, Folder, ImageIcon, Play } from "lucide-react";
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { formatDuration } from "@/components/assets/MediaItemViews";
 import { JustifiedGrid } from "@/components/assets/JustifiedGrid";
+import { ViewControls, type KindFilter } from "@/components/assets/LibraryToolbar";
 import { MediaViewer } from "@/components/assets/MediaViewer";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetTypeLabel } from "@/components/assets/asset-ui";
 import { buttonVariants } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
-import { tileAspect } from "@/lib/media-library";
+import {
+  parseMediaSort,
+  parseMediaView,
+  sortMediaAssets,
+  tileAspect,
+  type MediaSort,
+  type MediaView,
+} from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 export type SharedGalleryFolder = { id: string; name: string; files: number; folders: number; href: string };
+
+/** The share page's formats: the library's, minus the Details table. */
+const SHARE_VIEWS: readonly MediaView[] = ["masonry", "grid", "list"];
+const DEFAULT_SORT: MediaSort = "taken";
+
+// A visitor's view and sort, remembered in their browser (no account here).
+const PREFS_KEY = "vault:shared-gallery";
+const PREFS_EVENT = "vault:shared-gallery-prefs";
+
+function readPrefs(): string {
+  try {
+    return window.localStorage.getItem(PREFS_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function subscribePrefs(onChange: () => void) {
+  window.addEventListener(PREFS_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(PREFS_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function useSharedGalleryPrefs() {
+  const raw = useSyncExternalStore(subscribePrefs, readPrefs, () => "");
+  const prefs = useMemo(() => {
+    let parsed: { view?: unknown; sort?: unknown } = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+    const view = parseMediaView(parsed.view);
+    return {
+      view: SHARE_VIEWS.includes(view) ? view : "masonry",
+      sort: parsed.sort === undefined ? DEFAULT_SORT : parseMediaSort(parsed.sort),
+    };
+  }, [raw]);
+  const save = (next: Partial<{ view: MediaView; sort: MediaSort }>) => {
+    try {
+      window.localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, ...next }));
+    } catch {
+      // Private mode: the choice just isn't remembered.
+    }
+    window.dispatchEvent(new Event(PREFS_EVENT));
+  };
+  return [prefs, save] as const;
+}
+
+function matchesKind(asset: AssetLibraryItem, kind: KindFilter) {
+  return kind === "all" || asset.kind === kind;
+}
 
 /**
  * The public side of a media share link (`/s/<token>`): no workspace, no
  * account, just the shared folder (or file): subfolders, a phone-gallery
  * mosaic of thumbnails (the library's `JustifiedGrid`), the same full-screen
- * viewer as the library, and, when the owner allows it, downloads.
+ * viewer as the library, and, when the owner allows it, downloads. Visitors
+ * can filter by type, sort, and switch to a grid or list (`ViewControls`);
+ * view and sort are remembered in their browser.
  */
 export function SharedMediaGallery({
   title,
@@ -44,6 +109,13 @@ export function SharedMediaGallery({
   singleItem?: boolean;
 }) {
   const [open, setOpen] = useState<number | null>(null);
+  const [kind, setKind] = useState<KindFilter>("all");
+  const [prefs, savePrefs] = useSharedGalleryPrefs();
+  // What's on screen, in screen order; the viewer steps through the same list.
+  const shown = useMemo(
+    () => sortMediaAssets(assets.filter((asset) => matchesKind(asset, kind)), prefs.sort),
+    [assets, kind, prefs.sort],
+  );
   const totalBytes = assets.reduce((total, asset) => total + asset.sizeBytes, 0);
   const counts = [
     folders.length > 0 ? `${folders.length} ${folders.length === 1 ? "folder" : "folders"}` : null,
@@ -124,17 +196,53 @@ export function SharedMediaGallery({
             <SharedCard asset={assets[0]} onOpen={() => setOpen(0)} />
           </div>
         ) : (
-          <JustifiedGrid
-            entries={assets.map((asset, index) => ({
-              key: asset.id,
-              aspect: tileAspect({
-                width: asset.width,
-                height: asset.height,
-                pictured: asset.thumbUrl !== null,
-              }),
-              node: <SharedTile asset={asset} onOpen={() => setOpen(index)} />,
-            }))}
-          />
+          <section aria-label="Files" className="grid min-w-0 gap-3">
+            <div className="flex items-center justify-end gap-1.5">
+              <ViewControls
+                kind={kind}
+                onKindChange={setKind}
+                sort={prefs.sort}
+                onSortChange={(sort) => savePrefs({ sort })}
+                view={prefs.view}
+                onViewChange={(view) => savePrefs({ view })}
+                views={SHARE_VIEWS}
+              />
+            </div>
+            {shown.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border/80 px-5 py-10 text-center text-sm text-muted-foreground">
+                Nothing of that type here.{" "}
+                <button type="button" onClick={() => setKind("all")} className="underline underline-offset-4">
+                  Show everything
+                </button>
+              </p>
+            ) : prefs.view === "grid" ? (
+              <div className="grid min-w-0 grid-cols-3 gap-0.5 sm:gap-1 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6">
+                {shown.map((asset, index) => (
+                  <div key={asset.id} className="relative aspect-square min-w-0">
+                    <SharedTile asset={asset} onOpen={() => setOpen(index)} />
+                  </div>
+                ))}
+              </div>
+            ) : prefs.view === "list" ? (
+              <div role="list" className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
+                {shown.map((asset, index) => (
+                  <SharedRow key={asset.id} asset={asset} onOpen={() => setOpen(index)} />
+                ))}
+              </div>
+            ) : (
+              <JustifiedGrid
+                entries={shown.map((asset, index) => ({
+                  key: asset.id,
+                  aspect: tileAspect({
+                    width: asset.width,
+                    height: asset.height,
+                    pictured: asset.thumbUrl !== null,
+                  }),
+                  node: <SharedTile asset={asset} onOpen={() => setOpen(index)} />,
+                }))}
+              />
+            )}
+          </section>
         )
       ) : folders.length === 0 ? (
         <p className="rounded-md border border-dashed border-border/80 px-5 py-12 text-center text-sm text-muted-foreground">
@@ -144,7 +252,7 @@ export function SharedMediaGallery({
 
       {open !== null ? (
         <MediaViewer
-          items={assets}
+          items={singleItem ? assets : shown}
           index={open}
           onIndexChange={setOpen}
           onClose={() => setOpen(null)}
@@ -194,6 +302,37 @@ function SharedTile({ asset, onOpen }: { asset: AssetLibraryItem; onOpen: () => 
   );
 }
 
+/** A list row: thumbnail, name, and what it is. */
+function SharedRow({ asset, onOpen }: { asset: AssetLibraryItem; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      role="listitem"
+      onClick={onOpen}
+      className="flex w-full min-w-0 items-center gap-3 rounded-md border border-transparent px-2 py-1.5 text-left text-sm transition hover:border-border/70 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+    >
+      <span className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded bg-muted text-muted-foreground">
+        <RenditionImage
+          src={asset.thumbUrl}
+          alt=""
+          className="size-full object-cover"
+          fallback={<KindIcon kind={asset.kind} small />}
+        />
+      </span>
+      <span className="min-w-0 flex-1 truncate font-medium">{asset.displayName}</span>
+      <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground @xl:block">{assetTypeLabel(asset)}</span>
+      {asset.kind === "video" && asset.durationMs ? (
+        <span className="hidden w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground @md:block">
+          {formatDuration(asset.durationMs)}
+        </span>
+      ) : null}
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+        {formatBytes(asset.sizeBytes)}
+      </span>
+    </button>
+  );
+}
+
 /** The single shared file, at display size with its name under it. */
 function SharedCard({ asset, onOpen }: { asset: AssetLibraryItem; onOpen: () => void }) {
   return (
@@ -233,7 +372,7 @@ function SharedCard({ asset, onOpen }: { asset: AssetLibraryItem; onOpen: () => 
   );
 }
 
-function KindIcon({ kind }: { kind: AssetLibraryItem["kind"] }) {
+function KindIcon({ kind, small = false }: { kind: AssetLibraryItem["kind"]; small?: boolean }) {
   const Icon = kind === "video" ? Film : kind === "pdf" ? FileText : kind === "image" ? ImageIcon : FileIcon;
-  return <Icon className="size-8" />;
+  return <Icon className={small ? "size-4" : "size-8"} />;
 }

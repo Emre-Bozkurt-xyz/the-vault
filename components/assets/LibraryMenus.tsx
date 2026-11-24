@@ -312,7 +312,7 @@ export function PlaceMenuItems({
           <DropdownMenuSubContent className="min-w-36">
             <DropdownMenuRadioGroup value={view} onValueChange={(value) => onViewChange(value as MediaView)}>
               {MEDIA_VIEWS.map((option) => (
-                <DropdownMenuRadioItem key={option} value={option}>
+                <DropdownMenuRadioItem key={option} value={option} closeOnClick>
                   {VIEW_LABELS[option]}
                 </DropdownMenuRadioItem>
               ))}
@@ -324,7 +324,7 @@ export function PlaceMenuItems({
           <DropdownMenuSubContent className="min-w-36">
             <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as MediaSort)}>
               {MEDIA_SORTS.map((option) => (
-                <DropdownMenuRadioItem key={option} value={option}>
+                <DropdownMenuRadioItem key={option} value={option} closeOnClick>
                   {SORT_LABELS[option]}
                 </DropdownMenuRadioItem>
               ))}

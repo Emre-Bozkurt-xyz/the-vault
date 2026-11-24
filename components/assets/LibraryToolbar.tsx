@@ -175,8 +175,6 @@ export function LibraryToolbar({
   onUploadFiles: () => void;
   onUploadFolder: () => void;
 }) {
-  const ViewIcon = VIEW_ICONS[view];
-
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -199,153 +197,16 @@ export function LibraryToolbar({
         </label>
 
         <div className="flex items-center gap-1.5">
-          {/* Phones: one button for how you're looking. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label="View options"
-              className={cn(menuButton, "relative size-9 px-0 sm:hidden", kind !== "all" && "border-primary/50")}
-            >
-              <SlidersHorizontal className="size-4" />
-              {kind !== "all" ? (
-                <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
-              ) : null}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-52">
-              <DropdownMenuGroup>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Filter /> Type
-                    <span className="ml-auto pl-3 text-xs text-muted-foreground">{KIND_LABELS[kind]}</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-40">
-                    <DropdownMenuRadioGroup value={kind} onValueChange={(value) => onKindChange(value as KindFilter)}>
-                      {(Object.keys(KIND_LABELS) as KindFilter[]).map((option) => (
-                        <DropdownMenuRadioItem key={option} value={option} closeOnClick>
-                          {KIND_LABELS[option]}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <ArrowDownUp /> Sort
-                    <span className="ml-auto pl-3 text-xs text-muted-foreground">{SORT_LABELS[sort]}</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-40">
-                    <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as MediaSort)}>
-                      {MEDIA_SORTS.map((option) => (
-                        <DropdownMenuRadioItem key={option} value={option} closeOnClick>
-                          {SORT_LABELS[option]}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <ViewIcon /> View
-                    <span className="ml-auto pl-3 text-xs text-muted-foreground">{VIEW_LABELS[view]}</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-40">
-                    <DropdownMenuRadioGroup value={view} onValueChange={(value) => onViewChange(value as MediaView)}>
-                      {MEDIA_VIEWS.map((option) => {
-                        const Icon = VIEW_ICONS[option];
-                        return (
-                          <DropdownMenuRadioItem key={option} value={option} closeOnClick>
-                            <Icon /> {VIEW_LABELS[option]}
-                          </DropdownMenuRadioItem>
-                        );
-                      })}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuCheckboxItem
-                  checked={showNames}
-                  disabled={!isPhotoView(view)}
-                  onCheckedChange={(checked) => onShowNamesChange(checked)}
-                >
-                  Show names
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={cn(menuButton, "max-sm:hidden", kind !== "all" && "border-primary/50 text-foreground")}
-              aria-label="Filter"
-            >
-              <Filter className="size-4" />
-              <span className="hidden @2xl:inline">{kind === "all" ? "Filter" : KIND_LABELS[kind]}</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Type</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={kind} onValueChange={(value) => onKindChange(value as KindFilter)}>
-                  {(Object.keys(KIND_LABELS) as KindFilter[]).map((option) => (
-                    <DropdownMenuRadioItem key={option} value={option}>
-                      {KIND_LABELS[option]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(menuButton, "max-sm:hidden")} aria-label={`Sort: ${SORT_LABELS[sort]}`}>
-              <ArrowDownUp className="size-4" />
-              <span className="hidden @2xl:inline">{SORT_LABELS[sort]}</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-40">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as MediaSort)}>
-                  {MEDIA_SORTS.map((option) => (
-                    <DropdownMenuRadioItem key={option} value={option}>
-                      {SORT_LABELS[option]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(menuButton, "max-sm:hidden")} aria-label={`View: ${VIEW_LABELS[view]}`}>
-              <ViewIcon className="size-4" />
-              <ChevronDown className="size-3.5 text-muted-foreground" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>View</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={view} onValueChange={(value) => onViewChange(value as MediaView)}>
-                  {MEDIA_VIEWS.map((option) => {
-                    const Icon = VIEW_ICONS[option];
-                    return (
-                      <DropdownMenuRadioItem key={option} value={option}>
-                        <Icon /> {VIEW_LABELS[option]}
-                      </DropdownMenuRadioItem>
-                    );
-                  })}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuCheckboxItem
-                  checked={showNames}
-                  disabled={!isPhotoView(view)}
-                  onCheckedChange={(checked) => onShowNamesChange(checked)}
-                >
-                  Show names
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ViewControls
+            kind={kind}
+            onKindChange={onKindChange}
+            sort={sort}
+            onSortChange={onSortChange}
+            view={view}
+            onViewChange={onViewChange}
+            showNames={showNames}
+            onShowNamesChange={onShowNamesChange}
+          />
 
           <button
             type="button"
@@ -399,5 +260,198 @@ export function LibraryToolbar({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * How you're looking: Filter (type), Sort and View. On a phone they fold into
+ * one "View options" menu; wider, they're three buttons. Every pick closes
+ * its menu. Shared by the library toolbar and the public share page.
+ */
+export function ViewControls({
+  kind,
+  onKindChange,
+  sort,
+  onSortChange,
+  view,
+  onViewChange,
+  views = MEDIA_VIEWS,
+  showNames = false,
+  onShowNamesChange,
+}: {
+  kind: KindFilter;
+  onKindChange: (kind: KindFilter) => void;
+  sort: MediaSort;
+  onSortChange: (sort: MediaSort) => void;
+  view: MediaView;
+  onViewChange: (view: MediaView) => void;
+  /** The formats offered (the share page has no Details table). */
+  views?: readonly MediaView[];
+  showNames?: boolean;
+  /** Omit where names can't be switched (the share page). */
+  onShowNamesChange?: (showNames: boolean) => void;
+}) {
+  const ViewIcon = VIEW_ICONS[view];
+
+  return (
+    <>
+    {/* Phones: one button for how you're looking. */}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="View options"
+        className={cn(menuButton, "relative size-9 px-0 sm:hidden", kind !== "all" && "border-primary/50")}
+      >
+        <SlidersHorizontal className="size-4" />
+        {kind !== "all" ? (
+          <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
+        ) : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-52">
+        <DropdownMenuGroup>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Filter /> Type
+              <span className="ml-auto pl-3 text-xs text-muted-foreground">{KIND_LABELS[kind]}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-40">
+              <DropdownMenuRadioGroup value={kind} onValueChange={(value) => onKindChange(value as KindFilter)}>
+                {(Object.keys(KIND_LABELS) as KindFilter[]).map((option) => (
+                  <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                    {KIND_LABELS[option]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ArrowDownUp /> Sort
+              <span className="ml-auto pl-3 text-xs text-muted-foreground">{SORT_LABELS[sort]}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-40">
+              <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as MediaSort)}>
+                {MEDIA_SORTS.map((option) => (
+                  <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                    {SORT_LABELS[option]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ViewIcon /> View
+              <span className="ml-auto pl-3 text-xs text-muted-foreground">{VIEW_LABELS[view]}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-40">
+              <DropdownMenuRadioGroup value={view} onValueChange={(value) => onViewChange(value as MediaView)}>
+                {views.map((option) => {
+                  const Icon = VIEW_ICONS[option];
+                  return (
+                    <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                      <Icon /> {VIEW_LABELS[option]}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuGroup>
+        {onShowNamesChange ? (
+        <>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuCheckboxItem
+            closeOnClick
+            checked={showNames}
+            disabled={!isPhotoView(view)}
+            onCheckedChange={(checked) => onShowNamesChange(checked)}
+          >
+            Show names
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(menuButton, "max-sm:hidden", kind !== "all" && "border-primary/50 text-foreground")}
+        aria-label="Filter"
+      >
+        <Filter className="size-4" />
+        <span className="hidden @2xl:inline">{kind === "all" ? "Filter" : KIND_LABELS[kind]}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Type</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={kind} onValueChange={(value) => onKindChange(value as KindFilter)}>
+            {(Object.keys(KIND_LABELS) as KindFilter[]).map((option) => (
+              <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                {KIND_LABELS[option]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+
+    <DropdownMenu>
+      <DropdownMenuTrigger className={cn(menuButton, "max-sm:hidden")} aria-label={`Sort: ${SORT_LABELS[sort]}`}>
+        <ArrowDownUp className="size-4" />
+        <span className="hidden @2xl:inline">{SORT_LABELS[sort]}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-40">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as MediaSort)}>
+            {MEDIA_SORTS.map((option) => (
+              <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                {SORT_LABELS[option]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+
+    <DropdownMenu>
+      <DropdownMenuTrigger className={cn(menuButton, "max-sm:hidden")} aria-label={`View: ${VIEW_LABELS[view]}`}>
+        <ViewIcon className="size-4" />
+        <ChevronDown className="size-3.5 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>View</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={view} onValueChange={(value) => onViewChange(value as MediaView)}>
+            {views.map((option) => {
+              const Icon = VIEW_ICONS[option];
+              return (
+                <DropdownMenuRadioItem key={option} value={option} closeOnClick>
+                  <Icon /> {VIEW_LABELS[option]}
+                </DropdownMenuRadioItem>
+              );
+            })}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        {onShowNamesChange ? (
+        <>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuCheckboxItem
+            closeOnClick
+            checked={showNames}
+            disabled={!isPhotoView(view)}
+            onCheckedChange={(checked) => onShowNamesChange(checked)}
+          >
+            Show names
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+    </>
   );
 }
