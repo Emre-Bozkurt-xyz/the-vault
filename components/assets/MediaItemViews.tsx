@@ -7,7 +7,6 @@ import {
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactNode,
 } from "react";
 import {
   ArrowDown,
@@ -19,58 +18,77 @@ import {
   Globe2,
   ImageIcon,
   Link2,
-  Lock,
   Play,
 } from "lucide-react";
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
+import {
+  FolderCard,
+  FolderRow,
+  FolderTableRow,
+  SharedBadge,
+  type FolderItemHandlers,
+  type FolderTileData,
+} from "@/components/assets/FolderTiles";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetExtensionBadge, assetTypeLabel } from "@/components/assets/asset-ui";
-import { WithContextMenu, type ContextMenuController } from "@/components/ui/use-context-menu";
 import { formatBytes } from "@/lib/format";
 import type { MediaSort, MediaView } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 /**
- * The four ways the library lists files (docs/26 §7): masonry (the default
+ * The four ways the library lists a place (docs/26 §7): masonry (the default
  * look), a square grid for big dumps, a compact list, and a details table.
- * All share one contract with the page — click selects (with modifiers),
- * double-click/Enter opens the viewer, drag moves — and render progressively,
- * so a folder of thousands of photos doesn't build thousands of cards up
- * front.
+ * Folders always come first, in the same columns or rows as the files. All
+ * share one contract with the page: click selects (with modifiers),
+ * double-click/Enter opens, drag moves, right-click is the page's context
+ * menu (items carry `data-asset-id` / `data-folder-id` for it). Files render
+ * progressively, so a folder of thousands of photos doesn't build thousands
+ * of cards up front.
  */
 
 export const RENDER_STEP = 150;
 
 export type MediaItemHandlers = {
   selectedIds: ReadonlySet<string>;
-  /** True while anything is selected: shows every card's select circle. */
+  /** True while selecting several: shows every card's tick circle. */
   selecting: boolean;
   onItemClick: (asset: AssetLibraryItem, event: MouseEvent) => void;
   /** The round checkbox: always a toggle, for touch and mouse alike. */
   onItemToggle: (asset: AssetLibraryItem) => void;
   onItemOpen: (asset: AssetLibraryItem) => void;
   onItemDragStart: (asset: AssetLibraryItem, event: DragEvent) => void;
-  renderActions: (asset: AssetLibraryItem, menu: ContextMenuController, className: string) => ReactNode;
   /** Where a file lives, shown while searching across folders. */
   locationOf?: (asset: AssetLibraryItem) => string | null;
   /** Files with a working share link (link badge). */
   sharedIds?: ReadonlySet<string>;
+  /** Photo views: caption every card, or only on hover. */
+  showNames: boolean;
 };
+
+// Masonry columns and the folder row above them share counts and gaps, so
+// the folders line up with the photos as one grid.
+const MASONRY_COLUMNS = "columns-2 gap-3 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5";
+const MASONRY_FOLDERS = "grid grid-cols-2 gap-3 @2xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5";
+const SQUARE_GRID = "grid grid-cols-3 gap-2 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6 @7xl:grid-cols-8";
 
 export function MediaItemView({
   view,
   assets,
+  folders,
+  folderHandlers,
   sort,
   onSortChange,
   ...handlers
 }: MediaItemHandlers & {
   view: MediaView;
   assets: AssetLibraryItem[];
+  folders: FolderTileData[];
+  folderHandlers: FolderItemHandlers;
   sort: MediaSort;
   onSortChange: (sort: MediaSort) => void;
 }) {
-  // The parent keys this component by folder/search/sort/view, so the count
+  // The parent keys this component by place/search/sort/view, so the count
   // starts over whenever the list itself changes.
   const [limit, setLimit] = useState(RENDER_STEP);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -94,25 +112,46 @@ export function MediaItemView({
 
   const body =
     view === "details" ? (
-      <DetailsTable assets={shown} sort={sort} onSortChange={onSortChange} {...handlers} />
+      <DetailsTable
+        assets={shown}
+        folders={folders}
+        folderHandlers={folderHandlers}
+        sort={sort}
+        onSortChange={onSortChange}
+        {...handlers}
+      />
     ) : view === "list" ? (
       <div role="list" className="grid gap-1">
+        {folders.map((folder) => (
+          <FolderRow key={folder.id} folder={folder} handlers={folderHandlers} />
+        ))}
         {shown.map((asset) => (
           <ListRow key={asset.id} asset={asset} {...handlers} />
         ))}
       </div>
-    ) : (
-      <div
-        className={cn(
-          "min-w-0",
-          view === "grid"
-            ? "grid grid-cols-2 gap-3 @md:grid-cols-3 @2xl:grid-cols-4 @5xl:grid-cols-6 @7xl:grid-cols-8"
-            : "columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5",
-        )}
-      >
-        {shown.map((asset) => (
-          <Card key={asset.id} asset={asset} square={view === "grid"} {...handlers} />
+    ) : view === "grid" ? (
+      <div className={cn("min-w-0", SQUARE_GRID)}>
+        {folders.map((folder) => (
+          <FolderCard key={folder.id} folder={folder} handlers={folderHandlers} />
         ))}
+        {shown.map((asset) => (
+          <PhotoCard key={asset.id} asset={asset} square {...handlers} />
+        ))}
+      </div>
+    ) : (
+      <div className="min-w-0">
+        {folders.length > 0 ? (
+          <div className={cn(MASONRY_FOLDERS, shown.length > 0 && "mb-3")}>
+            {folders.map((folder) => (
+              <FolderCard key={folder.id} folder={folder} handlers={folderHandlers} />
+            ))}
+          </div>
+        ) : null}
+        <div className={MASONRY_COLUMNS}>
+          {shown.map((asset) => (
+            <PhotoCard key={asset.id} asset={asset} square={false} {...handlers} />
+          ))}
+        </div>
       </div>
     );
 
@@ -134,6 +173,7 @@ function itemButtonProps(asset: AssetLibraryItem, handlers: MediaItemHandlers) {
     type: "button" as const,
     draggable: true,
     "aria-pressed": handlers.selectedIds.has(asset.id),
+    "aria-label": asset.displayName,
     onDragStart: (event: DragEvent) => handlers.onItemDragStart(asset, event),
     onClick: (event: MouseEvent) => handlers.onItemClick(asset, event),
     onDoubleClick: () => handlers.onItemOpen(asset),
@@ -145,9 +185,6 @@ function itemButtonProps(asset: AssetLibraryItem, handlers: MediaItemHandlers) {
     },
   };
 }
-
-const actionsClass =
-  "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100";
 
 function SelectCircle({
   asset,
@@ -175,7 +212,7 @@ function SelectCircle({
           ? "border-primary bg-primary text-primary-foreground opacity-100"
           : cn(
               "border-white/80 bg-black/25 text-transparent hover:bg-black/40",
-              handlers.selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+              handlers.selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
             ),
         className,
       )}
@@ -185,60 +222,100 @@ function SelectCircle({
   );
 }
 
-function Card({
+/** Link and public-gallery marks: only what is visible outside Vault gets one. */
+function ExposureBadges({
+  asset,
+  handlers,
+  className,
+}: {
+  asset: AssetLibraryItem;
+  handlers: MediaItemHandlers;
+  className?: string;
+}) {
+  const linked = handlers.sharedIds?.has(asset.id) ?? false;
+  const listed = asset.visibility === "public";
+  if (!linked && !listed) return null;
+  return (
+    <span className={cn("flex gap-1", className)}>
+      {linked ? <SharedBadge /> : null}
+      {listed ? <SharedBadge icon={Globe2} label="Public in gallery" /> : null}
+    </span>
+  );
+}
+
+/**
+ * A card in the photo views. Photos and posters fill it edge to edge, with
+ * the name fading in on hover unless names are switched on; files without a
+ * picture always show theirs.
+ */
+function PhotoCard({
   asset,
   square,
   ...handlers
 }: MediaItemHandlers & { asset: AssetLibraryItem; square: boolean }) {
   const selected = handlers.selectedIds.has(asset.id);
   const location = handlers.locationOf?.(asset);
+  const visual = (asset.kind === "image" || asset.kind === "video") && asset.thumbUrl !== null;
+  const hoverCaption = !handlers.showNames && visual;
+  const meta = `${assetTypeLabel(asset)} · ${formatBytes(asset.sizeBytes)}${location ? ` · ${location}` : ""}`;
 
   return (
-    <WithContextMenu>
-      {(menu) => (
-        <div
-          data-asset-card
-          onContextMenu={menu.onContextMenu}
-          className={cn("group relative break-inside-avoid", square ? "" : "mb-4")}
-        >
-          <button
-            {...itemButtonProps(asset, handlers)}
-            className={cn(
-              "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-              selected ? "border-primary ring-2 ring-primary/45" : "border-border/70",
-            )}
-          >
-            {square ? (
-              <span className="relative block aspect-square bg-muted">
-                <Thumb asset={asset} className="size-full object-cover" />
-                {asset.kind === "video" ? <VideoBadge durationMs={asset.durationMs ?? null} /> : null}
-              </span>
-            ) : (
-              <MasonryThumb asset={asset} />
-            )}
-            <span className={cn("flex items-center gap-2", square ? "px-2 py-1.5" : "px-3 py-2.5")}>
-              <span className="min-w-0 flex-1">
-                <span className={cn("block truncate font-medium", square ? "text-xs" : "text-sm")}>
-                  {asset.displayName}
-                </span>
-                {square ? null : (
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
-                    {location ? ` · ${location}` : ""}
-                  </span>
-                )}
-              </span>
-              {!square && handlers.sharedIds?.has(asset.id) ? (
-                <Link2 className="size-3.5 shrink-0 text-primary" aria-label="Shared by link" />
-              ) : null}
-              {square ? null : <VisibilityIcon visibility={asset.visibility} />}
+    <div
+      data-asset-card
+      data-asset-id={asset.id}
+      className={cn("group relative break-inside-avoid", square ? "" : "mb-3")}
+    >
+      <button
+        {...itemButtonProps(asset, handlers)}
+        className={cn(
+          "relative block w-full overflow-hidden rounded-md text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          handlers.showNames ? "border bg-card shadow-sm hover:shadow-md" : "bg-muted",
+          selected
+            ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+            : handlers.showNames
+              ? "border-border/70 hover:border-primary/50"
+              : "",
+        )}
+      >
+        {square ? (
+          <span className="relative block aspect-square bg-muted">
+            <Thumb asset={asset} className="size-full object-cover" />
+          </span>
+        ) : (
+          <MasonryThumb asset={asset} />
+        )}
+        {asset.kind === "video" ? (
+          <VideoBadge
+            durationMs={asset.durationMs ?? null}
+            className={hoverCaption ? "transition-opacity group-hover:opacity-0" : undefined}
+          />
+        ) : null}
+
+        {hoverCaption ? (
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-3 pb-2 pt-10 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            <span className="block truncate text-sm font-medium">{asset.displayName}</span>
+            {square ? null : <span className="block truncate text-xs text-white/75">{meta}</span>}
+          </span>
+        ) : square && !handlers.showNames ? (
+          // A file in the square grid keeps its name inside the square.
+          <span className="absolute inset-x-0 bottom-0 truncate bg-background/85 px-2 py-1 text-xs font-medium backdrop-blur">
+            {asset.displayName}
+          </span>
+        ) : (
+          <span className={cn("block", square ? "px-2 py-1.5" : "px-3 py-2.5")}>
+            <span className={cn("block truncate font-medium", square ? "text-xs" : "text-sm")}>
+              {asset.displayName}
             </span>
-          </button>
-          <SelectCircle asset={asset} handlers={handlers} className="absolute left-2 top-2" />
-          {handlers.renderActions(asset, menu, cn("absolute right-2 top-2", actionsClass))}
-        </div>
-      )}
-    </WithContextMenu>
+            {square ? null : (
+              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{meta}</span>
+            )}
+          </span>
+        )}
+        {selected ? <span aria-hidden className="pointer-events-none absolute inset-0 bg-primary/12" /> : null}
+      </button>
+      <SelectCircle asset={asset} handlers={handlers} className="absolute left-2 top-2" />
+      <ExposureBadges asset={asset} handlers={handlers} className="absolute right-2 top-2" />
+    </div>
   );
 }
 
@@ -247,7 +324,6 @@ function MasonryThumb({ asset }: { asset: AssetLibraryItem }) {
   if (asset.kind !== "image" && asset.kind !== "video") return tile;
   return (
     <span className="relative block bg-muted">
-      {asset.kind === "video" ? <VideoBadge durationMs={asset.durationMs ?? null} /> : null}
       <RenditionImage
         src={asset.thumbUrl}
         alt={asset.altText ?? asset.displayName}
@@ -274,66 +350,70 @@ function Thumb({ asset, className }: { asset: AssetLibraryItem; className: strin
   );
 }
 
+function ExposureIcons({ asset, handlers }: { asset: AssetLibraryItem; handlers: MediaItemHandlers }) {
+  return (
+    <span className="flex w-10 shrink-0 justify-end gap-1.5 text-primary">
+      {handlers.sharedIds?.has(asset.id) ? <Link2 className="size-3.5" aria-label="Shared by link" /> : null}
+      {asset.visibility === "public" ? <Globe2 className="size-3.5" aria-label="Public in gallery" /> : null}
+    </span>
+  );
+}
+
 function ListRow({ asset, ...handlers }: MediaItemHandlers & { asset: AssetLibraryItem }) {
   const selected = handlers.selectedIds.has(asset.id);
   const location = handlers.locationOf?.(asset);
 
   return (
-    <WithContextMenu>
-      {(menu) => (
-        <div
-          role="listitem"
-          data-asset-card
-          onContextMenu={menu.onContextMenu}
-          className="group relative"
-        >
-          <button
-            {...itemButtonProps(asset, handlers)}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-md border px-2 py-1.5 pl-10 pr-12 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-              selected
-                ? "border-primary/60 bg-primary/10"
-                : "border-transparent hover:border-border/70 hover:bg-muted/50",
-            )}
-          >
-            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded bg-muted">
-              <Thumb asset={asset} className="size-full object-cover" />
-            </span>
-            <span className="min-w-0 flex-1 truncate font-medium">{asset.displayName}</span>
-            {location ? (
-              <span className="hidden w-32 shrink-0 truncate text-xs text-muted-foreground @2xl:block">
-                {location}
-              </span>
-            ) : null}
-            <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground @xl:block">
-              {assetTypeLabel(asset)}
-            </span>
-            <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-              {formatBytes(asset.sizeBytes)}
-            </span>
-            <span suppressHydrationWarning className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground @3xl:block">
-              {formatDay(asset.takenAt ?? asset.createdAt, Boolean(asset.takenAt))}
-            </span>
-          </button>
-          <SelectCircle
-            asset={asset}
-            handlers={handlers}
-            className="absolute left-2 top-1/2 -translate-y-1/2 border-border bg-background/80"
-          />
-          {handlers.renderActions(asset, menu, cn("absolute right-1.5 top-1/2 -translate-y-1/2", actionsClass))}
-        </div>
-      )}
-    </WithContextMenu>
+    <div role="listitem" data-asset-card data-asset-id={asset.id} className="group relative">
+      <button
+        {...itemButtonProps(asset, handlers)}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-md border px-2 py-1.5 pl-10 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          selected
+            ? "border-primary/60 bg-primary/10"
+            : "border-transparent hover:border-border/70 hover:bg-muted/50",
+        )}
+      >
+        <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded bg-muted">
+          <Thumb asset={asset} className="size-full object-cover" />
+        </span>
+        <span className="min-w-0 flex-1 truncate font-medium">{asset.displayName}</span>
+        <ExposureIcons asset={asset} handlers={handlers} />
+        {location ? (
+          <span className="hidden w-32 shrink-0 truncate text-xs text-muted-foreground @2xl:block">
+            {location}
+          </span>
+        ) : null}
+        <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground @xl:block">
+          {assetTypeLabel(asset)}
+        </span>
+        <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+          {formatBytes(asset.sizeBytes)}
+        </span>
+        <span suppressHydrationWarning className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground @3xl:block">
+          {formatDay(asset.takenAt ?? asset.createdAt, Boolean(asset.takenAt))}
+        </span>
+      </button>
+      <SelectCircle
+        asset={asset}
+        handlers={handlers}
+        className="absolute left-2 top-1/2 -translate-y-1/2 border-border bg-background/80"
+      />
+    </div>
   );
 }
 
 function DetailsTable({
   assets,
+  folders,
+  folderHandlers,
   sort,
   onSortChange,
   ...handlers
 }: MediaItemHandlers & {
   assets: AssetLibraryItem[];
+  folders: FolderTileData[];
+  folderHandlers: FolderItemHandlers;
   sort: MediaSort;
   onSortChange: (sort: MediaSort) => void;
 }) {
@@ -364,11 +444,18 @@ function DetailsTable({
                 onClick={() => onSortChange(sort === "newest" ? "oldest" : "newest")}
               />
             </th>
-            <th className="w-10 py-2 pr-2" aria-label="Visibility" />
-            <th className="w-12 py-2 pr-2" aria-label="Actions" />
+            <th className="w-14 py-2 pr-3" aria-label="Sharing" />
           </tr>
         </thead>
         <tbody>
+          {folders.map((folder) => (
+            <FolderTableRow
+              key={folder.id}
+              folder={folder}
+              handlers={folderHandlers}
+              columns={showLocation ? 6 : 5}
+            />
+          ))}
           {assets.map((asset) => (
             <DetailsRow key={asset.id} asset={asset} showLocation={showLocation} {...handlers} />
           ))}
@@ -386,51 +473,47 @@ function DetailsRow({
   const selected = handlers.selectedIds.has(asset.id);
 
   return (
-    <WithContextMenu>
-      {(menu) => (
-        <tr
-          data-asset-card
-          onContextMenu={menu.onContextMenu}
-          className={cn(
-            "group border-b border-border/50 last:border-b-0",
-            selected ? "bg-primary/10" : "hover:bg-muted/40",
-          )}
-        >
-          <td className="px-2 py-1.5">
-            <SelectCircle asset={asset} handlers={handlers} className="border-border bg-background/80" />
-          </td>
-          <td className="max-w-0 py-1.5 pr-3">
-            <button {...itemButtonProps(asset, handlers)} className="flex w-full min-w-0 items-center gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
-              <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded bg-muted">
-                <Thumb asset={asset} className="size-full object-cover" />
-              </span>
-              <span className="truncate font-medium">{asset.displayName}</span>
-            </button>
-          </td>
-          {showLocation ? (
-            <td className="max-w-40 truncate py-1.5 pr-3 text-xs text-muted-foreground">
-              {handlers.locationOf?.(asset)}
-            </td>
-          ) : null}
-          <td className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">{assetTypeLabel(asset)}</td>
-          <td className="whitespace-nowrap py-1.5 pr-3 text-right text-xs tabular-nums text-muted-foreground">
-            {formatBytes(asset.sizeBytes)}
-          </td>
-          <td suppressHydrationWarning className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">
-            {asset.takenAt ? formatDay(asset.takenAt, true) : "—"}
-          </td>
-          <td suppressHydrationWarning className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">
-            {formatDay(asset.createdAt, false)}
-          </td>
-          <td className="py-1.5 pr-2">
-            <VisibilityIcon visibility={asset.visibility} />
-          </td>
-          <td className="relative py-1.5 pr-2">
-            {handlers.renderActions(asset, menu, cn("relative", actionsClass))}
-          </td>
-        </tr>
+    <tr
+      data-asset-card
+      data-asset-id={asset.id}
+      className={cn(
+        "group border-b border-border/50 last:border-b-0",
+        selected ? "bg-primary/10" : "hover:bg-muted/40",
       )}
-    </WithContextMenu>
+    >
+      <td className="px-2 py-1.5">
+        <SelectCircle asset={asset} handlers={handlers} className="border-border bg-background/80" />
+      </td>
+      <td className="max-w-0 py-1.5 pr-3">
+        <button
+          {...itemButtonProps(asset, handlers)}
+          className="flex w-full min-w-0 items-center gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        >
+          <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded bg-muted">
+            <Thumb asset={asset} className="size-full object-cover" />
+          </span>
+          <span className="truncate font-medium">{asset.displayName}</span>
+        </button>
+      </td>
+      {showLocation ? (
+        <td className="max-w-40 truncate py-1.5 pr-3 text-xs text-muted-foreground">
+          {handlers.locationOf?.(asset)}
+        </td>
+      ) : null}
+      <td className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">{assetTypeLabel(asset)}</td>
+      <td className="whitespace-nowrap py-1.5 pr-3 text-right text-xs tabular-nums text-muted-foreground">
+        {formatBytes(asset.sizeBytes)}
+      </td>
+      <td suppressHydrationWarning className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">
+        {asset.takenAt ? formatDay(asset.takenAt, true) : "—"}
+      </td>
+      <td suppressHydrationWarning className="whitespace-nowrap py-1.5 pr-3 text-xs text-muted-foreground">
+        {formatDay(asset.createdAt, false)}
+      </td>
+      <td className="py-1.5 pr-3">
+        <ExposureIcons asset={asset} handlers={handlers} />
+      </td>
+    </tr>
   );
 }
 
@@ -494,9 +577,14 @@ function FileTile({
 }
 
 /** Play mark and running time over a video's poster. */
-function VideoBadge({ durationMs }: { durationMs: number | null }) {
+function VideoBadge({ durationMs, className }: { durationMs: number | null; className?: string }) {
   return (
-    <span className="pointer-events-none absolute bottom-2 left-2 z-[1] inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.7rem] font-medium text-white tabular-nums">
+    <span
+      className={cn(
+        "pointer-events-none absolute bottom-2 right-2 z-[1] inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.7rem] font-medium text-white tabular-nums",
+        className,
+      )}
+    >
       <Play className="size-3 fill-current" aria-hidden />
       {durationMs ? formatDuration(durationMs) : "Video"}
     </span>
@@ -510,25 +598,6 @@ export function formatDuration(durationMs: number) {
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = String(total % 60).padStart(2, "0");
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
-}
-
-function VisibilityIcon({ visibility }: { visibility: "private" | "public" }) {
-  const Icon = visibility === "public" ? Globe2 : Lock;
-  const label = visibility === "public" ? "Public" : "Private";
-  return (
-    <span
-      className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-full border",
-        visibility === "public"
-          ? "border-primary/40 bg-primary/10 text-primary"
-          : "border-border/70 text-muted-foreground",
-      )}
-      title={label}
-    >
-      <Icon className="size-3" aria-hidden />
-      <span className="sr-only">{label}</span>
-    </span>
-  );
 }
 
 /**

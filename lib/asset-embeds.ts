@@ -8,6 +8,12 @@ export type AssetEmbedResolution = {
   displayName: string;
   mimeType: string;
   sizeBytes: number;
+  /**
+   * The display rendition (≤2048 px WebP, metadata stripped) for image
+   * embeds; null/absent means use `url`. `url` stays the original, for Open
+   * and Download.
+   */
+  displayUrl?: string | null;
 };
 
 export type AssetEmbedResolutionMap = Record<string, AssetEmbedResolution>;
@@ -357,7 +363,9 @@ function renderAssetEmbedHtml(
   }
 
   const alt = attributes.alt || asset.altText || parsedLabel || asset.displayName;
-  const url = encodeURI(asset.url);
+  // Documents show the display copy: a camera original can be 20 MB and carry
+  // GPS. The server only sends a display URL it expects to work.
+  const url = encodeURI(asset.displayUrl ?? asset.url);
   const caption = attributes.caption;
   const figureStyle = getAssetEmbedStyle(attributes);
   const containerTag = attributes.layout === "inline" ? "span" : "figure";

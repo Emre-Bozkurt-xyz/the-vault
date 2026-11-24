@@ -214,6 +214,46 @@ export async function listSharedTargetsForUser(userId: string) {
   };
 }
 
+/**
+ * How many live items the library's Shared place lists: folders and files
+ * with a working link, plus files listed in the public gallery (each counted
+ * once). Binned items are left out; their links are paused.
+ */
+export async function countSharedForUser(userId: string) {
+  const now = new Date();
+  const working = and(
+    isNull(assetShareLinks.revokedAt),
+    or(isNull(assetShareLinks.expiresAt), gt(assetShareLinks.expiresAt, now)),
+  );
+  const [[files], [folders]] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(assets)
+      .where(
+        and(
+          eq(assets.ownerId, userId),
+          eq(assets.status, "ready"),
+          isNull(assets.deletedAt),
+          or(
+            eq(assets.visibility, "public"),
+            sql`exists (select 1 from ${assetShareLinks} where ${assetShareLinks.assetId} = ${assets.id} and ${working})`,
+          ),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(assetFolders)
+      .where(
+        and(
+          eq(assetFolders.ownerId, userId),
+          eq(assetFolders.status, "active"),
+          sql`exists (select 1 from ${assetShareLinks} where ${assetShareLinks.folderId} = ${assetFolders.id} and ${working})`,
+        ),
+      ),
+  ]);
+  return (files?.count ?? 0) + (folders?.count ?? 0);
+}
+
 // ── Public side ────────────────────────────────────────────────────────────
 
 export type ResolvedShare = {

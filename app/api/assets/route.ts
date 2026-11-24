@@ -15,7 +15,7 @@ import {
   listFoldersForUser,
   requireLiveFolder,
 } from "@/server/asset-folders";
-import { listSharedTargetsForUser } from "@/server/asset-share-links";
+import { countSharedForUser, listSharedTargetsForUser } from "@/server/asset-share-links";
 import {
   canEditDocumentWithOptionalShareLink,
 } from "@/server/documents-data";
@@ -38,11 +38,12 @@ export async function GET(request: Request) {
     // `?view=summary`: the sidebar's counts and recent uploads only, so its
     // payload does not grow with the library.
     if (view === "summary") {
-      const [summary, folders] = await Promise.all([
+      const [summary, folders, sharedCount] = await Promise.all([
         summarizeAssetsForUser(user.id, summaryRecentCount),
         listFoldersForUser(user.id),
+        countSharedForUser(user.id),
       ]);
-      return NextResponse.json({ ...summary, folders, storage });
+      return NextResponse.json({ ...summary, folders, sharedCount, storage });
     }
 
     // `?view=bin`: binned assets with when each is deleted for good.

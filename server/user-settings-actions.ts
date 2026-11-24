@@ -7,7 +7,7 @@ import {
   getExtensionManifest,
   getInstalledExtensionIds,
 } from "@/lib/extension-host/manifests";
-import { MEDIA_VIEWS } from "@/lib/media-library";
+import { MEDIA_VIEWS, parseMediaLibraryPrefs } from "@/lib/media-library";
 import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
 import { isShortcutId } from "@/lib/shortcuts/registry";
 import { requireActiveUser } from "@/server/authz";
@@ -184,14 +184,18 @@ export async function setConfirmMoveToBinAction(input: unknown) {
  */
 export async function setMediaLibraryViewAction(input: unknown) {
   const user = await requireActiveUser();
-  const view = z.enum(MEDIA_VIEWS).parse(input);
+  // A bare view (older callers) or any subset of the preferences; the rest
+  // keep their saved values.
+  const patch = z
+    .union([
+      z.enum(MEDIA_VIEWS).transform((view) => ({ view })),
+      z.object({ view: z.enum(MEDIA_VIEWS).optional(), showNames: z.boolean().optional() }).strict(),
+    ])
+    .parse(input);
+  const scope = { userId: user.id, namespace: "files-assets", key: "media-library" } as const;
+  const current = parseMediaLibraryPrefs((await getUserSetting(scope))?.value);
 
-  await upsertUserSetting({
-    userId: user.id,
-    namespace: "files-assets",
-    key: "media-library",
-    value: { view },
-  });
+  await upsertUserSetting({ ...scope, value: { ...current, ...patch } });
 }
 
 export async function saveHotkeysSettingsAction(input: unknown) {

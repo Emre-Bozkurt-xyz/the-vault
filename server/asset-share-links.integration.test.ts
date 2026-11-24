@@ -186,6 +186,26 @@ describe.skipIf(!databaseUrl)("asset share links (database)", () => {
     expect(await shares.resolveShareToken(token)).toBeNull();
   });
 
+  it("counts what the Shared place lists: live linked folders and files, and public files, once each", async () => {
+    expect(await shares.countSharedForUser(ownerId)).toBe(0);
+    const album = await mkdir("Album");
+    const linked = await seed(null);
+    const publicFile = await seed(null, { visibility: "public" });
+    await seed(null); // private, unshared
+    await share({ folderId: album.id });
+    await share({ assetId: linked });
+    await share({ assetId: publicFile }); // linked and public: still one item
+    expect(await shares.countSharedForUser(ownerId)).toBe(3);
+
+    // A revoked link, a binned folder and another user's items don't count.
+    const revoked = await seed(null);
+    const { link } = await share({ assetId: revoked });
+    await shares.revokeShareLink(ownerId, link.id);
+    await folders.trashAssetFolder({ userId: ownerId, folderId: album.id });
+    await seed(null, { visibility: "public" }, strangerId);
+    expect(await shares.countSharedForUser(ownerId)).toBe(2);
+  });
+
   it("only owners can share, and only live things", async () => {
     const mine = await mkdir("Mine");
     await expect(

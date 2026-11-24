@@ -67,7 +67,7 @@ type WorkspaceChromeData = {
 
 type WorkspaceChromeContextValue = {
   setActivePage: (page: WorkspacePageDescriptor) => void;
-  setRightPanel: (panel: ReactNode | null, title?: string) => void;
+  setRightPanel: (panel: ReactNode | null, title?: string, onClose?: () => void) => void;
   upsertDocument: (document: WorkspaceDocumentItem) => void;
   activeDocument: ActiveDocumentCommandContext | null;
   setActiveDocument: (document: ActiveDocumentCommandContext | null) => void;
@@ -135,9 +135,11 @@ export function WorkspaceChrome({
   const [rightPanelState, setRightPanelState] = useState<{
     panel: ReactNode | null;
     title?: string;
+    onClose?: () => void;
   }>({ panel: null });
   const setRightPanel = useCallback(
-    (panel: ReactNode | null, title?: string) => setRightPanelState({ panel, title }),
+    (panel: ReactNode | null, title?: string, onClose?: () => void) =>
+      setRightPanelState({ panel, title, onClose }),
     [],
   );
   const [activeDocument, setActiveDocument] =
@@ -286,6 +288,7 @@ export function WorkspaceChrome({
         adminPanel={<WorkspaceAdminPanel isAdmin={isAdmin} />}
         rightPanel={rightPanelState.panel}
         rightPanelTitle={rightPanelState.title}
+        onRightPanelClose={rightPanelState.onClose}
       >
         {children}
       </VaultWorkspaceShell>
@@ -297,6 +300,7 @@ export function WorkspacePageRegistration({
   page,
   rightPanel,
   rightPanelTitle,
+  onRightPanelClose,
   documentItem,
   documentCommand,
 }: {
@@ -304,6 +308,12 @@ export function WorkspacePageRegistration({
   rightPanel?: ReactNode;
   /** Heading of the right panel; defaults to "Context". */
   rightPanelTitle?: string;
+  /**
+   * Makes the right panel the page's own toggle (the asset library's
+   * Details): it shows whenever registered, ignoring the shared collapsed
+   * state, and its hide button calls this instead. Keep it stable.
+   */
+  onRightPanelClose?: () => void;
   documentItem?: WorkspaceDocumentItem;
   documentCommand?: ActiveDocumentCommandContext;
 }) {
@@ -311,7 +321,7 @@ export function WorkspacePageRegistration({
 
   useEffect(() => {
     context?.setActivePage(page);
-    context?.setRightPanel(rightPanel ?? null, rightPanelTitle);
+    context?.setRightPanel(rightPanel ?? null, rightPanelTitle, onRightPanelClose);
     context?.setActiveDocument(documentCommand ?? null);
 
     if (documentItem) {
@@ -322,7 +332,7 @@ export function WorkspacePageRegistration({
       context?.setRightPanel(null);
       context?.setActiveDocument(null);
     };
-  }, [context, documentCommand, documentItem, page, rightPanel, rightPanelTitle]);
+  }, [context, documentCommand, documentItem, onRightPanelClose, page, rightPanel, rightPanelTitle]);
 
   return null;
 }

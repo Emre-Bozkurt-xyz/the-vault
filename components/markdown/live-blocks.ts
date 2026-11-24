@@ -537,7 +537,11 @@ class AssetGroupBlockWidget extends WidgetType {
 
       const image = document.createElement("img");
       image.className = "vault-md-img vault-asset-embed-image";
-      image.src = asset.url;
+      image.src = asset.displayUrl ?? asset.url;
+      // A display copy that fails (storage hiccup) falls back to the original.
+      image.addEventListener("error", () => {
+        if (image.src !== new URL(asset.url, window.location.href).href) image.src = asset.url;
+      }, { once: true });
       image.alt =
         child.parsed.attributes.alt ||
         asset.altText ||

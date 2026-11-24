@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { AssetBinClient } from "@/components/assets/AssetBinClient";
 import { AssetLibraryClient } from "@/components/assets/AssetLibraryClient";
 import { WorkspacePage } from "@/components/workspace/WorkspacePage";
-import { parseMediaView } from "@/lib/media-library";
+import { parseMediaLibraryPrefs } from "@/lib/media-library";
 import {
   listBinFoldersForUser,
   listFoldersForUser,
@@ -58,7 +58,7 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
         <AssetLibraryClient
           initialAssets={assets}
           initialFolders={folders}
-          initialView={parseMediaView(viewSetting?.value?.view)}
+          initialPrefs={parseMediaLibraryPrefs(viewSetting?.value)}
           initialShared={shared}
           storageUsedBytes={storage.usedBytes}
           storageQuotaBytes={storage.quotaBytes}

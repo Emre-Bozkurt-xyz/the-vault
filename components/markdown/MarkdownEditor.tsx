@@ -125,6 +125,7 @@ import {
   type AssetGroupWidth,
   type ParsedAssetEmbed,
 } from "@/lib/asset-embeds";
+import { withRendition } from "@/lib/asset-renditions";
 import { subscribeToDocumentCommand } from "@/lib/document-command-events";
 import {
   consumeEditorJump,
@@ -1361,6 +1362,7 @@ export function MarkdownEditor({
                     mimeType: asset.mimeType,
                     sizeBytes: asset.sizeBytes,
                     url: asset.url,
+                    displayUrl: asset.kind === "image" ? withRendition(asset.url, "display") : null,
                   },
                 }));
               },
@@ -1436,6 +1438,7 @@ export function MarkdownEditor({
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
           url: asset.url,
+          displayUrl: asset.kind === "image" ? withRendition(asset.url, "display") : null,
         },
       }));
 
@@ -3170,6 +3173,7 @@ class AssetEmbedPreviewWidget extends WidgetType {
     return (
       widget.asset.id === this.asset.id &&
       widget.asset.url === this.asset.url &&
+      widget.asset.displayUrl === this.asset.displayUrl &&
       widget.label === this.label &&
       JSON.stringify(widget.attributes) === JSON.stringify(this.attributes)
     );
@@ -3194,7 +3198,12 @@ class AssetEmbedPreviewWidget extends WidgetType {
 
       const image = document.createElement("img");
       image.className = "vault-md-img vault-asset-embed-image";
-      image.src = this.asset.url;
+      image.src = this.asset.displayUrl ?? this.asset.url;
+      // A display copy that fails (storage hiccup) falls back to the original.
+      const original = this.asset.url;
+      image.addEventListener("error", () => {
+        if (image.src !== new URL(original, window.location.href).href) image.src = original;
+      }, { once: true });
       image.alt =
         this.attributes.alt ||
         this.asset.altText ||

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  ChevronRight,
   Clock3,
   Folder,
   MoreHorizontal,
@@ -12,11 +13,8 @@ import {
   Trash2,
 } from "lucide-react";
 
-import {
-  AssetPreview,
-  AssetThumbnail,
-  type AssetLibraryItem,
-} from "@/components/assets/AssetLibraryClient";
+import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
+import { AssetPreview, AssetThumbnail } from "@/components/assets/AssetPreviews";
 import {
   deleteAssetsForever,
   emptyAssetBin,
@@ -185,37 +183,35 @@ export function AssetBinClient({
       <WorkspacePageRegistration page={BIN_PAGE} rightPanel={panel} rightPanelTitle="Bin item" />
 
       <div className="@container grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
-        <header className="flex flex-col gap-5 border-b border-border/70 pb-6 @3xl:flex-row @3xl:items-end @3xl:justify-between">
-          <div className="min-w-0">
+        <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <nav aria-label="Folder path" className="flex min-w-0 items-center gap-0.5">
             <Link
               href="/assets"
-              className="inline-flex items-center gap-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.26em] text-muted-foreground transition hover:text-foreground"
+              className="rounded px-1 py-0.5 text-xl font-semibold tracking-tight text-muted-foreground transition hover:text-foreground"
             >
-              <ArrowLeft className="size-3" aria-hidden />
-              Asset library
+              All files
             </Link>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight vault-display">Bin</h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              Items here are hidden everywhere and deleted for good{" "}
-              {ASSET_LIMITS.binRetentionDays} days after you moved them. Until then they
-              still count toward your storage.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 @3xl:shrink-0">
-            <p className="text-sm text-muted-foreground">
-              {itemCount} {itemCount === 1 ? "item" : "items"} ·{" "}
-              {formatBytes(binBytes)}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={itemCount === 0 || busy}
-              onClick={() => setConfirmingEmpty(true)}
-            >
-              <Trash2 data-icon="inline-start" />
-              {busy ? "Emptying…" : "Empty Bin"}
-            </Button>
-          </div>
+            <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground/60" />
+            <h1 className="px-1 text-xl font-semibold tracking-tight">Bin</h1>
+          </nav>
+          <p className="text-sm text-muted-foreground">
+            {itemCount} {itemCount === 1 ? "item" : "items"} · {formatBytes(binBytes)}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={itemCount === 0 || busy}
+            onClick={() => setConfirmingEmpty(true)}
+          >
+            <Trash2 data-icon="inline-start" />
+            {busy ? "Emptying…" : "Empty Bin"}
+          </Button>
+          <p className="basis-full px-1 text-xs text-muted-foreground">
+            Deleted for good {ASSET_LIMITS.binRetentionDays} days after being moved here. Until then,
+            items still count toward your storage.
+          </p>
         </header>
 
         {folders.length > 0 ? (

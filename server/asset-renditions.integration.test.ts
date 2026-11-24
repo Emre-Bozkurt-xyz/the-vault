@@ -367,4 +367,58 @@ describe.skipIf(!databaseUrl)("asset renditions (database)", () => {
       .where(orm.eq(schema.assets.id, id));
     expect(clamped).toEqual({ width: 1280, height: 720, durationMs: 24 * 60 * 60 * 1000 });
   });
+
+  it("gives document image embeds a display URL through the document's grant", async () => {
+    const { id: photo } = await seedImage(await cameraJpeg());
+    const pdfId = randomUUID();
+    await db.insert(schema.assets).values({
+      id: pdfId,
+      ownerId,
+      uploaderId: ownerId,
+      storageBucket: "test-bucket",
+      storageKey: `users/${ownerId}/assets/${pdfId}.pdf`,
+      originalFilename: "a.pdf",
+      displayName: "a.pdf",
+      mimeType: "application/pdf",
+      detectedMimeType: "application/pdf",
+      fileExtension: "pdf",
+      sizeBytes: 10,
+      kind: "pdf",
+      status: "ready",
+    });
+    const [document] = await db
+      .insert(schema.documents)
+      .values({ ownerId, title: "Trip notes", markdown: `![[asset:${photo}]] ![[asset:${pdfId}]]` })
+      .returning({ id: schema.documents.id });
+    await db.insert(schema.documentAssets).values([
+      { documentId: document.id, assetId: photo },
+      { documentId: document.id, assetId: pdfId },
+    ]);
+    await db.insert(schema.documentPermissions).values({ documentId: document.id, userId: strangerId, role: "viewer" });
+
+    const resolutions = await assetsServer.listAssetResolutionsForDocument(document.id, strangerId);
+    expect(resolutions[photo].displayUrl).toBe(
+      `/api/assets/${photo}/content?doc=${document.id}&r=display&v=${lib.RENDITION_VERSION}`,
+    );
+    expect(resolutions[photo].url).toBe(`/api/assets/${photo}/content?doc=${document.id}`);
+    expect(resolutions[pdfId].displayUrl).toBeNull();
+
+    // A reader of the document gets the display copy through the same grant.
+    const { GET } = await import("@/app/api/assets/[assetId]/content/route");
+    const fetchAs = async (userId: string | null, query: string) => {
+      session.userId = userId;
+      return GET(new Request(`http://vault.test/api/assets/${photo}/content?${query}`), {
+        params: Promise.resolve({ assetId: photo }),
+      });
+    };
+    const display = await fetchAs(strangerId, `doc=${document.id}&r=display&v=${lib.RENDITION_VERSION}`);
+    expect(display.status).toBe(200);
+    expect(display.headers.get("content-type")).toBe("image/webp");
+    // Without the grant (no doc, or a reader removed), nothing.
+    expect((await fetchAs(strangerId, `r=display`)).status).toBe(404);
+    await db.delete(schema.documentPermissions).where(orm.eq(schema.documentPermissions.documentId, document.id));
+    expect((await fetchAs(strangerId, `doc=${document.id}&r=display`)).status).toBe(404);
+
+    await db.delete(schema.documents).where(orm.eq(schema.documents.id, document.id));
+  });
 });

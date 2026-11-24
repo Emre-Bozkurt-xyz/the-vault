@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_SELECTION,
   applySelectionClick,
+  folderPreviewThumbs,
+  isPhotoView,
+  parseLibraryPlace,
+  parseMediaLibraryPrefs,
+  resolveContextTarget,
   parseMediaSort,
   parseMediaView,
   pruneSelection,
@@ -105,5 +110,87 @@ describe("stepIndex", () => {
     expect(stepIndex(4, 1, 5)).toBe(4);
     expect(stepIndex(2, 1, 5)).toBe(3);
     expect(stepIndex(0, 1, 0)).toBe(-1);
+  });
+});
+
+describe("parseMediaLibraryPrefs", () => {
+  it("reads the saved view and caption choice, defaulting to masonry without names", () => {
+    expect(parseMediaLibraryPrefs({ view: "grid", showNames: true })).toEqual({ view: "grid", showNames: true });
+    expect(parseMediaLibraryPrefs({ view: "list" })).toEqual({ view: "list", showNames: false });
+    expect(parseMediaLibraryPrefs(null)).toEqual({ view: "masonry", showNames: false });
+    expect(parseMediaLibraryPrefs({ view: "carousel", showNames: "yes" })).toEqual({ view: "masonry", showNames: false });
+  });
+
+  it("knows which views are photo-first", () => {
+    expect(isPhotoView("masonry")).toBe(true);
+    expect(isPhotoView("grid")).toBe(true);
+    expect(isPhotoView("list")).toBe(false);
+    expect(isPhotoView("details")).toBe(false);
+  });
+});
+
+describe("parseLibraryPlace", () => {
+  it("only knows the shared place; anything else is the file tree", () => {
+    expect(parseLibraryPlace("shared")).toBe("shared");
+    expect(parseLibraryPlace("bin")).toBe("files");
+    expect(parseLibraryPlace(null)).toBe("files");
+  });
+});
+
+describe("resolveContextTarget", () => {
+  const several = { assetIds: ["a", "b"], folderIds: ["f"], anchor: "a" };
+
+  it("acts on the place for empty space, keeping the selection", () => {
+    expect(resolveContextTarget(several, null)).toEqual({ target: { kind: "background" }, selection: several });
+  });
+
+  it("acts on the whole selection when the item is part of it", () => {
+    for (const clicked of [{ kind: "asset", id: "b" }, { kind: "folder", id: "f" }] as const) {
+      const { target, selection } = resolveContextTarget(several, clicked);
+      expect(target).toEqual({ kind: "selection", assetIds: ["a", "b"], folderIds: ["f"] });
+      expect(selection).toBe(several);
+    }
+  });
+
+  it("selects an item outside the selection on its own", () => {
+    expect(resolveContextTarget(several, { kind: "asset", id: "z" })).toEqual({
+      target: { kind: "asset", id: "z" },
+      selection: { assetIds: ["z"], folderIds: [], anchor: "z" },
+    });
+    expect(resolveContextTarget(EMPTY_SELECTION, { kind: "folder", id: "g" })).toEqual({
+      target: { kind: "folder", id: "g" },
+      selection: { assetIds: [], folderIds: ["g"], anchor: "g" },
+    });
+  });
+
+  it("leaves a lone selected item's selection untouched", () => {
+    const lone = { assetIds: ["a"], folderIds: [], anchor: "a" };
+    expect(resolveContextTarget(lone, { kind: "asset", id: "a" }).selection).toBe(lone);
+  });
+});
+
+describe("folderPreviewThumbs", () => {
+  const item = (id: string, folderId: string | null, thumbUrl: string | null, createdAt: string) => ({
+    id,
+    folderId,
+    thumbUrl,
+    createdAt,
+  });
+
+  it("takes the newest thumbnails directly inside each folder, up to the count", () => {
+    const previews = folderPreviewThumbs(
+      [
+        item("1", "f", "t1", "2026-01-01"),
+        item("2", "f", "t2", "2026-01-03"),
+        item("3", "f", null, "2026-01-04"),
+        item("4", "f", "t4", "2026-01-02"),
+        item("5", "g", "t5", "2026-01-01"),
+        item("6", null, "t6", "2026-01-05"),
+      ],
+      2,
+    );
+    expect(previews.get("f")).toEqual(["t2", "t4"]);
+    expect(previews.get("g")).toEqual(["t5"]);
+    expect(previews.has("h")).toBe(false);
   });
 });

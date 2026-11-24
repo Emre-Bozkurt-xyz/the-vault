@@ -232,7 +232,7 @@ function MoveToFolderForm({
   }, [folders, selection, target]);
 
   const targetName =
-    target === null ? "Assets" : (folders.find((folder) => folder.id === target)?.name ?? "folder");
+    target === null ? "All files" : (folders.find((folder) => folder.id === target)?.name ?? "folder");
 
   function toggle(id: string) {
     setExpanded((current) => {
@@ -323,7 +323,7 @@ function MoveToFolderForm({
           )}
         >
           <Library className="size-4 text-muted-foreground" />
-          Assets
+          All files
         </button>
         <ul>{renderLevel(null, 0)}</ul>
         {folders.length === 0 ? (

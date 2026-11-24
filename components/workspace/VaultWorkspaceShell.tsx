@@ -71,6 +71,8 @@ type VaultWorkspaceShellProps = {
   children: ReactNode;
   rightPanel?: ReactNode;
   rightPanelTitle?: string;
+  /** A page-owned panel: always expanded while registered; hiding calls this. */
+  onRightPanelClose?: () => void;
 };
 
 export function VaultWorkspaceShell({
@@ -92,6 +94,7 @@ export function VaultWorkspaceShell({
   children,
   rightPanel,
   rightPanelTitle = "Context",
+  onRightPanelClose,
 }: VaultWorkspaceShellProps) {
   const [panelMode, setPanelMode] = useState<WorkspacePanelMode>(
     initialLayout?.panelMode ?? defaultPanelMode,
@@ -124,6 +127,22 @@ export function VaultWorkspaceShell({
   if (hydrated && rightPanelFits && !rightPanelShown) setRightPanelShown(true);
   const mountLeftPanel = leftPanelFits || leftPanelShown;
   const mountRightPanel = rightPanelFits || rightPanelShown;
+
+  // A page-owned panel (`onRightPanelClose`) is opened by the page's own
+  // toggle, so it ignores the collapsed state documents share, and below `lg`
+  // its sheet opens the moment the page turns it on (and closes with it).
+  const pageOwnedPanel = Boolean(rightPanel && onRightPanelClose);
+  const [pageOwnedShown, setPageOwnedShown] = useState(pageOwnedPanel);
+  if (pageOwnedPanel !== pageOwnedShown) {
+    setPageOwnedShown(pageOwnedPanel);
+    setMobileRightPanelOpen(pageOwnedPanel && hydrated && !rightPanelFits);
+  }
+  const rightShowsCollapsed = rightCollapsed && !pageOwnedPanel;
+  const hideRightPanel = onRightPanelClose ?? toggleRightPanel;
+  function changeMobileRightPanel(open: boolean) {
+    setMobileRightPanelOpen(open);
+    if (!open) onRightPanelClose?.();
+  }
 
   // A `/share` or `/history` command needs the context panel visible so its
   // (otherwise unmounted) contents can receive the command.
@@ -342,7 +361,7 @@ export function VaultWorkspaceShell({
           </main>
 
           {rightPanel ? (
-            rightCollapsed ? (
+            rightShowsCollapsed ? (
               <aside className="hidden h-full min-h-0 w-9 shrink-0 border-l border-border/70 bg-card/30 lg:flex">
                 <button
                   type="button"
@@ -371,10 +390,10 @@ export function VaultWorkspaceShell({
                     </p>
                     <button
                       type="button"
-                      onClick={toggleRightPanel}
+                      onClick={hideRightPanel}
                       className="flex size-7 items-center justify-center rounded text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
-                      aria-label="Hide context panel"
-                      title="Hide context panel"
+                      aria-label={onRightPanelClose ? `Close ${rightPanelTitle.toLowerCase()}` : "Hide context panel"}
+                      title={onRightPanelClose ? "Close" : "Hide context panel"}
                     >
                       <PanelRightClose className="size-4" />
                     </button>
@@ -506,7 +525,7 @@ export function VaultWorkspaceShell({
       </Sheet>
 
       {rightPanel ? (
-        <Sheet open={mobileRightPanelOpen} onOpenChange={setMobileRightPanelOpen}>
+        <Sheet open={mobileRightPanelOpen} onOpenChange={changeMobileRightPanel}>
           <SheetContent
             side="right"
             showCloseButton={false}

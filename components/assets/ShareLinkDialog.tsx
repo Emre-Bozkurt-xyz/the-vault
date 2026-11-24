@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Link2, Loader2, RefreshCw } from "lucide-react";
+import { Copy, Globe2, Link2, Loader2, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,15 @@ import { dispatchAssetsChanged } from "@/lib/asset-events";
 import { showWorkspaceToast } from "@/lib/workspace-toast";
 import { cn } from "@/lib/utils";
 
-export type ShareTarget = { kind: "folder" | "asset"; id: string; name: string };
+export type ShareTarget = {
+  kind: "folder" | "asset";
+  id: string;
+  name: string;
+  /** Files only: listed in the owner's public gallery. */
+  listed?: boolean;
+  /** Files only: lists or unlists it; throws with the server's message. */
+  onListedChange?: (listed: boolean) => Promise<void>;
+};
 
 type ShareLink = {
   id: string;
@@ -253,7 +261,69 @@ function ShareLinkForm({ target }: { target: ShareTarget }) {
           {error}
         </p>
       ) : null}
+
+      {target.kind === "asset" && target.onListedChange ? (
+        <GalleryListing listed={target.listed ?? false} onChange={target.onListedChange} />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * The other way a file is seen outside Vault: listed in the owner's public
+ * gallery (and readable by anyone with its plain link), independent of the
+ * share link above.
+ */
+function GalleryListing({
+  listed: initialListed,
+  onChange,
+}: {
+  listed: boolean;
+  onChange: (listed: boolean) => Promise<void>;
+}) {
+  const [listed, setListed] = useState(initialListed);
+  const [saving, setSaving] = useState(false);
+
+  async function toggle(next: boolean) {
+    // Show the change at once; put it back if the save fails.
+    setListed(next);
+    setSaving(true);
+    try {
+      await onChange(next);
+      showWorkspaceToast({
+        message: next ? "Listed in your public gallery." : "Removed from your public gallery.",
+        durationMs: 2500,
+      });
+    } catch (error) {
+      setListed(!next);
+      showWorkspaceToast({
+        message: error instanceof Error ? error.message : "Could not change the gallery listing.",
+        tone: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <label className="flex items-start gap-3 border-t border-border/60 pt-4">
+      <input
+        type="checkbox"
+        className="mt-0.5 size-4 accent-foreground"
+        checked={listed}
+        disabled={saving}
+        onChange={(event) => void toggle(event.target.checked)}
+      />
+      <span className="text-sm">
+        <span className="flex items-center gap-1.5 font-medium">
+          <Globe2 className="size-3.5 text-muted-foreground" /> Show in public gallery
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          Listed in the gallery, and anyone with its file link can open it. Off keeps it to you
+          and the readers of documents that embed it.
+        </span>
+      </span>
+    </label>
   );
 }
 

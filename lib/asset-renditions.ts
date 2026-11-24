@@ -88,6 +88,11 @@ export function hasCurrentRenditions(asset: {
   return asset.renditionStatus === "ready" && asset.renditionVersion === RENDITION_VERSION;
 }
 
+/** A content URL with a rendition selected (`?r=` and the cache-busting `v=`). */
+export function withRendition(url: string, name: RenditionName, version: number = RENDITION_VERSION) {
+  return `${url}${url.includes("?") ? "&" : "?"}r=${name}&v=${version}`;
+}
+
 export function renditionKey(input: {
   ownerId: string;
   assetId: string;

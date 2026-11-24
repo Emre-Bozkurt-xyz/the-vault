@@ -213,6 +213,11 @@ and render on first request if the upload-time render has not happened.
 - **Selection**: click selects and shows details in the right panel;
   Ctrl/Cmd-click toggles; Shift-click ranges; Ctrl+A; Esc clears; a bulk bar
   (Move, Download, Share, Move to Bin) appears with 2+ selected.
+  *Redesigned 2026-11-23:* a click only highlights; Details is a toggle (`I`)
+  that follows the selection; actions are one context-aware right-click menu;
+  folders sit first inside each view; photo views show names on hover; the
+  left panel is places (All files, Shared, Bin) + folders + storage. See the
+  2026-11-23 "Redesigned the asset library workspace" changelog entry.
 - **Viewer** (as shipped): double-click, Enter, "View" in a menu, or the
   panel preview opens a full-screen viewer at `?open=<id>` (`?view=` was
   already the Bin's), pushed so Back closes it. ←/→/Home/End and swipe step

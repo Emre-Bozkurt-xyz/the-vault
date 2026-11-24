@@ -3,24 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import {
-  ChevronRight,
-  File as FileIcon,
-  Film,
-  Folder,
-  FolderOpen,
-  FileText,
-  Globe2,
-  ImageIcon,
-  Images,
-  Library,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, ImageIcon, Images, Link2, Trash2, Upload } from "lucide-react";
 
-import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
-import { assetTypeLabel } from "@/components/assets/asset-ui";
-import { RenditionImage } from "@/components/assets/RenditionImage";
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import {
@@ -34,7 +18,6 @@ import {
   useActiveHref,
 } from "@/components/workspace/SidePanel";
 import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
-import { requestOpenRightPanel } from "@/lib/document-command-events";
 import { formatBytes } from "@/lib/format";
 import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
 import { fetchAssetLibrary } from "@/lib/shared-request";
@@ -43,36 +26,24 @@ import { cn } from "@/lib/utils";
 
 const UPLOAD_ACCEPT =
   "image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm";
-// `view` and `folder` too: the Bin and folders are places, not "All assets".
-const FILTER_KEYS = ["kind", "visibility", "view", "folder"];
-
-type RecentAsset = Pick<
-  AssetLibraryItem,
-  "id" | "kind" | "displayName" | "sizeBytes" | "mimeType" | "createdAt" | "url" | "thumbUrl"
->;
+// `view` and `folder` are places; type filters are not, so "All files" stays
+// highlighted while one is applied.
+const PLACE_KEYS = ["view", "folder"];
 
 /** `GET /api/assets?view=summary`. */
 type AssetsSummaryResponse = {
-  counts: { all: number; image: number; pdf: number; video: number; file: number; public: number };
-  recent: RecentAsset[];
+  counts: { all: number };
   binCount?: number;
+  sharedCount?: number;
   folders?: FolderNode[];
   storage?: { usedBytes: number; quotaBytes: number; unrestrictedUploadsAllowed: boolean };
 };
 
-const emptyCounts: AssetsSummaryResponse["counts"] = {
-  all: 0,
-  image: 0,
-  pdf: 0,
-  video: 0,
-  file: 0,
-  public: 0,
-};
-
 /**
- * Assets mode of the left panel: the library's filters as navigation (each a
- * deep link into `/assets`), recent uploads, and uploading without leaving the
- * current page. Data comes from `GET /api/assets` and refreshes whenever any
+ * Assets mode of the left panel: where you are in the library, and nothing
+ * else. Places (All files, Shared, Bin), the folder tree, and storage; type
+ * filters live in the library's toolbar. Uploading works from any page.
+ * Data comes from `GET /api/assets?view=summary` and refreshes whenever any
  * asset view reports a change.
  */
 export function WorkspaceAssetsPanel() {
@@ -111,8 +82,6 @@ export function WorkspaceAssetsPanel() {
     autoDismissMs: 3000,
   });
 
-  const counts = data?.counts ?? emptyCounts;
-  const recent = data?.recent ?? [];
   const storage = data?.storage;
   const folders = useMemo(() => data?.folders ?? [], [data?.folders]);
   const pathname = usePathname();
@@ -128,20 +97,13 @@ export function WorkspaceAssetsPanel() {
       <SidePanelHeader
         icon={ImageIcon}
         title="Assets"
-        subtitle={
-          storage
-            ? `${formatBytes(storage.usedBytes)} of ${formatBytes(storage.quotaBytes)} used`
-            : "Your uploads"
-        }
+        subtitle="Photos, videos and files"
         actions={
-          <>
-            <SidePanelAction
-              icon={Upload}
-              label="Upload"
-              onClick={() => fileInputRef.current?.click()}
-            />
-            <SidePanelAction icon={Library} label="Open library" href="/assets" />
-          </>
+          <SidePanelAction
+            icon={Upload}
+            label={openFolderId ? "Upload to this folder" : "Upload"}
+            onClick={() => fileInputRef.current?.click()}
+          />
         }
       />
       <input
@@ -171,48 +133,16 @@ export function WorkspaceAssetsPanel() {
           <SidePanelNavItem
             href="/assets"
             icon={Images}
-            label="All assets"
-            trailing={data ? counts.all : null}
-            active={isActive("/assets", { filterKeys: FILTER_KEYS })}
+            label="All files"
+            trailing={data ? data.counts.all : null}
+            active={isActive("/assets", { filterKeys: PLACE_KEYS })}
           />
           <SidePanelNavItem
-            href="/assets?kind=image"
-            icon={ImageIcon}
-            label="Images"
-            trailing={data ? counts.image : null}
-            active={isActive("/assets?kind=image")}
-          />
-          {counts.video > 0 ? (
-            <SidePanelNavItem
-              href="/assets?kind=video"
-              icon={Film}
-              label="Videos"
-              trailing={data ? counts.video : null}
-              active={isActive("/assets?kind=video")}
-            />
-          ) : null}
-          <SidePanelNavItem
-            href="/assets?kind=pdf"
-            icon={FileText}
-            label="PDFs"
-            trailing={data ? counts.pdf : null}
-            active={isActive("/assets?kind=pdf")}
-          />
-          {counts.file > 0 || storage?.unrestrictedUploadsAllowed ? (
-            <SidePanelNavItem
-              href="/assets?kind=file"
-              icon={FileIcon}
-              label="Other files"
-              trailing={data ? counts.file : null}
-              active={isActive("/assets?kind=file")}
-            />
-          ) : null}
-          <SidePanelNavItem
-            href="/assets?visibility=public"
-            icon={Globe2}
-            label="Public"
-            trailing={data ? counts.public : null}
-            active={isActive("/assets?visibility=public")}
+            href="/assets?view=shared"
+            icon={Link2}
+            label="Shared"
+            trailing={data && data.sharedCount ? data.sharedCount : null}
+            active={isActive("/assets?view=shared")}
           />
           <SidePanelNavItem
             href="/assets?view=bin"
@@ -226,37 +156,43 @@ export function WorkspaceAssetsPanel() {
         <SidePanelSection title="Folders" count={data ? folders.length : undefined}>
           {data === null ? null : folders.length === 0 ? (
             <SidePanelEmpty>
-              No folders yet. Create one from the library, or drop a folder onto it.
+              No folders yet. Use New in the library, or drop a folder onto it.
             </SidePanelEmpty>
           ) : (
             <FolderTreeNav folders={folders} activeId={openFolderId} />
           )}
         </SidePanelSection>
-
-        <SidePanelSection title="Recent uploads" count={data ? recent.length : undefined}>
-          {data === null ? (
-            <SidePanelEmpty>Loading…</SidePanelEmpty>
-          ) : recent.length === 0 ? (
-            <SidePanelEmpty>
-              Nothing uploaded yet. Use Upload above, or drop an image into a document.
-            </SidePanelEmpty>
-          ) : (
-            recent.map((asset) => (
-              <SidePanelNavItem
-                key={asset.id}
-                href={`/assets?asset=${asset.id}`}
-                leading={<AssetThumb asset={asset} />}
-                label={asset.displayName}
-                detail={`${assetTypeLabel(asset)} · ${formatBytes(asset.sizeBytes)}`}
-                active={isActive(`/assets?asset=${asset.id}`)}
-                // The details live in the right panel; make sure it is showing.
-                onClick={() => requestOpenRightPanel()}
-              />
-            ))
-          )}
-        </SidePanelSection>
       </SidePanelBody>
+
+      {storage ? <StorageMeter used={storage.usedBytes} quota={storage.quotaBytes} /> : null}
     </SidePanel>
+  );
+}
+
+/** One slim meter, shown once. The Bin still counts until it empties. */
+function StorageMeter({ used, quota }: { used: number; quota: number }) {
+  const ratio = quota > 0 ? Math.min(used / quota, 1) : 0;
+  const percent = Math.round(ratio * 100);
+
+  return (
+    <div className="shrink-0 border-t border-border/70 px-4 py-3">
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Storage used"
+      >
+        <div
+          className={cn("h-full rounded-full transition-all", ratio >= 0.9 ? "bg-destructive" : "bg-primary")}
+          style={{ width: `${Math.max(ratio * 100, used > 0 ? 2 : 0)}%` }}
+        />
+      </div>
+      <p className="mt-1.5 text-[0.7rem] text-muted-foreground">
+        {formatBytes(used)} of {quota > 0 ? formatBytes(quota) : "unlimited"} used
+      </p>
+    </div>
   );
 }
 
@@ -321,33 +257,4 @@ function FolderTreeNav({ folders, activeId }: { folders: FolderNode[]; activeId:
   }
 
   return <ul>{renderLevel(null)}</ul>;
-}
-
-function AssetThumb({ asset }: { asset: RecentAsset }) {
-  const frame = "grid size-8 shrink-0 place-items-center overflow-hidden rounded border border-border/60 bg-muted/60";
-
-  const Icon =
-    asset.kind === "pdf"
-      ? FileText
-      : asset.kind === "image"
-        ? ImageIcon
-        : asset.kind === "video"
-          ? Film
-          : FileIcon;
-  const icon = <Icon className="size-4 text-muted-foreground" />;
-
-  return (
-    <span className={frame}>
-      {asset.kind === "image" || asset.kind === "video" ? (
-        <RenditionImage
-          src={asset.thumbUrl}
-          alt=""
-          className="size-full object-cover"
-          fallback={icon}
-        />
-      ) : (
-        icon
-      )}
-    </span>
-  );
 }

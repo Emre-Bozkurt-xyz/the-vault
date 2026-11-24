@@ -153,3 +153,95 @@ export function stepIndex(index: number, delta: number, length: number) {
   if (length === 0) return -1;
   return Math.min(length - 1, Math.max(0, index + delta));
 }
+
+// ── Library preferences ────────────────────────────────────────────────────
+
+/**
+ * Saved per user (`files-assets/media-library`): the view format, and whether
+ * photo views (masonry, grid) caption every card or only on hover.
+ */
+export type MediaLibraryPrefs = { view: MediaView; showNames: boolean };
+
+export function parseMediaLibraryPrefs(value: unknown): MediaLibraryPrefs {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return { view: parseMediaView(record.view), showNames: record.showNames === true };
+}
+
+/** Views that show photos edge to edge, where names can hide until hover. */
+export function isPhotoView(view: MediaView) {
+  return view === "masonry" || view === "grid";
+}
+
+// ── Places ─────────────────────────────────────────────────────────────────
+
+/**
+ * Where the library is looking (`/assets?view=`): the folder tree, or every
+ * item that is visible outside Vault (a working share link, or listed in the
+ * public gallery). The Bin is its own page.
+ */
+export type LibraryPlace = "files" | "shared";
+
+export function parseLibraryPlace(value: unknown): LibraryPlace {
+  return value === "shared" ? "shared" : "files";
+}
+
+// ── Context menu ───────────────────────────────────────────────────────────
+
+export type ContextTarget =
+  | { kind: "background" }
+  | { kind: "asset"; id: string }
+  | { kind: "folder"; id: string }
+  | { kind: "selection"; assetIds: string[]; folderIds: string[] };
+
+/**
+ * What a right-click acts on, like a file manager: empty space is the place
+ * itself (the selection stays); an item inside a multi-selection is the whole
+ * selection; any other item becomes the selection on its own, so the menu
+ * and the highlight always agree.
+ */
+export function resolveContextTarget(
+  selection: MediaSelection,
+  clicked: { kind: "asset" | "folder"; id: string } | null,
+): { target: ContextTarget; selection: MediaSelection } {
+  if (!clicked) return { target: { kind: "background" }, selection };
+
+  const inSelection =
+    clicked.kind === "asset"
+      ? selection.assetIds.includes(clicked.id)
+      : selection.folderIds.includes(clicked.id);
+  if (inSelection && selectionSize(selection) > 1) {
+    return {
+      target: { kind: "selection", assetIds: selection.assetIds, folderIds: selection.folderIds },
+      selection,
+    };
+  }
+
+  const key = clicked.kind === "asset" ? "assetIds" : "folderIds";
+  const alreadyAlone = inSelection && selectionSize(selection) === 1;
+  return {
+    target: { kind: clicked.kind, id: clicked.id },
+    selection: alreadyAlone ? selection : { ...EMPTY_SELECTION, [key]: [clicked.id], anchor: clicked.id },
+  };
+}
+
+/**
+ * Up to `count` thumbnails per folder, for folder cards: the newest photos
+ * and videos directly inside each folder that have one. One pass over the
+ * library, so a page of folders costs the same as one.
+ */
+export function folderPreviewThumbs<
+  T extends { id: string; folderId: string | null; thumbUrl: string | null; createdAt: Date | string },
+>(assets: readonly T[], count = 4): Map<string, string[]> {
+  const newestFirst = [...assets].sort(
+    (a, b) => (time(b.createdAt) ?? 0) - (time(a.createdAt) ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  const previews = new Map<string, string[]>();
+  for (const asset of newestFirst) {
+    if (!asset.folderId || !asset.thumbUrl) continue;
+    const list = previews.get(asset.folderId) ?? [];
+    if (list.length >= count) continue;
+    list.push(asset.thumbUrl);
+    previews.set(asset.folderId, list);
+  }
+  return previews;
+}

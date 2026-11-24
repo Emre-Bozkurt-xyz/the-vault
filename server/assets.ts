@@ -99,6 +99,12 @@ export type AssetResolution = {
   displayName: string;
   mimeType: string;
   sizeBytes: number;
+  /**
+   * The display rendition (≤2048 px WebP, metadata stripped) for image
+   * embeds; null/absent means use `url`. `url` stays the original, for Open
+   * and Download.
+   */
+  displayUrl?: string | null;
 };
 
 export type AssetCompletion = {
@@ -959,7 +965,8 @@ export async function updateAssetForUser(input: {
       altText: emptyToNull(input.altText)?.slice(0, 240) ?? null,
       description: emptyToNull(input.description)?.slice(0, 1000) ?? null,
       visibility: input.visibility,
-      publishedAt: input.visibility === "public" ? new Date() : null,
+      // Saving other details of a public asset keeps when it was published.
+      publishedAt: input.visibility === "public" ? sql`coalesce(${assets.publishedAt}, now())` : null,
       updatedAt: new Date(),
     })
     .where(
@@ -1378,6 +1385,8 @@ export async function listAssetResolutionsForDocument(
     mimeType: assets.mimeType,
     sizeBytes: assets.sizeBytes,
     visibility: assets.visibility,
+    renditionStatus: assets.renditionStatus,
+    renditionVersion: assets.renditionVersion,
   };
 
   // Linked assets: the document_assets row is an access grant, which is what
@@ -1436,6 +1445,7 @@ export async function listAssetResolutionsForDocument(
         mimeType: row.mimeType,
         sizeBytes: row.sizeBytes,
         url: buildAssetContentUrl(row.id, documentId, embedSessionToken),
+        displayUrl: embedDisplayUrl(row, documentId, embedSessionToken),
       } satisfies AssetResolution,
     ]),
   );
@@ -1467,6 +1477,8 @@ export async function resolveEmbeddableAssetForDocument(input: {
       altText: assets.altText,
       mimeType: assets.mimeType,
       sizeBytes: assets.sizeBytes,
+      renditionStatus: assets.renditionStatus,
+      renditionVersion: assets.renditionVersion,
     })
     .from(assets)
     .where(
@@ -1491,7 +1503,22 @@ export async function resolveEmbeddableAssetForDocument(input: {
     mimeType: asset.mimeType,
     sizeBytes: asset.sizeBytes,
     url: buildAssetContentUrl(asset.id, input.documentId),
+    displayUrl: embedDisplayUrl(asset, input.documentId),
   } satisfies AssetResolution;
+}
+
+/**
+ * The display copy for an image embed, through the same `?doc=` grant (and
+ * embed token) as the original, or null to use the original: not an image,
+ * or rendering failed. Videos and PDFs render as cards, never as <img>.
+ */
+function embedDisplayUrl(
+  asset: Parameters<typeof buildAssetRenditionUrls>[0],
+  documentId: string,
+  embedSessionToken?: string | null,
+) {
+  if (asset.kind !== "image") return null;
+  return buildAssetRenditionUrls(asset, documentId, embedSessionToken).displayUrl;
 }
 
 export async function getReadableAsset(input: {
