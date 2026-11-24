@@ -576,6 +576,10 @@ function inferWorkspacePage(
     return { type: "admin", title: "Tags", href };
   }
 
+  if (pathname === "/dashboard/admin/tiers") {
+    return { type: "admin", title: "Tiers", href };
+  }
+
   if (pathname === "/dashboard/admin/assets") {
     return { type: "admin", title: "Assets", href };
   }

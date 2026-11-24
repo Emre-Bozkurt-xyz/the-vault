@@ -19,7 +19,6 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
-import { ASSET_LIMITS } from "../lib/config/asset-limits";
 import type { AssetMaintenanceResult } from "../lib/asset-maintenance";
 import type { SnippetStatus } from "../lib/config/snippet-limits";
 import type {
@@ -112,20 +111,24 @@ export const users = pgTable(
      * editing a document never implies it. Off for everyone by default.
      */
     codeExecutionAllowed: boolean("code_execution_allowed").notNull().default(false),
-    /**
-     * Admin grant to upload any file type, not just the image/PDF allow-list.
-     * Such files get `kind: "file"`. Off for everyone by default.
-     */
-    unrestrictedUploadsAllowed: boolean("unrestricted_uploads_allowed")
-      .notNull()
-      .default(false),
     profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
     storageUsedBytes: bigint("storage_used_bytes", { mode: "number" })
       .notNull()
       .default(0),
-    storageQuotaBytes: bigint("storage_quota_bytes", { mode: "number" })
-      .notNull()
-      .default(ASSET_LIMITS.defaultUserStorageQuotaBytes),
+    /**
+     * The user's tier (`user_tiers`); null follows whichever tier is the
+     * default, so new signups and users whose tier is deleted land there.
+     */
+    tierId: uuid("tier_id").references((): AnyPgColumn => userTiers.id, {
+      onDelete: "set null",
+    }),
+    /** Per-user storage quota; null inherits the tier's. */
+    storageQuotaOverrideBytes: bigint("storage_quota_override_bytes", { mode: "number" }),
+    /**
+     * Per-user grant to upload any file type (stored as `kind: "file"`), not
+     * just the image/PDF/video allow-list; null inherits the tier's.
+     */
+    unrestrictedUploadsOverride: boolean("unrestricted_uploads_override"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -139,6 +142,37 @@ export const users = pgTable(
     index("users_name_idx").on(table.name),
     index("users_role_idx").on(table.role),
     index("users_banned_until_idx").on(table.bannedUntil),
+    index("users_tier_id_idx").on(table.tierId),
+  ],
+);
+
+/**
+ * Allowance tiers (docs/03): how much a user gets, separate from `role`
+ * (what they may do). A user's effective quota and upload grant are their own
+ * override, else their tier's, else the default tier's
+ * (`server/user-tiers.ts`). Exactly one tier is the default at a time.
+ */
+export const userTiers = pgTable(
+  "user_tiers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    storageQuotaBytes: bigint("storage_quota_bytes", { mode: "number" }).notNull(),
+    /** May upload any file type, not just the image/PDF/video allow-list. */
+    unrestrictedUploadsAllowed: boolean("unrestricted_uploads_allowed")
+      .notNull()
+      .default(false),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("user_tiers_name_unique").on(sql`lower(${table.name})`),
+    uniqueIndex("user_tiers_one_default").on(table.isDefault).where(sql`${table.isDefault}`),
   ],
 );
 

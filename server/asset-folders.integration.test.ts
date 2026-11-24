@@ -49,8 +49,8 @@ describe.skipIf(!databaseUrl)("asset folders (database)", () => {
     assetsServer = await import("@/server/assets");
 
     await db.insert(schema.users).values([
-      { id: ownerId, name: "Folder test owner", storageQuotaBytes: 1e9 },
-      { id: strangerId, name: "Folder test stranger", storageQuotaBytes: 1e9 },
+      { id: ownerId, name: "Folder test owner", storageQuotaOverrideBytes: 1e9 },
+      { id: strangerId, name: "Folder test stranger", storageQuotaOverrideBytes: 1e9 },
     ]);
   });
 

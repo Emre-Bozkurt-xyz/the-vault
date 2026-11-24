@@ -28,7 +28,12 @@ users
   banned_at TIMESTAMP
   banned_until TIMESTAMP
   ban_reason TEXT
+  code_execution_allowed BOOLEAN NOT NULL DEFAULT false
   profile_completed_at TIMESTAMP
+  storage_used_bytes BIGINT NOT NULL DEFAULT 0
+  tier_id UUID REFERENCES user_tiers(id) ON DELETE SET NULL  -- null = default tier
+  storage_quota_override_bytes BIGINT     -- null = the tier's quota
+  unrestricted_uploads_override BOOLEAN   -- null = the tier's grant
   created_at TIMESTAMP
   updated_at TIMESTAMP
 ```
@@ -42,6 +47,35 @@ Notes:
 - `username` is searchable and user-editable; relational data must keep using `users.id` as the stable key.
 - `role` currently supports `user` and `admin`.
 - `banned_at`, `banned_until`, and `ban_reason` are moderation fields. A row with `banned_at` and no `banned_until` is a permanent ban.
+- Allowances (storage quota, "upload any file type") come from tiers, not the
+  user row (added 2026-11-24, migrations `0038_user_tiers.sql` and
+  `0039_drop_user_allowance_columns.sql`, which replaced
+  `users.storage_quota_bytes` and `users.unrestricted_uploads_allowed`). The
+  effective value is the user's override, else their tier's, else the default
+  tier's; `server/user-tiers.ts` computes it in SQL so the upload quota check
+  and every reader agree. `role` stays separate: what a user may do, not how
+  much they get. `code_execution_allowed` stays a per-user grant on purpose.
+
+### user_tiers
+
+```txt
+user_tiers
+  id UUID PRIMARY KEY
+  name TEXT NOT NULL                 -- unique case-insensitively
+  storage_quota_bytes BIGINT NOT NULL
+  unrestricted_uploads_allowed BOOLEAN NOT NULL DEFAULT false
+  is_default BOOLEAN NOT NULL DEFAULT false  -- partial unique: one default
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+- Users with `tier_id` null (new signups included) follow the default tier, so
+  switching the default moves all of them at once. Deleting a tier sets its
+  members' `tier_id` to null (back to the default); their overrides stay. The
+  default tier can't be deleted.
+- `0038` created one default "Standard" tier at the most common existing
+  quota (50 MiB with no users) and turned every differing quota, and every
+  granted unrestricted upload, into that user's override.
 - Do not expose raw internal user IDs publicly unless needed.
 
 ---
@@ -711,9 +745,10 @@ Important rules:
 - Publishing a document does not automatically publish embedded assets.
 - Individual assets can be explicitly published later for gallery visibility.
 - `kind = 'file'` (added 2026-10-13, migration `0028_dusty_mojo.sql`) holds any
-  type outside the sniffed image/PDF allow-list. Only users with
-  `users.unrestricted_uploads_allowed` (admin grant, default `false`) can create
-  one, and it is always served as a sandboxed `octet-stream` download.
+  type outside the sniffed image/PDF allow-list. Only users whose effective
+  unrestricted-uploads grant is on (their override, else their tier's; since
+  `0038`) can create one, and it is always served as a sandboxed
+  `octet-stream` download.
 - Per-upload size caps live in `deployment_settings` (added 2026-10-13,
   migration `0029_clear_golden_guardian.sql`), a single-row table for
   deployment-wide settings admins edit at runtime:
@@ -751,7 +786,7 @@ Implemented schema additions in migration `0011_tiresome_ultimates.sql`:
 ```txt
 users
   storage_used_bytes BIGINT NOT NULL DEFAULT 0
-  storage_quota_bytes BIGINT NOT NULL DEFAULT 268435456
+  storage_quota_bytes BIGINT NOT NULL DEFAULT 268435456  -- dropped in 0039 (tiers)
 
 assets
   id UUID PRIMARY KEY

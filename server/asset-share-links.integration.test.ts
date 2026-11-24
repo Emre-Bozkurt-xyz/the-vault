@@ -62,8 +62,8 @@ describe.skipIf(!databaseUrl)("asset share links (database)", () => {
     assetsServer = await import("@/server/assets");
     tokens = await import("@/lib/share-token");
     await db.insert(schema.users).values([
-      { id: ownerId, name: "Share owner", storageQuotaBytes: 1e9 },
-      { id: strangerId, name: "Share stranger", storageQuotaBytes: 1e9 },
+      { id: ownerId, name: "Share owner", storageQuotaOverrideBytes: 1e9 },
+      { id: strangerId, name: "Share stranger", storageQuotaOverrideBytes: 1e9 },
     ]);
   });
 

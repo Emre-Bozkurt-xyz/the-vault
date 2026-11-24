@@ -4,6 +4,7 @@ import {
   BookOpen,
   Hash,
   HardDrive,
+  Layers,
   LayoutDashboard,
   ShieldCheck,
   Users,
@@ -38,7 +39,7 @@ const SECTIONS = [
       {
         label: "Users",
         href: "/dashboard/admin/users",
-        detail: "Roles, bans, grants, quotas",
+        detail: "Roles, tiers, bans, grants, quotas",
         icon: Users,
         prefix: true,
       },
@@ -47,6 +48,13 @@ const SECTIONS = [
         href: "/dashboard/admin/assets",
         detail: "Storage, upload limits, moderation",
         icon: HardDrive,
+        prefix: true,
+      },
+      {
+        label: "Tiers",
+        href: "/dashboard/admin/tiers",
+        detail: "Default storage and upload allowances",
+        icon: Layers,
         prefix: true,
       },
       {

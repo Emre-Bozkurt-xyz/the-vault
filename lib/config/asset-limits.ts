@@ -3,7 +3,8 @@
  *
  * Per-upload caps are edited by admins at runtime (`deployment_settings`, see
  * `lib/upload-limits.ts`); the values here are what applies until an admin sets
- * one. The storage quota default feeds the `users` schema column default.
+ * one. Storage quotas live on allowance tiers (`user_tiers`); the quota
+ * default below seeds the first tier and is the fallback if none is default.
  * Client code imports this too (upload routing), so keep it dependency-free.
  */
 const MiB = 1024 * 1024;
@@ -46,6 +47,10 @@ export const ASSET_LIMITS = {
   deletedAssetRetentionDays: 30,
   /** Objects younger than this are never treated as orphans (race margin). */
   orphanGraceMs: 6 * 60 * 60 * 1000, // 6 hours
-  /** Default per-user storage quota applied to new users. */
+  /**
+   * Fallback storage quota: for the first tier when there were no users to
+   * take it from (0038 migration), and if no tier is the default
+   * (`server/user-tiers.ts`).
+   */
   defaultUserStorageQuotaBytes: 50 * MiB, // 50 MiB
 } as const;

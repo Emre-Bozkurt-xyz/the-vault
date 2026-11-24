@@ -267,6 +267,20 @@
       "when": 1795483480176,
       "tag": "0037_clear_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795498627612,
+      "tag": "0038_user_tiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795498643186,
+      "tag": "0039_drop_user_allowance_columns",
+      "breakpoints": true
     }
   ]
 }

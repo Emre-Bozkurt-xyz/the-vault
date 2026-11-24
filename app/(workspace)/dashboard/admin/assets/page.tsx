@@ -14,6 +14,7 @@ import {
 import { AdminShell } from "@/components/admin/AdminShell";
 import { MetricCard, UsageBar } from "@/components/admin/metric-card";
 import { AssetMaintenancePanel } from "@/components/admin/AssetMaintenancePanel";
+import { QuotaOverrideForm } from "@/components/admin/QuotaOverrideForm";
 import { UploadLimitsForm } from "@/components/admin/UploadLimitsForm";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -26,7 +27,6 @@ import {
   getAssetStorageOverview,
   listUserStorageForAdmin,
   recalcUserStorageAction,
-  updateUserQuotaAction,
   type AdminAssetItem,
 } from "@/server/assets-admin";
 import {
@@ -350,27 +350,7 @@ export default async function AdminAssetsPage({
                       quota={user.storageQuotaBytes}
                     />
 
-                    <form
-                      action={updateUserQuotaAction}
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <input type="hidden" name="userId" value={user.id} />
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Quota (MiB)
-                      </label>
-                      <Input
-                        type="number"
-                        name="quotaMb"
-                        min={0}
-                        step={1}
-                        defaultValue={Math.round(user.storageQuotaBytes / MB)}
-                        className="h-9 w-28"
-                        aria-label="Storage quota in MiB"
-                      />
-                      <Button type="submit" variant="outline" size="sm">
-                        Set quota
-                      </Button>
-                    </form>
+                    <QuotaOverrideForm userId={user.id} allowance={user} />
                   </article>
                 );
               })}

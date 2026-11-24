@@ -7,12 +7,14 @@ import {
   CodeXml,
   FileUp,
   HardDrive,
+  Layers,
   RefreshCw,
   ShieldCheck,
   ShieldOff,
 } from "lucide-react";
 
 import { UsageBar } from "@/components/admin/metric-card";
+import { QuotaOverrideForm } from "@/components/admin/QuotaOverrideForm";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,15 +34,13 @@ import {
   unbanUserAction,
   type AdminUserListItem,
 } from "@/server/admin";
-import {
-  recalcUserStorageAction,
-  updateUserQuotaAction,
-} from "@/server/assets-admin";
+import { recalcUserStorageAction } from "@/server/assets-admin";
+import type { UserTier } from "@/server/user-tiers";
+import { setUserTierAction } from "@/server/user-tiers-admin";
 
-const MIB = 1024 * 1024;
-
-export function UsersTable({ users, executionEnabled }: {
+export function UsersTable({ users, tiers, executionEnabled }: {
   users: AdminUserListItem[];
+  tiers: UserTier[];
   executionEnabled: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -54,6 +54,7 @@ export function UsersTable({ users, executionEnabled }: {
             <tr className="border-b border-border/60 text-left text-xs uppercase tracking-[0.12em] text-muted-foreground">
               <th className="px-3 py-2 font-semibold">User</th>
               <th className="px-3 py-2 font-semibold">Role</th>
+              <th className="px-3 py-2 font-semibold">Tier</th>
               <th className="px-3 py-2 font-semibold">Status</th>
               <th className="px-3 py-2 font-semibold">Storage</th>
               <th className="px-3 py-2 font-semibold">Joined</th>
@@ -79,6 +80,12 @@ export function UsersTable({ users, executionEnabled }: {
                     {user.role}
                   </Badge>
                 </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {user.tierName ?? "None"}
+                  {user.tierId === null ? (
+                    <span className="ml-1 text-muted-foreground">(default)</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2.5">
                   <span className="flex flex-wrap gap-1">
                     {user.isBanActive ? (
@@ -97,6 +104,9 @@ export function UsersTable({ users, executionEnabled }: {
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {formatBytes(user.storageUsedBytes)} /{" "}
                   {formatBytes(user.storageQuotaBytes)}
+                  {user.storageQuotaOverrideBytes !== null ? (
+                    <span className="ml-1" title="Custom quota, not the tier's">*</span>
+                  ) : null}
                   <span className="ml-1">({user.assetCount})</span>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
@@ -116,7 +126,7 @@ export function UsersTable({ users, executionEnabled }: {
       >
         <SheetContent>
           {selected ? (
-            <UserDetail user={selected} executionEnabled={executionEnabled} />
+            <UserDetail user={selected} tiers={tiers} executionEnabled={executionEnabled} />
           ) : null}
         </SheetContent>
       </Sheet>
@@ -124,10 +134,13 @@ export function UsersTable({ users, executionEnabled }: {
   );
 }
 
-function UserDetail({ user, executionEnabled }: {
+function UserDetail({ user, tiers, executionEnabled }: {
   user: AdminUserListItem;
+  tiers: UserTier[];
   executionEnabled: boolean;
 }) {
+  const defaultTier = tiers.find((tier) => tier.isDefault);
+
   return (
     <>
       <SheetHeader>
@@ -175,6 +188,46 @@ function UserDetail({ user, executionEnabled }: {
         </form>
       </section>
 
+      {/* Tier */}
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Tier
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Sets this user&apos;s storage and upload allowances, unless they have
+          their own below.{" "}
+          <Link href="/dashboard/admin/tiers" className="underline underline-offset-4">
+            Edit tiers
+          </Link>
+        </p>
+        <form
+          key={user.tierId ?? "default"}
+          action={setUserTierAction}
+          className="flex items-center gap-2"
+        >
+          <input type="hidden" name="userId" value={user.id} />
+          <select
+            name="tierId"
+            defaultValue={user.tierId ?? "default"}
+            className="h-9 flex-1 border border-input bg-background px-3 text-sm"
+            aria-label="Tier"
+          >
+            <option value="default">
+              Default{defaultTier ? ` (${defaultTier.name})` : ""}
+            </option>
+            {tiers.map((tier) => (
+              <option key={tier.id} value={tier.id}>
+                {tier.name}
+              </option>
+            ))}
+          </select>
+          <Button type="submit" variant="outline" size="sm">
+            <Layers className="size-4" />
+            Set
+          </Button>
+        </form>
+      </section>
+
       {/* Code execution */}
       <section className="grid gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -203,15 +256,37 @@ function UserDetail({ user, executionEnabled }: {
         </h3>
         <p className="text-sm text-muted-foreground">
           {user.unrestrictedUploadsAllowed
-            ? "Can upload any file type. Files outside images and PDFs are only ever served as downloads."
-            : "Can upload images and PDFs only."}
+            ? "Can upload any file type. Files outside images, PDFs and videos are only ever served as downloads."
+            : "Can upload images, PDFs and videos only."}{" "}
+          {user.unrestrictedUploadsOverride === null
+            ? `From the ${user.tierName ?? "default"} tier.`
+            : "Set for this user, not by their tier."}
         </p>
-        <form action={setUnrestrictedUploadsAction}>
+        <form
+          key={String(user.unrestrictedUploadsOverride)}
+          action={setUnrestrictedUploadsAction}
+          className="flex items-center gap-2"
+        >
           <input type="hidden" name="userId" value={user.id} />
-          <input type="hidden" name="allowed" value={user.unrestrictedUploadsAllowed ? "false" : "true"} />
+          <select
+            name="allowed"
+            defaultValue={
+              user.unrestrictedUploadsOverride === null
+                ? "inherit"
+                : String(user.unrestrictedUploadsOverride)
+            }
+            className="h-9 flex-1 border border-input bg-background px-3 text-sm"
+            aria-label="Upload file types"
+          >
+            <option value="inherit">
+              From tier ({user.tierUnrestrictedUploads ? "any file type" : "images, PDFs, videos"})
+            </option>
+            <option value="true">Any file type</option>
+            <option value="false">Images, PDFs and videos only</option>
+          </select>
           <Button type="submit" variant="outline" size="sm">
             <FileUp className="size-4" />
-            {user.unrestrictedUploadsAllowed ? "Restrict to images and PDFs" : "Allow any file type"}
+            Set
           </Button>
         </form>
       </section>
@@ -273,27 +348,7 @@ function UserDetail({ user, executionEnabled }: {
         </h3>
         <UsageBar used={user.storageUsedBytes} quota={user.storageQuotaBytes} />
         <p className="text-xs text-muted-foreground">{user.assetCount} assets</p>
-        <form
-          action={updateUserQuotaAction}
-          className="flex flex-wrap items-center gap-2"
-        >
-          <input type="hidden" name="userId" value={user.id} />
-          <label className="text-xs font-medium text-muted-foreground">
-            Quota (MiB)
-          </label>
-          <Input
-            type="number"
-            name="quotaMb"
-            min={0}
-            step={1}
-            defaultValue={Math.round(user.storageQuotaBytes / MIB)}
-            className="h-9 w-28"
-            aria-label="Storage quota in MiB"
-          />
-          <Button type="submit" variant="outline" size="sm">
-            Set quota
-          </Button>
-        </form>
+        <QuotaOverrideForm userId={user.id} allowance={user} />
         <div className="flex flex-wrap gap-2">
           <form action={recalcUserStorageAction}>
             <input type="hidden" name="userId" value={user.id} />

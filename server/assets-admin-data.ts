@@ -22,6 +22,7 @@ import {
   buildAssetContentUrl,
 } from "@/server/assets";
 import { requireAdmin } from "@/server/authz";
+import { toUserAllowance, userAllowanceColumns } from "@/server/user-tiers";
 
 export async function getUserStorageForAdmin(
   userId: string,
@@ -39,7 +40,7 @@ export async function getUserStorageForAdmin(
       username: users.username,
       email: users.email,
       storageUsedBytes: users.storageUsedBytes,
-      storageQuotaBytes: users.storageQuotaBytes,
+      ...userAllowanceColumns(),
       assetCount,
       actualBytes,
     })
@@ -55,8 +56,8 @@ export async function getUserStorageForAdmin(
 
   return {
     ...row,
+    ...toUserAllowance(row),
     storageUsedBytes: Number(row.storageUsedBytes),
-    storageQuotaBytes: Number(row.storageQuotaBytes),
     assetCount: Number(row.assetCount),
     actualBytes: Number(row.actualBytes),
   };

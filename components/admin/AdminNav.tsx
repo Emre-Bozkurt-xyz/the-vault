@@ -6,6 +6,7 @@ import {
   BookOpen,
   Hash,
   HardDrive,
+  Layers,
   LayoutDashboard,
   Users,
 } from "lucide-react";
@@ -23,6 +24,7 @@ const TABS: AdminTab[] = [
   { label: "Overview", href: "/dashboard/admin", icon: LayoutDashboard, exact: true },
   { label: "Users", href: "/dashboard/admin/users", icon: Users },
   { label: "Assets", href: "/dashboard/admin/assets", icon: HardDrive },
+  { label: "Tiers", href: "/dashboard/admin/tiers", icon: Layers },
   { label: "Tags", href: "/dashboard/admin/tags", icon: Hash },
   { label: "Official docs", href: "/dashboard/admin/docs", icon: BookOpen },
 ];

@@ -48,6 +48,7 @@ import { deleteAssetObject, getR2Bucket, putAssetObject } from "@/lib/storage/r2
 import { isUserBanActive } from "@/server/authz";
 import { syncAssetTags } from "@/server/content-metadata";
 import { getUploadLimits } from "@/server/deployment-settings";
+import { effectiveStorageQuotaSql, effectiveUnrestrictedUploadsSql } from "@/server/user-tiers";
 import { getAssetContentStats } from "@/server/content-interactions";
 import { deleteRenditionObjects, scheduleRenditionsAfterUpload } from "@/server/asset-renditions";
 
@@ -143,8 +144,8 @@ export async function getOptionalAssetUser(): Promise<ActiveAssetUser | null> {
       bannedAt: users.bannedAt,
       bannedUntil: users.bannedUntil,
       storageUsedBytes: users.storageUsedBytes,
-      storageQuotaBytes: users.storageQuotaBytes,
-      unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
+      storageQuotaBytes: effectiveStorageQuotaSql(),
+      unrestrictedUploadsAllowed: effectiveUnrestrictedUploadsSql(),
     })
     .from(users)
     .where(eq(users.id, session.user.id))
@@ -172,8 +173,8 @@ export async function getUserStorageSummary(
   const [user] = await db
     .select({
       storageUsedBytes: users.storageUsedBytes,
-      storageQuotaBytes: users.storageQuotaBytes,
-      unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
+      storageQuotaBytes: effectiveStorageQuotaSql(),
+      unrestrictedUploadsAllowed: effectiveUnrestrictedUploadsSql(),
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -224,8 +225,8 @@ async function resolveAssetUserFromEmbedSessionToken(
       bannedAt: users.bannedAt,
       bannedUntil: users.bannedUntil,
       storageUsedBytes: users.storageUsedBytes,
-      storageQuotaBytes: users.storageQuotaBytes,
-      unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
+      storageQuotaBytes: effectiveStorageQuotaSql(),
+      unrestrictedUploadsAllowed: effectiveUnrestrictedUploadsSql(),
     })
     .from(users)
     .where(eq(users.id, payload.vaultUserId))
@@ -388,7 +389,7 @@ export async function createUploadedAsset(input: {
   documentId?: string | null;
   /** Media library folder, already checked live and owned by the caller. */
   folderId?: string | null;
-  /** From the uploader's `users.unrestricted_uploads_allowed` grant. */
+  /** The uploader's effective "any file type" grant (override, else tier; server/user-tiers.ts). */
   allowAnyFileType?: boolean;
 }) {
   const buffer = Buffer.from(await input.file.arrayBuffer());
@@ -1689,7 +1690,7 @@ export async function reserveUserStorage(userId: string, sizeBytes: number) {
     .where(
       and(
         eq(users.id, userId),
-        sql`${users.storageUsedBytes} + ${sizeBytes} <= ${users.storageQuotaBytes}`,
+        sql`${users.storageUsedBytes} + ${sizeBytes} <= ${effectiveStorageQuotaSql()}`,
       ),
     )
     .returning({ id: users.id });

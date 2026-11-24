@@ -4,6 +4,7 @@ import {
   Database,
   FileText,
   Hash,
+  Layers,
   HardDrive,
   ImageIcon,
   ShieldAlert,
@@ -153,6 +154,7 @@ export default async function AdminOverviewPage() {
           {[
             { label: "User management", href: "/dashboard/admin/users", icon: Users },
             { label: "Asset storage", href: "/dashboard/admin/assets", icon: HardDrive },
+            { label: "Tiers", href: "/dashboard/admin/tiers", icon: Layers },
             { label: "Tags", href: "/dashboard/admin/tags", icon: Hash },
             { label: "Official docs", href: "/dashboard/admin/docs", icon: BookOpen },
           ].map((link) => {

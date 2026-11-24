@@ -78,8 +78,8 @@ describe.skipIf(!databaseUrl)("asset renditions (database)", () => {
     lib = await import("@/lib/asset-renditions");
 
     await db.insert(schema.users).values([
-      { id: ownerId, name: "Rendition test owner", storageQuotaBytes: 1e9 },
-      { id: strangerId, name: "Rendition test stranger", storageQuotaBytes: 1e9 },
+      { id: ownerId, name: "Rendition test owner", storageQuotaOverrideBytes: 1e9 },
+      { id: strangerId, name: "Rendition test stranger", storageQuotaOverrideBytes: 1e9 },
     ]);
   });
 

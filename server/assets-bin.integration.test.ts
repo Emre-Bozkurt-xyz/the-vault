@@ -51,8 +51,8 @@ describe.skipIf(!databaseUrl)("asset Bin (database)", () => {
     orm = await import("drizzle-orm");
 
     await db.insert(schema.users).values([
-      { id: ownerId, name: "Bin test owner", storageQuotaBytes: 10_000 },
-      { id: strangerId, name: "Bin test stranger", storageQuotaBytes: 10_000 },
+      { id: ownerId, name: "Bin test owner", storageQuotaOverrideBytes: 10_000 },
+      { id: strangerId, name: "Bin test stranger", storageQuotaOverrideBytes: 10_000 },
     ]);
   });
 

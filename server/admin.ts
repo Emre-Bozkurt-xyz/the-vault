@@ -8,6 +8,12 @@ import { z } from "zod";
 import { db } from "@/db";
 import { assets, users, type UserRole } from "@/db/schema";
 import { isUserBanActive, requireAdmin } from "@/server/authz";
+import {
+  setUserUnrestrictedUploadsOverride,
+  toUserAllowance,
+  userAllowanceColumns,
+  type UserAllowance,
+} from "@/server/user-tiers";
 
 const USERS_PATH = "/dashboard/admin/users";
 
@@ -32,9 +38,13 @@ const codeExecutionMutationSchema = z.object({
   allowed: z.enum(["true", "false"]),
 });
 
-const unrestrictedUploadsMutationSchema = codeExecutionMutationSchema;
+const unrestrictedUploadsMutationSchema = z.object({
+  userId: userIdSchema,
+  /** "inherit" clears the override, so the user follows their tier again. */
+  allowed: z.enum(["true", "false", "inherit"]),
+});
 
-export type AdminUserListItem = {
+export type AdminUserListItem = UserAllowance & {
   id: string;
   nickname: string | null;
   username: string | null;
@@ -45,12 +55,10 @@ export type AdminUserListItem = {
   bannedUntil: Date | null;
   banReason: string | null;
   codeExecutionAllowed: boolean;
-  unrestrictedUploadsAllowed: boolean;
   createdAt: Date;
   updatedAt: Date;
   isBanActive: boolean;
   storageUsedBytes: number;
-  storageQuotaBytes: number;
   assetCount: number;
 };
 
@@ -145,11 +153,10 @@ export async function listUsersForAdmin(options: {
         bannedUntil: users.bannedUntil,
         banReason: users.banReason,
         codeExecutionAllowed: users.codeExecutionAllowed,
-        unrestrictedUploadsAllowed: users.unrestrictedUploadsAllowed,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
         storageUsedBytes: users.storageUsedBytes,
-        storageQuotaBytes: users.storageQuotaBytes,
+        ...userAllowanceColumns(),
         assetCount,
       })
       .from(users)
@@ -168,8 +175,8 @@ export async function listUsersForAdmin(options: {
   return {
     items: rows.map((user) => ({
       ...user,
+      ...toUserAllowance(user),
       storageUsedBytes: Number(user.storageUsedBytes),
-      storageQuotaBytes: Number(user.storageQuotaBytes),
       assetCount: Number(user.assetCount),
       isBanActive: isUserBanActive(user),
     })),
@@ -294,9 +301,10 @@ export async function setCodeExecutionAction(formData: FormData) {
 }
 
 /**
- * Grant or revoke uploading any file type. Takes effect on the user's next
- * upload: `POST /api/assets` re-reads this column every time. Revoking does
- * not touch files already uploaded.
+ * Grant or revoke uploading any file type for one user, or ("inherit") let
+ * their tier decide again. Takes effect on the user's next upload: uploads
+ * re-read the effective grant every time. Revoking does not touch files
+ * already uploaded.
  */
 export async function setUnrestrictedUploadsAction(formData: FormData) {
   await requireAdmin();
@@ -305,13 +313,10 @@ export async function setUnrestrictedUploadsAction(formData: FormData) {
     allowed: formData.get("allowed"),
   });
 
-  await db
-    .update(users)
-    .set({
-      unrestrictedUploadsAllowed: input.allowed === "true",
-      updatedAt: sql`now()`,
-    })
-    .where(eq(users.id, input.userId));
+  await setUserUnrestrictedUploadsOverride(
+    input.userId,
+    input.allowed === "inherit" ? null : input.allowed === "true",
+  );
 
   revalidatePath(USERS_PATH);
 }

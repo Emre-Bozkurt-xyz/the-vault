@@ -21,6 +21,13 @@ import {
 } from "@/server/assets";
 import { requireAdmin } from "@/server/authz";
 import {
+  effectiveStorageQuotaSql,
+  setUserStorageQuotaOverride,
+  toUserAllowance,
+  userAllowanceColumns,
+  type UserAllowance,
+} from "@/server/user-tiers";
+import {
   userIdSchema,
 } from "@/server/assets-admin-data";
 
@@ -51,13 +58,12 @@ export type AssetStorageOverview = {
   usersWithAssets: number;
 };
 
-export type AdminUserStorageItem = {
+export type AdminUserStorageItem = UserAllowance & {
   id: string;
   name: string | null;
   username: string | null;
   email: string | null;
   storageUsedBytes: number;
-  storageQuotaBytes: number;
   assetCount: number;
   actualBytes: number;
 };
@@ -93,7 +99,7 @@ export async function getAssetStorageOverview(): Promise<AssetStorageOverview> {
 
   const [userStats] = await db
     .select({
-      totalQuotaBytes: sql<number>`coalesce(sum(${users.storageQuotaBytes}), 0)`,
+      totalQuotaBytes: sql<number>`coalesce(sum(${effectiveStorageQuotaSql()}), 0)`,
       trackedUsedBytes: sql<number>`coalesce(sum(${users.storageUsedBytes}), 0)`,
       userCount: sql<number>`count(*)::int`,
       usersWithAssets: sql<number>`count(*) filter (where ${users.storageUsedBytes} > 0)::int`,
@@ -155,7 +161,7 @@ export async function listUserStorageForAdmin(options: {
     sort === "usage_asc"
       ? asc(users.storageUsedBytes)
       : sort === "quota_desc"
-        ? desc(users.storageQuotaBytes)
+        ? desc(effectiveStorageQuotaSql())
         : sort === "assets_desc"
           ? desc(assetCount)
           : sort === "name_asc"
@@ -169,7 +175,7 @@ export async function listUserStorageForAdmin(options: {
       username: users.username,
       email: users.email,
       storageUsedBytes: users.storageUsedBytes,
-      storageQuotaBytes: users.storageQuotaBytes,
+      ...userAllowanceColumns(),
       assetCount,
       actualBytes,
     })
@@ -182,8 +188,8 @@ export async function listUserStorageForAdmin(options: {
 
   return rows.map((row) => ({
     ...row,
+    ...toUserAllowance(row),
     storageUsedBytes: Number(row.storageUsedBytes),
-    storageQuotaBytes: Number(row.storageQuotaBytes),
     assetCount: Number(row.assetCount),
     actualBytes: Number(row.actualBytes),
   }));
@@ -208,20 +214,17 @@ export async function recalcUserStorageAction(formData: FormData) {
 }
 
 // Quota is entered in MiB in the admin UI; cap at 1 TiB to avoid absurd values.
+// Blank (or `reset`) clears the user's own quota so the tier's applies again.
 const quotaMbSchema = z.coerce.number().int().min(0).max(1024 * 1024);
 
 export async function updateUserQuotaAction(formData: FormData) {
   await requireAdmin();
   const userId = userIdSchema.parse(formData.get("userId"));
-  const quotaMb = quotaMbSchema.parse(formData.get("quotaMb"));
+  const raw = formData.get("quotaMb");
+  const inherit = formData.get("reset") === "1" || raw === null || String(raw).trim() === "";
+  const quotaMb = inherit ? null : quotaMbSchema.parse(raw);
 
-  await db
-    .update(users)
-    .set({
-      storageQuotaBytes: quotaMb * 1024 * 1024,
-      updatedAt: new Date(),
-    })
-    .where(eq(users.id, userId));
+  await setUserStorageQuotaOverride(userId, quotaMb === null ? null : quotaMb * 1024 * 1024);
 
   revalidatePath(ADMIN_ASSETS_PATH);
   revalidatePath("/dashboard/admin/users");

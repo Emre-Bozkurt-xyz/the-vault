@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { listUsersForAdmin } from "@/server/admin";
 import { requireAdmin } from "@/server/authz";
 import { executionEnabled } from "@/server/code-runtime";
+import { listUserTiers } from "@/server/user-tiers";
 
 const SORT_OPTIONS = [
   { label: "Newest", value: "joined_desc" },
@@ -45,13 +46,16 @@ export default async function AdminUsersPage({
   const { q, role, status, sort, page, error } = await searchParams;
   const currentPage = Number(page) > 0 ? Number(page) : 1;
 
-  const result = await listUsersForAdmin({
-    query: q,
-    role,
-    status,
-    sort,
-    page: currentPage,
-  });
+  const [result, tiers] = await Promise.all([
+    listUsersForAdmin({
+      query: q,
+      role,
+      status,
+      sort,
+      page: currentPage,
+    }),
+    listUserTiers(),
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const rangeStart = result.total === 0 ? 0 : (result.page - 1) * result.pageSize + 1;
@@ -148,7 +152,7 @@ export default async function AdminUsersPage({
         </div>
       ) : (
         <>
-          <UsersTable users={result.items} executionEnabled={executionEnabled()} />
+          <UsersTable users={result.items} tiers={tiers} executionEnabled={executionEnabled()} />
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>
               {rangeStart}–{rangeEnd} of {result.total}
