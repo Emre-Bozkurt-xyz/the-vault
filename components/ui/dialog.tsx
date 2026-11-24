@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
+import { useCloseOnBack } from "@/components/ui/use-close-on-back"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -39,6 +40,11 @@ function DialogOverlay({
   )
 }
 
+function DialogBackClose({ closeRef }: { closeRef: React.RefObject<HTMLButtonElement | null> }) {
+  useCloseOnBack(() => closeRef.current?.click())
+  return null
+}
+
 function DialogContent({
   className,
   children,
@@ -47,6 +53,7 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
 }) {
+  const backCloseRef = React.useRef<HTMLButtonElement>(null)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -59,6 +66,9 @@ function DialogContent({
         {...props}
       >
         {children}
+        {/* Back closes the dialog (phones), through its own Close. */}
+        <DialogPrimitive.Close ref={backCloseRef} tabIndex={-1} aria-hidden className="hidden" />
+        <DialogBackClose closeRef={backCloseRef} />
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"

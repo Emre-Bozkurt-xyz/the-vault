@@ -21,6 +21,8 @@ import {
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { formatDay, formatDuration } from "@/components/assets/MediaItemViews";
 import { assetTypeLabel, downloadAsset } from "@/components/assets/asset-ui";
+import { useCloseOnBack } from "@/components/ui/use-close-on-back";
+import { useMediaQuery } from "@/components/workspace/panel-visibility";
 import { formatBytes } from "@/lib/format";
 import { stepIndex } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
@@ -43,6 +45,7 @@ export function MediaViewer({
   allowOriginals = true,
   onVideoReady,
   onVideoUnplayable,
+  closeOnBack = false,
 }: {
   items: AssetLibraryItem[];
   index: number;
@@ -58,9 +61,18 @@ export function MediaViewer({
   onVideoReady?: (asset: AssetLibraryItem, video: HTMLVideoElement) => void;
   /** Called when this browser can't play a video (the library asks the server for a poster). */
   onVideoUnplayable?: (asset: AssetLibraryItem) => void;
+  /**
+   * Back closes the viewer. Off for the library, whose viewer is already a
+   * history entry (`?open=`); on for pages without one (the share page).
+   */
+  closeOnBack?: boolean;
 }) {
   const asset = items[index] ?? null;
   const [showInfo, setShowInfo] = useState(false);
+  const phone = useMediaQuery("(max-width: 639px)", false);
+  useCloseOnBack(onClose, closeOnBack);
+  // On a phone the details are a sheet over the photo: Back closes it first.
+  useCloseOnBack(() => setShowInfo(false), showInfo && phone);
   // Zoom belongs to one item: stepping to another starts fitted again.
   const [zoom, setZoom] = useState<{ id: string | null; on: boolean }>({ id: null, on: false });
   const zoomed = asset !== null && zoom.id === asset.id && zoom.on;
@@ -159,6 +171,7 @@ export function MediaViewer({
                   zoomed={zoomed}
                   onToggleZoom={toggleZoom}
                   onSwipe={go}
+                  onDismiss={onClose}
                 />
                 <NavButton side="left" disabled={index === 0} onClick={() => go(-1)} />
                 <NavButton side="right" disabled={index === items.length - 1} onClick={() => go(1)} />
@@ -177,6 +190,66 @@ export function MediaViewer({
   );
 }
 
+/** Height of a video's control strip: touches there scrub, never swipe. */
+const VIDEO_CONTROLS_PX = 64;
+
+/**
+ * Swipe gestures on the stage: sideways steps to the previous/next item, down
+ * closes the viewer (the item follows the finger and fades, then springs back
+ * if released early). Works the same on photos, videos and the icon card.
+ */
+function useStageGestures(onSwipe: (delta: number) => void, onDismiss: () => void) {
+  const start = useRef<{ x: number; y: number; element: HTMLElement } | null>(null);
+
+  const settle = (element: HTMLElement) => {
+    element.style.transition = "transform 150ms ease-out, opacity 150ms ease-out";
+    element.style.transform = "";
+    element.style.opacity = "";
+    window.setTimeout(() => (element.style.transition = ""), 160);
+  };
+
+  return {
+    onPointerDown(event: ReactPointerEvent<HTMLElement>) {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const target = event.target as HTMLElement;
+      if (target.tagName === "VIDEO" && event.clientY > target.getBoundingClientRect().bottom - VIDEO_CONTROLS_PX) {
+        return;
+      }
+      start.current = { x: event.clientX, y: event.clientY, element: event.currentTarget };
+    },
+    onPointerMove(event: ReactPointerEvent<HTMLElement>) {
+      const origin = start.current;
+      if (!origin || event.pointerType === "mouse") return;
+      const dx = event.clientX - origin.x;
+      const dy = event.clientY - origin.y;
+      if (dy > 0 && dy > Math.abs(dx)) {
+        origin.element.style.transition = "none";
+        origin.element.style.transform = `translateY(${dy}px)`;
+        origin.element.style.opacity = String(Math.max(0.35, 1 - dy / 500));
+      }
+    },
+    onPointerUp(event: ReactPointerEvent<HTMLElement>) {
+      const origin = start.current;
+      start.current = null;
+      if (!origin) return;
+      const dx = event.clientX - origin.x;
+      const dy = event.clientY - origin.y;
+      if (dy > 100 && dy > Math.abs(dx) * 1.2) {
+        onDismiss();
+        return;
+      }
+      settle(origin.element);
+      // A deliberate horizontal swipe, not a tap or a drag down.
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) onSwipe(dx < 0 ? 1 : -1);
+    },
+    onPointerCancel() {
+      const origin = start.current;
+      start.current = null;
+      if (origin) settle(origin.element);
+    },
+  };
+}
+
 function Stage({
   asset,
   allowOriginals,
@@ -185,6 +258,7 @@ function Stage({
   zoomed,
   onToggleZoom,
   onSwipe,
+  onDismiss,
 }: {
   asset: AssetLibraryItem;
   allowOriginals: boolean;
@@ -193,10 +267,11 @@ function Stage({
   zoomed: boolean;
   onToggleZoom: () => void;
   onSwipe: (delta: number) => void;
+  onDismiss: () => void;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const gestures = useStageGestures(onSwipe, onDismiss);
   const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -213,7 +288,7 @@ function Stage({
 
   if (asset.kind === "video" && !failed) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center p-4 sm:px-16">
+      <div {...gestures} className="absolute inset-0 flex touch-none items-center justify-center p-4 sm:px-16">
         {/* Streams from the content route with byte ranges; the poster is the display rendition. */}
         <video
           key={asset.id}
@@ -237,6 +312,7 @@ function Stage({
   if (asset.kind !== "image" || !source) {
     const Icon = asset.kind === "pdf" ? FileText : asset.kind === "video" ? Film : FileIcon;
     return (
+      <div {...gestures} className="absolute inset-0 flex touch-none items-center justify-center p-4">
       <div className="grid max-w-sm place-items-center gap-4 rounded-xl border border-white/15 bg-white/5 px-8 py-10 text-center">
         <Icon className="size-12 text-white/70" />
         <div>
@@ -271,10 +347,12 @@ function Stage({
           )}
         </div>
       </div>
+      </div>
     );
   }
 
-  function onPointerDown(event: ReactPointerEvent) {
+  // Zoomed in, a drag pans the original; fitted, it's a swipe.
+  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (zoomed && scroller.current) {
       pan.current = {
         x: event.clientX,
@@ -284,26 +362,25 @@ function Stage({
       };
       event.currentTarget.setPointerCapture(event.pointerId);
     } else {
-      swipe.current = { x: event.clientX, y: event.clientY };
+      gestures.onPointerDown(event);
     }
   }
 
-  function onPointerMove(event: ReactPointerEvent) {
+  function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     if (pan.current && scroller.current) {
       scroller.current.scrollLeft = pan.current.left - (event.clientX - pan.current.x);
       scroller.current.scrollTop = pan.current.top - (event.clientY - pan.current.y);
+    } else {
+      gestures.onPointerMove(event);
     }
   }
 
-  function onPointerUp(event: ReactPointerEvent) {
-    pan.current = null;
-    const start = swipe.current;
-    swipe.current = null;
-    if (!start) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    // A deliberate horizontal swipe, not a tap or a vertical scroll.
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) onSwipe(dx < 0 ? 1 : -1);
+  function onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (pan.current) {
+      pan.current = null;
+      return;
+    }
+    gestures.onPointerUp(event);
   }
 
   return (
@@ -315,7 +392,7 @@ function Stage({
         onPointerUp={onPointerUp}
         onPointerCancel={() => {
           pan.current = null;
-          swipe.current = null;
+          gestures.onPointerCancel();
         }}
         onDoubleClick={allowOriginals ? onToggleZoom : undefined}
         className={cn(

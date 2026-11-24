@@ -425,13 +425,6 @@ export function VaultWorkspaceShell({
             label="Panel"
             onClick={() => setMobilePanelOpen(true)}
           />
-          {rightPanel ? (
-            <MobileActionButton
-              icon={PanelRightOpen}
-              label="Context"
-              onClick={() => setMobileRightPanelOpen(true)}
-            />
-          ) : null}
           <MobileActionButton
             icon={Search}
             label="Search"
@@ -442,6 +435,14 @@ export function VaultWorkspaceShell({
             label="Settings"
             onClick={() => openWorkspaceSettings("account")}
           />
+          {/* Last, on the right: it opens the panel that slides in from the right. */}
+          {rightPanel ? (
+            <MobileActionButton
+              icon={PanelRightOpen}
+              label="Context"
+              onClick={() => setMobileRightPanelOpen(true)}
+            />
+          ) : null}
         </nav>
       </div>
 

@@ -257,6 +257,7 @@ export function SharedMediaGallery({
           onIndexChange={setOpen}
           onClose={() => setOpen(null)}
           allowOriginals={allowDownload}
+          closeOnBack
         />
       ) : null}
     </div>
