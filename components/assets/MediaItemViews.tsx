@@ -65,6 +65,8 @@ export type MediaItemHandlers = {
   sharedIds?: ReadonlySet<string>;
   /** Photo views: caption every card, or only on hover. */
   showNames: boolean;
+  /** Touch screens: no dragging, so a long-press can select instead. */
+  dragDisabled?: boolean;
 };
 
 const SQUARE_GRID = "grid grid-cols-3 gap-2 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6 @7xl:grid-cols-8";
@@ -192,7 +194,7 @@ function isPictured(asset: AssetLibraryItem) {
 function itemButtonProps(asset: AssetLibraryItem, handlers: MediaItemHandlers) {
   return {
     type: "button" as const,
-    draggable: true,
+    draggable: !handlers.dragDisabled,
     "aria-pressed": handlers.selectedIds.has(asset.id),
     "aria-label": asset.displayName,
     onDragStart: (event: DragEvent) => handlers.onItemDragStart(asset, event),
@@ -283,10 +285,10 @@ function PhotoCard({
 
   if (tile) {
     return (
-      <div data-asset-card data-asset-id={asset.id} className="group relative size-full">
+      <div data-asset-card data-asset-id={asset.id} className="group relative size-full select-none">
         <button
           {...itemButtonProps(asset, handlers)}
-          className="relative block size-full overflow-hidden rounded-[3px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="relative block size-full overflow-hidden rounded-[3px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_img]:pointer-events-none"
         >
           <Thumb asset={asset} className="size-full object-cover" />
           {asset.kind === "video" ? (
@@ -299,7 +301,7 @@ function PhotoCard({
             <span
               className={cn(
                 "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-1.5 pt-8 text-white transition-opacity",
-                handlers.showNames ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                handlers.showNames ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
               )}
             >
               <span className="block truncate text-xs font-medium sm:text-sm">{asset.displayName}</span>
@@ -350,7 +352,7 @@ function PhotoCard({
         ) : null}
 
         {hoverCaption ? (
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-3 pb-2 pt-10 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-3 pb-2 pt-10 text-white opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
             <span className="block truncate text-sm font-medium">{asset.displayName}</span>
           </span>
         ) : !handlers.showNames ? (

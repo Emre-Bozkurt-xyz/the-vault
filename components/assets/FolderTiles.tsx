@@ -126,6 +126,8 @@ export type FolderItemHandlers = {
   onFolderToggle: (folder: FolderTileData) => void;
   onFolderOpen: (folder: FolderTileData) => void;
   onFolderDragStart: (folder: FolderTileData, event: DragEvent) => void;
+  /** Touch screens: no dragging, so a long-press can select instead. */
+  dragDisabled?: boolean;
   onFolderDropItems: (folder: FolderTileData, payload: MediaDragPayload) => void;
   onFolderDropFiles: (folder: FolderTileData, dataTransfer: DataTransfer) => void;
 };
@@ -164,7 +166,7 @@ function useFolderItem(folder: FolderTileData, handlers: FolderItemHandlers) {
     },
     buttonProps: {
       type: "button" as const,
-      draggable: true,
+      draggable: !handlers.dragDisabled,
       "aria-pressed": selected,
       "aria-label": `Folder ${folder.name}, ${folderSummary(folder).toLowerCase()}`,
       onDragStart: (event: DragEvent) => handlers.onFolderDragStart(folder, event),
@@ -235,7 +237,7 @@ export function FolderCard({
   const previews = handlers.previews?.get(folder.id) ?? [];
 
   return (
-    <div {...item.wrapperProps} className={cn("group relative", fill && "size-full")}>
+    <div {...item.wrapperProps} className={cn("group relative select-none", fill && "size-full")}>
       <button
         {...item.buttonProps}
         className={cn(

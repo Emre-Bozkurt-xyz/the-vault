@@ -146,7 +146,7 @@ export function MediaViewer({
             </DialogPrimitive.Close>
           </header>
 
-          <div className="flex min-h-0 flex-1">
+          <div className="relative flex min-h-0 flex-1">
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="relative flex min-h-0 flex-1 items-center justify-center">
                 {/* Keyed so loading state resets per item and per zoom level. */}
@@ -167,7 +167,9 @@ export function MediaViewer({
                 <Filmstrip items={items} index={index} onSelect={onIndexChange} />
               ) : null}
             </div>
-            {showInfo ? <InfoPanel asset={asset} location={locationOf?.(asset) ?? null} /> : null}
+            {showInfo ? (
+              <InfoPanel asset={asset} location={locationOf?.(asset) ?? null} onClose={() => setShowInfo(false)} />
+            ) : null}
           </div>
         </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
@@ -497,7 +499,19 @@ function ViewerButton({
   );
 }
 
-function InfoPanel({ asset, location }: { asset: AssetLibraryItem; location: string | null }) {
+/**
+ * The item's details: a side panel on wider screens, a sheet over the bottom
+ * of the photo on a phone (with its own close, since `i` needs a keyboard).
+ */
+function InfoPanel({
+  asset,
+  location,
+  onClose,
+}: {
+  asset: AssetLibraryItem;
+  location: string | null;
+  onClose: () => void;
+}) {
   const rows: [string, string][] = [
     ["Type", assetTypeLabel(asset)],
     ["Size", formatBytes(asset.sizeBytes)],
@@ -510,8 +524,21 @@ function InfoPanel({ asset, location }: { asset: AssetLibraryItem; location: str
   rows.push(["Visibility", asset.visibility === "public" ? "Public" : "Private"]);
 
   return (
-    <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-white/10 bg-black/40 p-4 sm:block">
-      <h2 className="break-words text-sm font-semibold">{asset.displayName}</h2>
+    <aside
+      aria-label="Details"
+      className="absolute inset-x-0 bottom-0 z-20 max-h-[60%] overflow-y-auto rounded-t-2xl border-t border-white/15 bg-neutral-950/95 p-4 pb-6 shadow-2xl backdrop-blur sm:static sm:z-auto sm:max-h-none sm:w-72 sm:shrink-0 sm:rounded-none sm:border-l sm:border-t-0 sm:bg-black/40 sm:pb-4 sm:shadow-none sm:backdrop-blur-none"
+    >
+      <div className="flex items-start gap-2">
+        <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">{asset.displayName}</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close details"
+          className="-mr-1 -mt-1 grid size-8 shrink-0 place-items-center rounded-md text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:hidden"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
       {asset.description ? <p className="mt-2 text-xs leading-relaxed text-white/70">{asset.description}</p> : null}
       <dl className="mt-4 grid gap-2 text-xs">
         {rows.map(([label, value]) => (

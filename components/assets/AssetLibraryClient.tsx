@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import {
+  CheckSquare,
   FolderInput,
   FolderOpen,
   FolderX,
@@ -64,6 +65,7 @@ import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WorkspacePageRegistration } from "@/components/workspace/WorkspaceChrome";
+import { useMediaQuery } from "@/components/workspace/panel-visibility";
 import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
 import { childFolders, descendantFolderIds, folderPath } from "@/lib/asset-folders";
 import {
@@ -212,6 +214,10 @@ export function AssetLibraryClient({
   // shows its circle and the selection bar appears. A plain click only
   // highlights one item.
   const [ticking, setTicking] = useState(false);
+  // Selection mode entered on purpose (a touch long-press, "Select items"):
+  // stays on, even with nothing ticked, until it is closed.
+  const [selectMode, setSelectMode] = useState(false);
+  const coarsePointer = useMediaQuery("(pointer: coarse)", false);
   const [seenUrlAsset, setSeenUrlAsset] = useState(urlAssetId);
   if (urlAssetId !== seenUrlAsset) {
     setSeenUrlAsset(urlAssetId);
@@ -347,7 +353,7 @@ export function AssetLibraryClient({
   const selectedAssetIds = useMemo(() => new Set(liveSelection.assetIds), [liveSelection]);
   const selectedFolderIds = useMemo(() => new Set(liveSelection.folderIds), [liveSelection]);
   const selectedCount = selectionSize(liveSelection);
-  const selecting = selectedCount > 1 || (ticking && selectedCount > 0);
+  const selecting = selectedCount > 1 || (ticking && selectedCount > 0) || selectMode;
   const selected =
     selectedCount === 1 && liveSelection.assetIds.length === 1
       ? (assets.find((asset) => asset.id === liveSelection.assetIds[0]) ?? null)
@@ -398,6 +404,7 @@ export function AssetLibraryClient({
   const clearSelection = useCallback(() => {
     setSelection(EMPTY_SELECTION);
     setTicking(false);
+    setSelectMode(false);
     if (new URLSearchParams(window.location.search).has("asset")) {
       updateLibraryUrl({ asset: null });
     }
@@ -574,7 +581,36 @@ export function AssetLibraryClient({
       setTicking(true);
     },
     clearSelection,
+    select: (item) => {
+      setSelectMode(true);
+      const already = item.kind === "asset" ? selectedAssetIds.has(item.id) : selectedFolderIds.has(item.id);
+      // Entering selection mode keeps what is selected only if it was a
+      // deliberate selection already; a lone highlight is replaced.
+      if (!already) {
+        if (!selecting) {
+          setSelection(
+            item.kind === "asset"
+              ? { assetIds: [item.id], folderIds: [], anchor: item.id }
+              : { assetIds: [], folderIds: [item.id], anchor: item.id },
+          );
+          setTicking(true);
+          updateLibraryUrl({ asset: item.kind === "asset" ? item.id : null });
+        } else {
+          toggleItem(item.kind, item.id);
+        }
+      }
+    },
+    startSelecting: () => {
+      setSelectMode(true);
+      setTicking(true);
+    },
   };
+
+  /** A finger resting on an item selects it, like a phone gallery. */
+  function handleItemLongPress(clicked: { kind: "asset" | "folder"; id: string }) {
+    navigator.vibrate?.(12);
+    actions.select(clicked);
+  }
 
   function renameSelected() {
     if (selected && selectedCount === 1) actions.renameAsset(selected);
@@ -606,7 +642,7 @@ export function AssetLibraryClient({
         actions.selectAll();
       } else if (mod) {
         return;
-      } else if (event.key === "Escape" && selectedCount > 0) {
+      } else if (event.key === "Escape" && (selectedCount > 0 || selectMode)) {
         event.preventDefault();
         clearSelection();
       } else if ((event.key === "Delete" || event.key === "Backspace") && selectedCount > 0) {
@@ -645,7 +681,7 @@ export function AssetLibraryClient({
       openViewer(asset);
       return;
     }
-    const mode = selecting && window.matchMedia("(hover: none)").matches ? "toggle" : selectionMode(event);
+    const mode = selecting && (selectMode || window.matchMedia("(hover: none)").matches) ? "toggle" : selectionMode(event);
     const next = applySelectionClick(liveSelection, { kind: "asset", id: asset.id, mode, order: visibleAssetIds });
     setSelection(next);
     setTicking(mode !== "replace");
@@ -671,7 +707,7 @@ export function AssetLibraryClient({
       openFolder(folderId);
       return;
     }
-    const mode = selecting && window.matchMedia("(hover: none)").matches ? "toggle" : selectionMode(event);
+    const mode = selecting && (selectMode || window.matchMedia("(hover: none)").matches) ? "toggle" : selectionMode(event);
     setSelection(applySelectionClick(liveSelection, { kind: "folder", id: folderId, mode, order: visibleFolderIds }));
     setTicking(mode !== "replace");
     updateLibraryUrl({ asset: null });
@@ -782,6 +818,7 @@ export function AssetLibraryClient({
     sharedFolderIds,
     previews,
     selecting,
+    dragDisabled: coarsePointer,
     onFolderClick: (folder, event) => handleFolderClick(folder.id, event),
     onFolderToggle: (folder) => toggleItem("folder", folder.id),
     onFolderOpen: (folder) => openFolder(folder.id),
@@ -871,6 +908,7 @@ export function AssetLibraryClient({
       onSortChange={setSortMode}
       selectedIds={selectedAssetIds}
       selecting={selecting}
+      dragDisabled={coarsePointer}
       showNames={showNames}
       onItemClick={handleItemClick}
       onItemToggle={(asset) => toggleItem("asset", asset.id)}
@@ -988,7 +1026,12 @@ export function AssetLibraryClient({
           />
         ) : null}
 
-        <LibraryContextMenu onTarget={handleMenuTarget} menu={menu} className="min-h-[60vh] pb-20">
+        <LibraryContextMenu
+          onTarget={handleMenuTarget}
+          onItemLongPress={handleItemLongPress}
+          menu={menu}
+          className="min-h-[60vh] pb-20"
+        >
           {gallery}
         </LibraryContextMenu>
 
@@ -997,7 +1040,15 @@ export function AssetLibraryClient({
             count={selectedCount}
             onMove={() => actions.move(liveSelection)}
             onBin={() => void binItems(liveSelection)}
+            onSelectAll={actions.selectAll}
             onClear={clearSelection}
+            menu={
+              <SelectionMenuItems
+                assetIds={liveSelection.assetIds}
+                folderIds={liveSelection.folderIds}
+                actions={actions}
+              />
+            }
           />
         ) : null}
       </div>
@@ -1210,32 +1261,71 @@ export function AssetLibraryClient({
   }
 }
 
+/**
+ * The bar while selecting: the count, the common actions, every other action
+ * for the selection in "⋯", and close. With nothing ticked yet (selection mode
+ * entered from a menu) it says what to do and offers Select all.
+ */
 function SelectionBar({
   count,
   onMove,
   onBin,
+  onSelectAll,
   onClear,
+  menu,
 }: {
   count: number;
   onMove: () => void;
   onBin: () => void;
+  onSelectAll: () => void;
   onClear: () => void;
+  menu: ReactNode;
 }) {
   return (
     <div
       role="toolbar"
       aria-label="Selection"
-      className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-1 rounded-full border border-border/80 bg-popover/95 py-1 pl-4 pr-1 text-sm shadow-lg backdrop-blur"
+      className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-full items-center gap-0.5 rounded-full border border-border/80 bg-popover/95 py-1 pl-4 pr-1 text-sm shadow-lg backdrop-blur sm:gap-1"
     >
-      <span className="mr-2 font-medium tabular-nums">{count} selected</span>
-      <Button type="button" variant="ghost" size="sm" onClick={onMove}>
-        <FolderInput data-icon="inline-start" />
-        Move to…
-      </Button>
-      <Button type="button" variant="ghost" size="sm" onClick={onBin} className="text-destructive">
-        <Trash2 data-icon="inline-start" />
-        Move to Bin
-      </Button>
+      <span className="mr-1 whitespace-nowrap font-medium tabular-nums sm:mr-2" aria-live="polite">
+        {count > 0 ? `${count} selected` : "Tap items to select"}
+      </span>
+      {count === 0 ? (
+        <Button type="button" variant="ghost" size="sm" onClick={onSelectAll}>
+          <CheckSquare data-icon="inline-start" />
+          Select all
+        </Button>
+      ) : (
+        <>
+          <Button type="button" variant="ghost" size="sm" onClick={onMove} aria-label="Move to…" title="Move to…">
+            <FolderInput data-icon="inline-start" />
+            <span className="hidden sm:inline">Move to…</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onBin}
+            className="text-destructive"
+            aria-label="Move to Bin"
+            title="Move to Bin"
+          >
+            <Trash2 data-icon="inline-start" />
+            <span className="hidden sm:inline">Move to Bin</span>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="More actions for the selection"
+              className="grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 data-[popup-open]:bg-muted"
+            >
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="min-w-52">
+              {menu}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      )}
       <Button
         type="button"
         variant="ghost"
