@@ -172,50 +172,110 @@ export function isPhotoView(view: MediaView) {
   return view === "masonry" || view === "grid";
 }
 
-// ── Masonry ────────────────────────────────────────────────────────────────
+// ── Justified rows (the "Masonry" view) ──────────────────────────────────
 
 /**
- * Masonry column count for a container width in px: the Tailwind container
- * steps the other views use (@2xl 42rem, @5xl 64rem, @7xl 80rem).
+ * Narrowest and widest shape a tile may take. Phone screenshots (≈0.46) and
+ * ordinary panoramas show whole; anything more extreme is cropped to this so
+ * one image can't squash its row to a sliver.
  */
-export function masonryColumnCount(widthPx: number) {
-  if (widthPx >= 1280) return 5;
-  if (widthPx >= 1024) return 4;
-  if (widthPx >= 672) return 3;
-  return 2;
+const MIN_TILE_ASPECT = 0.4;
+const MAX_TILE_ASPECT = 3;
+
+/** A tile's width ÷ height from stored dimensions; files without a picture are square. */
+export function tileAspect(item: { width?: number | null; height?: number | null; pictured: boolean }) {
+  if (!item.pictured || !item.width || !item.height || item.width <= 0 || item.height <= 0) return 1;
+  return Math.min(MAX_TILE_ASPECT, Math.max(MIN_TILE_ASPECT, item.width / item.height));
 }
 
 /**
- * Column count for the public share gallery (`/s/<token>`), which has room
- * for bigger cards: @sm 24rem, @2xl 42rem, @5xl 64rem.
+ * The row height the layout aims for at a container width: about half the
+ * width on a phone (one to three tiles a row, depending on their shapes),
+ * capped so wide screens get more tiles per row rather than giant ones.
  */
-export function sharedGalleryColumnCount(widthPx: number) {
-  if (widthPx >= 1024) return 4;
-  if (widthPx >= 672) return 3;
-  if (widthPx >= 384) return 2;
-  return 1;
+export function justifiedTargetHeight(widthPx: number) {
+  return Math.min(220, Math.max(140, widthPx * 0.49));
 }
 
 /**
- * Deal items into columns in list order, each into the column that is
- * currently shortest (ties go left), so the list reads left to right across
- * the top and folders, which come first, sit in the first row like any other
- * item. Returns the item indexes per column. Appending items never moves
- * earlier ones, so progressive rendering keeps cards where they are.
+ * Most tiles one row may hold: three on a phone, so a run of screenshots
+ * shows three tall tiles rather than four thin ones; more on wide screens.
  */
-export function packMasonry(heights: readonly number[], columns: number, gap = 0): number[][] {
-  const count = Math.max(1, Math.floor(columns));
-  const packed: number[][] = Array.from({ length: count }, () => []);
-  const filled = new Array<number>(count).fill(0);
-  heights.forEach((height, index) => {
-    let shortest = 0;
-    for (let column = 1; column < count; column += 1) {
-      if (filled[column] < filled[shortest] - 1e-6) shortest = column;
+export function justifiedMaxPerRow(widthPx: number) {
+  return Math.max(3, Math.round(widthPx / 220));
+}
+
+/** Gap between tiles: hairline on phones, a little more on wide screens. */
+export function justifiedGap(widthPx: number) {
+  return widthPx < 640 ? 2 : 4;
+}
+
+export type JustifiedRow = {
+  /** Items `start` (inclusive) to `end` (exclusive), in list order. */
+  start: number;
+  end: number;
+  height: number;
+  /** False for a last row left short at the target height instead of stretched. */
+  justified: boolean;
+};
+
+/**
+ * Packs items into rows, like a phone gallery's mosaic: every tile keeps its
+ * shape, all tiles in a row share one height, and each row fills the width
+ * exactly, so a row holds however many tiles its shapes allow (up to
+ * `maxPerRow`: narrow tiles then make a taller row instead of a crowded one).
+ * Rows close at whichever break, with or without the next tile, lands nearer
+ * the target height. A last row that would be much taller than the target
+ * stays at the target, left-aligned. Appending items only changes the last row.
+ */
+export function justifyRows(
+  aspects: readonly number[],
+  widthPx: number,
+  targetHeight: number,
+  gap: number,
+  maxPerRow = Number.POSITIVE_INFINITY,
+): JustifiedRow[] {
+  const rows: JustifiedRow[] = [];
+  if (widthPx <= 0 || targetHeight <= 0) return rows;
+  const limit = Math.max(1, maxPerRow);
+  const distance = (height: number) => Math.abs(height - targetHeight);
+
+  let start = 0;
+  while (start < aspects.length) {
+    let sum = 0;
+    let previous: { end: number; height: number } | null = null;
+    let closed = false;
+
+    for (let index = start; index < aspects.length; index += 1) {
+      sum += Math.max(aspects[index], 0.01);
+      const count = index - start + 1;
+      const height = (widthPx - gap * (count - 1)) / sum;
+      if (height <= targetHeight) {
+        const keep = previous && distance(previous.height) < distance(height) ? previous : { end: index + 1, height };
+        rows.push({ start, end: keep.end, height: keep.height, justified: true });
+        start = keep.end;
+        closed = true;
+        break;
+      }
+      if (count === limit && index < aspects.length - 1) {
+        // Full: a taller row of narrow tiles.
+        rows.push({ start, end: index + 1, height, justified: true });
+        start = index + 1;
+        closed = true;
+        break;
+      }
+      previous = { end: index + 1, height };
     }
-    packed[shortest].push(index);
-    filled[shortest] += Math.max(0, height) + gap;
-  });
-  return packed;
+
+    if (!closed) {
+      // The rest doesn't fill a row: stretch it only if that stays close.
+      const height = previous!.height;
+      const justified = height <= targetHeight * 1.25;
+      rows.push({ start, end: aspects.length, height: justified ? height : targetHeight, justified });
+      break;
+    }
+  }
+  return rows;
 }
 
 // ── Places ─────────────────────────────────────────────────────────────────

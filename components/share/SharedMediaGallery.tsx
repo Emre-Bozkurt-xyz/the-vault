@@ -6,33 +6,22 @@ import { ChevronRight, Download, File as FileIcon, FileText, Film, Folder, Image
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { formatDuration } from "@/components/assets/MediaItemViews";
-import { MasonryGrid } from "@/components/assets/MasonryGrid";
+import { JustifiedGrid } from "@/components/assets/JustifiedGrid";
 import { MediaViewer } from "@/components/assets/MediaViewer";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetTypeLabel } from "@/components/assets/asset-ui";
 import { buttonVariants } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
-import { sharedGalleryColumnCount } from "@/lib/media-library";
+import { tileAspect } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 export type SharedGalleryFolder = { id: string; name: string; files: number; folders: number; href: string };
 
-// Cards: 1px border, the picture, then a two-line caption (px-3 py-2.5).
-const CARD_CHROME = 60;
-const CARD_GAP = 16;
-const FALLBACK_COLUMNS = "columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4";
-
-/** A card's height at a column width, from the stored size (4:3 tile otherwise). */
-function cardHeight(asset: AssetLibraryItem, columnWidth: number) {
-  const pictured = asset.thumbUrl !== null && asset.width && asset.height && asset.width > 0 && asset.height > 0;
-  return columnWidth * (pictured ? asset.height! / asset.width! : 3 / 4) + CARD_CHROME;
-}
-
 /**
  * The public side of a media share link (`/s/<token>`): no workspace, no
- * account, just the shared folder (or file): subfolders, a masonry grid of
- * display renditions, the same full-screen viewer as the library, and, when
- * the owner allows it, downloads.
+ * account, just the shared folder (or file): subfolders, a phone-gallery
+ * mosaic of thumbnails (the library's `JustifiedGrid`), the same full-screen
+ * viewer as the library, and, when the owner allows it, downloads.
  */
 export function SharedMediaGallery({
   title,
@@ -132,20 +121,19 @@ export function SharedMediaGallery({
       {assets.length > 0 ? (
         singleItem ? (
           <div className="mx-auto w-full min-w-0 max-w-3xl">
-            <SharedCard asset={assets[0]} singleItem onOpen={() => setOpen(0)} />
+            <SharedCard asset={assets[0]} onOpen={() => setOpen(0)} />
           </div>
         ) : (
-          // Shortest-column masonry, like the library: CSS columns fill top to
-          // bottom and leave the last column short.
-          <MasonryGrid
+          <JustifiedGrid
             entries={assets.map((asset, index) => ({
               key: asset.id,
-              estimate: (columnWidth: number) => cardHeight(asset, columnWidth),
-              node: <SharedCard asset={asset} onOpen={() => setOpen(index)} />,
+              aspect: tileAspect({
+                width: asset.width,
+                height: asset.height,
+                pictured: asset.thumbUrl !== null,
+              }),
+              node: <SharedTile asset={asset} onOpen={() => setOpen(index)} />,
             }))}
-            columnsFor={sharedGalleryColumnCount}
-            gap={CARD_GAP}
-            fallbackClassName={FALLBACK_COLUMNS}
           />
         )
       ) : folders.length === 0 ? (
@@ -167,15 +155,47 @@ export function SharedMediaGallery({
   );
 }
 
-function SharedCard({
-  asset,
-  singleItem = false,
-  onOpen,
-}: {
-  asset: AssetLibraryItem;
-  singleItem?: boolean;
-  onOpen: () => void;
-}) {
+/** A mosaic tile: the picture edge to edge, its name on hover. */
+function SharedTile({ asset, onOpen }: { asset: AssetLibraryItem; onOpen: () => void }) {
+  const pictured = asset.thumbUrl !== null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={asset.displayName}
+      className="group relative block size-full overflow-hidden rounded-[3px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <RenditionImage
+        src={asset.thumbUrl}
+        alt={asset.altText ?? asset.displayName}
+        className="size-full object-cover"
+        fallback={
+          <span className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
+            <KindIcon kind={asset.kind} />
+            <span className="text-xs">{assetTypeLabel(asset)}</span>
+          </span>
+        }
+      />
+      {asset.kind === "video" ? (
+        <span className="pointer-events-none absolute bottom-1.5 right-1.5 inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.7rem] font-medium text-white tabular-nums transition-opacity group-hover:opacity-0">
+          <Play className="size-3 fill-current" aria-hidden />
+          {asset.durationMs ? formatDuration(asset.durationMs) : "Video"}
+        </span>
+      ) : null}
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-1.5 pt-8 text-white transition-opacity",
+          pictured ? "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" : "opacity-100",
+        )}
+      >
+        <span className="block truncate text-xs font-medium sm:text-sm">{asset.displayName}</span>
+      </span>
+    </button>
+  );
+}
+
+/** The single shared file, at display size with its name under it. */
+function SharedCard({ asset, onOpen }: { asset: AssetLibraryItem; onOpen: () => void }) {
   return (
     <button
       type="button"
@@ -184,7 +204,7 @@ function SharedCard({
     >
       <span className="relative block bg-muted">
         <RenditionImage
-          src={singleItem ? asset.displayUrl : asset.thumbUrl}
+          src={asset.displayUrl}
           alt={asset.altText ?? asset.displayName}
           width={asset.width}
           height={asset.height}

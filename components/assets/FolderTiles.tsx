@@ -218,19 +218,29 @@ function FolderSelectCircle({
 }
 
 /**
- * A folder in the photo views (masonry, grid): a square card previewing what
- * is inside, sitting in the same columns as the photos after it.
+ * A folder in the photo views: a square card previewing what is inside. In
+ * the grid it sits in the same columns as the photos; with `fill` (the
+ * mosaic) it fills the square box the row gives it, with the mosaic's corners.
  */
-export function FolderCard({ folder, handlers }: { folder: FolderTileData; handlers: FolderItemHandlers }) {
+export function FolderCard({
+  folder,
+  handlers,
+  fill = false,
+}: {
+  folder: FolderTileData;
+  handlers: FolderItemHandlers;
+  fill?: boolean;
+}) {
   const item = useFolderItem(folder, handlers);
   const previews = handlers.previews?.get(folder.id) ?? [];
 
   return (
-    <div {...item.wrapperProps} className="group relative">
+    <div {...item.wrapperProps} className={cn("group relative", fill && "size-full")}>
       <button
         {...item.buttonProps}
         className={cn(
-          "relative block aspect-square w-full overflow-hidden rounded-md border bg-muted/50 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          "relative block overflow-hidden border bg-muted/50 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          fill ? "size-full rounded-[3px]" : "aspect-square w-full rounded-md",
           item.drop.active
             ? "border-primary ring-2 ring-primary/50"
             : item.selected

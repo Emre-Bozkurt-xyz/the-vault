@@ -30,11 +30,11 @@ import {
   type FolderItemHandlers,
   type FolderTileData,
 } from "@/components/assets/FolderTiles";
-import { MasonryGrid, type MasonryEntry } from "@/components/assets/MasonryGrid";
+import { JustifiedGrid, type JustifiedEntry } from "@/components/assets/JustifiedGrid";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetExtensionBadge, assetTypeLabel } from "@/components/assets/asset-ui";
 import { formatBytes } from "@/lib/format";
-import { masonryColumnCount, type MediaSort, type MediaView } from "@/lib/media-library";
+import { tileAspect, type MediaSort, type MediaView } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 /**
@@ -67,12 +67,6 @@ export type MediaItemHandlers = {
   showNames: boolean;
 };
 
-// Only until the masonry has measured its width (server render, first paint
-// of a hard load): plain CSS columns with the same counts.
-const MASONRY_FALLBACK = "columns-2 gap-3 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5";
-const MASONRY_GAP = 12;
-// The name and meta lines under a masonry card (px-3 py-2.5, two lines).
-const MASONRY_CAPTION = 58;
 const SQUARE_GRID = "grid grid-cols-3 gap-2 @lg:grid-cols-4 @2xl:grid-cols-5 @5xl:grid-cols-6 @7xl:grid-cols-8";
 
 export function MediaItemView({
@@ -138,7 +132,7 @@ export function MediaItemView({
           <FolderCard key={folder.id} folder={folder} handlers={folderHandlers} />
         ))}
         {shown.map((asset) => (
-          <PhotoCard key={asset.id} asset={asset} square {...handlers} />
+          <PhotoCard key={asset.id} asset={asset} layout="square" {...handlers} />
         ))}
       </div>
     ) : (
@@ -158,9 +152,9 @@ export function MediaItemView({
 }
 
 /**
- * Masonry with folders as ordinary items: one list (folders first, then
- * files) in shortest-column order (`MasonryGrid`), so a lone folder takes one
- * card's place in the first row rather than a row of its own.
+ * The "Masonry" view: a phone-gallery mosaic (`JustifiedGrid`). Folders come
+ * first as square tiles, then files at their own shapes, in rows that fill
+ * the width.
  */
 function Masonry({
   assets,
@@ -173,42 +167,25 @@ function Masonry({
   folderHandlers: FolderItemHandlers;
   handlers: MediaItemHandlers;
 }) {
-  const entries: MasonryEntry[] = [
+  const entries: JustifiedEntry[] = [
     ...folders.map((folder) => ({
       key: `folder:${folder.id}`,
-      estimate: (columnWidth: number) => columnWidth,
-      node: (
-        <div className="mb-3">
-          <FolderCard folder={folder} handlers={folderHandlers} />
-        </div>
-      ),
+      aspect: 1,
+      node: <FolderCard folder={folder} handlers={folderHandlers} fill />,
     })),
     ...assets.map((asset) => ({
       key: asset.id,
-      estimate: (columnWidth: number) => masonryCardHeight(asset, columnWidth, handlers.showNames),
-      node: <PhotoCard asset={asset} square={false} {...handlers} />,
+      aspect: tileAspect({ width: asset.width, height: asset.height, pictured: isPictured(asset) }),
+      node: <PhotoCard asset={asset} layout="tile" {...handlers} />,
     })),
   ];
 
-  return (
-    <MasonryGrid
-      entries={entries}
-      columnsFor={masonryColumnCount}
-      gap={MASONRY_GAP}
-      fallbackClassName={MASONRY_FALLBACK}
-    />
-  );
+  return <JustifiedGrid entries={entries} />;
 }
 
-/** A masonry card's height in px, as `PhotoCard`/`MasonryThumb` will draw it. */
-function masonryCardHeight(asset: AssetLibraryItem, columnWidth: number, showNames: boolean) {
-  const visual = (asset.kind === "image" || asset.kind === "video") && asset.thumbUrl !== null;
-  const ratio =
-    visual && asset.width && asset.height && asset.width > 0 && asset.height > 0
-      ? asset.height / asset.width
-      : 3 / 4;
-  const caption = showNames || !visual ? MASONRY_CAPTION : 0;
-  return columnWidth * ratio + caption;
+/** Whether a file shows as its picture (a photo, or a video with a poster). */
+function isPictured(asset: AssetLibraryItem) {
+  return (asset.kind === "image" || asset.kind === "video") && asset.thumbUrl !== null;
 }
 
 /** Shared item wiring: click with modifiers, Enter opens, double-click opens, drag. */
@@ -288,27 +265,68 @@ function ExposureBadges({
 }
 
 /**
- * A card in the photo views. Photos and posters fill it edge to edge, with
- * the name fading in on hover unless names are switched on; files without a
- * picture always show theirs.
+ * A card in the photo views. `square`: the grid view's fixed squares.
+ * `tile`: the mosaic, where the grid sizes the box and the picture fills it
+ * edge to edge with barely rounded corners. Names fade in on hover unless
+ * names are switched on; files without a picture always show theirs.
  */
 function PhotoCard({
   asset,
-  square,
+  layout,
   ...handlers
-}: MediaItemHandlers & { asset: AssetLibraryItem; square: boolean }) {
+}: MediaItemHandlers & { asset: AssetLibraryItem; layout: "square" | "tile" }) {
   const selected = handlers.selectedIds.has(asset.id);
   const location = handlers.locationOf?.(asset);
-  const visual = (asset.kind === "image" || asset.kind === "video") && asset.thumbUrl !== null;
-  const hoverCaption = !handlers.showNames && visual;
+  const visual = isPictured(asset);
+  const tile = layout === "tile";
   const meta = `${assetTypeLabel(asset)} · ${formatBytes(asset.sizeBytes)}${location ? ` · ${location}` : ""}`;
 
+  if (tile) {
+    return (
+      <div data-asset-card data-asset-id={asset.id} className="group relative size-full">
+        <button
+          {...itemButtonProps(asset, handlers)}
+          className="relative block size-full overflow-hidden rounded-[3px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <Thumb asset={asset} className="size-full object-cover" />
+          {asset.kind === "video" ? (
+            <VideoBadge
+              durationMs={asset.durationMs ?? null}
+              className={visual && !handlers.showNames ? "transition-opacity group-hover:opacity-0" : undefined}
+            />
+          ) : null}
+          {visual ? (
+            <span
+              className={cn(
+                "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-1.5 pt-8 text-white transition-opacity",
+                handlers.showNames ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+              )}
+            >
+              <span className="block truncate text-xs font-medium sm:text-sm">{asset.displayName}</span>
+              {location ? <span className="block truncate text-[0.7rem] text-white/75">{location}</span> : null}
+            </span>
+          ) : (
+            // A file without a picture keeps its name on the tile.
+            <span className="absolute inset-x-0 bottom-0 truncate bg-background/85 px-2 py-1 text-xs font-medium backdrop-blur">
+              {asset.displayName}
+            </span>
+          )}
+          {selected ? (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-[3px] bg-primary/15 ring-[3px] ring-inset ring-primary"
+            />
+          ) : null}
+        </button>
+        <SelectCircle asset={asset} handlers={handlers} className="absolute left-1.5 top-1.5" />
+        <ExposureBadges asset={asset} handlers={handlers} className="absolute right-1.5 top-1.5" />
+      </div>
+    );
+  }
+
+  const hoverCaption = !handlers.showNames && visual;
   return (
-    <div
-      data-asset-card
-      data-asset-id={asset.id}
-      className={cn("group relative break-inside-avoid", square ? "" : "mb-3")}
-    >
+    <div data-asset-card data-asset-id={asset.id} className="group relative">
       <button
         {...itemButtonProps(asset, handlers)}
         className={cn(
@@ -321,13 +339,9 @@ function PhotoCard({
               : "",
         )}
       >
-        {square ? (
-          <span className="relative block aspect-square bg-muted">
-            <Thumb asset={asset} className="size-full object-cover" />
-          </span>
-        ) : (
-          <MasonryThumb asset={asset} />
-        )}
+        <span className="relative block aspect-square bg-muted">
+          <Thumb asset={asset} className="size-full object-cover" />
+        </span>
         {asset.kind === "video" ? (
           <VideoBadge
             durationMs={asset.durationMs ?? null}
@@ -338,21 +352,15 @@ function PhotoCard({
         {hoverCaption ? (
           <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-3 pb-2 pt-10 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <span className="block truncate text-sm font-medium">{asset.displayName}</span>
-            {square ? null : <span className="block truncate text-xs text-white/75">{meta}</span>}
           </span>
-        ) : square && !handlers.showNames ? (
+        ) : !handlers.showNames ? (
           // A file in the square grid keeps its name inside the square.
           <span className="absolute inset-x-0 bottom-0 truncate bg-background/85 px-2 py-1 text-xs font-medium backdrop-blur">
             {asset.displayName}
           </span>
         ) : (
-          <span className={cn("block", square ? "px-2 py-1.5" : "px-3 py-2.5")}>
-            <span className={cn("block truncate font-medium", square ? "text-xs" : "text-sm")}>
-              {asset.displayName}
-            </span>
-            {square ? null : (
-              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{meta}</span>
-            )}
+          <span className="block px-2 py-1.5" title={meta}>
+            <span className="block truncate text-xs font-medium">{asset.displayName}</span>
           </span>
         )}
         {selected ? <span aria-hidden className="pointer-events-none absolute inset-0 bg-primary/12" /> : null}
@@ -360,23 +368,6 @@ function PhotoCard({
       <SelectCircle asset={asset} handlers={handlers} className="absolute left-2 top-2" />
       <ExposureBadges asset={asset} handlers={handlers} className="absolute right-2 top-2" />
     </div>
-  );
-}
-
-function MasonryThumb({ asset }: { asset: AssetLibraryItem }) {
-  const tile = <FileTile asset={asset} className="aspect-[4/3]" />;
-  if (asset.kind !== "image" && asset.kind !== "video") return tile;
-  return (
-    <span className="relative block bg-muted">
-      <RenditionImage
-        src={asset.thumbUrl}
-        alt={asset.altText ?? asset.displayName}
-        width={asset.width}
-        height={asset.height}
-        className="h-auto w-full object-cover"
-        fallback={tile}
-      />
-    </span>
   );
 }
 

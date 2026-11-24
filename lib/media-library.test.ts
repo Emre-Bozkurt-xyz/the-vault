@@ -5,8 +5,10 @@ import {
   applySelectionClick,
   folderPreviewThumbs,
   isPhotoView,
-  masonryColumnCount,
-  packMasonry,
+  justifiedGap,
+  justifiedMaxPerRow,
+  justifiedTargetHeight,
+  justifyRows,
   parseLibraryPlace,
   parseMediaLibraryPrefs,
   resolveContextTarget,
@@ -18,30 +20,77 @@ import {
   selectionSize,
   sortMediaAssets,
   stepIndex,
+  tileAspect,
 } from "@/lib/media-library";
 
-describe("masonry", () => {
-  it("steps column counts with the container width", () => {
-    expect(masonryColumnCount(400)).toBe(2);
-    expect(masonryColumnCount(672)).toBe(3);
-    expect(masonryColumnCount(1100)).toBe(4);
-    expect(masonryColumnCount(1600)).toBe(5);
+describe("justified rows", () => {
+  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+
+  it("fills each row's width exactly, at a shared height", () => {
+    const aspects = [4 / 3, 4 / 3, 0.75, 0.46, 0.46, 4 / 3, 4 / 3, 4 / 3];
+    const rows = justifyRows(aspects, 390, 195, 2);
+    for (const row of rows.filter((candidate) => candidate.justified)) {
+      const slice = aspects.slice(row.start, row.end);
+      const width = sum(slice.map((aspect) => aspect * row.height)) + 2 * (slice.length - 1);
+      expect(width).toBeCloseTo(390, 6);
+    }
+    // Every item placed once, in order.
+    expect(rows.map((row) => [row.start, row.end]).flat()[0]).toBe(0);
+    expect(rows.at(-1)!.end).toBe(aspects.length);
+    rows.slice(1).forEach((row, index) => expect(row.start).toBe(rows[index].end));
   });
 
-  it("fills the first row in order, then the shortest column", () => {
-    // A folder (1) and three photos: the first row takes items 0..2 left to
-    // right, and item 3 goes under the shortest of them.
-    expect(packMasonry([1, 2, 0.5, 1], 3)).toEqual([[0], [1], [2, 3]]);
-    // Ties go to the leftmost column.
-    expect(packMasonry([1, 1, 1, 1], 2)).toEqual([[0, 2], [1, 3]]);
+  it("puts more tiles in a row when they are narrow, like a phone gallery", () => {
+    const phone = (aspects: number[]) =>
+      justifyRows(aspects, 390, justifiedTargetHeight(390), 2, justifiedMaxPerRow(390));
+    // Three phone screenshots share a tall row; two landscape photos share a short one.
+    const screenshots = phone([0.46, 0.46, 0.46, 0.46, 0.46, 0.46]);
+    expect(screenshots[0]).toMatchObject({ start: 0, end: 3 });
+    expect(screenshots[0].height).toBeGreaterThan(250);
+    expect(phone([1.5, 1.5, 1.5, 1.5])[0]).toMatchObject({ start: 0, end: 2 });
+    expect(phone([4 / 3, 4 / 3, 4 / 3, 4 / 3])[0]).toMatchObject({ start: 0, end: 2 });
+    // A portrait and two screenshots, like the reference.
+    expect(phone([0.75, 0.46, 0.46, 1.33, 1.33])[0]).toMatchObject({ start: 0, end: 3 });
+    // A panorama gets a row to itself.
+    expect(phone([3, 1, 1])[0]).toMatchObject({ start: 0, end: 1 });
   });
 
-  it("counts the gap and never moves earlier items when more are appended", () => {
-    const first = packMasonry([1, 1.2, 0.3, 0.3], 2, 0.1);
-    const more = packMasonry([1, 1.2, 0.3, 0.3, 0.8, 0.5], 2, 0.1);
-    expect(first).toEqual([[0, 2], [1, 3]]);
-    expect(more.map((column, index) => column.slice(0, first[index].length))).toEqual(first);
-    expect(packMasonry([1, 2], 0)).toEqual([[0, 1]]);
+  it("leaves a short last row at the target height instead of blowing it up", () => {
+    const rows = justifyRows([1.5, 1.5, 1], 390, 190, 2);
+    expect(rows.at(-1)).toMatchObject({ start: 2, end: 3, height: 190, justified: false });
+    // A last row that nearly fills is stretched to fit.
+    const near = justifyRows([1, 1], 420, 195, 2);
+    expect(near.at(-1)!.justified).toBe(true);
+  });
+
+  it("only changes the last row when items are appended", () => {
+    const aspects = [1.5, 0.75, 0.75, 1.33, 0.46, 0.46, 1.5, 1];
+    const first = justifyRows(aspects.slice(0, 6), 800, 260, 4);
+    const more = justifyRows(aspects, 800, 260, 4);
+    expect(more.slice(0, first.length - 1)).toEqual(first.slice(0, -1));
+  });
+
+  it("handles nothing to lay out", () => {
+    expect(justifyRows([], 390, 195, 2)).toEqual([]);
+    expect(justifyRows([1], 0, 195, 2)).toEqual([]);
+  });
+
+  it("keeps tile shapes within bounds and scales row height with the screen", () => {
+    expect(tileAspect({ width: 4000, height: 3000, pictured: true })).toBeCloseTo(4 / 3);
+    expect(tileAspect({ width: 9000, height: 1000, pictured: true })).toBe(3);
+    expect(tileAspect({ width: 100, height: 1000, pictured: true })).toBe(0.4);
+    expect(tileAspect({ width: 4000, height: 3000, pictured: false })).toBe(1);
+    expect(tileAspect({ width: null, height: null, pictured: true })).toBe(1);
+    expect(justifiedTargetHeight(390)).toBeCloseTo(191.1);
+    expect(justifiedTargetHeight(1400)).toBe(220);
+    expect(justifiedTargetHeight(200)).toBe(140);
+    expect([justifiedGap(390), justifiedGap(1200)]).toEqual([2, 4]);
+    expect([justifiedMaxPerRow(390), justifiedMaxPerRow(1100)]).toEqual([3, 5]);
+  });
+
+  it("caps a row at the most tiles allowed", () => {
+    const rows = justifyRows([0.46, 0.46, 0.46, 0.46, 0.46], 390, 191, 2, 3);
+    expect(rows.map((row) => row.end - row.start)).toEqual([3, 2]);
   });
 });
 

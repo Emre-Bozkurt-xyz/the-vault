@@ -219,8 +219,9 @@ and render on first request if the upload-time render has not happened.
   left panel is places (All files, Shared, Bin) + folders + storage. See the
   2026-11-23 "Redesigned the asset library workspace" changelog entry.
   *2026-11-24:* the viewer has a thumbnail filmstrip; the share page uses
-  the same shortest-column masonry; ffmpeg makes posters for videos the
-  browser can't decode.
+  the library's layout; ffmpeg makes posters for videos the browser can't
+  decode. The Masonry view became a phone-gallery mosaic (justified rows,
+  `JustifiedGrid`).
 - **Viewer** (as shipped): double-click, Enter, "View" in a menu, or the
   panel preview opens a full-screen viewer at `?open=<id>` (`?view=` was
   already the Bin's), pushed so Back closes it. ←/→/Home/End and swipe step
