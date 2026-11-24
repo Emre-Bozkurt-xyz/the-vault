@@ -20,6 +20,7 @@ import {
   Download,
   File as FileIcon,
   FileText,
+  Film,
   FolderInput,
   FolderOpen,
   FolderPlus,
@@ -34,6 +35,7 @@ import {
   Globe2,
   ImageIcon,
   Loader2,
+  Link2,
   Lock,
   MoreHorizontal,
   MousePointerClick,
@@ -48,6 +50,7 @@ import {
 import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
 import { MediaItemView } from "@/components/assets/MediaItemViews";
 import { MediaViewer } from "@/components/assets/MediaViewer";
+import { ShareLinkDialog, type ShareTarget } from "@/components/assets/ShareLinkDialog";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { moveAssetsToBin } from "@/components/assets/asset-bin-actions";
 import { FolderNameDialog, MoveToFolderDialog, type MoveSelection } from "@/components/assets/FolderDialogs";
@@ -117,6 +120,7 @@ import {
   type MediaSort,
   type MediaView,
 } from "@/lib/media-library";
+import { attachVideoPoster } from "@/lib/video-poster";
 import { setMediaLibraryViewAction } from "@/server/user-settings-actions";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { formatBytes } from "@/lib/format";
@@ -131,7 +135,7 @@ export type AssetLibraryItem = {
   id: string;
   /** Media library folder; null = the library root. */
   folderId: string | null;
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   displayName: string;
   description: string | null;
   altText: string | null;
@@ -151,6 +155,8 @@ export type AssetLibraryItem = {
   height: number | null;
   /** EXIF date taken (camera wall clock stored as UTC), once known. */
   takenAt: Date | string | null;
+  /** Video length, once the uploader's browser measured it. */
+  durationMs?: number | null;
   markdown: string;
 };
 
@@ -163,16 +169,18 @@ type AssetDraft = {
   visibility: "private" | "public";
   tags: string;
 };
-type KindFilter = "all" | "image" | "pdf" | "file";
+type KindFilter = "all" | "image" | "pdf" | "video" | "file";
 type VisibilityFilter = "all" | "private" | "public";
 
-const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
+const UPLOAD_ACCEPT =
+  "image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm";
 const ASSETS_PAGE = { type: "assets", title: "Assets", href: "/assets" } as const;
 
 export function AssetLibraryClient({
   initialAssets,
   initialFolders,
   initialView,
+  initialShared,
   storageUsedBytes,
   storageQuotaBytes,
   unrestrictedUploads = false,
@@ -181,6 +189,8 @@ export function AssetLibraryClient({
   initialFolders: MediaFolder[];
   /** Saved per user (`files-assets/media-library`). */
   initialView: MediaView;
+  /** Folders and files with a working share link. */
+  initialShared: { folderIds: string[]; assetIds: string[] };
   /** Tracked quota use (includes the Bin, which still occupies storage). */
   storageUsedBytes: number;
   storageQuotaBytes: number;
@@ -211,10 +221,15 @@ export function AssetLibraryClient({
     { mode: "create" } | { mode: "rename"; folder: MediaFolder } | null
   >(null);
   const [moveSelection, setMoveSelection] = useState<MoveSelection | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
+  const [shared, setShared] = useState(initialShared);
+  const sharedFolderIds = useMemo(() => new Set(shared.folderIds), [shared]);
+  const sharedAssetIds = useMemo(() => new Set(shared.assetIds), [shared]);
   const [fileDropActive, setFileDropActive] = useState(false);
   const fileDropDepth = useRef(0);
   // Whether this page pushed the viewer's history entry (then closing goes Back).
   const viewerPushed = useRef(false);
+  const healedPosters = useRef(new Set<string>());
 
   // Selection: a link or the side panel can select one asset through
   // `?asset=`; clicks here change it directly. A URL value is adopted (during
@@ -344,10 +359,12 @@ export function AssetLibraryClient({
       const payload = (await fetchAssetLibrary()) as {
         assets?: AssetLibraryItem[];
         folders?: MediaFolder[];
+        shared?: { folderIds: string[]; assetIds: string[] };
         storage?: { usedBytes: number };
       } | null;
       if (payload?.assets) setAssets(payload.assets);
       if (payload?.folders) setFolders(payload.folders);
+      if (payload?.shared) setShared(payload.shared);
       if (payload?.storage) setUsedBytes(payload.storage.usedBytes);
     } catch {
       // Keep the list we have.
@@ -657,6 +674,9 @@ export function AssetLibraryClient({
       >
         <FolderInput /> Move to…
       </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setShareTarget({ kind: "asset", id: asset.id, name: asset.displayName })}>
+        <Link2 /> Share…
+      </DropdownMenuItem>
       {searching && asset.folderId ? (
         <DropdownMenuItem onClick={() => openFolder(asset.folderId)}>
           <FolderOpen /> Show in folder
@@ -727,6 +747,9 @@ export function AssetLibraryClient({
                   onMove={() =>
                     setMoveSelection({ assets: [], folderIds: [currentFolder.id] })
                   }
+                  onShare={() =>
+                    setShareTarget({ kind: "folder", id: currentFolder.id, name: currentFolder.name })
+                  }
                   onBin={() => {
                     const parent = currentFolder.parentId;
                     void moveFolderToBin(currentFolder).then((moved) => {
@@ -784,6 +807,7 @@ export function AssetLibraryClient({
               options={[
                 ["all", "All types"],
                 ["image", "Images"],
+                ["video", "Videos"],
                 ["pdf", "PDFs"],
                 ["file", "Other files"],
               ]}
@@ -860,7 +884,7 @@ export function AssetLibraryClient({
           <EmptyState
             icon={ImageIcon}
             title="No assets yet"
-            body={`Upload ${unrestrictedUploads ? "any file" : "images or PDFs"}, drop a whole folder from a camera card onto this page, or add one from the upload button in a document's toolbar.`}
+            body={`Upload ${unrestrictedUploads ? "any file" : "photos, videos or PDFs"}, drop a whole folder from a camera card onto this page, or add one from the upload button in a document's toolbar.`}
           >
             <div className="flex flex-wrap justify-center gap-2">{uploadButtons}</div>
           </EmptyState>
@@ -882,6 +906,8 @@ export function AssetLibraryClient({
                     >
                       <FolderTile
                         folder={tile}
+                        shared={sharedFolderIds.has(tile.id)}
+                        onShare={() => setShareTarget({ kind: "folder", id: tile.id, name: tile.name })}
                         selected={selectedFolderIds.has(tile.id)}
                         onSelect={(event) => selectFolderTile(tile.id, event)}
                         onOpen={() => openFolder(tile.id)}
@@ -920,6 +946,7 @@ export function AssetLibraryClient({
                 onItemDragStart={(asset, event) => startMediaDrag(event, dragPayloadFor("asset", asset.id))}
                 renderActions={renderActions}
                 locationOf={searching ? locationOf : undefined}
+                sharedIds={sharedAssetIds}
               />
             ) : searching ? (
               <EmptyState
@@ -991,6 +1018,13 @@ export function AssetLibraryClient({
         }}
       />
 
+      <ShareLinkDialog
+        target={shareTarget}
+        onOpenChange={(open) => {
+          if (!open) setShareTarget(null);
+        }}
+      />
+
       {viewerIndex !== -1 ? (
         <MediaViewer
           items={viewerItems}
@@ -1001,6 +1035,15 @@ export function AssetLibraryClient({
           }}
           onClose={closeViewer}
           locationOf={locationOf}
+          onVideoReady={(asset, video) => {
+            // A video whose poster wasn't captured at upload (a busy machine, a
+            // closed tab) gets one now, from the frame on screen.
+            if (asset.thumbUrl || healedPosters.current.has(asset.id)) return;
+            healedPosters.current.add(asset.id);
+            void attachVideoPoster(asset.id, video).then((stored) => {
+              if (stored) dispatchAssetsChanged();
+            });
+          }}
         />
       ) : null}
 
@@ -1188,10 +1231,12 @@ function describeFolderContents(folderCount: number, fileCount: number) {
 function CurrentFolderMenu({
   onRename,
   onMove,
+  onShare,
   onBin,
 }: {
   onRename: () => void;
   onMove: () => void;
+  onShare: () => void;
   onBin: () => void;
 }) {
   return (
@@ -1208,6 +1253,9 @@ function CurrentFolderMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onMove}>
           <FolderInput /> Move to…
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onShare}>
+          <Link2 /> Share…
         </DropdownMenuItem>
         <DropdownMenuItem variant="destructive" onClick={onBin}>
           <Trash2 /> Move to Bin
@@ -1468,7 +1516,7 @@ export function AssetThumbnail({
 }) {
   const tile = <FileTile asset={asset} className="aspect-[4/3]" />;
 
-  if (asset.kind !== "image") return tile;
+  if (asset.kind !== "image" && asset.kind !== "video") return tile;
 
   return (
     <span className="block bg-muted">
@@ -1491,7 +1539,7 @@ export function AssetPreview({
 }) {
   const tile = <FileTile asset={asset} className="h-36 rounded-md border border-border/60" />;
 
-  if (asset.kind !== "image") return tile;
+  if (asset.kind !== "image" && asset.kind !== "video") return tile;
 
   return (
     <div className="grid max-h-64 place-items-center overflow-hidden rounded-md border border-border/60 bg-muted/40">
@@ -1656,7 +1704,9 @@ function VisibilityOption({
 }
 
 function parseKindFilter(value: string | null): KindFilter {
-  return value === "image" || value === "pdf" || value === "file" ? value : "all";
+  return value === "image" || value === "pdf" || value === "video" || value === "file"
+    ? value
+    : "all";
 }
 
 function parseVisibilityFilter(value: string | null): VisibilityFilter {
@@ -1759,5 +1809,6 @@ function AssetKindIcon({
 }) {
   if (kind === "image") return <ImageIcon className={className} />;
   if (kind === "pdf") return <FileText className={className} />;
+  if (kind === "video") return <Film className={className} />;
   return <FileIcon className={className} />;
 }

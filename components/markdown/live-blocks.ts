@@ -950,7 +950,7 @@ function createAssetFileCard(
   asset: AssetEmbedResolutionMap[string],
   label: string | null,
 ) {
-  const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
+  const kindLabel = asset.kind === "pdf" ? "PDF" : asset.kind === "video" ? "Video" : "File";
   const card = document.createElement("span");
   card.className = [
     "vault-asset-embed",

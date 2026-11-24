@@ -723,9 +723,9 @@ Plan: `docs/26_MEDIA_LIBRARY_AND_FOLDERS_PLAN.md` (2026-11-23). Separate media f
 | [x] | Slice 2 - Thumbnails and display renditions | 2026-11-23. `sharp` WebP thumb/display renditions (EXIF-oriented, metadata stripped), migration 0033 (applied locally), upload-time + lazy + daily backfill rendering, sweep- and reconcile-aware versioned keys, all asset grids switched over. Verified with unit, real-Postgres and Chromium (local MinIO) checks and in the production image; not yet run against real R2 |
 | [x] | Slice 3 - Folders | 2026-11-23. `asset_folders` (migration 0034, applied locally), advisory-locked tree mutations, eager marked subtree binning with exact restore, folder routes + all-or-nothing moves, breadcrumbs, tiles, Move to… dialog, drag-and-drop, folder uploads (camera `DCIM`), cross-folder search, Bin folders, side-panel tree. Verified with unit, real-Postgres and Chromium (local MinIO) checks; not yet run against real R2 |
 | [x] | Slice 4 - View formats, selection, viewer, pagination | 2026-11-23. Masonry/grid/list/details (saved per user), selection + bulk bar + Selection panel, full-screen viewer (`?open=`), EXIF date taken (migration 0035, applied locally), progressive rendering instead of server pagination (plan §7). Verified with unit, real-Postgres and Chromium (local MinIO) checks |
-| [ ] | Slice 5 - Video | `video` kind and cap, browser-captured posters, inline playback |
-| [ ] | Slice 6 - Share links and `/s/<token>` | Folder and item links, stripped-down page, zip download |
-| [ ] | Slice 7 - Hardening | More integration tests, Playwright smoke, rate limits, user guide |
+| [x] | Slice 5 - Video | 2026-11-23. `video` kind and cap (migration 0036), inline playback, browser-captured posters with viewer self-healing, badges/filters. Verified with unit, real-Postgres and Chromium (local MinIO, in-browser WebM) checks |
+| [x] | Slice 6 - Share links and `/s/<token>` | 2026-11-23. `asset_share_links` (migration 0037), derived HMAC tokens, owner dialog, public page with subtree browsing and viewer, streamed zip, downloads-off rules. Verified with unit, real-Postgres and cookie-less Chromium checks |
+| [~] | Slice 7 - Hardening | 2026-11-23. DB suites for every slice, rate limits, user guide done. Remaining: a committed Playwright e2e suite (needs an auth/storage bootstrap), a shared rate-limit store if Vault ever runs more than one instance, and a first run against real R2 |
 
 ---
 

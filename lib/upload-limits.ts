@@ -10,6 +10,7 @@ export const MAX_MULTIPART_PARTS = 10_000;
 export type UploadLimits = {
   imageMaxBytes: number;
   pdfMaxBytes: number;
+  videoMaxBytes: number;
   fileMaxBytes: number;
 };
 
@@ -17,6 +18,7 @@ export type UploadLimits = {
 export type UploadLimitOverrides = {
   imageMaxUploadBytes: number | null;
   pdfMaxUploadBytes: number | null;
+  videoMaxUploadBytes?: number | null;
   fileMaxUploadBytes: number | null;
 };
 
@@ -31,6 +33,7 @@ export function resolveUploadLimits(
   return {
     imageMaxBytes: pick(overrides?.imageMaxUploadBytes, ASSET_LIMITS.imageMaxBytes),
     pdfMaxBytes: pick(overrides?.pdfMaxUploadBytes, ASSET_LIMITS.pdfMaxBytes),
+    videoMaxBytes: pick(overrides?.videoMaxUploadBytes, ASSET_LIMITS.videoMaxBytes),
     fileMaxBytes: pick(overrides?.fileMaxUploadBytes, ASSET_LIMITS.fileMaxBytes),
   };
 }

@@ -14,6 +14,7 @@ import {
   listAssetsForUser,
   listBinAssetsForUser,
 } from "@/server/assets";
+import { listSharedTargetsForUser } from "@/server/asset-share-links";
 import { getUserSetting } from "@/server/user-settings";
 
 type AssetsPageProps = {
@@ -42,11 +43,12 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
     );
   }
 
-  const [assets, folders, storage, viewSetting] = await Promise.all([
+  const [assets, folders, storage, viewSetting, shared] = await Promise.all([
     listAssetsForUser(session.user.id),
     listFoldersForUser(session.user.id),
     getUserStorageSummary(session.user.id),
     getUserSetting({ userId: session.user.id, namespace: "files-assets", key: "media-library" }),
+    listSharedTargetsForUser(session.user.id),
   ]);
 
   return (
@@ -57,6 +59,7 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
           initialAssets={assets}
           initialFolders={folders}
           initialView={parseMediaView(viewSetting?.value?.view)}
+          initialShared={shared}
           storageUsedBytes={storage.usedBytes}
           storageQuotaBytes={storage.quotaBytes}
           unrestrictedUploads={storage.unrestrictedUploadsAllowed}

@@ -4,7 +4,7 @@ Date: 2026-11-23. Tracker: Phase 28. Builds on
 `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` (storage, access model, embeds),
 which stays authoritative for everything this plan does not change.
 
-**Status: plan agreed 2026-11-23; slices 1–4 (Bin, renditions, folders, browsing) implemented — see §12.**
+**Status: plan agreed 2026-11-23; all seven slices implemented 2026-11-23 — see §12. Not yet exercised against real R2 or deployed.**
 
 ## 1. Goal
 
@@ -122,21 +122,28 @@ unique (owner_id, coalesce(parent_id, nil), lower(name)) where status = 'active'
 
 ### 4.3 `asset_share_links` (slice 6)
 
+As shipped (migration `0037`):
+
 ```txt
 id uuid pk
 owner_id uuid → users (cascade)
-folder_id uuid → asset_folders (cascade)  -- exactly one of folder_id / asset_id
+folder_id uuid → asset_folders (cascade)  -- exactly one of folder_id / asset_id (check)
 asset_id uuid → assets (cascade)
-token_hash text unique           -- sha256 of a 32-byte base64url token
 allow_download boolean default true
 expires_at timestamptz
 revoked_at timestamptz
 created_at, updated_at, last_viewed_at
+unique (folder_id) where revoked_at is null; unique (asset_id) likewise
 ```
 
-A folder link reaches the folder's **live** subtree at request time: items
-added later appear, items binned or moved out disappear. One active link per
-target; regenerating revokes the old token.
+**Changed from the plan: no token is stored.** The URL token is the row id
+plus a truncated HMAC-SHA256 of it under `AUTH_SECRET` (`lib/share-token.ts`,
+44 URL-safe characters, canonical spelling enforced). The owner can copy the
+same link again at any time, a database dump alone can't forge one, and
+rotating `AUTH_SECRET` invalidates every media link. A folder link reaches the
+folder's **live** subtree at request time: items added later appear, items
+binned or moved out disappear. One live link per target; "New link" revokes
+and recreates.
 
 ### 4.4 Renditions (slice 2)
 
@@ -231,20 +238,28 @@ and render on first request if the upload-time render has not happened.
   Generated after upload completes; generated lazily on first request for
   older assets; failures mark `thumb_status = failed` and fall back to an icon
   tile, never to the original.
-- Video: sniff `video/mp4`, `video/quicktime`, `video/webm` as a new `video`
-  kind with its own admin upload cap (default 2 GiB, multipart path). Played
-  through the existing Range-capable content route. Posters are captured in
-  the browser at upload (`<video>` + canvas) and sent to
-  `PUT /api/assets/:id/poster` (sniffed WebP/JPEG ≤ 1 MiB); no server ffmpeg.
-  Codecs the browser cannot decode (some HEVC MOVs) get an icon tile and a
-  download.
+- Video (as shipped, slice 5): `video/mp4`, `video/x-m4v`, `video/quicktime`
+  and `video/webm` are sniffed as a `video` kind with its own admin cap
+  (`video_max_upload_bytes`, default 2 GiB; migration `0036`), played inline
+  through the Range-capable content route. The uploader's browser captures a
+  poster (`lib/video-poster.ts`: blob URL → `<video>` → canvas, ≤1280 px) and
+  `POST`s it to `/api/assets/:id/poster` (owner, sniffed WebP/JPEG/PNG ≤ 2 MiB,
+  re-encoded through the rendition pipeline) with the duration and size
+  (clamped; `assets.duration_ms`). If capture didn't happen (busy machine,
+  closed tab), the owner's viewer captures one from the playing video. Video
+  renditions are served at the version stored (`servableRenditionVersion`),
+  since a version bump can't regenerate a poster server-side. Codecs the
+  browser can't decode get a "can't play — download" card. No server ffmpeg.
 - `taken_at` from EXIF `DateTimeOriginal` enables "Date taken" sorting, which
   is what an event dump wants.
 
 ## 9. Share links and the public page (slice 6)
 
-- Share dialog (from a folder, an item, or the bulk bar): toggle link on/off,
-  copy, allow downloads, optional expiry, regenerate.
+- Share dialog (folder tile, current folder, or file menu — not the bulk bar):
+  create/turn off, copy (automatically on create), allow downloads, expiry
+  (never/1/7/30 days), "New link". Settings changes reuse the same `POST`
+  (upsert, same URL); there is no separate PATCH. Shared folders and files
+  carry a link badge in the library.
 - `/s/<token>`: no workspace shell, no sign-in, `noindex`. Header with the
   folder name, item count and owner display name; the masonry grid (or a
   single item); the same viewer; subfolders navigable *inside* the shared
@@ -256,7 +271,15 @@ and render on first request if the upload-time render has not happened.
   failure. Rate-limited per token and IP.
 - Display renditions by default; originals only when downloading is allowed.
 - Revoking or expiring a link takes effect on the next request (no long-lived
-  public caching for link-served content: `Cache-Control: private`).
+  public caching for link-served content: renditions `private, max-age=300`,
+  originals `private, no-store`). A link also stops while its owner is banned.
+- Without downloads, originals 404 except that a video may stream for
+  playback (`download=1` still 404s); the viewer hides Download, Open original
+  and zoom. "Download all" is a stored (uncompressed) zip streamed with yazl,
+  one storage read at a time, ZIP64 when needed, at most 5,000 files, 10 per
+  link and IP per hour. Pages are limited to 120 per minute per IP and content
+  requests to 1,200 per minute per link and IP (in-process limiter: fine for
+  the single app instance, needs a shared store if that changes).
 
 ## 10. Invariants (add to project-knowledge §18 as they ship)
 
@@ -282,8 +305,11 @@ The suite today is pure unit tests (vitest, no database). This plan adds:
 - **Database integration tests** behind `TEST_DATABASE_URL` (skipped when
   unset): trash/restore/delete-forever/purge with quota totals, races between
   restore and purge, folder trash/restore marker behaviour, share-link scope.
-- **Playwright smoke** for `/assets` (upload, folder, view switch, viewer
-  keys, Bin) and `/s/<token>` as an anonymous visitor.
+- **Browser passes** (as done): every slice was exercised in Chromium against
+  a local MinIO bucket, including `/s/<token>` from a cookie-less context.
+  These were run by hand through Playwright, not committed as a suite: the
+  repo has no e2e harness (auth bootstrap, seeded storage). Adding one is the
+  main remaining hardening item.
 
 ## 12. Slices
 
@@ -293,9 +319,9 @@ The suite today is pure unit tests (vitest, no database). This plan adds:
 | 2 | Thumbnails and display renditions; sweep-aware keys | Implemented 2026-11-23 |
 | 3 | Folders: schema, API, breadcrumbs, side-panel tree, move, upload into folder, folder drop | Implemented 2026-11-23 |
 | 4 | View formats, selection and bulk bar, full-screen viewer, progressive rendering, date taken | Implemented 2026-11-23 |
-| 5 | Video kind, posters, playback | Not started |
-| 6 | Share links, `/s/<token>` page, zip download | Not started |
-| 7 | Hardening: DB integration tests, Playwright, rate limits, user guide | Not started |
+| 5 | Video kind, posters, playback | Implemented 2026-11-23 |
+| 6 | Share links, `/s/<token>` page, zip download | Implemented 2026-11-23 |
+| 7 | Hardening: DB integration tests, rate limits, user guide | Implemented 2026-11-23 (no committed Playwright suite; see §11) |
 
 ## 13. Deferred
 

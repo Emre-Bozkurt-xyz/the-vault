@@ -104,6 +104,33 @@ Restoring it brings back exactly what was in it.
   swipe) to step through the folder, `i` for details, `d` to download, and `z`
   or a double-click to zoom to the original's full size. Esc or Back closes it.
 
+## Videos
+
+MP4, MOV, M4V and WebM videos upload like photos (large ones go straight to
+storage in parts). Vault takes a poster frame in your browser after the
+upload, so the card shows a still with the running time; the full-screen
+viewer plays the video. If a poster is missing, it appears the first time you
+play the video. Videos your browser can't decode (some HEVC `.mov` files)
+still upload, and can be downloaded.
+
+## Sharing by link
+
+**Share…** in a folder's or file's `…` menu (or the folder's title menu)
+creates a link anyone can open, without an account. They see a plain page with
+only what you shared: for a folder, its photos, videos and subfolders, which
+they can browse and view full screen; things you add later appear too.
+
+- **Allow downloads** (on by default) lets visitors download originals and use
+  **Download all** for a zip of the folder. Turned off, they see display-size
+  copies only — without the camera's location data — and videos still play.
+- **Expiry** turns the link off after 1, 7 or 30 days.
+- **New link** replaces the URL; the old one stops working at once.
+  **Turn off** stops it entirely.
+- Moving a shared folder to the Bin pauses its link; restoring it brings the
+  link back.
+
+Shared folders and files show a small link icon in your library.
+
 ## Deleting assets and the Bin
 
 **Move to Bin** (from an asset's `…` menu, right-click, the details panel, or

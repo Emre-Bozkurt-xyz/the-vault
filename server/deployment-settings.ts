@@ -14,6 +14,7 @@ export async function getUploadLimitOverrides(): Promise<UploadLimitOverrides | 
     .select({
       imageMaxUploadBytes: deploymentSettings.imageMaxUploadBytes,
       pdfMaxUploadBytes: deploymentSettings.pdfMaxUploadBytes,
+      videoMaxUploadBytes: deploymentSettings.videoMaxUploadBytes,
       fileMaxUploadBytes: deploymentSettings.fileMaxUploadBytes,
     })
     .from(deploymentSettings)

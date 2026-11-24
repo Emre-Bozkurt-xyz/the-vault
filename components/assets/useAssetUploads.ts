@@ -8,6 +8,7 @@ import {
   type UploadedAsset,
   type UploadProgress,
 } from "@/lib/asset-upload-client";
+import { attachVideoPoster } from "@/lib/video-poster";
 
 export type UploadItemStatus =
   | "queued"
@@ -135,6 +136,14 @@ export function useAssetUploads<Context = void>(options: Options<Context> = {}) 
           pendingProgressRef.current.delete(id);
           patch(id, { status: "done", loadedBytes: file.size, bytesPerSecond: null });
           optionsRef.current.onUploaded?.(asset, context);
+
+          // Videos get a poster from this browser, after the upload (never
+          // holding it up); views refresh once it lands.
+          if (asset.kind === "video") {
+            void attachVideoPoster(asset.id, file, { bearerToken }).then((stored) => {
+              if (stored) optionsRef.current.onSettled?.();
+            });
+          }
 
           const dismissAfter = optionsRef.current.autoDismissMs;
           if (dismissAfter) {

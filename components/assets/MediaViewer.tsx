@@ -9,6 +9,7 @@ import {
   ExternalLink,
   File as FileIcon,
   FileText,
+  Film,
   Info,
   Loader2,
   X,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
-import { formatDay } from "@/components/assets/MediaItemViews";
+import { formatDay, formatDuration } from "@/components/assets/MediaItemViews";
 import { assetTypeLabel, downloadAsset } from "@/components/assets/asset-ui";
 import { formatBytes } from "@/lib/format";
 import { stepIndex } from "@/lib/media-library";
@@ -36,12 +37,21 @@ export function MediaViewer({
   onIndexChange,
   onClose,
   locationOf,
+  allowOriginals = true,
+  onVideoReady,
 }: {
   items: AssetLibraryItem[];
   index: number;
   onIndexChange: (index: number) => void;
   onClose: () => void;
   locationOf?: (asset: AssetLibraryItem) => string | null;
+  /**
+   * False on a share link without downloads: no Download, no Open original,
+   * no zoom to the original (images stay at display size). Video still plays.
+   */
+  allowOriginals?: boolean;
+  /** Called once a video has a frame to show (the library heals missing posters). */
+  onVideoReady?: (asset: AssetLibraryItem, video: HTMLVideoElement) => void;
 }) {
   const asset = items[index] ?? null;
   const [showInfo, setShowInfo] = useState(false);
@@ -49,7 +59,7 @@ export function MediaViewer({
   const [zoom, setZoom] = useState<{ id: string | null; on: boolean }>({ id: null, on: false });
   const zoomed = asset !== null && zoom.id === asset.id && zoom.on;
   const toggleZoom = () => {
-    if (asset?.kind === "image") setZoom({ id: asset.id, on: !zoomed });
+    if (asset?.kind === "image" && allowOriginals) setZoom({ id: asset.id, on: !zoomed });
   };
 
   // Warm the cache for the photos either side.
@@ -90,7 +100,7 @@ export function MediaViewer({
             else if (key === "Home") onIndexChange(0);
             else if (key === "End") onIndexChange(items.length - 1);
             else if (key === "i") setShowInfo((current) => !current);
-            else if (key === "d") downloadAsset(asset);
+            else if (key === "d" && allowOriginals) downloadAsset(asset);
             else if (key === "z") toggleZoom();
             else return;
             event.preventDefault();
@@ -108,10 +118,12 @@ export function MediaViewer({
             <ViewerButton label="Details (i)" pressed={showInfo} onClick={() => setShowInfo((current) => !current)}>
               <Info className="size-4" />
             </ViewerButton>
-            <ViewerButton label="Download (d)" onClick={() => downloadAsset(asset)}>
-              <Download className="size-4" />
-            </ViewerButton>
-            {asset.kind !== "file" ? (
+            {allowOriginals ? (
+              <ViewerButton label="Download (d)" onClick={() => downloadAsset(asset)}>
+                <Download className="size-4" />
+              </ViewerButton>
+            ) : null}
+            {asset.kind !== "file" && allowOriginals ? (
               <ViewerButton
                 label="Open original in a new tab"
                 onClick={() => window.open(asset.url, "_blank", "noopener,noreferrer")}
@@ -134,6 +146,8 @@ export function MediaViewer({
               <Stage
                 key={`${asset.id}:${zoomed}`}
                 asset={asset}
+                allowOriginals={allowOriginals}
+                onVideoReady={onVideoReady}
                 zoomed={zoomed}
                 onToggleZoom={toggleZoom}
                 onSwipe={go}
@@ -151,11 +165,15 @@ export function MediaViewer({
 
 function Stage({
   asset,
+  allowOriginals,
+  onVideoReady,
   zoomed,
   onToggleZoom,
   onSwipe,
 }: {
   asset: AssetLibraryItem;
+  allowOriginals: boolean;
+  onVideoReady?: (asset: AssetLibraryItem, video: HTMLVideoElement) => void;
   zoomed: boolean;
   onToggleZoom: () => void;
   onSwipe: (delta: number) => void;
@@ -167,22 +185,52 @@ function Stage({
   const scroller = useRef<HTMLDivElement>(null);
 
   // A failed display rendition falls back to the original: in the viewer the
-  // user has explicitly asked for this one image.
-  const source = asset.kind === "image" ? (zoomed || failed || !asset.displayUrl ? asset.url : asset.displayUrl) : null;
+  // user has explicitly asked for this one image (when originals are allowed).
+  const source =
+    asset.kind !== "image"
+      ? null
+      : zoomed || failed || !asset.displayUrl
+        ? allowOriginals
+          ? asset.url
+          : null
+        : asset.displayUrl;
+
+  if (asset.kind === "video" && !failed) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center p-4 sm:px-16">
+        {/* Streams from the content route with byte ranges; the poster is the display rendition. */}
+        <video
+          key={asset.id}
+          src={asset.url}
+          poster={asset.displayUrl ?? undefined}
+          controls
+          autoPlay
+          playsInline
+          preload="metadata"
+          onLoadedData={(event) => onVideoReady?.(asset, event.currentTarget)}
+          onError={() => setFailed(true)}
+          className="max-h-full max-w-full bg-black"
+        />
+      </div>
+    );
+  }
 
   if (asset.kind !== "image" || !source) {
-    const Icon = asset.kind === "pdf" ? FileText : FileIcon;
+    const Icon = asset.kind === "pdf" ? FileText : asset.kind === "video" ? Film : FileIcon;
     return (
       <div className="grid max-w-sm place-items-center gap-4 rounded-xl border border-white/15 bg-white/5 px-8 py-10 text-center">
         <Icon className="size-12 text-white/70" />
         <div>
           <p className="break-words font-medium">{asset.displayName}</p>
+          {asset.kind === "video" ? (
+            <p className="mt-1 text-xs text-white/60">This browser can&apos;t play this video. Download it to watch.</p>
+          ) : null}
           <p className="mt-1 text-xs text-white/60">
             {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
           </p>
         </div>
         <div className="flex gap-2">
-          {asset.kind === "pdf" ? (
+          {asset.kind === "pdf" && allowOriginals ? (
             <button
               type="button"
               onClick={() => window.open(asset.url, "_blank", "noopener,noreferrer")}
@@ -191,13 +239,17 @@ function Stage({
               Open PDF
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => downloadAsset(asset)}
-            className="rounded-md border border-white/30 px-3 py-1.5 text-sm transition hover:bg-white/10"
-          >
-            Download
-          </button>
+          {allowOriginals ? (
+            <button
+              type="button"
+              onClick={() => downloadAsset(asset)}
+              className="rounded-md border border-white/30 px-3 py-1.5 text-sm transition hover:bg-white/10"
+            >
+              Download
+            </button>
+          ) : (
+            <p className="text-xs text-white/60">The owner hasn&apos;t allowed downloads.</p>
+          )}
         </div>
       </div>
     );
@@ -246,7 +298,7 @@ function Stage({
           pan.current = null;
           swipe.current = null;
         }}
-        onDoubleClick={onToggleZoom}
+        onDoubleClick={allowOriginals ? onToggleZoom : undefined}
         className={cn(
           "absolute inset-0 touch-none select-none outline-none",
           zoomed ? "cursor-grab overflow-auto active:cursor-grabbing" : "flex items-center justify-center p-4 sm:px-16",
@@ -269,6 +321,7 @@ function Stage({
         />
       </div>
       {!loaded ? <Loader2 className="pointer-events-none absolute size-6 animate-spin text-white/60" /> : null}
+      {allowOriginals ? (
       <button
         type="button"
         onClick={onToggleZoom}
@@ -278,6 +331,7 @@ function Stage({
       >
         {zoomed ? <ZoomOut className="size-4" /> : <ZoomIn className="size-4" />}
       </button>
+      ) : null}
     </>
   );
 }
@@ -342,6 +396,7 @@ function InfoPanel({ asset, location }: { asset: AssetLibraryItem; location: str
     ["Size", formatBytes(asset.sizeBytes)],
   ];
   if (asset.width && asset.height) rows.push(["Dimensions", `${asset.width} × ${asset.height}`]);
+  if (asset.durationMs) rows.push(["Length", formatDuration(asset.durationMs)]);
   if (asset.takenAt) rows.push(["Taken", formatDay(asset.takenAt, true)]);
   rows.push(["Added", formatDay(asset.createdAt, false)]);
   if (location) rows.push(["Folder", location]);

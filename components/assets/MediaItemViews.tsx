@@ -9,7 +9,19 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { ArrowDown, ArrowUp, Check, File as FileIcon, FileText, Globe2, ImageIcon, Lock } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  File as FileIcon,
+  FileText,
+  Film,
+  Globe2,
+  ImageIcon,
+  Link2,
+  Lock,
+  Play,
+} from "lucide-react";
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { RenditionImage } from "@/components/assets/RenditionImage";
@@ -42,6 +54,8 @@ export type MediaItemHandlers = {
   renderActions: (asset: AssetLibraryItem, menu: ContextMenuController, className: string) => ReactNode;
   /** Where a file lives, shown while searching across folders. */
   locationOf?: (asset: AssetLibraryItem) => string | null;
+  /** Files with a working share link (link badge). */
+  sharedIds?: ReadonlySet<string>;
 };
 
 export function MediaItemView({
@@ -195,8 +209,9 @@ function Card({
             )}
           >
             {square ? (
-              <span className="block aspect-square bg-muted">
+              <span className="relative block aspect-square bg-muted">
                 <Thumb asset={asset} className="size-full object-cover" />
+                {asset.kind === "video" ? <VideoBadge durationMs={asset.durationMs ?? null} /> : null}
               </span>
             ) : (
               <MasonryThumb asset={asset} />
@@ -213,6 +228,9 @@ function Card({
                   </span>
                 )}
               </span>
+              {!square && handlers.sharedIds?.has(asset.id) ? (
+                <Link2 className="size-3.5 shrink-0 text-primary" aria-label="Shared by link" />
+              ) : null}
               {square ? null : <VisibilityIcon visibility={asset.visibility} />}
             </span>
           </button>
@@ -226,9 +244,10 @@ function Card({
 
 function MasonryThumb({ asset }: { asset: AssetLibraryItem }) {
   const tile = <FileTile asset={asset} className="aspect-[4/3]" />;
-  if (asset.kind !== "image") return tile;
+  if (asset.kind !== "image" && asset.kind !== "video") return tile;
   return (
-    <span className="block bg-muted">
+    <span className="relative block bg-muted">
+      {asset.kind === "video" ? <VideoBadge durationMs={asset.durationMs ?? null} /> : null}
       <RenditionImage
         src={asset.thumbUrl}
         alt={asset.altText ?? asset.displayName}
@@ -244,7 +263,7 @@ function MasonryThumb({ asset }: { asset: AssetLibraryItem }) {
 /** A thumbnail that fills its box (grid, list, details). */
 function Thumb({ asset, className }: { asset: AssetLibraryItem; className: string }) {
   const tile = <FileTile asset={asset} className="size-full" compact />;
-  if (asset.kind !== "image") return tile;
+  if (asset.kind !== "image" && asset.kind !== "video") return tile;
   return (
     <RenditionImage
       src={asset.thumbUrl}
@@ -449,7 +468,14 @@ function FileTile({
   className?: string;
   compact?: boolean;
 }) {
-  const Icon = asset.kind === "image" ? ImageIcon : asset.kind === "pdf" ? FileText : FileIcon;
+  const Icon =
+    asset.kind === "image"
+      ? ImageIcon
+      : asset.kind === "pdf"
+        ? FileText
+        : asset.kind === "video"
+          ? Film
+          : FileIcon;
   return (
     <span
       className={cn(
@@ -465,6 +491,25 @@ function FileTile({
       )}
     </span>
   );
+}
+
+/** Play mark and running time over a video's poster. */
+function VideoBadge({ durationMs }: { durationMs: number | null }) {
+  return (
+    <span className="pointer-events-none absolute bottom-2 left-2 z-[1] inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.7rem] font-medium text-white tabular-nums">
+      <Play className="size-3 fill-current" aria-hidden />
+      {durationMs ? formatDuration(durationMs) : "Video"}
+    </span>
+  );
+}
+
+/** 0:42, 3:07, 1:02:09. */
+export function formatDuration(durationMs: number) {
+  const total = Math.round(durationMs / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
 }
 
 function VisibilityIcon({ visibility }: { visibility: "private" | "public" }) {

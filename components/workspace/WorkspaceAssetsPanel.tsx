@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   ChevronRight,
   File as FileIcon,
+  Film,
   Folder,
   FolderOpen,
   FileText,
@@ -40,7 +41,8 @@ import { fetchAssetLibrary } from "@/lib/shared-request";
 import { childFolders, folderPath, type FolderNode } from "@/lib/asset-folders";
 import { cn } from "@/lib/utils";
 
-const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
+const UPLOAD_ACCEPT =
+  "image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm";
 // `view` and `folder` too: the Bin and folders are places, not "All assets".
 const FILTER_KEYS = ["kind", "visibility", "view", "folder"];
 
@@ -51,7 +53,7 @@ type RecentAsset = Pick<
 
 /** `GET /api/assets?view=summary`. */
 type AssetsSummaryResponse = {
-  counts: { all: number; image: number; pdf: number; file: number; public: number };
+  counts: { all: number; image: number; pdf: number; video: number; file: number; public: number };
   recent: RecentAsset[];
   binCount?: number;
   folders?: FolderNode[];
@@ -62,6 +64,7 @@ const emptyCounts: AssetsSummaryResponse["counts"] = {
   all: 0,
   image: 0,
   pdf: 0,
+  video: 0,
   file: 0,
   public: 0,
 };
@@ -179,6 +182,15 @@ export function WorkspaceAssetsPanel() {
             trailing={data ? counts.image : null}
             active={isActive("/assets?kind=image")}
           />
+          {counts.video > 0 ? (
+            <SidePanelNavItem
+              href="/assets?kind=video"
+              icon={Film}
+              label="Videos"
+              trailing={data ? counts.video : null}
+              active={isActive("/assets?kind=video")}
+            />
+          ) : null}
           <SidePanelNavItem
             href="/assets?kind=pdf"
             icon={FileText}
@@ -314,12 +326,19 @@ function FolderTreeNav({ folders, activeId }: { folders: FolderNode[]; activeId:
 function AssetThumb({ asset }: { asset: RecentAsset }) {
   const frame = "grid size-8 shrink-0 place-items-center overflow-hidden rounded border border-border/60 bg-muted/60";
 
-  const Icon = asset.kind === "pdf" ? FileText : asset.kind === "image" ? ImageIcon : FileIcon;
+  const Icon =
+    asset.kind === "pdf"
+      ? FileText
+      : asset.kind === "image"
+        ? ImageIcon
+        : asset.kind === "video"
+          ? Film
+          : FileIcon;
   const icon = <Icon className="size-4 text-muted-foreground" />;
 
   return (
     <span className={frame}>
-      {asset.kind === "image" ? (
+      {asset.kind === "image" || asset.kind === "video" ? (
         <RenditionImage
           src={asset.thumbUrl}
           alt=""

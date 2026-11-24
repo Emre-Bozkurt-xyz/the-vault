@@ -6,6 +6,7 @@ import {
   Folder,
   FolderInput,
   FolderOpen,
+  Link2,
   MoreHorizontal,
   PenLine,
   Trash2,
@@ -129,11 +130,16 @@ export function FolderTile({
   onRename,
   onMove,
   onBin,
+  onShare,
+  shared = false,
   onDropItems,
   onDropFiles,
 }: {
   folder: FolderTileData;
   selected?: boolean;
+  /** Has a working share link (shows a link badge). */
+  shared?: boolean;
+  onShare?: () => void;
   /** Ctrl/Cmd/Shift-click selects instead of opening. */
   onSelect?: (event: MouseEvent) => void;
   onOpen: () => void;
@@ -191,7 +197,12 @@ export function FolderTile({
               <Folder className="size-5 shrink-0 text-muted-foreground" />
             )}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">{folder.name}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-sm font-medium">{folder.name}</span>
+                {shared ? (
+                  <Link2 className="size-3.5 shrink-0 text-primary" aria-label="Shared by link" />
+                ) : null}
+              </span>
               <span className="block truncate text-xs text-muted-foreground">
                 {drop.active ? "Drop to move here" : summary}
               </span>
@@ -217,6 +228,11 @@ export function FolderTile({
                 <DropdownMenuItem onClick={onMove}>
                   <FolderInput /> Move to…
                 </DropdownMenuItem>
+                {onShare ? (
+                  <DropdownMenuItem onClick={onShare}>
+                    <Link2 /> Share…
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>

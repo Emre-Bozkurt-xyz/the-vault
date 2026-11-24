@@ -22,6 +22,12 @@ const FIELDS = [
     defaultBytes: ASSET_LIMITS.pdfMaxBytes,
   },
   {
+    name: "videoMaxMiB",
+    label: "Videos",
+    override: "videoMaxUploadBytes",
+    defaultBytes: ASSET_LIMITS.videoMaxBytes,
+  },
+  {
     name: "fileMaxMiB",
     label: "Other files",
     override: "fileMaxUploadBytes",

@@ -525,7 +525,7 @@ export function registerVaultDocumentTools(server: McpServer): void {
             "Require all of these tags. Normalized to lowercase slugs (dashes become underscores).",
           ),
         kind: z
-          .enum(["image", "pdf", "file"])
+          .enum(["image", "pdf", "video", "file"])
           .optional()
           .describe(
             'Filter by asset kind. "file" is any other type, uploaded by users an admin allowed to upload any file type.',

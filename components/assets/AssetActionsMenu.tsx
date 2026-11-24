@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 
 export type ActionableAsset = {
   id: string;
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   displayName: string;
   url: string;
   markdown: string;

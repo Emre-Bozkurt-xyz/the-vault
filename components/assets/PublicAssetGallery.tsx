@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 
 export type PublicGalleryAsset = {
   id: string;
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   displayName: string;
   description: string | null;
   altText: string | null;
@@ -162,7 +162,7 @@ export function PublicAssetGallery({
                       : "border-border/70",
                   )}
                 >
-                  {asset.kind === "image" && asset.thumbUrl ? (
+                  {(asset.kind === "image" || asset.kind === "video") && asset.thumbUrl ? (
                     <span className="block bg-muted">
                       <RenditionImage
                         src={asset.thumbUrl}

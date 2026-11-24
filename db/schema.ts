@@ -37,7 +37,7 @@ export type UserRole = "user" | "admin";
  * `file` is any other type, accepted only from users an admin granted
  * unrestricted uploads. Always served as a sandboxed download, never inline.
  */
-export type AssetKind = "image" | "pdf" | "file";
+export type AssetKind = "image" | "pdf" | "video" | "file";
 export type AssetVisibility = "private" | "public";
 /**
  * Lifecycle (see `lib/asset-lifecycle.ts`): pending -> ready <-> trashed ->
@@ -155,6 +155,7 @@ export const deploymentSettings = pgTable(
     imageMaxUploadBytes: bigint("image_max_upload_bytes", { mode: "number" }),
     pdfMaxUploadBytes: bigint("pdf_max_upload_bytes", { mode: "number" }),
     fileMaxUploadBytes: bigint("file_max_upload_bytes", { mode: "number" }),
+    videoMaxUploadBytes: bigint("video_max_upload_bytes", { mode: "number" }),
     /**
      * Daily asset cleanup (`server/asset-maintenance.ts`). `started_at` is a
      * lease so only one process runs it; `ran_at` and `result` record the last
@@ -759,6 +760,8 @@ export const assets = pgTable(
      * UTC (`lib/exif-date.ts`); filled when renditions are made. Null if unknown.
      */
     takenAt: timestamp("taken_at", { withTimezone: true }),
+    /** Video length, measured by the uploader's browser with the poster. */
+    durationMs: integer("duration_ms"),
     /** Media library folder; null = the library root. */
     folderId: uuid("folder_id").references(() => assetFolders.id, {
       onDelete: "set null",
@@ -792,6 +795,50 @@ export const assets = pgTable(
     index("assets_created_at_idx").on(table.createdAt),
     index("assets_deleted_at_idx").on(table.deletedAt),
     uniqueIndex("assets_storage_key_unique").on(table.storageKey),
+  ],
+);
+
+/**
+ * "Anyone with the link" access to a media folder (its live subtree) or one
+ * asset (docs/26_MEDIA_LIBRARY_AND_FOLDERS_PLAN.md §4.3, §9). No token is
+ * stored: the URL token is the row id plus an HMAC of it under `AUTH_SECRET`
+ * (`lib/share-token.ts`), so a link can be shown again at any time and a
+ * database leak alone can't forge one. A link works while it is not revoked,
+ * not expired, and its target is live (binning the folder pauses it).
+ */
+export const assetShareLinks = pgTable(
+  "asset_share_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    folderId: uuid("folder_id").references(() => assetFolders.id, { onDelete: "cascade" }),
+    assetId: uuid("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    allowDownload: boolean("allow_download").notNull().default(true),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("asset_share_links_owner_id_idx").on(table.ownerId),
+    check(
+      "asset_share_links_one_target",
+      sql`(${table.folderId} is null) <> (${table.assetId} is null)`,
+    ),
+    // At most one live link per target; "reset link" revokes, then creates.
+    uniqueIndex("asset_share_links_active_folder_unique")
+      .on(table.folderId)
+      .where(sql`${table.revokedAt} is null and ${table.folderId} is not null`),
+    uniqueIndex("asset_share_links_active_asset_unique")
+      .on(table.assetId)
+      .where(sql`${table.revokedAt} is null and ${table.assetId} is not null`),
   ],
 );
 

@@ -26,6 +26,7 @@ export default function robots(): MetadataRoute.Robots {
         "/banned",
         "/healthz",
         "/share/",
+        "/s/",
       ],
     },
     sitemap: getAbsoluteSiteUrl("/sitemap.xml"),

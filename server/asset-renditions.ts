@@ -169,6 +169,88 @@ async function generate(asset: RenditionAsset, bytes?: Buffer) {
   return true;
 }
 
+/** A video's poster frame, captured by the uploader's browser. */
+export const MAX_POSTER_BYTES = 2 * 1024 * 1024;
+/** Longest believable duration (a day), so a bad client value can't skew sorts. */
+const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
+const MAX_DIMENSION = 16_384;
+
+/**
+ * Stores renditions for a video from its poster frame: the image goes through
+ * the same pipeline as photos (re-encoded WebP, metadata stripped, pixel
+ * limit), and the browser's measurements are clamped before they are kept.
+ * Resolves false when the poster can't be decoded or the video is gone.
+ */
+export async function storeVideoPoster(input: {
+  asset: Pick<RenditionAsset, "id" | "ownerId" | "renditionStatus" | "renditionVersion">;
+  bytes: Buffer;
+  mimeType: string;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+}) {
+  let rendered;
+  try {
+    rendered = await renderRenditions(input.bytes, input.mimeType);
+  } catch (error) {
+    if (error instanceof RenditionDecodeError) return false;
+    throw error;
+  }
+
+  const keys = RENDITION_NAMES.map((name) => ({
+    name,
+    key: renditionKey({
+      ownerId: input.asset.ownerId,
+      assetId: input.asset.id,
+      version: RENDITION_VERSION,
+      name,
+    }),
+  }));
+  for (const { name, key } of keys) {
+    await putAssetObject({ key, body: rendered.outputs[name].body, contentType: "image/webp" });
+  }
+
+  const clamp = (value: number | null, max: number) =>
+    value !== null && Number.isFinite(value) && value > 0 ? Math.min(Math.round(value), max) : null;
+
+  const [updated] = await db
+    .update(assets)
+    .set({
+      renditionStatus: "ready",
+      renditionVersion: RENDITION_VERSION,
+      width: clamp(input.width, MAX_DIMENSION) ?? rendered.width,
+      height: clamp(input.height, MAX_DIMENSION) ?? rendered.height,
+      durationMs: clamp(input.durationMs, MAX_DURATION_MS),
+    })
+    .where(
+      and(
+        eq(assets.id, input.asset.id),
+        eq(assets.kind, "video"),
+        inArray(assets.status, [...REFERENCED_ASSET_STATUSES]),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .returning({ id: assets.id });
+
+  if (!updated) {
+    await Promise.allSettled(keys.map(({ key }) => deleteAssetObject(key)));
+    return false;
+  }
+
+  if (
+    input.asset.renditionStatus === "ready" &&
+    input.asset.renditionVersion !== null &&
+    input.asset.renditionVersion !== RENDITION_VERSION
+  ) {
+    await deleteRenditionObjects({
+      ownerId: input.asset.ownerId,
+      assetId: input.asset.id,
+      version: input.asset.renditionVersion,
+    });
+  }
+  return true;
+}
+
 async function readObject(key: string) {
   const object = await getAssetObject(key).catch((error: unknown) => {
     if (error instanceof Error && error.name === "NoSuchKey") return null;

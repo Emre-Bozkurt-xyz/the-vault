@@ -290,4 +290,81 @@ describe.skipIf(!databaseUrl)("asset renditions (database)", () => {
     session.userId = null;
     expect((await request("?r=thumb")).status).toBe(404);
   });
+
+  it("stores a video's poster as its renditions, through the owner-only poster route", async () => {
+    const id = randomUUID();
+    await db.insert(schema.assets).values({
+      id,
+      ownerId,
+      uploaderId: ownerId,
+      storageBucket: "test-bucket",
+      storageKey: `users/${ownerId}/assets/${id}.mp4`,
+      originalFilename: "MVI_0001.MP4",
+      displayName: "MVI_0001.MP4",
+      mimeType: "video/mp4",
+      detectedMimeType: "video/mp4",
+      fileExtension: "mp4",
+      sizeBytes: 5000,
+      kind: "video",
+      status: "ready",
+    });
+    const { POST } = await import("@/app/api/assets/[assetId]/poster/route");
+    const post = async (poster: Blob, fields: Record<string, string> = {}) => {
+      const form = new FormData();
+      form.set("poster", poster, "poster");
+      for (const [key, value] of Object.entries(fields)) form.set(key, value);
+      return POST(new Request(`http://vault.test/api/assets/${id}/poster`, { method: "POST", body: form }), {
+        params: Promise.resolve({ assetId: id }),
+      });
+    };
+    const frame = await sharp({ create: { width: 1280, height: 720, channels: 3, background: "#225588" } })
+      .webp()
+      .toBuffer();
+
+    // Someone else's video: as if it doesn't exist.
+    session.userId = strangerId;
+    expect((await post(new Blob([new Uint8Array(frame)]))).status).toBe(404);
+
+    session.userId = ownerId;
+    // Not an image.
+    expect((await post(new Blob(["<svg onload=alert(1)>"]))).status).toBe(415);
+
+    const stored = await post(new Blob([new Uint8Array(frame)]), {
+      durationMs: "42500",
+      width: "3840",
+      height: "2160",
+    });
+    expect(stored.status).toBe(200);
+    expect(bucket.objects.has(keyFor(id, "thumb"))).toBe(true);
+    expect(bucket.objects.has(keyFor(id, "display"))).toBe(true);
+    const [row] = await db
+      .select({
+        status: schema.assets.renditionStatus,
+        version: schema.assets.renditionVersion,
+        width: schema.assets.width,
+        height: schema.assets.height,
+        durationMs: schema.assets.durationMs,
+      })
+      .from(schema.assets)
+      .where(orm.eq(schema.assets.id, id));
+    expect(row).toMatchObject({ status: "ready", version: lib.RENDITION_VERSION, width: 3840, height: 2160, durationMs: 42500 });
+
+    // Lists point at the stored version, and the content route serves it.
+    const urls = assetsServer.buildAssetRenditionUrls({ id, kind: "video", mimeType: "video/mp4", renditionStatus: "ready", renditionVersion: lib.RENDITION_VERSION });
+    expect(urls.thumbUrl).toContain(`r=thumb&v=${lib.RENDITION_VERSION}`);
+    const { GET } = await import("@/app/api/assets/[assetId]/content/route");
+    const thumb = await GET(new Request(`http://vault.test/api/assets/${id}/content?r=thumb`), {
+      params: Promise.resolve({ assetId: id }),
+    });
+    expect(thumb.status).toBe(200);
+    expect(thumb.headers.get("content-type")).toBe("image/webp");
+
+    // Absurd measurements are clamped rather than stored.
+    await post(new Blob([new Uint8Array(frame)]), { durationMs: "1e12", width: "-5", height: "nope" });
+    const [clamped] = await db
+      .select({ width: schema.assets.width, height: schema.assets.height, durationMs: schema.assets.durationMs })
+      .from(schema.assets)
+      .where(orm.eq(schema.assets.id, id));
+    expect(clamped).toEqual({ width: 1280, height: 720, durationMs: 24 * 60 * 60 * 1000 });
+  });
 });

@@ -484,7 +484,7 @@ export type EditorHandle = {
 
 export type PickedAsset = {
   id: string;
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   displayName: string;
   mimeType: string;
 };

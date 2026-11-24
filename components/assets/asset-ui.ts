@@ -4,7 +4,7 @@ import { assetDownloadUrl, fileExtensionFromName } from "@/lib/asset-delivery";
 import { showWorkspaceToast } from "@/lib/workspace-toast";
 
 type AssetLike = {
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   mimeType: string;
   displayName: string;
 };
@@ -17,12 +17,16 @@ export function assetTypeLabel(asset: AssetLike) {
   // only `file` assets (no sniffable type) fall back to the filename.
   const mimeSubtype = asset.mimeType.includes("/") ? asset.mimeType.split("/")[1] : null;
   const extension =
-    asset.kind === "image"
+    asset.kind === "image" || asset.kind === "video"
       ? mimeSubtype
       : fileExtensionFromName(asset.displayName) ?? mimeSubtype;
   const tag = extension && extension !== "octet-stream" ? extension.toUpperCase() : null;
 
   if (asset.kind === "image") return tag ? `${tag} image` : "Image";
+  if (asset.kind === "video") {
+    const label = asset.mimeType === "video/quicktime" ? "MOV" : tag === "X-M4V" ? "M4V" : tag;
+    return label ? `${label} video` : "Video";
+  }
   return tag ? `${tag} file` : "File";
 }
 

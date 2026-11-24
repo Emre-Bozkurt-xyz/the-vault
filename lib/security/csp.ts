@@ -134,6 +134,9 @@ export function buildReportOnlyCsp(nonce: string, options: CspOptions = {}): str
     "style-src": ["'self'", nonceSource],
     "style-src-attr": ["'unsafe-inline'"],
     "img-src": ["'self'", "https:", "data:", "blob:"],
+    // Video plays from Vault's own routes; the upload flow reads a local
+    // file through a blob: URL to capture its poster frame.
+    "media-src": ["'self'", "blob:"],
     "font-src": ["'self'", "data:"],
     "connect-src": ["'self'", ...collabConnectSrc(), ...r2UploadConnectSrc()],
     "frame-src": iframeFrameSrc,

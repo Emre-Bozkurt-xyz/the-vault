@@ -15,6 +15,7 @@ import {
   listFoldersForUser,
   requireLiveFolder,
 } from "@/server/asset-folders";
+import { listSharedTargetsForUser } from "@/server/asset-share-links";
 import {
   canEditDocumentWithOptionalShareLink,
 } from "@/server/documents-data";
@@ -53,11 +54,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ assets, folders, storage });
     }
 
-    const [assets, folders] = await Promise.all([
+    const [assets, folders, shared] = await Promise.all([
       listAssetsForUser(user.id),
       listFoldersForUser(user.id),
+      listSharedTargetsForUser(user.id),
     ]);
-    return NextResponse.json({ assets, folders, storage });
+    return NextResponse.json({ assets, folders, shared, storage });
   } catch (error) {
     return assetErrorResponse(error);
   }

@@ -8,14 +8,16 @@ import { db } from "@/db";
 import { assets, type AssetKind } from "@/db/schema";
 import { assetDeliveryHeaders } from "@/lib/asset-delivery";
 import {
-  RENDITION_VERSION,
   isRenditionName,
   renditionKey,
+  servableRenditionVersion,
   supportsRenditions,
   type RenditionName,
 } from "@/lib/asset-renditions";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { getAssetObject } from "@/lib/storage/r2";
 import { ensureRenditions } from "@/server/asset-renditions";
+import { getAssetViaShare, resolveShareToken } from "@/server/asset-share-links";
 import {
   getOptionalAssetUserForContentRequest,
   getReadableAsset,
@@ -43,13 +45,43 @@ async function serveAsset(
   headOnly: boolean,
 ) {
   const { assetId } = await context.params;
+  const url = new URL(request.url);
+  const shareToken = url.searchParams.get("s");
+  const rendition = url.searchParams.get("r");
+  const download = url.searchParams.get("download") === "1";
+
+  // `?s=<token>`: a media share link (docs/26 §9). The link alone decides —
+  // no session involved — and renditions are always viewable while originals
+  // need "allow downloads", except that a video may stream for playback.
+  if (shareToken !== null) {
+    const share = await resolveShareToken(shareToken);
+    const limited =
+      share &&
+      !checkRateLimit(`share-content:${share.link.id}:${clientAddress(request)}`, 1200, 60_000).ok;
+    if (limited) {
+      return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": "60" } });
+    }
+    const asset = share ? await getAssetViaShare(share, assetId) : null;
+    if (!share || !asset) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
+    if (rendition !== null) {
+      return serveRendition(asset, rendition, headOnly, "private, max-age=300");
+    }
+    const mayServeOriginal =
+      share.link.allowDownload || (asset.kind === "video" && !download);
+    if (!mayServeOriginal) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
+    return serveOriginal(request, asset, headOnly, download, "private, no-store");
+  }
+
   // Falls back to the embed session token (`?embed=`) when there is no Vault
   // session cookie — an `<img>` tag can't set an Authorization header, so the
   // embed editor page threads the token through the URL instead. The token is
   // an identity assertion only: getReadableAsset below still runs its full,
   // unmodified permission check against whatever id is resolved either way.
   const user = await getOptionalAssetUserForContentRequest(request);
-  const url = new URL(request.url);
   const documentId = url.searchParams.get("doc");
   const asset = await getReadableAsset({
     assetId,
@@ -63,11 +95,21 @@ async function serveAsset(
 
   // `?r=thumb|display`: a rendition, behind exactly the same permission
   // check as the original above.
-  const rendition = url.searchParams.get("r");
   if (rendition !== null) {
     return serveRendition(asset, rendition, headOnly);
   }
 
+  return serveOriginal(request, asset, headOnly, download);
+}
+
+/** The asset's own bytes, with byte-range support (video seeking, resumes). */
+async function serveOriginal(
+  request: Request,
+  asset: ReadableAsset,
+  headOnly: boolean,
+  download: boolean,
+  cacheControl?: string,
+) {
   const range = parseRangeHeader(request.headers.get("range"), asset.sizeBytes);
 
   if (range?.status === "invalid") {
@@ -79,11 +121,8 @@ async function serveAsset(
     });
   }
 
-  const headers = buildHeaders(
-    asset,
-    range?.status === "ok" ? range : null,
-    url.searchParams.get("download") === "1",
-  );
+  const headers = buildHeaders(asset, range?.status === "ok" ? range : null, download);
+  if (cacheControl) headers.set("Cache-Control", cacheControl);
 
   if (headOnly) {
     return new Response(null, {
@@ -122,30 +161,39 @@ type ReadableAsset = NonNullable<Awaited<ReturnType<typeof getReadableAsset>>>;
  * none yet. 404 when the asset has no renditions (not an image, or rendering
  * failed); 503 when storage failed, so nothing is recorded as broken.
  */
-async function serveRendition(asset: ReadableAsset, name: string, headOnly: boolean) {
-  if (!isRenditionName(name) || !supportsRenditions(asset)) {
+async function serveRendition(
+  asset: ReadableAsset,
+  name: string,
+  headOnly: boolean,
+  cacheControl?: string,
+) {
+  const version = isRenditionName(name) ? servableRenditionVersion(asset) : null;
+  if (!isRenditionName(name) || version === null) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
-  let available: boolean;
-  try {
-    available = await ensureRenditions(asset);
-  } catch (error) {
-    console.error("[asset-renditions] render on request failed", { assetId: asset.id, error });
-    return NextResponse.json(
-      { error: "Try again shortly." },
-      { status: 503, headers: { "Retry-After": "30" } },
-    );
-  }
+  // Images render here on first request; video posters were stored at upload.
+  if (supportsRenditions(asset)) {
+    let available: boolean;
+    try {
+      available = await ensureRenditions(asset);
+    } catch (error) {
+      console.error("[asset-renditions] render on request failed", { assetId: asset.id, error });
+      return NextResponse.json(
+        { error: "Try again shortly." },
+        { status: 503, headers: { "Retry-After": "30" } },
+      );
+    }
 
-  if (!available) {
-    return NextResponse.json({ error: "Not found." }, { status: 404 });
+    if (!available) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
   }
 
   const key = renditionKey({
     ownerId: asset.ownerId,
     assetId: asset.id,
-    version: RENDITION_VERSION,
+    version,
     name,
   });
   const object = await getAssetObject(key).catch((error: unknown) => {
@@ -170,9 +218,10 @@ async function serveRendition(asset: ReadableAsset, name: string, headOnly: bool
     // The URL carries the version and the bytes behind it never change, so
     // browsers may keep it; private assets stay out of shared caches.
     "Cache-Control":
-      asset.visibility === "public"
+      cacheControl ??
+      (asset.visibility === "public"
         ? `public, max-age=${readPositiveIntEnv("ASSET_PUBLIC_CACHE_SECONDS", 3600)}, stale-while-revalidate=86400`
-        : "private, max-age=3600",
+        : "private, max-age=3600"),
   });
   if (typeof object.ContentLength === "number") {
     headers.set("Content-Length", String(object.ContentLength));
@@ -287,6 +336,15 @@ function toWebStream(body: unknown): ReadableStream<Uint8Array> {
   }
 
   return Readable.toWeb(body as Readable) as ReadableStream<Uint8Array>;
+}
+
+/** Best-effort client address for rate limits (behind Cloudflare and Caddy). */
+function clientAddress(request: Request) {
+  return (
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown"
+  );
 }
 
 function readPositiveIntEnv(name: string, fallback: number) {

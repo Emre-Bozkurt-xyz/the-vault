@@ -283,7 +283,7 @@ type WikiLinkMapStore = {
 };
 type AssetCompletionItem = {
   id: string;
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   displayName: string;
   description: string | null;
   altText: string | null;
@@ -3235,7 +3235,7 @@ function createAssetFileCard(
   asset: AssetEmbedResolutionMap[string],
   label: string | null,
 ) {
-  const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
+  const kindLabel = asset.kind === "pdf" ? "PDF" : asset.kind === "video" ? "Video" : "File";
   const card = document.createElement("span");
   card.className = [
     "vault-asset-embed",

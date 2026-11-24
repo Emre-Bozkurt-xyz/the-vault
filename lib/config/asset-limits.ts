@@ -13,6 +13,8 @@ export const ASSET_LIMITS = {
   imageMaxBytes: 10 * MiB, // 10 MiB
   /** Default per-upload cap for PDFs. */
   pdfMaxBytes: 25 * MiB, // 25 MiB
+  /** Default per-upload cap for videos (MP4, MOV, WebM): a camera clip. */
+  videoMaxBytes: 2 * 1024 * MiB, // 2 GiB
   /**
    * Default per-upload cap for any other file type, which only users granted
    * unrestricted uploads may send.

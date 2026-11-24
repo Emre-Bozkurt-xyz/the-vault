@@ -41,6 +41,7 @@ export type AssetStorageOverview = {
   totalBytes: number;
   imageCount: number;
   pdfCount: number;
+  videoCount: number;
   fileCount: number;
   publicCount: number;
   privateCount: number;
@@ -81,6 +82,7 @@ export async function getAssetStorageOverview(): Promise<AssetStorageOverview> {
       totalBytes: sql<number>`coalesce(sum(${assets.sizeBytes}), 0)`,
       imageCount: sql<number>`count(*) filter (where ${assets.kind} = 'image')::int`,
       pdfCount: sql<number>`count(*) filter (where ${assets.kind} = 'pdf')::int`,
+      videoCount: sql<number>`count(*) filter (where ${assets.kind} = 'video')::int`,
       fileCount: sql<number>`count(*) filter (where ${assets.kind} = 'file')::int`,
       // A binned asset keeps its stored visibility but is not public.
       publicCount: sql<number>`count(*) filter (where ${assets.visibility} = 'public' and ${assets.status} = 'ready')::int`,
@@ -106,6 +108,7 @@ export async function getAssetStorageOverview(): Promise<AssetStorageOverview> {
     totalBytes: Number(assetStats?.totalBytes ?? 0),
     imageCount: Number(assetStats?.imageCount ?? 0),
     pdfCount: Number(assetStats?.pdfCount ?? 0),
+    videoCount: Number(assetStats?.videoCount ?? 0),
     fileCount: Number(assetStats?.fileCount ?? 0),
     publicCount,
     privateCount: totalAssets - publicCount,
@@ -233,6 +236,7 @@ export async function updateUploadLimitsAction(formData: FormData) {
   const values = {
     imageMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("imageMaxMiB") ?? ""),
     pdfMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("pdfMaxMiB") ?? ""),
+    videoMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("videoMaxMiB") ?? ""),
     fileMaxUploadBytes: uploadLimitMiBSchema.parse(formData.get("fileMaxMiB") ?? ""),
     updatedBy: admin.id,
     updatedAt: new Date(),

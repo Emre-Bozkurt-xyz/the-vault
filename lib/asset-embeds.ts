@@ -336,7 +336,7 @@ function renderAssetEmbedHtml(
 ) {
   if (asset.kind !== "image") {
     const label = parsedLabel || asset.displayName;
-    const kindLabel = asset.kind === "pdf" ? "PDF" : "File";
+    const kindLabel = asset.kind === "pdf" ? "PDF" : asset.kind === "video" ? "Video" : "File";
 
     return [
       `<span class="vault-asset-embed vault-asset-embed--file vault-asset-embed--${escapeHtml(

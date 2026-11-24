@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 
 type PrivateEmbeddedAsset = {
   id: string;
-  kind: "image" | "pdf" | "file";
+  kind: "image" | "pdf" | "video" | "file";
   displayName: string;
   mimeType: string;
   sizeBytes: number;

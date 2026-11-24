@@ -59,6 +59,27 @@ export function needsRenditions(asset: {
   return asset.renditionStatus === "none" || asset.renditionVersion !== RENDITION_VERSION;
 }
 
+/**
+ * The rendition version to serve for an asset, or null when it has none.
+ * Images render on the server, so they always target the current version
+ * (rendered on first request if missing), unless rendering failed for it.
+ * Video renditions come from a poster the uploader's browser captured, which
+ * the server cannot redo, so a video serves whatever version it stored.
+ */
+export function servableRenditionVersion(asset: {
+  kind: string;
+  mimeType: string;
+  renditionStatus: "none" | "ready" | "failed";
+  renditionVersion: number | null;
+}): number | null {
+  if (asset.kind === "video") {
+    return asset.renditionStatus === "ready" ? asset.renditionVersion : null;
+  }
+  if (!supportsRenditions(asset)) return null;
+  if (asset.renditionStatus === "failed" && asset.renditionVersion === RENDITION_VERSION) return null;
+  return RENDITION_VERSION;
+}
+
 /** Whether a current rendition exists to serve. */
 export function hasCurrentRenditions(asset: {
   renditionStatus: "none" | "ready" | "failed";

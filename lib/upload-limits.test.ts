@@ -18,6 +18,7 @@ describe("resolveUploadLimits", () => {
     expect(resolveUploadLimits(null)).toEqual({
       imageMaxBytes: ASSET_LIMITS.imageMaxBytes,
       pdfMaxBytes: ASSET_LIMITS.pdfMaxBytes,
+      videoMaxBytes: ASSET_LIMITS.videoMaxBytes,
       fileMaxBytes: ASSET_LIMITS.fileMaxBytes,
     });
   });
@@ -27,11 +28,13 @@ describe("resolveUploadLimits", () => {
       resolveUploadLimits({
         imageMaxUploadBytes: 3 * MiB,
         pdfMaxUploadBytes: null,
+        videoMaxUploadBytes: 4096 * MiB,
         fileMaxUploadBytes: 80 * MiB,
       }),
     ).toEqual({
       imageMaxBytes: 3 * MiB,
       pdfMaxBytes: ASSET_LIMITS.pdfMaxBytes,
+      videoMaxBytes: 4096 * MiB,
       fileMaxBytes: 80 * MiB,
     });
   });
@@ -41,11 +44,13 @@ describe("resolveUploadLimits", () => {
       imageMaxUploadBytes: 0,
       pdfMaxUploadBytes: -5,
       fileMaxUploadBytes: ASSET_LIMITS.maxUploadBytes * 4,
+      videoMaxUploadBytes: ASSET_LIMITS.maxUploadBytes + 1,
     });
 
     expect(limits.imageMaxBytes).toBe(ASSET_LIMITS.imageMaxBytes);
     expect(limits.pdfMaxBytes).toBe(ASSET_LIMITS.pdfMaxBytes);
     expect(limits.fileMaxBytes).toBe(ASSET_LIMITS.maxUploadBytes);
+    expect(limits.videoMaxBytes).toBe(ASSET_LIMITS.maxUploadBytes);
   });
 });
 

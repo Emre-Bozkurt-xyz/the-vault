@@ -35,6 +35,7 @@ describe("buildReportOnlyCsp", () => {
     expect(csp).toContain("https://www.youtube-nocookie.com");
     expect(csp).toContain("https://*.bandcamp.com");
     expect(csp).toContain("img-src 'self' https: data: blob:");
+    expect(csp).toContain("media-src 'self' blob:");
   });
 
   it("lets large uploads reach the R2 endpoint origin only", () => {

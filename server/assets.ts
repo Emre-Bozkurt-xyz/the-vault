@@ -29,7 +29,7 @@ import {
   type AssetRenditionStatus,
 } from "@/db/schema";
 import { fileExtensionFromName } from "@/lib/asset-delivery";
-import { RENDITION_VERSION, supportsRenditions } from "@/lib/asset-renditions";
+import { servableRenditionVersion } from "@/lib/asset-renditions";
 import {
   STORED_ASSET_STATUSES,
   binPurgeAt,
@@ -57,6 +57,12 @@ const ALLOWED_MIME_TYPES: Record<string, { kind: AssetKind; extension: string }>
   "image/webp": { kind: "image", extension: "webp" },
   "image/gif": { kind: "image", extension: "gif" },
   "application/pdf": { kind: "pdf", extension: "pdf" },
+  // Camera and phone clips. Served inline with byte ranges, so the browser
+  // plays them directly; codecs it can't decode (some HEVC MOVs) still download.
+  "video/mp4": { kind: "video", extension: "mp4" },
+  "video/x-m4v": { kind: "video", extension: "m4v" },
+  "video/quicktime": { kind: "video", extension: "mov" },
+  "video/webm": { kind: "video", extension: "webm" },
 };
 
 export class AssetError extends Error {
@@ -333,6 +339,7 @@ const assetMediaColumns = {
   width: assets.width,
   height: assets.height,
   takenAt: assets.takenAt,
+  durationMs: assets.durationMs,
   renditionStatus: assets.renditionStatus,
   renditionVersion: assets.renditionVersion,
 };
@@ -355,18 +362,17 @@ export function buildAssetRenditionUrls(
   documentId?: string | null,
   embedSessionToken?: string | null,
 ) {
-  const failed =
-    asset.renditionStatus === "failed" && asset.renditionVersion === RENDITION_VERSION;
+  const version = servableRenditionVersion(asset);
 
-  if (!supportsRenditions(asset) || failed) {
+  if (version === null) {
     return { thumbUrl: null, displayUrl: null };
   }
 
   const base = buildAssetContentUrl(asset.id, documentId, embedSessionToken);
   const join = base.includes("?") ? "&" : "?";
   return {
-    thumbUrl: `${base}${join}r=thumb&v=${RENDITION_VERSION}`,
-    displayUrl: `${base}${join}r=display&v=${RENDITION_VERSION}`,
+    thumbUrl: `${base}${join}r=thumb&v=${version}`,
+    displayUrl: `${base}${join}r=display&v=${version}`,
   };
 }
 
@@ -724,6 +730,7 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
         all: sql<number>`count(*)::int`,
         image: sql<number>`(count(*) filter (where ${assets.kind} = 'image'))::int`,
         pdf: sql<number>`(count(*) filter (where ${assets.kind} = 'pdf'))::int`,
+        video: sql<number>`(count(*) filter (where ${assets.kind} = 'video'))::int`,
         file: sql<number>`(count(*) filter (where ${assets.kind} = 'file'))::int`,
         public: sql<number>`(count(*) filter (where ${assets.visibility} = 'public'))::int`,
       })
@@ -756,7 +763,7 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
   ]);
 
   return {
-    counts: counts ?? { all: 0, image: 0, pdf: 0, file: 0, public: 0 },
+    counts: counts ?? { all: 0, image: 0, pdf: 0, video: 0, file: 0, public: 0 },
     binCount: bin?.count ?? 0,
     recent: recentRows.map((asset) => ({
       ...asset,
@@ -869,7 +876,7 @@ function buildPublicAssetSearchWhere(query?: ContentSearchQuery) {
 
   if (
     query.filters.kind &&
-    !["asset", "image", "pdf", "file"].includes(query.filters.kind)
+    !["asset", "image", "pdf", "video", "file"].includes(query.filters.kind)
   ) {
     conditions.push(sql`false`);
   }
@@ -877,6 +884,7 @@ function buildPublicAssetSearchWhere(query?: ContentSearchQuery) {
   if (
     query.filters.kind === "image" ||
     query.filters.kind === "pdf" ||
+    query.filters.kind === "video" ||
     query.filters.kind === "file"
   ) {
     conditions.push(eq(assets.kind, query.filters.kind));
@@ -1601,7 +1609,11 @@ export async function classifyAssetBytes(input: {
 
   const limits = await getUploadLimits();
   const maxBytes =
-    allowed.kind === "image" ? limits.imageMaxBytes : limits.pdfMaxBytes;
+    allowed.kind === "image"
+      ? limits.imageMaxBytes
+      : allowed.kind === "video"
+        ? limits.videoMaxBytes
+        : limits.pdfMaxBytes;
 
   if (input.sizeBytes > maxBytes) {
     throw new AssetError("File is too large.", 413, "FILE_TOO_LARGE");
