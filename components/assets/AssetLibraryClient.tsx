@@ -18,7 +18,6 @@ import {
   Code2,
   Copy,
   Download,
-  ExternalLink,
   File as FileIcon,
   FileText,
   FolderInput,
@@ -26,6 +25,12 @@ import {
   FolderPlus,
   FolderUp,
   FolderX,
+  LayoutDashboard,
+  LayoutGrid,
+  List,
+  Maximize2,
+  Rows3,
+  X,
   Globe2,
   ImageIcon,
   Loader2,
@@ -41,18 +46,22 @@ import {
 } from "lucide-react";
 
 import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
+import { MediaItemView } from "@/components/assets/MediaItemViews";
+import { MediaViewer } from "@/components/assets/MediaViewer";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { moveAssetsToBin } from "@/components/assets/asset-bin-actions";
 import { FolderNameDialog, MoveToFolderDialog, type MoveSelection } from "@/components/assets/FolderDialogs";
 import {
   FolderBreadcrumbs,
   FolderTile,
+  MEDIA_DRAG_TYPE,
   isFileDrag,
   isMediaDrag,
   startMediaDrag,
   type MediaDragPayload,
 } from "@/components/assets/FolderTiles";
 import {
+  binMediaItems,
   createMediaFolder,
   moveFolderToBin,
   moveMediaItems,
@@ -79,7 +88,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { WithContextMenu } from "@/components/ui/use-context-menu";
+import type { ContextMenuController } from "@/components/ui/use-context-menu";
 import { TagAutocompleteInput } from "@/components/tag-autocomplete-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -95,6 +104,20 @@ import {
   requestOpenRightPanel,
 } from "@/lib/document-command-events";
 import { childFolders, folderPath } from "@/lib/asset-folders";
+import {
+  EMPTY_SELECTION,
+  applySelectionClick,
+  parseMediaSort,
+  pruneSelection,
+  selectAll,
+  selectionMode,
+  selectionSize,
+  sortMediaAssets,
+  type MediaSelection,
+  type MediaSort,
+  type MediaView,
+} from "@/lib/media-library";
+import { setMediaLibraryViewAction } from "@/server/user-settings-actions";
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { formatBytes } from "@/lib/format";
 import {
@@ -126,6 +149,8 @@ export type AssetLibraryItem = {
   /** Displayed pixel size, once known (filled when renditions are made). */
   width: number | null;
   height: number | null;
+  /** EXIF date taken (camera wall clock stored as UTC), once known. */
+  takenAt: Date | string | null;
   markdown: string;
 };
 
@@ -140,7 +165,6 @@ type AssetDraft = {
 };
 type KindFilter = "all" | "image" | "pdf" | "file";
 type VisibilityFilter = "all" | "private" | "public";
-type SortMode = "newest" | "oldest" | "name" | "size";
 
 const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
 const ASSETS_PAGE = { type: "assets", title: "Assets", href: "/assets" } as const;
@@ -148,12 +172,15 @@ const ASSETS_PAGE = { type: "assets", title: "Assets", href: "/assets" } as cons
 export function AssetLibraryClient({
   initialAssets,
   initialFolders,
+  initialView,
   storageUsedBytes,
   storageQuotaBytes,
   unrestrictedUploads = false,
 }: {
   initialAssets: AssetLibraryItem[];
   initialFolders: MediaFolder[];
+  /** Saved per user (`files-assets/media-library`). */
+  initialView: MediaView;
   /** Tracked quota use (includes the Bin, which still occupies storage). */
   storageUsedBytes: number;
   storageQuotaBytes: number;
@@ -163,28 +190,53 @@ export function AssetLibraryClient({
   const [assets, setAssets] = useState(initialAssets);
   const [folders, setFolders] = useState(initialFolders);
   const [usedBytes, setUsedBytes] = useState(storageUsedBytes);
+  const [view, setView] = useState(initialView);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  // The folder, filters and the selected asset live in the URL, so the side
-  // panel and links can open the library in a given place and view
-  // (`?folder=<id>`, `?kind=image`, `?asset=<id>`). Search and sort stay local.
+  // The folder, filters, the single selected asset and the viewer live in the
+  // URL, so links and Back work (`?folder=`, `?kind=`, `?asset=`, `?open=`).
+  // Search, sort and multi-selection stay local.
   const searchParams = useSearchParams();
   const kindFilter = parseKindFilter(searchParams.get("kind"));
   const visibilityFilter = parseVisibilityFilter(searchParams.get("visibility"));
-  const selectedId = searchParams.get("asset");
-  const selected = assets.find((asset) => asset.id === selectedId) ?? null;
+  const urlAssetId = searchParams.get("asset");
+  const openId = searchParams.get("open");
   const requestedFolderId = searchParams.get("folder");
   const currentFolder = folders.find((folder) => folder.id === requestedFolderId) ?? null;
   const currentFolderId = currentFolder?.id ?? null;
   const missingFolder = requestedFolderId !== null && currentFolder === null;
   const [query, setQuery] = useState("");
-  const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [sortMode, setSortMode] = useState<MediaSort>("newest");
   const [nameDialog, setNameDialog] = useState<
     { mode: "create" } | { mode: "rename"; folder: MediaFolder } | null
   >(null);
   const [moveSelection, setMoveSelection] = useState<MoveSelection | null>(null);
   const [fileDropActive, setFileDropActive] = useState(false);
   const fileDropDepth = useRef(0);
+  // Whether this page pushed the viewer's history entry (then closing goes Back).
+  const viewerPushed = useRef(false);
+
+  // Selection: a link or the side panel can select one asset through
+  // `?asset=`; clicks here change it directly. A URL value is adopted (during
+  // render, React's "derive from props" pattern) only when it *changes* to an
+  // id the selection doesn't already say. Comparing against our own last
+  // write instead would misfire: `useSearchParams` catches up with
+  // `replaceState` a render late, so a stale value would re-select one item
+  // and wipe a Ctrl-click.
+  const [selection, setSelection] = useState<MediaSelection>(() =>
+    urlAssetId ? { assetIds: [urlAssetId], folderIds: [], anchor: urlAssetId } : EMPTY_SELECTION,
+  );
+  const [seenUrlAsset, setSeenUrlAsset] = useState(urlAssetId);
+  if (urlAssetId !== seenUrlAsset) {
+    setSeenUrlAsset(urlAssetId);
+    const alreadySelected =
+      selection.assetIds.length === 1 &&
+      selection.folderIds.length === 0 &&
+      selection.assetIds[0] === urlAssetId;
+    if (urlAssetId && !alreadySelected) {
+      setSelection({ assetIds: [urlAssetId], folderIds: [], anchor: urlAssetId });
+    }
+  }
 
   // The configure panel lives in the workspace's right panel (resizable and
   // collapsible like a document's). The page registers an empty host there and
@@ -250,9 +302,42 @@ export function AssetLibraryClient({
       ),
     [assets, currentFolderId, kindFilter, parsedQuery, searching, sortMode, visibilityFilter],
   );
+  const visibleAssetIds = useMemo(() => visibleAssets.map((asset) => asset.id), [visibleAssets]);
+  const visibleFolderIds = useMemo(() => folderTiles.map((tile) => tile.id), [folderTiles]);
+
+  // Only what is on screen can stay selected (moves, bins, folder changes).
+  const liveSelection = useMemo(
+    () => pruneSelection(selection, new Set(visibleAssetIds), new Set(visibleFolderIds)),
+    [selection, visibleAssetIds, visibleFolderIds],
+  );
+  const selectedAssetIds = useMemo(() => new Set(liveSelection.assetIds), [liveSelection]);
+  const selectedFolderIds = useMemo(() => new Set(liveSelection.folderIds), [liveSelection]);
+  const selectedCount = selectionSize(liveSelection);
+  const selected =
+    selectedCount === 1 && liveSelection.assetIds.length === 1
+      ? (assets.find((asset) => asset.id === liveSelection.assetIds[0]) ?? null)
+      : // A deep link may point at an asset in another folder: still show it.
+        selectedCount === 0 && urlAssetId
+        ? (assets.find((asset) => asset.id === urlAssetId) ?? null)
+        : null;
+
+  // The viewer steps through what's on screen, in its order.
+  const viewerItems = useMemo(() => {
+    if (!openId) return [];
+    if (visibleAssetIds.includes(openId)) return visibleAssets;
+    const lone = assets.find((asset) => asset.id === openId);
+    return lone ? [lone] : [];
+  }, [assets, openId, visibleAssetIds, visibleAssets]);
+  const viewerIndex = openId ? viewerItems.findIndex((asset) => asset.id === openId) : -1;
+
   const libraryEmpty = assets.length === 0 && folders.length === 0;
   const rootLabel = "Content";
   const here = currentFolder?.name ?? rootLabel;
+  const locationOf = useCallback(
+    (asset: AssetLibraryItem) =>
+      asset.folderId ? (folderNames.get(asset.folderId) ?? rootLabel) : rootLabel,
+    [folderNames],
+  );
 
   const refreshAssets = useCallback(async () => {
     try {
@@ -271,7 +356,14 @@ export function AssetLibraryClient({
 
   useEffect(() => subscribeToAssetsChanged(() => void refreshAssets()), [refreshAssets]);
 
-  // A click on empty page space deselects the asset and collapses the details
+  const clearSelection = useCallback(() => {
+    setSelection(EMPTY_SELECTION);
+    if (new URLSearchParams(window.location.search).has("asset")) {
+      updateLibraryUrl({ asset: null });
+    }
+  }, []);
+
+  // A click on empty page space clears the selection and collapses the details
   // panel, like a file manager's background click. Cards, controls, text
   // selections, and the click that only dismissed an open menu don't count;
   // neither do clicks in the side panels (outside `main`).
@@ -294,9 +386,7 @@ export function AssetLibraryClient({
         return;
       }
 
-      if (new URLSearchParams(window.location.search).has("asset")) {
-        updateLibraryUrl({ asset: null });
-      }
+      clearSelection();
       requestCloseRightPanel();
     };
 
@@ -306,52 +396,131 @@ export function AssetLibraryClient({
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("click", onClick);
     };
-  }, []);
+  }, [clearSelection]);
 
-  const removeFromLibrary = useCallback((ids: string[]) => {
-    if (ids.length === 0) return;
-    setAssets((current) => current.filter((asset) => !ids.includes(asset.id)));
-    const selectedNow = new URLSearchParams(window.location.search).get("asset");
-    if (selectedNow && ids.includes(selectedNow)) updateLibraryUrl({ asset: null });
-  }, []);
+  const binSelection = useCallback(async () => {
+    const binAssets = assets.filter((asset) => selectedAssetIds.has(asset.id));
+    const binFolders = folders.filter((folder) => selectedFolderIds.has(folder.id));
+    if (binAssets.length + binFolders.length === 0) return;
 
-  const moveToBin = useCallback(
-    async (asset: AssetLibraryItem) => removeFromLibrary(await moveAssetsToBin([asset])),
-    [removeFromLibrary],
-  );
+    if (binFolders.length === 0) {
+      const moved = await moveAssetsToBin(binAssets);
+      setAssets((current) => current.filter((asset) => !moved.includes(asset.id)));
+    } else {
+      await binMediaItems({ assets: binAssets, folders: binFolders });
+    }
+    clearSelection();
+  }, [assets, clearSelection, folders, selectedAssetIds, selectedFolderIds]);
 
-  // Delete / Backspace moves the selected asset to the Bin, as in a file
-  // manager. Reversible (Undo toast), so no confirmation; ignored while typing.
+  function openViewer(asset: AssetLibraryItem) {
+    viewerPushed.current = true;
+    updateLibraryUrl({ open: asset.id }, { push: true });
+  }
+
+  function closeViewer() {
+    if (viewerPushed.current) {
+      viewerPushed.current = false;
+      window.history.back();
+    } else {
+      updateLibraryUrl({ open: null });
+    }
+  }
+
+  // Library shortcuts, ignored while typing or with a dialog open:
+  // Delete bins the selection, Ctrl/Cmd+A selects everything here, Escape
+  // clears, Enter opens the single selected file in the viewer.
   useEffect(() => {
-    if (!selected) return;
+    if (openId) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || event.altKey) return;
       const target = event.target;
       if (
         target instanceof HTMLElement &&
-        (target.isContentEditable || target.closest("input, textarea, select, [role='dialog']"))
+        (target.isContentEditable ||
+          target.closest("input, textarea, select, [role='dialog'], [role='menu']"))
       ) {
         return;
       }
-      event.preventDefault();
-      void moveToBin(selected);
+      const mod = event.metaKey || event.ctrlKey;
+
+      if (mod && event.key.toLowerCase() === "a" && !missingFolder) {
+        event.preventDefault();
+        setSelection(selectAll(visibleAssetIds, visibleFolderIds));
+      } else if (!mod && event.key === "Escape" && selectedCount > 0) {
+        event.preventDefault();
+        clearSelection();
+      } else if (!mod && (event.key === "Delete" || event.key === "Backspace") && selectedCount > 0) {
+        event.preventDefault();
+        void binSelection();
+      } else if (!mod && event.key === "Enter" && selected && !(target instanceof HTMLButtonElement)) {
+        event.preventDefault();
+        openViewer(selected);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [moveToBin, selected]);
+  });
 
-  function selectAsset(asset: AssetLibraryItem) {
-    updateLibraryUrl({ asset: asset.id });
+  function handleItemClick(asset: AssetLibraryItem, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) {
+    const mode = selectionMode(event);
+    const next = applySelectionClick(liveSelection, {
+      kind: "asset",
+      id: asset.id,
+      mode,
+      order: visibleAssetIds,
+    });
+    setSelection(next);
+
+    const single = selectionSize(next) === 1 && next.assetIds.length === 1 ? next.assetIds[0] : null;
+    updateLibraryUrl({ asset: single });
 
     // Collapsed panel (or the mobile sheet): bring the details into view.
-    if (!panelHost || panelHost.offsetParent === null) {
+    if (mode === "replace" && (!panelHost || panelHost.offsetParent === null)) {
       requestOpenRightPanel();
     }
   }
 
+  function toggleItem(kind: "asset" | "folder", id: string) {
+    const next = applySelectionClick(liveSelection, {
+      kind,
+      id,
+      mode: "toggle",
+      order: kind === "asset" ? visibleAssetIds : visibleFolderIds,
+    });
+    setSelection(next);
+    const single = selectionSize(next) === 1 && next.assetIds.length === 1 ? next.assetIds[0] : null;
+    updateLibraryUrl({ asset: single });
+  }
+
+  function selectFolderTile(folderId: string, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) {
+    setSelection(
+      applySelectionClick(liveSelection, {
+        kind: "folder",
+        id: folderId,
+        mode: selectionMode(event),
+        order: visibleFolderIds,
+      }),
+    );
+    updateLibraryUrl({ asset: null });
+  }
+
+  /** Dragging a selected item drags the whole selection. */
+  function dragPayloadFor(kind: "asset" | "folder", id: string): MediaDragPayload {
+    const inSelection = kind === "asset" ? selectedAssetIds.has(id) : selectedFolderIds.has(id);
+    if (inSelection && selectedCount > 1) {
+      return { assetIds: liveSelection.assetIds, folderIds: liveSelection.folderIds };
+    }
+    return kind === "asset" ? { assetIds: [id], folderIds: [] } : { assetIds: [], folderIds: [id] };
+  }
+
+  function changeView(next: MediaView) {
+    setView(next);
+    void setMediaLibraryViewAction(next).catch(() => undefined);
+  }
+
   /** Opens a folder as a new history entry, so Back goes up again. */
   function openFolder(folderId: string | null) {
+    setSelection(EMPTY_SELECTION);
     updateLibraryUrl({ folder: folderId, asset: null }, { push: true });
   }
 
@@ -397,6 +566,15 @@ export function AssetLibraryClient({
       folderIds: payload.folderIds,
       targetFolderId: targetId,
       targetName,
+    });
+  }
+
+  function moveSelectionTo() {
+    setMoveSelection({
+      assets: assets
+        .filter((asset) => selectedAssetIds.has(asset.id))
+        .map((asset) => ({ id: asset.id, folderId: asset.folderId })),
+      folderIds: liveSelection.folderIds,
     });
   }
 
@@ -462,12 +640,49 @@ export function AssetLibraryClient({
     </div>
   );
 
+  const renderActions = (asset: AssetLibraryItem, menu: ContextMenuController, className: string) => (
+    <AssetActionsMenu asset={asset} contextMenu={menu} className={className}>
+      <DropdownMenuItem onClick={() => openViewer(asset)}>
+        <Maximize2 /> View
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleItemClick(asset, { shiftKey: false, metaKey: false, ctrlKey: false })}>
+        <SlidersHorizontal /> Edit details
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={() =>
+          selectedAssetIds.has(asset.id) && selectedCount > 1
+            ? moveSelectionTo()
+            : setMoveSelection({ assets: [{ id: asset.id, folderId: asset.folderId }], folderIds: [] })
+        }
+      >
+        <FolderInput /> Move to…
+      </DropdownMenuItem>
+      {searching && asset.folderId ? (
+        <DropdownMenuItem onClick={() => openFolder(asset.folderId)}>
+          <FolderOpen /> Show in folder
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem
+        variant="destructive"
+        onClick={() =>
+          selectedAssetIds.has(asset.id) && selectedCount > 1
+            ? void binSelection()
+            : void moveAssetsToBin([asset]).then((moved) =>
+                setAssets((current) => current.filter((item) => !moved.includes(item.id))),
+              )
+        }
+      >
+        <Trash2 /> Move to Bin
+      </DropdownMenuItem>
+    </AssetActionsMenu>
+  );
+
   return (
     <>
       <WorkspacePageRegistration
         page={ASSETS_PAGE}
         rightPanel={panelSlot}
-        rightPanelTitle="Asset"
+        rightPanelTitle={selectedCount > 1 ? "Selection" : "Asset"}
       />
 
       {/* Container queries: the space this page gets depends on which side
@@ -588,14 +803,16 @@ export function AssetLibraryClient({
             <FilterSelect
               label="Sort assets"
               value={sortMode}
-              onChange={(value) => setSortMode(value as SortMode)}
+              onChange={(value) => setSortMode(parseMediaSort(value))}
               options={[
                 ["newest", "Newest"],
                 ["oldest", "Oldest"],
+                ["taken", "Date taken"],
                 ["name", "Name"],
                 ["size", "Largest"],
               ]}
             />
+            <ViewSwitcher value={view} onChange={changeView} />
             <Link
               href="/assets?view=bin"
               className={buttonVariants({ variant: "ghost", size: "icon" })}
@@ -654,97 +871,56 @@ export function AssetLibraryClient({
                 {folderTiles.map((tile) => {
                   const folder = folders.find((candidate) => candidate.id === tile.id)!;
                   return (
-                    <FolderTile
+                    <div
                       key={tile.id}
-                      folder={tile}
-                      onOpen={() => openFolder(tile.id)}
-                      onRename={() => setNameDialog({ mode: "rename", folder })}
-                      onMove={() => setMoveSelection({ assets: [], folderIds: [tile.id] })}
-                      onBin={() => void moveFolderToBin(folder)}
-                      onDropItems={(payload) => moveDropped(payload, tile.id, tile.name)}
-                      onDropFiles={(dataTransfer) => uploadDrop(dataTransfer, tile.id)}
-                    />
+                      onDragStartCapture={(event) => {
+                        const payload = dragPayloadFor("folder", tile.id);
+                        if (payload.assetIds.length + payload.folderIds.length > 1) {
+                          event.dataTransfer.setData(MEDIA_DRAG_TYPE, JSON.stringify(payload));
+                        }
+                      }}
+                    >
+                      <FolderTile
+                        folder={tile}
+                        selected={selectedFolderIds.has(tile.id)}
+                        onSelect={(event) => selectFolderTile(tile.id, event)}
+                        onOpen={() => openFolder(tile.id)}
+                        onRename={() => setNameDialog({ mode: "rename", folder })}
+                        onMove={() =>
+                          selectedFolderIds.has(tile.id) && selectedCount > 1
+                            ? moveSelectionTo()
+                            : setMoveSelection({ assets: [], folderIds: [tile.id] })
+                        }
+                        onBin={() =>
+                          selectedFolderIds.has(tile.id) && selectedCount > 1
+                            ? void binSelection()
+                            : void moveFolderToBin(folder)
+                        }
+                        onDropItems={(payload) => moveDropped(payload, tile.id, tile.name)}
+                        onDropFiles={(dataTransfer) => uploadDrop(dataTransfer, tile.id)}
+                      />
+                    </div>
                   );
                 })}
               </section>
             ) : null}
 
             {visibleAssets.length > 0 ? (
-              <div className="min-w-0 columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4 @7xl:columns-5">
-                {visibleAssets.map((asset) => (
-                  <WithContextMenu key={asset.id}>
-                    {(menu) => (
-                      <div
-                        data-asset-card
-                        onContextMenu={menu.onContextMenu}
-                        className="group relative mb-4 break-inside-avoid"
-                      >
-                        <button
-                          type="button"
-                          draggable
-                          onDragStart={(event) =>
-                            startMediaDrag(event, { assetIds: [asset.id], folderIds: [] })
-                          }
-                          onClick={() => selectAsset(asset)}
-                          aria-pressed={selected?.id === asset.id}
-                          className={cn(
-                            "block w-full overflow-hidden rounded-md border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                            selected?.id === asset.id
-                              ? "border-primary/70 ring-1 ring-primary/35"
-                              : "border-border/70",
-                          )}
-                        >
-                          <AssetThumbnail asset={asset} />
-                          <span className="flex items-center gap-2 px-3 py-2.5">
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">
-                                {asset.displayName}
-                              </span>
-                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                                {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
-                                {searching
-                                  ? ` · ${asset.folderId ? (folderNames.get(asset.folderId) ?? rootLabel) : rootLabel}`
-                                  : ""}
-                              </span>
-                            </span>
-                            <VisibilityIcon visibility={asset.visibility} />
-                          </span>
-                        </button>
-                        <AssetActionsMenu
-                          asset={asset}
-                          contextMenu={menu}
-                          className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100"
-                        >
-                          <DropdownMenuItem onClick={() => selectAsset(asset)}>
-                            <SlidersHorizontal /> Edit details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              setMoveSelection({
-                                assets: [{ id: asset.id, folderId: asset.folderId }],
-                                folderIds: [],
-                              })
-                            }
-                          >
-                            <FolderInput /> Move to…
-                          </DropdownMenuItem>
-                          {searching && asset.folderId ? (
-                            <DropdownMenuItem onClick={() => openFolder(asset.folderId)}>
-                              <FolderOpen /> Show in folder
-                            </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => void moveToBin(asset)}
-                          >
-                            <Trash2 /> Move to Bin
-                          </DropdownMenuItem>
-                        </AssetActionsMenu>
-                      </div>
-                    )}
-                  </WithContextMenu>
-                ))}
-              </div>
+              <MediaItemView
+                key={`${currentFolderId ?? "root"}|${query}|${kindFilter}|${visibilityFilter}|${sortMode}|${view}`}
+                view={view}
+                assets={visibleAssets}
+                sort={sortMode}
+                onSortChange={setSortMode}
+                selectedIds={selectedAssetIds}
+                selecting={selectedCount > 0}
+                onItemClick={handleItemClick}
+                onItemToggle={(asset) => toggleItem("asset", asset.id)}
+                onItemOpen={openViewer}
+                onItemDragStart={(asset, event) => startMediaDrag(event, dragPayloadFor("asset", asset.id))}
+                renderActions={renderActions}
+                locationOf={searching ? locationOf : undefined}
+              />
             ) : searching ? (
               <EmptyState
                 icon={Search}
@@ -762,6 +938,15 @@ export function AssetLibraryClient({
             ) : null}
           </>
         )}
+
+        {selectedCount > 1 ? (
+          <SelectionBar
+            count={selectedCount}
+            onMove={moveSelectionTo}
+            onBin={() => void binSelection()}
+            onClear={clearSelection}
+          />
+        ) : null}
       </div>
 
       <FolderNameDialog
@@ -799,30 +984,65 @@ export function AssetLibraryClient({
             targetFolderId,
             targetName,
           });
-          if (moved) setMoveSelection(null);
+          if (moved) {
+            setMoveSelection(null);
+            clearSelection();
+          }
         }}
       />
 
+      {viewerIndex !== -1 ? (
+        <MediaViewer
+          items={viewerItems}
+          index={viewerIndex}
+          onIndexChange={(index) => {
+            const next = viewerItems[index];
+            if (next) updateLibraryUrl({ open: next.id });
+          }}
+          onClose={closeViewer}
+          locationOf={locationOf}
+        />
+      ) : null}
+
       {panelHost
         ? createPortal(
-            selected ? (
+            selectedCount > 1 ? (
+              <SelectionPanel
+                assets={assets.filter((asset) => selectedAssetIds.has(asset.id))}
+                folderCount={liveSelection.folderIds.length}
+                onMove={moveSelectionTo}
+                onBin={() => void binSelection()}
+                onClear={clearSelection}
+              />
+            ) : selected ? (
               <AssetConfigurePanel
                 key={selected.id}
                 asset={selected}
                 onSaved={(saved) => {
                   setAssets((current) =>
-                    current.map((asset) => (asset.id === saved.id ? { ...saved, folderId: asset.folderId } : asset)),
+                    current.map((asset) =>
+                      asset.id === saved.id
+                        ? { ...asset, ...saved, folderId: asset.folderId, takenAt: asset.takenAt }
+                        : asset,
+                    ),
                   );
                   dispatchAssetsChanged();
                 }}
-                onMoveToBin={() => void moveToBin(selected)}
+                onMoveToBin={() =>
+                  void moveAssetsToBin([selected]).then((moved) => {
+                    setAssets((current) => current.filter((item) => !moved.includes(item.id)));
+                    clearSelection();
+                  })
+                }
+                onView={() => openViewer(selected)}
               />
             ) : (
               <div className="grid flex-1 place-content-center gap-2 px-6 py-16 text-center">
                 <MousePointerClick className="mx-auto size-6 text-muted-foreground" />
                 <p className="text-sm font-medium">Nothing selected</p>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Choose an asset to preview it and edit its details.
+                  Click a file to see its details. Ctrl/⌘- or Shift-click to select
+                  several; double-click to view full screen.
                 </p>
               </div>
             ),
@@ -830,6 +1050,129 @@ export function AssetLibraryClient({
           )
         : null}
     </>
+  );
+}
+
+const VIEW_OPTIONS: { value: MediaView; label: string; icon: typeof LayoutGrid }[] = [
+  { value: "masonry", label: "Masonry", icon: LayoutDashboard },
+  { value: "grid", label: "Grid", icon: LayoutGrid },
+  { value: "list", label: "List", icon: List },
+  { value: "details", label: "Details", icon: Rows3 },
+];
+
+function ViewSwitcher({ value, onChange }: { value: MediaView; onChange: (view: MediaView) => void }) {
+  return (
+    <div role="radiogroup" aria-label="View" className="flex h-9 items-center rounded-md border border-input p-0.5">
+      {VIEW_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          aria-label={option.label}
+          title={option.label}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "grid h-full w-8 place-items-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+            value === option.value && "bg-muted text-foreground",
+          )}
+        >
+          <option.icon className="size-4" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SelectionBar({
+  count,
+  onMove,
+  onBin,
+  onClear,
+}: {
+  count: number;
+  onMove: () => void;
+  onBin: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      role="toolbar"
+      aria-label="Selection"
+      className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-1 rounded-full border border-border/80 bg-popover/95 py-1 pl-4 pr-1 text-sm shadow-lg backdrop-blur"
+    >
+      <span className="mr-2 font-medium tabular-nums">{count} selected</span>
+      <Button type="button" variant="ghost" size="sm" onClick={onMove}>
+        <FolderInput data-icon="inline-start" />
+        Move to…
+      </Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onBin} className="text-destructive">
+        <Trash2 data-icon="inline-start" />
+        Move to Bin
+      </Button>
+      <Button type="button" variant="ghost" size="icon-sm" onClick={onClear} aria-label="Clear selection (Esc)" title="Clear selection (Esc)">
+        <X />
+      </Button>
+    </div>
+  );
+}
+
+function SelectionPanel({
+  assets,
+  folderCount,
+  onMove,
+  onBin,
+  onClear,
+}: {
+  assets: AssetLibraryItem[];
+  folderCount: number;
+  onMove: () => void;
+  onBin: () => void;
+  onClear: () => void;
+}) {
+  const bytes = assets.reduce((total, asset) => total + asset.sizeBytes, 0);
+  const preview = assets.filter((asset) => asset.thumbUrl).slice(0, 6);
+  const parts = [
+    folderCount > 0 ? `${folderCount} ${folderCount === 1 ? "folder" : "folders"}` : null,
+    assets.length > 0 ? `${assets.length} ${assets.length === 1 ? "file" : "files"} · ${formatBytes(bytes)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <ContextPanelBody>
+      <div className="grid gap-3 border-b border-border/60 p-4">
+        {preview.length > 0 ? (
+          <div className="grid grid-cols-3 gap-1.5">
+            {preview.map((asset) => (
+              <span key={asset.id} className="block aspect-square overflow-hidden rounded bg-muted">
+                <RenditionImage
+                  src={asset.thumbUrl}
+                  alt=""
+                  className="size-full object-cover"
+                  fallback={<span className="block size-full" />}
+                />
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div>
+          <h2 className="text-base font-semibold">{assets.length + folderCount} items selected</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{parts.join(" · ")}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onMove}>
+            <FolderInput data-icon="inline-start" />
+            Move to…
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={onBin}>
+            <Trash2 data-icon="inline-start" />
+            Move to Bin
+          </Button>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onClear}>
+          Clear selection
+        </Button>
+      </div>
+    </ContextPanelBody>
   );
 }
 
@@ -899,10 +1242,12 @@ function AssetConfigurePanel({
   asset,
   onSaved,
   onMoveToBin,
+  onView,
 }: {
   asset: AssetLibraryItem;
   onSaved: (asset: AssetLibraryItem) => void;
   onMoveToBin: () => void;
+  onView: () => void;
 }) {
   // Keyed by asset id, so switching assets starts a fresh draft.
   const [draft, setDraft] = useState<AssetDraft>(() => toDraft(asset));
@@ -958,7 +1303,14 @@ function AssetConfigurePanel({
     <form onSubmit={(event) => void onSubmit(event)} className="flex min-h-full flex-1 flex-col">
       <ContextPanelBody>
         <div className="grid gap-3 border-b border-border/60 p-4">
-          <AssetPreview asset={asset} />
+          <button
+            type="button"
+            onClick={onView}
+            aria-label={`View ${asset.displayName} full screen`}
+            className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          >
+            <AssetPreview asset={asset} />
+          </button>
           <div className="min-w-0">
             <h2 className="break-words text-base font-semibold leading-snug">
               {asset.displayName}
@@ -968,18 +1320,11 @@ function AssetConfigurePanel({
               {formatDate(asset.createdAt)}
             </p>
           </div>
-          <div className={cn("grid gap-2", asset.kind === "file" ? "grid-cols-2" : "grid-cols-3")}>
-            {asset.kind !== "file" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => window.open(asset.url, "_blank", "noopener,noreferrer")}
-              >
-                <ExternalLink data-icon="inline-start" />
-                Open
-              </Button>
-            ) : null}
+          <div className="grid grid-cols-3 gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={onView}>
+              <Maximize2 data-icon="inline-start" />
+              View
+            </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => downloadAsset(asset)}>
               <Download data-icon="inline-start" />
               Download
@@ -1275,26 +1620,6 @@ function StorageBar({ used, quota }: { used: number; quota: number }) {
   );
 }
 
-function VisibilityIcon({ visibility }: { visibility: "private" | "public" }) {
-  const Icon = visibility === "public" ? Globe2 : Lock;
-  const label = visibility === "public" ? "Public" : "Private";
-
-  return (
-    <span
-      className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-full border",
-        visibility === "public"
-          ? "border-primary/40 bg-primary/10 text-primary"
-          : "border-border/70 text-muted-foreground",
-      )}
-      title={label}
-    >
-      <Icon className="size-3" aria-hidden />
-      <span className="sr-only">{label}</span>
-    </span>
-  );
-}
-
 function VisibilityOption({
   active,
   icon: Icon,
@@ -1400,21 +1725,13 @@ function filterAndSortAssets(
     query: ReturnType<typeof parseContentSearchQuery>;
     kind: KindFilter;
     visibility: VisibilityFilter;
-    sort: SortMode;
+    sort: MediaSort;
   },
 ) {
-  return assets
-    .filter((asset) => {
-      if (filters.kind !== "all" && asset.kind !== filters.kind) {
-        return false;
-      }
-
-      if (
-        filters.visibility !== "all" &&
-        asset.visibility !== filters.visibility
-      ) {
-        return false;
-      }
+  return sortMediaAssets(
+    assets.filter((asset) => {
+      if (filters.kind !== "all" && asset.kind !== filters.kind) return false;
+      if (filters.visibility !== "all" && asset.visibility !== filters.visibility) return false;
 
       return matchesContentSearchQuery(
         {
@@ -1428,26 +1745,9 @@ function filterAndSortAssets(
         },
         filters.query,
       );
-    })
-    .sort((first, second) => {
-      if (filters.sort === "oldest") {
-        return dateValue(first.createdAt) - dateValue(second.createdAt);
-      }
-
-      if (filters.sort === "name") {
-        return first.displayName.localeCompare(second.displayName);
-      }
-
-      if (filters.sort === "size") {
-        return second.sizeBytes - first.sizeBytes;
-      }
-
-      return dateValue(second.createdAt) - dateValue(first.createdAt);
-    });
-}
-
-function dateValue(value: Date | string) {
-  return value instanceof Date ? value.getTime() : new Date(value).getTime();
+    }),
+    filters.sort,
+  );
 }
 
 function AssetKindIcon({

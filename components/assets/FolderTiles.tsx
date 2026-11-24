@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import {
   ChevronRight,
   Folder,
@@ -123,6 +123,8 @@ export type FolderTileData = {
  */
 export function FolderTile({
   folder,
+  selected = false,
+  onSelect,
   onOpen,
   onRename,
   onMove,
@@ -131,6 +133,9 @@ export function FolderTile({
   onDropFiles,
 }: {
   folder: FolderTileData;
+  selected?: boolean;
+  /** Ctrl/Cmd/Shift-click selects instead of opening. */
+  onSelect?: (event: MouseEvent) => void;
   onOpen: () => void;
   onRename: () => void;
   onMove: () => void;
@@ -166,10 +171,18 @@ export function FolderTile({
             type="button"
             draggable
             onDragStart={(event) => startMediaDrag(event, { assetIds: [], folderIds: [folder.id] })}
-            onClick={onOpen}
+            aria-pressed={selected}
+            onClick={(event) => {
+              if (onSelect && (event.metaKey || event.ctrlKey || event.shiftKey)) onSelect(event);
+              else onOpen();
+            }}
             className={cn(
               "flex w-full items-center gap-3 rounded-md border bg-card px-3 py-2.5 pr-11 text-left shadow-sm transition hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-              drop.active ? "border-primary bg-primary/10 ring-2 ring-primary/40" : "border-border/70",
+              drop.active
+                ? "border-primary bg-primary/10 ring-2 ring-primary/40"
+                : selected
+                  ? "border-primary bg-primary/10 ring-2 ring-primary/45"
+                  : "border-border/70",
             )}
           >
             {drop.active ? (

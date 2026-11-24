@@ -28,7 +28,7 @@ describe("renderRenditions", () => {
     const result = await renderRenditions(input, "image/jpeg");
 
     // Displayed (rotated) size of the original.
-    expect(result).toMatchObject({ width: 2000, height: 3000, animated: false });
+    expect(result).toMatchObject({ width: 2000, height: 3000, animated: false, takenAt: null });
     expect(result.outputs.display).toMatchObject({ width: 1365, height: 2048 });
     expect(result.outputs.thumb).toMatchObject({ width: 640, height: 960 });
 
@@ -42,6 +42,14 @@ describe("renderRenditions", () => {
       expect(meta.exif).toBeUndefined();
       expect(meta.xmp).toBeUndefined();
     }
+  });
+
+  it("records when the photo was taken", async () => {
+    const input = await sharp({ create: { width: 40, height: 30, channels: 3, background: "#000" } })
+      .jpeg()
+      .withExif({ IFD2: { DateTimeOriginal: "2026:10:01 09:30:15" } })
+      .toBuffer();
+    expect((await renderRenditions(input, "image/jpeg")).takenAt).toBe("2026-10-01T09:30:15.000Z");
   });
 
   it("never enlarges small images", async () => {

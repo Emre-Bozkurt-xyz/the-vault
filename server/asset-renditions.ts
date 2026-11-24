@@ -135,6 +135,7 @@ async function generate(asset: RenditionAsset, bytes?: Buffer) {
       renditionVersion: RENDITION_VERSION,
       width: rendered.width,
       height: rendered.height,
+      takenAt: rendered.takenAt ? new Date(rendered.takenAt) : null,
     })
     .where(
       and(

@@ -18,7 +18,8 @@
  * versions stop being referenced as each asset regenerates, and the orphan
  * sweep removes them.
  */
-export const RENDITION_VERSION = 1;
+// v2 (2026-11-23): renders also record EXIF "date taken" (`assets.taken_at`).
+export const RENDITION_VERSION = 2;
 
 export const RENDITIONS = {
   /** Masonry/grid cards: up to ~320 CSS px wide at 2x. Tall panoramas capped. */

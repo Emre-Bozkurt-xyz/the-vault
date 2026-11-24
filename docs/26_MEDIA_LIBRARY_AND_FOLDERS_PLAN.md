@@ -4,7 +4,7 @@ Date: 2026-11-23. Tracker: Phase 28. Builds on
 `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` (storage, access model, embeds),
 which stays authoritative for everything this plan does not change.
 
-**Status: plan agreed 2026-11-23; slices 1 (Bin), 2 (renditions) and 3 (folders) implemented — see §12.**
+**Status: plan agreed 2026-11-23; slices 1–4 (Bin, renditions, folders, browsing) implemented — see §12.**
 
 ## 1. Goal
 
@@ -206,14 +206,22 @@ and render on first request if the upload-time render has not happened.
 - **Selection**: click selects and shows details in the right panel;
   Ctrl/Cmd-click toggles; Shift-click ranges; Ctrl+A; Esc clears; a bulk bar
   (Move, Download, Share, Move to Bin) appears with 2+ selected.
-- **Viewer**: double-click or Enter opens a full-screen viewer (`?view=<id>`
-  so Back closes it). ←/→ and swipe between items in the current folder and
-  sort order, neighbours preloaded at display size, Esc closes, `i` toggles an
-  info strip, `d` downloads, videos play inline, PDFs open in the browser's
-  viewer. Zoom by double-tap / wheel on images.
-- **Pagination**: `GET /api/assets?folder=&cursor=` returns 200 at a time
-  (sorted, with a stable `(sortKey, id)` cursor); the grid loads more on
-  scroll.
+- **Viewer** (as shipped): double-click, Enter, "View" in a menu, or the
+  panel preview opens a full-screen viewer at `?open=<id>` (`?view=` was
+  already the Bin's), pushed so Back closes it. ←/→/Home/End and swipe step
+  through the current folder in its sort order, neighbours preloaded at
+  display size; Esc closes, `i` toggles details (taken, dimensions, folder),
+  `d` downloads, `z` or double-click zooms to the original with drag-to-pan.
+  PDFs and other files show a card with Open/Download. Videos come in slice 5.
+- **Date taken**: renders read EXIF `DateTimeOriginal` (`lib/exif-date.ts`)
+  into `assets.taken_at` (`RENDITION_VERSION` 2 re-renders existing images to
+  fill it); "Date taken" sorts oldest first, falling back to upload time.
+- **Large folders** (changed 2026-11-23): instead of a server cursor, the
+  page keeps loading the library's metadata in one request and renders
+  progressively — 150 items, then more as you scroll. Search and filters stay
+  instant and span every folder without a search endpoint. Revisit with
+  server pagination if a single library passes ~10,000 files (the metadata
+  payload is ~0.5 KB per file).
 
 ## 8. Media types (slices 2 and 5)
 
@@ -284,7 +292,7 @@ The suite today is pure unit tests (vitest, no database). This plan adds:
 | 1 | Bin: `trashed` status, API, purge in maintenance, Bin view, Undo | Implemented 2026-11-23 |
 | 2 | Thumbnails and display renditions; sweep-aware keys | Implemented 2026-11-23 |
 | 3 | Folders: schema, API, breadcrumbs, side-panel tree, move, upload into folder, folder drop | Implemented 2026-11-23 |
-| 4 | View formats, selection and bulk bar, full-screen viewer, pagination | Not started |
+| 4 | View formats, selection and bulk bar, full-screen viewer, progressive rendering, date taken | Implemented 2026-11-23 |
 | 5 | Video kind, posters, playback | Not started |
 | 6 | Share links, `/s/<token>` page, zip download | Not started |
 | 7 | Hardening: DB integration tests, Playwright, rate limits, user guide | Not started |

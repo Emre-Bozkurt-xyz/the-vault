@@ -101,7 +101,10 @@ describe.skipIf(!databaseUrl)("asset renditions (database)", () => {
   async function cameraJpeg() {
     return sharp({ create: { width: 1600, height: 1200, channels: 3, background: "#884422" } })
       .jpeg()
-      .withExif({ IFD3: { GPSLatitudeRef: "N", GPSLatitude: "51/1 30/1 0/1" } })
+      .withExif({
+        IFD2: { DateTimeOriginal: "2026:10:01 09:30:15" },
+        IFD3: { GPSLatitudeRef: "N", GPSLatitude: "51/1 30/1 0/1" },
+      })
       .withMetadata({ orientation: 6 })
       .toBuffer();
   }
@@ -142,6 +145,7 @@ describe.skipIf(!databaseUrl)("asset renditions (database)", () => {
         renditionVersion: schema.assets.renditionVersion,
         width: schema.assets.width,
         height: schema.assets.height,
+        takenAt: schema.assets.takenAt,
         status: schema.assets.status,
       })
       .from(schema.assets)
@@ -173,6 +177,8 @@ describe.skipIf(!databaseUrl)("asset renditions (database)", () => {
       width: 1200,
       height: 1600,
     });
+    // EXIF "date taken" is kept as the camera's wall clock.
+    expect(after.takenAt?.toISOString()).toBe("2026-10-01T09:30:15.000Z");
 
     const thumb = await sharp(bucket.objects.get(keyFor(id, "thumb"))!).metadata();
     // 1200×1600 fitted into the 640×1920 thumbnail box.

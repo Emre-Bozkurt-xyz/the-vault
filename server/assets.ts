@@ -332,6 +332,7 @@ export function buildAssetContentUrl(
 const assetMediaColumns = {
   width: assets.width,
   height: assets.height,
+  takenAt: assets.takenAt,
   renditionStatus: assets.renditionStatus,
   renditionVersion: assets.renditionVersion,
 };

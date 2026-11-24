@@ -754,6 +754,11 @@ export const assets = pgTable(
       .notNull()
       .default("none"),
     renditionVersion: integer("rendition_version"),
+    /**
+     * When the photo was taken (EXIF), as the camera's wall clock stored as
+     * UTC (`lib/exif-date.ts`); filled when renditions are made. Null if unknown.
+     */
+    takenAt: timestamp("taken_at", { withTimezone: true }),
     /** Media library folder; null = the library root. */
     folderId: uuid("folder_id").references(() => assetFolders.id, {
       onDelete: "set null",

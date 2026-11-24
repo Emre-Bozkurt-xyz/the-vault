@@ -246,6 +246,13 @@
       "when": 1795479912512,
       "tag": "0034_steep_plazm",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795481478870,
+      "tag": "0035_faithful_annihilus",
+      "breakpoints": true
     }
   ]
 }

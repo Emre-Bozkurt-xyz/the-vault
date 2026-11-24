@@ -88,6 +88,22 @@ from the folders in your document file browser.
 Moving a folder to the Bin takes everything inside it along, as one Bin entry.
 Restoring it brings back exactly what was in it.
 
+## Viewing and selecting
+
+- **Views**: the four buttons next to the sort menu switch between masonry
+  (the default), a square grid, a compact list, and a details table whose
+  column headers sort. Vault remembers your choice.
+- **Sort by Date taken** to see an event in the order the photos were shot
+  (from the camera's own clock; files without one use their upload date).
+- **Select** like a file manager: click one, Ctrl/⌘-click to add or remove,
+  Shift-click for a range, Ctrl/⌘+A for everything here, Esc to clear. The
+  round tick on each card also adds it, which is handy on a touchscreen. With
+  several selected, a bar at the bottom offers **Move to…** and **Move to
+  Bin**; dragging any selected item moves them all.
+- **View full screen** with a double-click, Enter, or **View**. Use ←/→ (or
+  swipe) to step through the folder, `i` for details, `d` to download, and `z`
+  or a double-click to zoom to the original's full size. Esc or Back closes it.
+
 ## Deleting assets and the Bin
 
 **Move to Bin** (from an asset's `…` menu, right-click, the details panel, or

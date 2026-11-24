@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { AssetBinClient } from "@/components/assets/AssetBinClient";
 import { AssetLibraryClient } from "@/components/assets/AssetLibraryClient";
 import { WorkspacePage } from "@/components/workspace/WorkspacePage";
+import { parseMediaView } from "@/lib/media-library";
 import {
   listBinFoldersForUser,
   listFoldersForUser,
@@ -13,6 +14,7 @@ import {
   listAssetsForUser,
   listBinAssetsForUser,
 } from "@/server/assets";
+import { getUserSetting } from "@/server/user-settings";
 
 type AssetsPageProps = {
   searchParams: Promise<{ view?: string | string[] }>;
@@ -40,10 +42,11 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
     );
   }
 
-  const [assets, folders, storage] = await Promise.all([
+  const [assets, folders, storage, viewSetting] = await Promise.all([
     listAssetsForUser(session.user.id),
     listFoldersForUser(session.user.id),
     getUserStorageSummary(session.user.id),
+    getUserSetting({ userId: session.user.id, namespace: "files-assets", key: "media-library" }),
   ]);
 
   return (
@@ -53,6 +56,7 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
         <AssetLibraryClient
           initialAssets={assets}
           initialFolders={folders}
+          initialView={parseMediaView(viewSetting?.value?.view)}
           storageUsedBytes={storage.usedBytes}
           storageQuotaBytes={storage.quotaBytes}
           unrestrictedUploads={storage.unrestrictedUploadsAllowed}

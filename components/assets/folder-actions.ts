@@ -156,3 +156,59 @@ export async function deleteFolderForever(folder: { id: string; name: string }) 
     return false;
   }
 }
+
+/**
+ * Bins a mixed selection of files and folders with one toast and one Undo
+ * that restores all of it. Resolves to the asset and folder ids that moved.
+ */
+export async function binMediaItems(input: {
+  assets: { id: string; displayName: string }[];
+  folders: { id: string; name: string }[];
+}): Promise<{ assetIds: string[]; folderIds: string[] }> {
+  const movedAssets: string[] = [];
+  const movedFolders: string[] = [];
+  try {
+    if (input.assets.length > 0) {
+      const { affected } = await send<{ affected: string[] }>("/api/assets/bulk", {
+        method: "POST",
+        body: JSON.stringify({ action: "trash", assetIds: input.assets.map((asset) => asset.id) }),
+      });
+      movedAssets.push(...affected);
+    }
+    for (const folder of input.folders) {
+      await send(`/api/assets/folders/${folder.id}`, { method: "DELETE" });
+      movedFolders.push(folder.id);
+    }
+  } catch (error) {
+    fail(error, "Could not move everything to the Bin.");
+  }
+
+  dispatchAssetsChanged();
+  const count = movedAssets.length + movedFolders.length;
+  if (count > 0) {
+    showWorkspaceToast({
+      message: `${count === 1 ? "1 item" : `${count} items`} moved to Bin.`,
+      action: {
+        label: "Undo",
+        run: async () => {
+          try {
+            if (movedAssets.length > 0) {
+              await send("/api/assets/bulk", {
+                method: "POST",
+                body: JSON.stringify({ action: "restore", assetIds: movedAssets }),
+              });
+            }
+            for (const id of movedFolders) {
+              await send(`/api/assets/folders/${id}/restore`, { method: "POST" });
+            }
+          } catch (error) {
+            fail(error, "Could not undo.");
+          }
+          dispatchAssetsChanged();
+        },
+      },
+      durationMs: 8000,
+    });
+  }
+  return { assetIds: movedAssets, folderIds: movedFolders };
+}

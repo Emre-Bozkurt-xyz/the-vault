@@ -1,0 +1,1 @@
+ALTER TABLE "assets" ADD COLUMN "taken_at" timestamp with time zone;

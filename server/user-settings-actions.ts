@@ -7,6 +7,7 @@ import {
   getExtensionManifest,
   getInstalledExtensionIds,
 } from "@/lib/extension-host/manifests";
+import { MEDIA_VIEWS } from "@/lib/media-library";
 import { canonicalizeBinding, isValidBinding } from "@/lib/shortcuts/binding";
 import { isShortcutId } from "@/lib/shortcuts/registry";
 import { requireActiveUser } from "@/server/authz";
@@ -173,6 +174,23 @@ export async function setConfirmMoveToBinAction(input: unknown) {
     namespace: "files-assets",
     key: "defaults",
     value: { ...(current?.value ?? {}), confirmMoveToBin },
+  });
+}
+
+/**
+ * Remembers the media library's view format (masonry, grid, list, details).
+ * Its own row, `files-assets/media-library`, so saving the Files & assets
+ * settings section (which rewrites `files-assets/defaults`) never resets it.
+ */
+export async function setMediaLibraryViewAction(input: unknown) {
+  const user = await requireActiveUser();
+  const view = z.enum(MEDIA_VIEWS).parse(input);
+
+  await upsertUserSetting({
+    userId: user.id,
+    namespace: "files-assets",
+    key: "media-library",
+    value: { view },
   });
 }
 

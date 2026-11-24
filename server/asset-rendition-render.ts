@@ -2,6 +2,7 @@ import "server-only";
 
 import sharp from "sharp";
 
+import { readExifDateTaken } from "@/lib/exif-date";
 import {
   RENDITIONS,
   RENDITION_MAX_INPUT_PIXELS,
@@ -32,6 +33,8 @@ export type RenderedRenditions = {
   width: number;
   height: number;
   animated: boolean;
+  /** EXIF "date taken" as an ISO string (camera wall clock in UTC), or null. */
+  takenAt: string | null;
   outputs: Record<RenditionName, RenderedRendition>;
 };
 
@@ -79,7 +82,13 @@ export async function renderRenditions(
     const display = await renderOne(bytes, inputOptions, "display", !animated);
     const thumb = await renderOne(display.body, { ...inputOptions, limitInputPixels: false }, "thumb", false);
 
-    return { width, height, animated, outputs: { display, thumb } };
+    return {
+      width,
+      height,
+      animated,
+      takenAt: readExifDateTaken(metadata.exif),
+      outputs: { display, thumb },
+    };
   } catch (error) {
     if (error instanceof RenditionDecodeError) throw error;
     throw new RenditionDecodeError(
