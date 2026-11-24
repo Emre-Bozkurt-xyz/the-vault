@@ -212,7 +212,24 @@ describe("every extension", () => {
               expect(declaration, `${file}: no state schema covers "${stateKey}"`).toBeDefined();
               const parsed = declaration!.schema.safeParse(row.state);
               expect(parsed.success, `${file}: "${stateKey}" ${parsed.error?.message ?? ""}`).toBe(true);
+              if (parsed.success && declaration!.assetIds) {
+                const ids = declaration!.assetIds(parsed.data);
+                expect(Array.isArray(ids) && ids.every((id) => typeof id === "string"), `${file}: assetIds returns strings`).toBe(true);
+              }
             }
+          }
+        });
+      }
+
+      // Files an extension keeps in its state must be findable by the warning
+      // before binning or deleting them (`ExtensionStateDeclaration.assetIds`).
+      if (manifest.permissions.includes("asset:read")) {
+        it("says which files its state uses, or that a state uses none", () => {
+          for (const declaration of serverExtensions[index].server?.state ?? []) {
+            expect(
+              typeof declaration.assetIds === "function" || declaration.noAssetIds === true,
+              `state "${declaration.key ?? "default"}" needs assetIds (or noAssetIds: true)`,
+            ).toBe(true);
           }
         });
       }

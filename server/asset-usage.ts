@@ -3,18 +3,26 @@ import "server-only";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { assets, documentAssets, documents } from "@/db/schema";
+import { assets, documentAssets, documentExtensionStates, documents } from "@/db/schema";
+import { serverExtensions } from "@/extensions/registry.server";
 import { findEmbedLine } from "@/lib/asset-embeds";
 import { canReadDocument } from "@/lib/permissions";
 
 /**
- * Which documents embed a user's files (`document_assets`, kept current on
- * every document save), for the warning before binning or deleting them and
- * the "Used in" list in Details. Documents the user can't open are counted,
- * never named. For the rest, the first line holding the embed
- * (`![[asset:<id>…]]`) is returned so the link can jump to it.
+ * Which documents use a user's files, for the warning before binning or
+ * deleting them and the "Used in" list in Details. Two sources:
  *
- * Data access only: trusts `ownerId`. The route checks the session.
+ * - Embeds in the document text (`document_assets`, kept current on every
+ *   save). The first line holding the embed (`![[asset:<id>…]]`) is returned
+ *   so the link can jump to it.
+ * - Extension state that refers to files (a sticker's image): any extension
+ *   whose state declaration has `assetIds` (`lib/extension-api/server.ts`) is
+ *   searched, with no per-extension code here. These name the extension
+ *   (`via`) and have no line.
+ *
+ * Documents the user can't open are counted, never named; documents in the
+ * Bin are skipped. Data access only: trusts `ownerId`. The route checks the
+ * session.
  */
 
 export type AssetUsageDocument = {
@@ -24,6 +32,8 @@ export type AssetUsageDocument = {
   line: number | null;
   /** That line's text, to find it again if the document moved on. */
   text: string | null;
+  /** The extension using the file here (its name), or null for an embed in the text. */
+  via: string | null;
 };
 
 export type AssetUsage = {
@@ -72,6 +82,71 @@ async function resolveAssetIds(ownerId: string, assetIds: string[], folderIds: s
   return [...ids];
 }
 
+type UsageRef = { assetId: string; documentId: string; title: string; via: string | null };
+
+/** Extension state declarations that can say which files they use. */
+function assetStateSources() {
+  return serverExtensions.flatMap(({ manifest, server }) =>
+    (server?.state ?? [])
+      .filter((declaration) => typeof declaration.assetIds === "function")
+      .map((declaration) => ({
+        extensionId: manifest.id,
+        name: manifest.name,
+        stateKey: declaration.key ?? "default",
+        declaration,
+      })),
+  );
+}
+
+/** Files used through extension state, found by each extension's own `assetIds`. */
+async function extensionRefs(ids: string[]): Promise<UsageRef[]> {
+  const wanted = new Set(ids);
+  // A cheap text match narrows the rows; the extension's schema and
+  // `assetIds` then decide exactly.
+  const patterns = ids.map((id) => `%${id}%`);
+  const refs: UsageRef[] = [];
+  for (const source of assetStateSources()) {
+    const rows = await db
+      .select({
+        documentId: documents.id,
+        title: documents.title,
+        state: documentExtensionStates.state,
+      })
+      .from(documentExtensionStates)
+      .innerJoin(documents, eq(documents.id, documentExtensionStates.documentId))
+      .where(
+        and(
+          eq(documentExtensionStates.extensionId, source.extensionId),
+          eq(documentExtensionStates.stateKey, source.stateKey),
+          isNull(documentExtensionStates.deletedAt),
+          isNull(documents.deletedAt),
+          sql`${documentExtensionStates.state}::text like any (array[${sql.join(
+            patterns.map((pattern) => sql`${pattern}`),
+            sql`, `,
+          )}])`,
+        ),
+      )
+      .limit(MAX_DOCUMENTS * 4);
+    for (const row of rows) {
+      const parsed = source.declaration.schema.safeParse(row.state);
+      if (!parsed.success) continue;
+      let used: readonly string[] = [];
+      try {
+        used = source.declaration.assetIds!(parsed.data);
+      } catch {
+        // A broken extractor must not break deleting files.
+        continue;
+      }
+      for (const assetId of new Set(used)) {
+        if (wanted.has(assetId)) {
+          refs.push({ assetId, documentId: row.documentId, title: row.title, via: source.name });
+        }
+      }
+    }
+  }
+  return refs;
+}
+
 /**
  * Usage of the owner's files (and of everything inside the given folders).
  * Only files used somewhere are returned, most-used first.
@@ -83,54 +158,75 @@ export async function getAssetUsageForOwner(
   const ids = await resolveAssetIds(ownerId, input.assetIds ?? [], input.folderIds ?? []);
   if (ids.length === 0) return [];
 
-  const links = await db
+  const embeds = await db
     .select({
       assetId: documentAssets.assetId,
-      assetName: assets.displayName,
       documentId: documents.id,
       title: documents.title,
     })
     .from(documentAssets)
     .innerJoin(documents, eq(documents.id, documentAssets.documentId))
-    .innerJoin(assets, eq(assets.id, documentAssets.assetId))
     // A document in its Bin doesn't show the file to anyone.
     .where(and(inArray(documentAssets.assetId, ids), isNull(documents.deletedAt)))
     .limit(MAX_DOCUMENTS * 4);
-  if (links.length === 0) return [];
+  const refs: UsageRef[] = [...embeds.map((embed) => ({ ...embed, via: null })), ...(await extensionRefs(ids))];
+  if (refs.length === 0) return [];
 
-  const documentIds = [...new Set(links.map((link) => link.documentId))].slice(0, MAX_DOCUMENTS);
+  const names = new Map<string, string>();
+  const nameRows = await db
+    .select({ id: assets.id, name: assets.displayName })
+    .from(assets)
+    .where(inArray(assets.id, [...new Set(refs.map((ref) => ref.assetId))]));
+  for (const row of nameRows) names.set(row.id, row.name);
+
+  const documentIds = [...new Set(refs.map((ref) => ref.documentId))].slice(0, MAX_DOCUMENTS);
   const readable = new Set<string>();
   for (const documentId of documentIds) {
     if (await canReadDocument(ownerId, documentId)) readable.add(documentId);
   }
+  // Only embeds need the text, to find their line.
   const bodies = new Map<string, string>();
-  if (readable.size > 0) {
+  const needBodies = [...readable].filter((id) => refs.some((ref) => ref.documentId === id && ref.via === null));
+  if (needBodies.length > 0) {
     const rows = await db
       .select({ id: documents.id, markdown: documents.markdown })
       .from(documents)
-      .where(inArray(documents.id, [...readable]));
+      .where(inArray(documents.id, needBodies));
     for (const row of rows) bodies.set(row.id, row.markdown);
   }
 
-  const byAsset = new Map<string, AssetUsage>();
-  for (const link of links) {
-    const usage =
-      byAsset.get(link.assetId) ??
-      byAsset.set(link.assetId, { assetId: link.assetId, name: link.assetName, documents: [], hidden: 0 }).get(link.assetId)!;
-    if (!readable.has(link.documentId)) {
+  const byAsset = new Map<string, AssetUsage & { seen: Set<string> }>();
+  for (const ref of refs) {
+    let usage = byAsset.get(ref.assetId);
+    if (!usage) {
+      usage = { assetId: ref.assetId, name: names.get(ref.assetId) ?? "File", documents: [], hidden: 0, seen: new Set() };
+      byAsset.set(ref.assetId, usage);
+    }
+    const key = `${ref.documentId}:${ref.via ?? ""}`;
+    if (usage.seen.has(key)) continue;
+    usage.seen.add(key);
+    if (!readable.has(ref.documentId)) {
       usage.hidden += 1;
       continue;
     }
-    const found = findEmbedLine(bodies.get(link.documentId) ?? "", link.assetId);
+    const found = ref.via === null ? findEmbedLine(bodies.get(ref.documentId) ?? "", ref.assetId) : null;
     usage.documents.push({
-      id: link.documentId,
-      title: link.title || "Untitled",
+      id: ref.documentId,
+      title: ref.title || "Untitled",
       line: found?.line ?? null,
       text: found?.text ?? null,
+      via: ref.via,
     });
   }
 
   return [...byAsset.values()]
-    .map((usage) => ({ ...usage, documents: usage.documents.sort((a, b) => a.title.localeCompare(b.title)) }))
+    .map((usage) => ({
+      assetId: usage.assetId,
+      name: usage.name,
+      hidden: usage.hidden,
+      documents: usage.documents.sort(
+        (a, b) => a.title.localeCompare(b.title) || (a.via ?? "").localeCompare(b.via ?? ""),
+      ),
+    }))
     .sort((a, b) => b.documents.length + b.hidden - (a.documents.length + a.hidden));
 }

@@ -50,12 +50,33 @@ export type ExtensionAction<
   permissions?: ReadonlyArray<M["permissions"][number]>;
 };
 
-export type ExtensionStateDeclaration = {
+export type ExtensionStateDeclaration<S extends ExtensionStateValue = ExtensionStateValue> = {
   /** Exact state key; omitted for the extension's default/only state. */
   key?: string;
   version: number;
-  schema: ZodType<ExtensionStateValue>;
+  schema: ZodType<S>;
+  /**
+   * The user's files this state uses (asset ids), given state that passed
+   * `schema`. Vault asks before anyone bins or deletes a file something still
+   * uses, and lists where: this is how state an extension keeps (a sticker's
+   * image, say) is found alongside files embedded in the document text.
+   * Required, or `noAssetIds`, for extensions with the `asset:read`
+   * permission (the contract test checks).
+   */
+  assetIds?(state: S): readonly string[];
+  /** This state never refers to files: the explicit opt-out from `assetIds`. */
+  noAssetIds?: true;
 };
+
+/**
+ * A state declaration whose `assetIds` sees the schema's own type. Plain
+ * object literals work too; this only saves a cast in `assetIds`.
+ */
+export function defineState<S extends ExtensionStateValue>(
+  declaration: ExtensionStateDeclaration<S>,
+): ExtensionStateDeclaration {
+  return declaration as unknown as ExtensionStateDeclaration;
+}
 
 /**
  * What `loadRenderData` may use (plan §8). The host builds it per page; like an

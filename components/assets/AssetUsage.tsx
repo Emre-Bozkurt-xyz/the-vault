@@ -84,7 +84,7 @@ export function AssetUsageList({
           ) : null}
           <ul className="grid gap-0.5">
             {entry.documents.slice(0, PER_FILE).map((document) => (
-              <li key={document.id}>
+              <li key={`${document.id}:${document.via ?? ""}`}>
                 <Link
                   href={`/docs/${document.id}`}
                   onClick={() => {
@@ -101,6 +101,9 @@ export function AssetUsageList({
                 >
                   <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate underline-offset-4 hover:underline">{document.title}</span>
+                  {document.via ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">· {document.via}</span>
+                  ) : null}
                 </Link>
               </li>
             ))}

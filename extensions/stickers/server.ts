@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { defineServer } from "@/lib/extension-api/server";
+import { defineServer, defineState } from "@/lib/extension-api/server";
 
 import manifest from "./manifest";
 import {
@@ -64,7 +64,16 @@ export default defineServer(manifest, {
     );
     return { items: stickers.filter((sticker) => visible.has(sticker.assetId)) };
   },
-  state: [{ key: "layout", version: 1, schema: stickersStateSchema }],
+  state: [
+    defineState({
+      key: "layout",
+      version: 1,
+      schema: stickersStateSchema,
+      // Each sticker shows one of its placer's files: binning that file would
+      // leave an empty sticker, so the warning lists this document.
+      assetIds: (state) => Object.values(state.items).map((item) => item.assetId),
+    }),
+  ],
   actions: [
     {
       id: "vault.stickers.listStickers",

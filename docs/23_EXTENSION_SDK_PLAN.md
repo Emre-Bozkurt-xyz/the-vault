@@ -341,7 +341,8 @@ The current couplings map as follows:
 import "server-only";
 
 export default defineServer(manifest, {
-  state?: Array<{ key: string; version: number; schema: ZodType }>;   // key: exact, or "prefix:*"
+  state?: Array<{ key: string; version: number; schema: ZodType;    // key: exact, or "prefix:*"
+                   assetIds?(state): string[]; noAssetIds?: true }>;  // files the state uses (2026-11-24)
   actions?: ExtensionAction[];
   loadRenderData?: (ctx: RenderDataContext) => Promise<JsonValue>;
 });

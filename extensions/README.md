@@ -207,6 +207,28 @@ export default defineServer(manifest, {
 Actions are what MCP agents call, and what your own UI calls through
 `useExtensionAction`: one permission-checked dispatcher for both.
 
+**State that refers to the user's files.** If a state stores asset ids (a
+sticker's image, a background photo), say how to find them, so Vault can warn
+before someone bins or deletes a file your extension still uses and list the
+document as "Title · Your extension":
+
+```ts
+state: [
+  defineState({
+    key: "layout",
+    version: 1,
+    schema: stickersStateSchema,
+    assetIds: (state) => Object.values(state.items).map((item) => item.assetId),
+  }),
+],
+```
+
+`defineState` only types `assetIds` with your schema; a plain object works too.
+An extension with the `asset:read` permission must give every state either
+`assetIds` or `noAssetIds: true` (the contract test fails otherwise). Vault
+finds candidate rows with a text match, then runs your schema and `assetIds`
+on them; a throw is treated as "uses none".
+
 An extension with `document:read` may also define `loadWorkspaceAgendaEvents`
 in `server.ts`. The host passes only that extension's state rows from documents
 the viewer owns, plus a day range. Return dated, read-only items for the Tasks

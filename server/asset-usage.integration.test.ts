@@ -26,6 +26,7 @@ describe.skipIf(!databaseUrl)("asset usage (database)", () => {
   const otherId = randomUUID();
   const photo = randomUUID();
   const unused = randomUUID();
+  const stickerOnly = randomUUID();
   const inFolder = randomUUID();
   const folderId = randomUUID();
   const childFolderId = randomUUID();
@@ -65,6 +66,7 @@ describe.skipIf(!databaseUrl)("asset usage (database)", () => {
     await db.insert(schema.assets).values([
       asset(photo, { displayName: "harbour.jpg" }),
       asset(unused),
+      asset(stickerOnly, { displayName: "cat-sticker.png" }),
       asset(inFolder, { folderId: childFolderId, displayName: "deep.jpg" }),
     ]);
 
@@ -81,6 +83,15 @@ describe.skipIf(!databaseUrl)("asset usage (database)", () => {
       .values({ ownerId, title: "Old draft", markdown: `![[asset:${photo}]]`, deletedAt: new Date() })
       .returning({ id: schema.documents.id });
     Object.assign(docs, { mine: mine.id, theirs: theirs.id, binned: binned.id });
+    // Stickers keep their files in extension state, not the text.
+    const stickers = (...ids: string[]) => ({
+      items: Object.fromEntries(ids.map((id, index) => [`s${index}`, { assetId: id, left: 10, top: 10, width: 120, rotation: 0 }])),
+    });
+    await db.insert(schema.documentExtensionStates).values([
+      { documentId: mine.id, extensionId: "vault.stickers", stateKey: "layout", state: stickers(photo, stickerOnly) },
+      // A removed state row doesn't count.
+      { documentId: theirs.id, extensionId: "vault.stickers", stateKey: "layout", state: stickers(unused), deletedAt: new Date() },
+    ]);
     await db.insert(schema.documentAssets).values([
       { documentId: mine.id, assetId: photo },
       { documentId: mine.id, assetId: inFolder },
@@ -100,10 +111,18 @@ describe.skipIf(!databaseUrl)("asset usage (database)", () => {
     const [entry] = await usage.getAssetUsageForOwner(ownerId, { assetIds: [photo] });
     expect(entry.name).toBe("harbour.jpg");
     expect(entry.documents).toEqual([
-      { id: docs.mine, title: "Trip notes", line: 3, text: `![[asset:${photo}|Harbour]]` },
+      { id: docs.mine, title: "Trip notes", line: 3, text: `![[asset:${photo}|Harbour]]`, via: null },
+      // The same document again, through the Stickers extension: no line to jump to.
+      { id: docs.mine, title: "Trip notes", line: null, text: null, via: "Stickers" },
     ]);
     // Someone else's private document: counted, not named. A binned document: skipped.
     expect(entry.hidden).toBe(1);
+  });
+
+  it("finds files used only through extension state, by the extension's own declaration", async () => {
+    const [entry] = await usage.getAssetUsageForOwner(ownerId, { assetIds: [stickerOnly] });
+    expect(entry).toMatchObject({ assetId: stickerOnly, name: "cat-sticker.png", hidden: 0 });
+    expect(entry.documents).toEqual([{ id: docs.mine, title: "Trip notes", line: null, text: null, via: "Stickers" }]);
   });
 
   it("returns nothing for unused files or other people's files", async () => {
