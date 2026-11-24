@@ -40,3 +40,12 @@ describe("long lines", () => {
     expect(resolveAnchorLine(["a", "b", long], { line: 1, text: long.slice(0, 160) })).toBe(3);
   });
 });
+
+describe("overlayAnchorSchema", () => {
+  it("accepts an anchor with or without a horizontal share", async () => {
+    const { overlayAnchorSchema } = await import("@/lib/extension-api/anchors");
+    expect(overlayAnchorSchema.safeParse({ line: 3, text: "x", dy: 2 }).success).toBe(true);
+    expect(overlayAnchorSchema.parse({ line: 3, text: "x", dy: 2, x: 0.84 }).x).toBe(0.84);
+    expect(overlayAnchorSchema.safeParse({ line: 0, text: "x", dy: 2 }).success).toBe(false);
+  });
+});

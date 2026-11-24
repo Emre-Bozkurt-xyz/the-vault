@@ -17,6 +17,7 @@ import { revealSticker } from "./reveal";
 import {
   STICKER_MAX_SIZE as MAX_SIZE,
   STICKER_MIN_SIZE as MIN_SIZE,
+  stickerBleed,
   stickersStateSchema,
   type StickerItem,
   type StickersState,
@@ -89,26 +90,45 @@ export default function StickerLayer({ ctx }: OverlayProps) {
   // words here and on read/public pages and move with their text; `top` is
   // the fallback.
   const anchors = useOverlayAnchors();
+  // Horizontally they keep their share of the column's width and stay on
+  // screen.
   const topOf = (item: StickerItem) => (item.anchor ? anchors.resolve(item.anchor) : null) ?? item.top;
+  const leftOf = (item: StickerItem) =>
+    anchors.resolveLeft({
+      left: item.left,
+      width: item.width,
+      anchor: item.anchor,
+      bleed: stickerBleed(item.width, item.rotation),
+    });
   const withAnchor = (item: StickerItem): StickerItem => ({
     ...item,
-    anchor: anchors.anchorAt(item.top) ?? undefined,
+    anchor: anchors.anchorAt(item.top, { left: item.left, width: item.width }) ?? undefined,
   });
 
   const stickers: LiveStickerItem[] = Object.entries(stickersState.items).map(
-    ([id, item]) => ({ id, ...item, top: topOf(item) }),
+    ([id, item]) => ({ id, ...item, top: topOf(item), left: leftOf(item) }),
   );
 
   // Stickers from before anchoring were placed by eye in the editor: anchor
   // each where it shows there, once the layout around it is final.
   useEffect(() => {
     if (!canEdit || status === "loading" || anchors.surface !== "editor" || !value) return;
-    if (Object.values(value.items).every((item) => item.anchor)) return;
+    if (Object.values(value.items).every((item) => item.anchor?.x !== undefined)) return;
     const timer = window.setTimeout(() => {
       let changed = false;
       const items = { ...value.items };
       for (const [id, item] of Object.entries(items)) {
-        if (item.anchor || !anchors.measuredAt(item.top)) continue;
+        if (item.anchor?.x !== undefined) continue;
+        if (item.anchor) {
+          // Anchored to its line before horizontal anchoring: add only its
+          // share of the editor's width (its stored top may be stale).
+          const x = withAnchor(item).anchor?.x;
+          if (x === undefined) continue;
+          items[id] = { ...item, anchor: { ...item.anchor, x } };
+          changed = true;
+          continue;
+        }
+        if (!anchors.measuredAt(item.top)) continue;
         const anchored = withAnchor(item);
         if (!anchored.anchor) continue;
         items[id] = anchored;

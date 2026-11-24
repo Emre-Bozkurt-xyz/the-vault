@@ -172,7 +172,11 @@ it with `useOverlayAnchors()`: store `anchorAt(top)` (an `OverlayAnchor`, the
 line plus an offset; `overlayAnchorSchema` from `@/lib/extension-api` for your
 state schema) whenever the item is placed or moved, and render at
 `resolve(anchor) ?? top`. The anchor follows its line when text is added above
-it. Stickers do this (`extensions/stickers/StickerLayer.tsx`), including
+it. Pass `anchorAt(top, { left, width })` to anchor horizontally too (`x`, the
+item's centre as a share of the column's width) and render at
+`resolveLeft({ left, width, anchor })`, which also keeps the item on screen,
+so one placed in a wide editor's margin tucks in on a phone (`viewportWidth`
+helps scale items down there). Stickers do this (`extensions/stickers/StickerLayer.tsx`), including
 anchoring items saved before anchors existed, once the editor's layout has
 settled (`surface === "editor"`, `measuredAt(top)`).
 

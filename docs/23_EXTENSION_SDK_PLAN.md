@@ -723,6 +723,8 @@ types.
   `data-source-line`/`data-source-end` tags `MarkdownDocument` puts on a
   document's top-level render (mapped back through asset-group expansion by
   `lib/markdown/source-line-map.ts`). Stickers store `anchor` beside `top`.
+  Horizontally an anchor keeps `x`, the item's centre as a share of the
+  overlay's width; `resolveLeft` places it there and keeps it on screen.
   `PublicStickerDisplay`, the sticker toolbar group, picker state and palette
   entry, `stickersEnabled` and `stickerItems` are gone from core.
 - Tests: SDK hooks' server actions are aliased to stubs under vitest

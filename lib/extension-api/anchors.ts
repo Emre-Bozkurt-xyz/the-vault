@@ -16,6 +16,12 @@ export type OverlayAnchor = {
   text: string;
   /** Item top minus the line's top, in px. */
   dy: number;
+  /**
+   * The item's horizontal centre as a share of the overlay's width (0 = left
+   * edge, 1 = right edge; beyond is the margin), so it keeps its place beside
+   * the text in a narrower or wider column.
+   */
+  x?: number;
 };
 
 /** An {@link OverlayAnchor} in an extension's state schema. */
@@ -23,6 +29,7 @@ export const overlayAnchorSchema = z.object({
   line: z.number().int().min(1),
   text: z.string().max(400),
   dy: z.number(),
+  x: z.number().optional(),
 });
 
 /**

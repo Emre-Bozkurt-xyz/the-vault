@@ -314,10 +314,24 @@ export type OverlayAnchors = {
    * stored position).
    */
   surface: "editor" | "page" | null;
-  /** The anchor for an item whose top is at `top` (overlay px), or null. */
-  anchorAt(top: number): OverlayAnchor | null;
+  /**
+   * The anchor for an item whose top is at `top` (overlay px), or null. Pass
+   * the item's `left` and `width` to anchor it horizontally too, as a share
+   * of the overlay's width (`x`).
+   */
+  anchorAt(top: number, horizontal?: { left: number; width: number }): OverlayAnchor | null;
   /** Where an anchored item's top is now (overlay px), or null when unknown. */
   resolve(anchor: OverlayAnchor): number | null;
+  /**
+   * Where an item's left edge goes (overlay px): at its anchor's `x` share of
+   * the overlay's width when it has one, else at the stored `left`, then
+   * kept on screen, so an item placed in a wide editor's margin tucks in on a
+   * phone instead of widening the page. `bleed` is how far the item's drawing
+   * reaches past `width` on each side (a rotated square's corners).
+   */
+  resolveLeft(item: { left: number; width: number; anchor?: OverlayAnchor; bleed?: number }): number;
+  /** The viewport's width, or null before the overlay is laid out (to scale items down on small screens). */
+  viewportWidth: number | null;
   /**
    * Whether the layout at `top` is final: false while the editor has only
    * estimated lines above it or images are loading. Take anchors from
@@ -356,7 +370,8 @@ export function useOverlayAnchors(): OverlayAnchors {
     return {
       surface: surface && layer ? surface.kind : null,
       version,
-      anchorAt(top) {
+      viewportWidth: layer && typeof document !== "undefined" ? document.documentElement.clientWidth : null,
+      anchorAt(top, horizontal) {
         const origin = layerTop();
         const containing = lineAtTop(top);
         if (!surface || origin === null || containing === null) return null;
@@ -376,11 +391,29 @@ export function useOverlayAnchors(): OverlayAnchors {
           lineTop = nextTop;
         }
         if (lineTop === null) return null;
-        return {
+        const anchor: OverlayAnchor = {
           line,
           text: anchorText(lines[line - 1] ?? ""),
           dy: Math.round((y - lineTop) * 100) / 100,
         };
+        const layerWidth = layer?.offsetWidth ?? 0;
+        if (horizontal && layerWidth > 0) {
+          anchor.x = Math.round(((horizontal.left + horizontal.width / 2) / layerWidth) * 10000) / 10000;
+        }
+        return anchor;
+      },
+      resolveLeft({ left, width, anchor, bleed = 0 }) {
+        if (!layer) return left;
+        const layerWidth = layer.offsetWidth;
+        const placed = anchor?.x !== undefined && layerWidth > 0 ? anchor.x * layerWidth - width / 2 : left;
+        // Keep the whole item inside the viewport, with a small gutter.
+        const gutter = 8;
+        const origin = layer.getBoundingClientRect().left;
+        const viewport = document.documentElement.clientWidth;
+        const min = gutter + bleed - origin;
+        const max = viewport - gutter - bleed - width - origin;
+        if (max < min) return (min + max) / 2;
+        return Math.min(Math.max(placed, min), max);
       },
       resolve(anchor) {
         const origin = layerTop();
