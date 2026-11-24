@@ -232,6 +232,13 @@
       "when": 1795475324201,
       "tag": "0032_small_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795477560722,
+      "tag": "0033_rapid_karma",
+      "breakpoints": true
     }
   ]
 }

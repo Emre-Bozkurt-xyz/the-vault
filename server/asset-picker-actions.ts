@@ -4,10 +4,13 @@ import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "@/db";
 import { assets, type AssetKind } from "@/db/schema";
+import { buildAssetRenditionUrls } from "@/server/assets";
 import { requireActiveUser } from "@/server/authz";
 
 export type PickerAsset = {
   id: string;
+  /** Grid thumbnail, or null when the asset has none (not an image, or it failed). */
+  thumbUrl: string | null;
   kind: AssetKind;
   displayName: string;
   mimeType: string;
@@ -43,18 +46,22 @@ export async function listUserAssetsForPickerAction(input: {
     );
   }
 
-  return db
+  const rows = await db
     .select({
       id: assets.id,
       kind: assets.kind,
       displayName: assets.displayName,
       mimeType: assets.mimeType,
       sizeBytes: assets.sizeBytes,
+      renditionStatus: assets.renditionStatus,
+      renditionVersion: assets.renditionVersion,
     })
     .from(assets)
     .where(and(...conditions))
     .orderBy(desc(assets.createdAt))
     .limit(limit);
+
+  return rows.map(toPickerAsset);
 }
 
 export async function listPublicAssetsForPickerAction(input: {
@@ -85,16 +92,39 @@ export async function listPublicAssetsForPickerAction(input: {
     );
   }
 
-  return db
+  const rows = await db
     .select({
       id: assets.id,
       kind: assets.kind,
       displayName: assets.displayName,
       mimeType: assets.mimeType,
       sizeBytes: assets.sizeBytes,
+      renditionStatus: assets.renditionStatus,
+      renditionVersion: assets.renditionVersion,
     })
     .from(assets)
     .where(and(...conditions))
     .orderBy(desc(assets.publishedAt), desc(assets.createdAt))
     .limit(limit);
+
+  return rows.map(toPickerAsset);
+}
+
+function toPickerAsset(row: {
+  id: string;
+  kind: AssetKind;
+  displayName: string;
+  mimeType: string;
+  sizeBytes: number;
+  renditionStatus: "none" | "ready" | "failed";
+  renditionVersion: number | null;
+}): PickerAsset {
+  return {
+    id: row.id,
+    kind: row.kind,
+    displayName: row.displayName,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    thumbUrl: buildAssetRenditionUrls(row).thumbUrl,
+  };
 }

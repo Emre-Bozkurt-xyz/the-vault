@@ -50,8 +50,9 @@ export function AssetMaintenancePanel({
             Last run {ranAt.toLocaleString()} ({result.trigger === "manual" ? "manual" : "scheduled"},{" "}
             {(result.durationMs / 1000).toFixed(1)}s)
           </p>
-          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Stat label="Bin items deleted" value={result.binPurged ?? 0} />
+            <Stat label="Thumbnails made" value={result.renditionsGenerated ?? 0} />
             <Stat label="Records purged" value={result.purgedRows} />
             <Stat label="Files checked" value={result.scannedObjects} />
             <Stat label="Orphans removed" value={result.deletedObjects} />

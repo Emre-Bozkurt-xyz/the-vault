@@ -46,6 +46,12 @@ export type AssetVisibility = "private" | "public";
  * assets without knowing the Bin exists.
  */
 export type AssetStatus = "pending" | "ready" | "trashed" | "failed" | "deleted";
+/**
+ * Thumbnail/display renditions (`lib/asset-renditions.ts`). `none` until the
+ * first attempt; `ready`/`failed` always carry the `rendition_version` they
+ * were made with, so bumping `RENDITION_VERSION` regenerates everything.
+ */
+export type AssetRenditionStatus = "none" | "ready" | "failed";
 export type TagCategory =
   | "general"
   | "topic"
@@ -683,9 +689,15 @@ export const assets = pgTable(
     detectedMimeType: text("detected_mime_type").notNull(),
     fileExtension: text("file_extension").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    /** Pixel size after EXIF orientation; filled when renditions are made. */
     width: integer("width"),
     height: integer("height"),
     kind: text("kind").$type<AssetKind>().notNull(),
+    renditionStatus: text("rendition_status")
+      .$type<AssetRenditionStatus>()
+      .notNull()
+      .default("none"),
+    renditionVersion: integer("rendition_version"),
     visibility: text("visibility").$type<AssetVisibility>().notNull().default("private"),
     status: text("status").$type<AssetStatus>().notNull().default("pending"),
     checksumSha256: text("checksum_sha256"),

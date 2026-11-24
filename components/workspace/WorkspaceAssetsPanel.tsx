@@ -14,6 +14,7 @@ import {
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { assetTypeLabel } from "@/components/assets/asset-ui";
+import { RenditionImage } from "@/components/assets/RenditionImage";
 import { UploadProgressList } from "@/components/assets/UploadProgressList";
 import { useAssetUploads } from "@/components/assets/useAssetUploads";
 import {
@@ -29,7 +30,6 @@ import {
 import { dispatchAssetsChanged, subscribeToAssetsChanged } from "@/lib/asset-events";
 import { requestOpenRightPanel } from "@/lib/document-command-events";
 import { formatBytes } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { useVisibleRefresh } from "@/components/workspace/panel-visibility";
 import { fetchAssetLibrary } from "@/lib/shared-request";
 
@@ -39,7 +39,7 @@ const FILTER_KEYS = ["kind", "visibility", "view"];
 
 type RecentAsset = Pick<
   AssetLibraryItem,
-  "id" | "kind" | "displayName" | "sizeBytes" | "mimeType" | "createdAt" | "url"
+  "id" | "kind" | "displayName" | "sizeBytes" | "mimeType" | "createdAt" | "url" | "thumbUrl"
 >;
 
 /** `GET /api/assets?view=summary`. */
@@ -225,19 +225,21 @@ export function WorkspaceAssetsPanel() {
 function AssetThumb({ asset }: { asset: RecentAsset }) {
   const frame = "grid size-8 shrink-0 place-items-center overflow-hidden rounded border border-border/60 bg-muted/60";
 
-  if (asset.kind === "image") {
-    return (
-      <span className={frame}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={asset.url} alt="" className="size-full object-cover" loading="lazy" />
-      </span>
-    );
-  }
+  const Icon = asset.kind === "pdf" ? FileText : asset.kind === "image" ? ImageIcon : FileIcon;
+  const icon = <Icon className="size-4 text-muted-foreground" />;
 
-  const Icon = asset.kind === "pdf" ? FileText : FileIcon;
   return (
-    <span className={cn(frame, "text-muted-foreground")}>
-      <Icon className="size-4" />
+    <span className={frame}>
+      {asset.kind === "image" ? (
+        <RenditionImage
+          src={asset.thumbUrl}
+          alt=""
+          className="size-full object-cover"
+          fallback={icon}
+        />
+      ) : (
+        icon
+      )}
     </span>
   );
 }

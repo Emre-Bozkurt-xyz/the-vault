@@ -22,6 +22,7 @@ import {
   listUserAssetsForPickerAction,
   type PickerAsset,
 } from "@/server/asset-picker-actions";
+import { RenditionImage } from "@/components/assets/RenditionImage";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -334,12 +335,15 @@ function ImageTile({
       onClick={() => onSelect(asset)}
       className="group relative aspect-square overflow-hidden rounded border border-border/50 bg-muted/40 transition hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`/api/assets/${asset.id}/content`}
+      <RenditionImage
+        src={asset.thumbUrl}
         alt={asset.displayName}
         className="h-full w-full object-cover transition group-hover:scale-[1.03]"
-        loading="lazy"
+        fallback={
+          <span className="grid h-full w-full place-items-center text-muted-foreground">
+            <ImageIcon className="size-6" />
+          </span>
+        }
       />
       <span className="absolute inset-x-0 bottom-0 translate-y-full bg-black/65 px-1.5 py-1 text-[0.65rem] leading-tight text-white transition-transform group-hover:translate-y-0">
         {asset.displayName}

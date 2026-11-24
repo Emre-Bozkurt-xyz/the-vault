@@ -720,7 +720,7 @@ Plan: `docs/26_MEDIA_LIBRARY_AND_FOLDERS_PLAN.md` (2026-11-23). Separate media f
 |---|---|---|
 | [x] | Plan and decisions | 2026-11-23. Separate media tree (not mixed with document folders); share links are anyone-with-the-link, revocable, optional expiry, download toggle; Bin is a `trashed` status, 30 days, counted against quota |
 | [x] | Slice 1 - Bin | 2026-11-23. `trashed` status + `assets.trashed_at` (migration 0032, applied locally), restore/delete forever/Empty Bin/bulk APIs, 30-day purge in daily maintenance, `/assets?view=bin`, Move to Bin with Undo. Verified with unit, real-Postgres integration and Chromium checks; not yet run against real R2 |
-| [ ] | Slice 2 - Thumbnails and display renditions | `sharp`, rendition keys taught to the orphan sweep first |
+| [x] | Slice 2 - Thumbnails and display renditions | 2026-11-23. `sharp` WebP thumb/display renditions (EXIF-oriented, metadata stripped), migration 0033 (applied locally), upload-time + lazy + daily backfill rendering, sweep- and reconcile-aware versioned keys, all asset grids switched over. Verified with unit, real-Postgres and Chromium (local MinIO) checks and in the production image; not yet run against real R2 |
 | [ ] | Slice 3 - Folders | `asset_folders`, breadcrumbs, side-panel tree, move, upload/drop into folder |
 | [ ] | Slice 4 - View formats, selection, viewer, pagination | Masonry default; grid, list, details; bulk bar; full-screen viewer |
 | [ ] | Slice 5 - Video | `video` kind and cap, browser-captured posters, inline playback |

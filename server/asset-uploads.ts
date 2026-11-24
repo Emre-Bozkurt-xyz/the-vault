@@ -32,6 +32,7 @@ import {
   sanitizeFilename,
   type ActiveAssetUser,
 } from "@/server/assets";
+import { scheduleRenditionsAfterUpload } from "@/server/asset-renditions";
 import { canEditDocumentWithOptionalShareLink } from "@/server/documents-data";
 
 /**
@@ -273,6 +274,12 @@ export async function completeDirectUpload(input: { userId: string; uploadId: st
       assetId: upload.assetId,
       linkedBy: input.userId,
     });
+  }
+
+  if (upload.kind === "image") {
+    // Read back from storage after the response; large camera files are
+    // exactly what thumbnails are for.
+    scheduleRenditionsAfterUpload(upload.assetId);
   }
 
   return {

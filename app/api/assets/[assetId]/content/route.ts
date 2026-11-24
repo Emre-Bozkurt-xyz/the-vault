@@ -2,9 +2,20 @@ import { Readable } from "node:stream";
 
 import { NextResponse } from "next/server";
 
-import type { AssetKind } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+import { db } from "@/db";
+import { assets, type AssetKind } from "@/db/schema";
 import { assetDeliveryHeaders } from "@/lib/asset-delivery";
+import {
+  RENDITION_VERSION,
+  isRenditionName,
+  renditionKey,
+  supportsRenditions,
+  type RenditionName,
+} from "@/lib/asset-renditions";
 import { getAssetObject } from "@/lib/storage/r2";
+import { ensureRenditions } from "@/server/asset-renditions";
 import {
   getOptionalAssetUserForContentRequest,
   getReadableAsset,
@@ -48,6 +59,13 @@ async function serveAsset(
 
   if (!asset) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  // `?r=thumb|display`: a rendition, behind exactly the same permission
+  // check as the original above.
+  const rendition = url.searchParams.get("r");
+  if (rendition !== null) {
+    return serveRendition(asset, rendition, headOnly);
   }
 
   const range = parseRangeHeader(request.headers.get("range"), asset.sizeBytes);
@@ -95,6 +113,76 @@ async function serveAsset(
     status: range?.status === "ok" ? 206 : 200,
     headers,
   });
+}
+
+type ReadableAsset = NonNullable<Awaited<ReturnType<typeof getReadableAsset>>>;
+
+/**
+ * Serves a thumbnail or display copy, rendering it first if this image has
+ * none yet. 404 when the asset has no renditions (not an image, or rendering
+ * failed); 503 when storage failed, so nothing is recorded as broken.
+ */
+async function serveRendition(asset: ReadableAsset, name: string, headOnly: boolean) {
+  if (!isRenditionName(name) || !supportsRenditions(asset)) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  let available: boolean;
+  try {
+    available = await ensureRenditions(asset);
+  } catch (error) {
+    console.error("[asset-renditions] render on request failed", { assetId: asset.id, error });
+    return NextResponse.json(
+      { error: "Try again shortly." },
+      { status: 503, headers: { "Retry-After": "30" } },
+    );
+  }
+
+  if (!available) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  const key = renditionKey({
+    ownerId: asset.ownerId,
+    assetId: asset.id,
+    version: RENDITION_VERSION,
+    name,
+  });
+  const object = await getAssetObject(key).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "NoSuchKey") return null;
+    throw error;
+  });
+
+  if (!object?.Body) {
+    // The row says ready but the object is gone (manual bucket cleanup): mark
+    // it unrendered so the next request renders it again.
+    await db
+      .update(assets)
+      .set({ renditionStatus: "none" })
+      .where(eq(assets.id, asset.id));
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  const headers = new Headers({
+    "Content-Type": "image/webp",
+    "Content-Disposition": `inline; filename="${renditionFilename(name)}"`,
+    "X-Content-Type-Options": "nosniff",
+    // The URL carries the version and the bytes behind it never change, so
+    // browsers may keep it; private assets stay out of shared caches.
+    "Cache-Control":
+      asset.visibility === "public"
+        ? `public, max-age=${readPositiveIntEnv("ASSET_PUBLIC_CACHE_SECONDS", 3600)}, stale-while-revalidate=86400`
+        : "private, max-age=3600",
+  });
+  if (typeof object.ContentLength === "number") {
+    headers.set("Content-Length", String(object.ContentLength));
+  }
+
+  return new Response(headOnly ? null : toWebStream(object.Body), { status: 200, headers });
+}
+
+function renditionFilename(name: RenditionName) {
+  return `${name}.webp`;
 }
 
 function buildHeaders(asset: {

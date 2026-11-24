@@ -7,6 +7,9 @@ import {
 } from "@aws-sdk/client-s3";
 import postgres from "postgres";
 
+/** Rendition names from lib/asset-renditions.ts (RENDITIONS). */
+const RENDITION_NAMES = ["thumb", "display"];
+
 const args = new Set(process.argv.slice(2));
 const repairQuota = args.has("--repair-quota");
 const deleteOrphans = args.has("--delete-orphans");
@@ -42,6 +45,17 @@ try {
     listR2Keys(),
   ]);
   const assetKeys = new Set(assetRows.map((asset) => asset.storage_key));
+  // Current renditions are referenced too (mirrors isReferencedRenditionKey in
+  // lib/asset-renditions.ts: same key layout and names; keep them in step).
+  for (const asset of assetRows) {
+    if (asset.rendition_status === "ready" && asset.rendition_version !== null) {
+      for (const name of RENDITION_NAMES) {
+        assetKeys.add(
+          `users/${asset.owner_id}/renditions/${asset.id}/v${asset.rendition_version}/${name}.webp`,
+        );
+      }
+    }
+  }
   // A pending upload has no object until it completes, so it is never "missing".
   const missingObjects = assetRows.filter(
     (asset) => asset.status !== "pending" && !r2Keys.has(asset.storage_key),
@@ -119,7 +133,7 @@ try {
 
 async function readAssetRows() {
   return sql`
-    select id, status, storage_key, size_bytes
+    select id, owner_id, status, storage_key, size_bytes, rendition_status, rendition_version
     from assets
     -- Binned assets keep their bytes until purge; pending ones are mid-upload.
     -- Either way their objects are not orphans.

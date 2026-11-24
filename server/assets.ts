@@ -25,8 +25,10 @@ import {
   tags,
   users,
   type AssetKind,
+  type AssetRenditionStatus,
 } from "@/db/schema";
 import { fileExtensionFromName } from "@/lib/asset-delivery";
+import { RENDITION_VERSION, supportsRenditions } from "@/lib/asset-renditions";
 import {
   STORED_ASSET_STATUSES,
   binPurgeAt,
@@ -46,6 +48,7 @@ import { isUserBanActive } from "@/server/authz";
 import { syncAssetTags } from "@/server/content-metadata";
 import { getUploadLimits } from "@/server/deployment-settings";
 import { getAssetContentStats } from "@/server/content-interactions";
+import { deleteRenditionObjects, scheduleRenditionsAfterUpload } from "@/server/asset-renditions";
 
 const ALLOWED_MIME_TYPES: Record<string, { kind: AssetKind; extension: string }> = {
   "image/png": { kind: "image", extension: "png" },
@@ -312,6 +315,51 @@ export function buildAssetContentUrl(
   return `${basePath.replace(/\/$/, "")}/${assetId}/content${query ? `?${query}` : ""}`;
 }
 
+/**
+ * Columns every asset list selects so the client can show renditions: the
+ * displayed pixel size (reserves masonry space before the image loads) and the
+ * rendition state behind {@link buildAssetRenditionUrls}.
+ */
+const assetMediaColumns = {
+  width: assets.width,
+  height: assets.height,
+  renditionStatus: assets.renditionStatus,
+  renditionVersion: assets.renditionVersion,
+};
+
+/**
+ * Thumbnail and display URLs for an image asset, or nulls when it has none:
+ * not a decodable image, or rendering failed for the current version. They
+ * point at the permission-checked content route (`?r=`), which renders on the
+ * first request if the upload-time render has not happened yet. `v` changes
+ * with `RENDITION_VERSION`, so caches never serve an old rendition.
+ */
+export function buildAssetRenditionUrls(
+  asset: {
+    id: string;
+    kind: string;
+    mimeType: string;
+    renditionStatus: AssetRenditionStatus;
+    renditionVersion: number | null;
+  },
+  documentId?: string | null,
+  embedSessionToken?: string | null,
+) {
+  const failed =
+    asset.renditionStatus === "failed" && asset.renditionVersion === RENDITION_VERSION;
+
+  if (!supportsRenditions(asset) || failed) {
+    return { thumbUrl: null, displayUrl: null };
+  }
+
+  const base = buildAssetContentUrl(asset.id, documentId, embedSessionToken);
+  const join = base.includes("?") ? "&" : "?";
+  return {
+    thumbUrl: `${base}${join}r=thumb&v=${RENDITION_VERSION}`,
+    displayUrl: `${base}${join}r=display&v=${RENDITION_VERSION}`,
+  };
+}
+
 export async function createUploadedAsset(input: {
   userId: string;
   file: File;
@@ -364,6 +412,10 @@ export async function createUploadedAsset(input: {
       .update(assets)
       .set({ status: "ready", updatedAt: new Date() })
       .where(eq(assets.id, assetId));
+
+    if (validation.kind === "image") {
+      scheduleRenditionsAfterUpload(assetId, buffer);
+    }
 
     if (input.documentId) {
       await linkAssetToDocument({
@@ -622,6 +674,7 @@ export async function listAssetsForUser(userId: string) {
       sizeBytes: assets.sizeBytes,
       visibility: assets.visibility,
       createdAt: assets.createdAt,
+      ...assetMediaColumns,
     })
     .from(assets)
     .where(
@@ -635,6 +688,7 @@ export async function listAssetsForUser(userId: string) {
     ...asset,
     tags: tagMap.get(asset.id) ?? [],
     url: buildAssetContentUrl(asset.id),
+    ...buildAssetRenditionUrls(asset),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   }));
 }
@@ -675,6 +729,7 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
         sizeBytes: assets.sizeBytes,
         mimeType: assets.mimeType,
         createdAt: assets.createdAt,
+        ...assetMediaColumns,
       })
       .from(assets)
       .where(scope)
@@ -688,6 +743,7 @@ export async function summarizeAssetsForUser(userId: string, recentCount: number
     recent: recentRows.map((asset) => ({
       ...asset,
       url: buildAssetContentUrl(asset.id),
+      ...buildAssetRenditionUrls(asset),
     })),
   };
 }
@@ -715,6 +771,7 @@ export async function listPublicAssets(
       sizeBytes: assets.sizeBytes,
       visibility: assets.visibility,
       createdAt: assets.createdAt,
+      ...assetMediaColumns,
       ownerName: users.name,
       ownerUsername: users.username,
     })
@@ -752,6 +809,7 @@ export async function listPublicAssets(
       trendingScore: 0,
     },
     url: buildAssetContentUrl(asset.id),
+    ...buildAssetRenditionUrls(asset),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   }));
 }
@@ -896,6 +954,7 @@ export async function updateAssetForUser(input: {
       sizeBytes: assets.sizeBytes,
       visibility: assets.visibility,
       createdAt: assets.createdAt,
+      ...assetMediaColumns,
     });
 
   if (!asset) {
@@ -913,6 +972,7 @@ export async function updateAssetForUser(input: {
     ...asset,
     tags: await listTagsForAssetId(asset.id),
     url: buildAssetContentUrl(asset.id),
+    ...buildAssetRenditionUrls(asset),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   };
 }
@@ -929,6 +989,7 @@ export async function getAssetForUser(userId: string, assetId: string) {
       sizeBytes: assets.sizeBytes,
       visibility: assets.visibility,
       createdAt: assets.createdAt,
+      ...assetMediaColumns,
     })
     .from(assets)
     .where(
@@ -949,6 +1010,7 @@ export async function getAssetForUser(userId: string, assetId: string) {
     ...asset,
     tags: await listTagsForAssetId(asset.id),
     url: buildAssetContentUrl(asset.id),
+    ...buildAssetRenditionUrls(asset),
     markdown: buildAssetMarkdown(asset.id, asset.displayName),
   };
 }
@@ -1114,6 +1176,8 @@ async function permanentlyDeleteAssets(
         ownerId: assets.ownerId,
         storageKey: assets.storageKey,
         sizeBytes: assets.sizeBytes,
+        renditionStatus: assets.renditionStatus,
+        renditionVersion: assets.renditionVersion,
       });
 
     if (rows.length === 0) return rows;
@@ -1158,6 +1222,16 @@ async function permanentlyDeleteAssets(
     });
   }
 
+  for (const row of deleted) {
+    if (row.renditionStatus === "ready" && row.renditionVersion !== null) {
+      await deleteRenditionObjects({
+        ownerId: row.ownerId,
+        assetId: row.id,
+        version: row.renditionVersion,
+      });
+    }
+  }
+
   return deleted.map((row) => ({ id: row.id, sizeBytes: row.sizeBytes }));
 }
 
@@ -1174,6 +1248,7 @@ export async function listBinAssetsForUser(userId: string) {
       sizeBytes: assets.sizeBytes,
       visibility: assets.visibility,
       createdAt: assets.createdAt,
+      ...assetMediaColumns,
       trashedAt: assets.trashedAt,
     })
     .from(assets)
@@ -1191,6 +1266,7 @@ export async function listBinAssetsForUser(userId: string) {
       tags: [] as string[],
       // The content route lets the owner read binned bytes, so previews work.
       url: buildAssetContentUrl(asset.id),
+    ...buildAssetRenditionUrls(asset),
       markdown: buildAssetMarkdown(asset.id, asset.displayName),
     };
   });
@@ -1383,6 +1459,8 @@ export async function getReadableAsset(input: {
       visibility: assets.visibility,
       status: assets.status,
       deletedAt: assets.deletedAt,
+      renditionStatus: assets.renditionStatus,
+      renditionVersion: assets.renditionVersion,
     })
     .from(assets)
     .where(eq(assets.id, input.assetId))

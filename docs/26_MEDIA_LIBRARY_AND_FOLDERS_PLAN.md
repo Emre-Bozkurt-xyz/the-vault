@@ -4,7 +4,7 @@ Date: 2026-11-23. Tracker: Phase 28. Builds on
 `docs/11_ASSET_STORAGE_AND_LIBRARY_PLAN.md` (storage, access model, embeds),
 which stays authoritative for everything this plan does not change.
 
-**Status: plan agreed 2026-11-23; slice 1 (Bin) implemented — see §12.**
+**Status: plan agreed 2026-11-23; slices 1 (Bin) and 2 (renditions) implemented — see §12.**
 
 ## 1. Goal
 
@@ -127,20 +127,26 @@ target; regenerating revokes the old token.
 
 ### 4.4 Renditions (slice 2)
 
-`assets` gains `thumb_status text` (`none|ready|failed|unsupported`),
-`width`/`height` (exist), `taken_at timestamptz` (EXIF), `duration_ms`.
-Objects live beside the original:
+As shipped in slice 2 (migration `0033`): `assets.rendition_status`
+(`none|ready|failed`) and `assets.rendition_version`; `width`/`height` are now
+filled with the displayed (EXIF-oriented) size. `taken_at` (EXIF date, slice 4)
+and `duration_ms` (video, slice 5) are still to come. Objects live beside the
+original, versioned so a format change regenerates rather than migrates:
 
 ```txt
-users/<uid>/assets/<assetId>.<ext>        original (existing)
-users/<uid>/renditions/<assetId>/t480.webp   grid thumbnail
-users/<uid>/renditions/<assetId>/d2048.webp  viewer/display size
-users/<uid>/renditions/<assetId>/poster.webp video poster
+users/<uid>/assets/<assetId>.<ext>                 original
+users/<uid>/renditions/<assetId>/v<N>/thumb.webp     ≤640×1920, grids
+users/<uid>/renditions/<assetId>/v<N>/display.webp   ≤2048×2048, panel/viewer
+users/<uid>/renditions/<assetId>/v<N>/poster.webp    video poster (slice 5)
 ```
 
-The orphan sweep treats a `renditions/<assetId>/…` key as referenced while
-asset `<assetId>` is `ready`, `pending` or `trashed` (pure rule in
-`lib/asset-maintenance.ts`, tested). Purging an asset deletes its renditions.
+A rendition key is referenced only while its asset is `ready`, `pending` or
+`trashed`, owned by the user in the path, and records that exact version as
+`ready` (`isReferencedRenditionKey` in `lib/asset-renditions.ts`, tested);
+everything else is swept. Deleting an asset for good deletes its renditions.
+Renditions do not count toward quota. They are served by the original's
+content route with `?r=thumb|display&v=<N>`, behind the same permission check,
+and render on first request if the upload-time render has not happened.
 
 ## 5. Bin (slice 1)
 
@@ -263,7 +269,7 @@ The suite today is pure unit tests (vitest, no database). This plan adds:
 | # | Slice | Status |
 |---|---|---|
 | 1 | Bin: `trashed` status, API, purge in maintenance, Bin view, Undo | Implemented 2026-11-23 |
-| 2 | Thumbnails and display renditions; sweep-aware keys | Not started |
+| 2 | Thumbnails and display renditions; sweep-aware keys | Implemented 2026-11-23 |
 | 3 | Folders: schema, API, breadcrumbs, side-panel tree, move, upload into folder, folder drop | Not started |
 | 4 | View formats, selection and bulk bar, full-screen viewer, pagination | Not started |
 | 5 | Video kind, posters, playback | Not started |

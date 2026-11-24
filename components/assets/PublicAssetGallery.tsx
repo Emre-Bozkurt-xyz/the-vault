@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
+import { RenditionImage } from "@/components/assets/RenditionImage";
 import {
   assetExtensionBadge,
   assetTypeLabel,
@@ -46,6 +47,10 @@ export type PublicGalleryAsset = {
   ownerUsername: string | null;
   tags: string[];
   url: string;
+  thumbUrl: string | null;
+  displayUrl: string | null;
+  width: number | null;
+  height: number | null;
   markdown: string;
   stats: {
     likeCount: number;
@@ -157,14 +162,13 @@ export function PublicAssetGallery({
                       : "border-border/70",
                   )}
                 >
-                  {asset.kind === "image" ? (
+                  {asset.kind === "image" && asset.thumbUrl ? (
                     <span className="block bg-muted">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={asset.url}
+                      <RenditionImage
+                        src={asset.thumbUrl}
                         alt={asset.altText ?? asset.displayName}
                         className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]"
-                        loading="lazy"
+                        fallback={<span className="block aspect-[4/3] w-full" />}
                       />
                     </span>
                   ) : (

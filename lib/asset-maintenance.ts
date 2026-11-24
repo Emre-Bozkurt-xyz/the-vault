@@ -1,3 +1,8 @@
+import {
+  isReferencedRenditionKey,
+  type RenditionOwnerRecord,
+} from "@/lib/asset-renditions";
+
 /**
  * Pure parts of the daily asset cleanup (`server/asset-maintenance.ts`), kept
  * here so the rules that decide what gets deleted are unit-tested.
@@ -16,6 +21,11 @@ export type AssetMaintenanceResult = {
   purgedRows: number;
   /** Bucket objects examined under `ASSET_KEY_PREFIX`. */
   scannedObjects: number;
+  /**
+   * Missing thumbnails/display copies generated for older images. Absent on
+   * results stored before renditions existed.
+   */
+  renditionsGenerated?: number;
   /** Objects removed because no live asset references them. */
   deletedObjects: number;
   /** Orphans whose delete failed; retried on the next run. */
@@ -35,7 +45,13 @@ export type AssetMaintenanceResult = {
  */
 export function selectOrphanKeys(input: {
   objects: { key: string; lastModified: Date | null }[];
+  /** Original object keys of every asset whose bytes must survive. */
   referencedKeys: ReadonlySet<string>;
+  /**
+   * The same assets by id, for their renditions (`users/<owner>/renditions/…`):
+   * a rendition survives only at the version its asset records as ready.
+   */
+  liveRenditions: ReadonlyMap<string, RenditionOwnerRecord>;
   now: Date;
   graceMs: number;
 }) {
@@ -46,6 +62,7 @@ export function selectOrphanKeys(input: {
       (object) =>
         object.key.startsWith(ASSET_KEY_PREFIX) &&
         !input.referencedKeys.has(object.key) &&
+        !isReferencedRenditionKey(object.key, input.liveRenditions) &&
         object.lastModified !== null &&
         object.lastModified.getTime() < cutoff,
     )

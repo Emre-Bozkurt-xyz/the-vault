@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 
 import { AssetActionsMenu } from "@/components/assets/AssetActionsMenu";
+import { RenditionImage } from "@/components/assets/RenditionImage";
 import { moveAssetsToBin } from "@/components/assets/asset-bin-actions";
 import {
   assetExtensionBadge,
@@ -80,9 +81,19 @@ export type AssetLibraryItem = {
   visibility: "private" | "public";
   createdAt: Date | string;
   tags: string[];
+  /** The original. Open, download and copy-link use it; grids never do. */
   url: string;
+  /** Grid-sized WebP (`?r=thumb`), or null when the asset has no renditions. */
+  thumbUrl: string | null;
+  /** Panel/viewer-sized WebP (`?r=display`), or null likewise. */
+  displayUrl: string | null;
+  /** Displayed pixel size, once known (filled when renditions are made). */
+  width: number | null;
+  height: number | null;
   markdown: string;
 };
+
+type MediaFields = "kind" | "altText" | "displayName" | "mimeType" | "width" | "height";
 
 type AssetDraft = {
   displayName: string;
@@ -728,44 +739,48 @@ function AssetConfigurePanel({
 export function AssetThumbnail({
   asset,
 }: {
-  asset: Pick<AssetLibraryItem, "kind" | "url" | "altText" | "displayName" | "mimeType">;
+  asset: Pick<AssetLibraryItem, MediaFields | "thumbUrl">;
 }) {
-  if (asset.kind === "image") {
-    return (
-      <span className="block bg-muted">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={asset.url}
-          alt={asset.altText ?? asset.displayName}
-          className="h-auto w-full object-cover"
-          loading="lazy"
-        />
-      </span>
-    );
-  }
+  const tile = <FileTile asset={asset} className="aspect-[4/3]" />;
 
-  return <FileTile asset={asset} className="aspect-[4/3]" />;
+  if (asset.kind !== "image") return tile;
+
+  return (
+    <span className="block bg-muted">
+      <RenditionImage
+        src={asset.thumbUrl}
+        alt={asset.altText ?? asset.displayName}
+        width={asset.width}
+        height={asset.height}
+        className="h-auto w-full object-cover"
+        fallback={tile}
+      />
+    </span>
+  );
 }
 
 export function AssetPreview({
   asset,
 }: {
-  asset: Pick<AssetLibraryItem, "kind" | "url" | "altText" | "displayName" | "mimeType">;
+  asset: Pick<AssetLibraryItem, MediaFields | "displayUrl">;
 }) {
-  if (asset.kind === "image") {
-    return (
-      <div className="grid max-h-64 place-items-center overflow-hidden rounded-md border border-border/60 bg-muted/40">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={asset.url}
-          alt={asset.altText ?? asset.displayName}
-          className="max-h-64 w-full object-contain"
-        />
-      </div>
-    );
-  }
+  const tile = <FileTile asset={asset} className="h-36 rounded-md border border-border/60" />;
 
-  return <FileTile asset={asset} className="h-36 rounded-md border border-border/60" />;
+  if (asset.kind !== "image") return tile;
+
+  return (
+    <div className="grid max-h-64 place-items-center overflow-hidden rounded-md border border-border/60 bg-muted/40">
+      <RenditionImage
+        src={asset.displayUrl}
+        alt={asset.altText ?? asset.displayName}
+        width={asset.width}
+        height={asset.height}
+        className="max-h-64 w-full object-contain"
+        loading="eager"
+        fallback={tile}
+      />
+    </div>
+  );
 }
 
 function FileTile({

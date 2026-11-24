@@ -13,6 +13,7 @@ import {
 import { ASSET_LIMITS } from "@/lib/config/asset-limits";
 import { deleteAssetObject, listAssetObjects } from "@/lib/storage/r2";
 import { purgeExpiredBinAssets } from "@/server/assets";
+import { backfillRenditions } from "@/server/asset-renditions";
 
 /**
  * Daily asset cleanup. This run:
@@ -23,8 +24,11 @@ import { purgeExpiredBinAssets } from "@/server/assets";
  *    (their tags, links and view counts cascade); and
  * 3. lists the bucket under `users/` and deletes objects that no `ready`,
  *    `pending` or `trashed` asset references and that are older than
- *    `orphanGraceMs` — failed deletes, deleted accounts' files, and
- *    single-request uploads that died after writing.
+ *    `orphanGraceMs` — failed deletes, deleted accounts' files, single-request
+ *    uploads that died after writing, and renditions of purged assets or of a
+ *    superseded `RENDITION_VERSION`; then
+ * 4. renders thumbnails for images that have none yet (older uploads, or all
+ *    of them after a version bump), a bounded batch per run.
  *
  * A lease on the `deployment_settings` row keeps it to one process at a time;
  * scheduled runs also skip unless the last run is ~a day old.
@@ -36,6 +40,9 @@ const DELETE_CONCURRENCY = 8;
 /** Bin purge batch size, and how many batches one run may take. */
 const BIN_PURGE_BATCH = 200;
 const BIN_PURGE_MAX_BATCHES = 50;
+/** Rendition backfill: images per run, and the most time it may take. */
+const RENDITION_BACKFILL_LIMIT = 300;
+const RENDITION_BACKFILL_MS = 10 * 60 * 1000;
 
 export async function runAssetMaintenance(input: {
   trigger: AssetMaintenanceResult["trigger"];
@@ -50,6 +57,7 @@ export async function runAssetMaintenance(input: {
   const startedAt = Date.now();
   const result: AssetMaintenanceResult = {
     binPurged: 0,
+    renditionsGenerated: 0,
     purgedRows: 0,
     scannedObjects: 0,
     deletedObjects: 0,
@@ -62,18 +70,27 @@ export async function runAssetMaintenance(input: {
     result.binPurged = await purgeExpiredBin(now);
     result.purgedRows = await purgeExpiredRows(now);
 
-    // List first, then read references: a row is always inserted before its
-    // object is written, so nothing listed can be missing from the read.
+    // List first, then read references: an asset row is always inserted
+    // before its object is written, so no listed original can be missing from
+    // the read. Renditions are written before their row says `ready`; the
+    // grace period is what covers one listed mid-render.
     const objects = await listAssetObjects(ASSET_KEY_PREFIX);
     result.scannedObjects = objects.length;
 
     const live = await db
-      .select({ storageKey: assets.storageKey })
+      .select({
+        id: assets.id,
+        ownerId: assets.ownerId,
+        storageKey: assets.storageKey,
+        renditionStatus: assets.renditionStatus,
+        renditionVersion: assets.renditionVersion,
+      })
       .from(assets)
       .where(inArray(assets.status, [...REFERENCED_ASSET_STATUSES]));
     const orphans = selectOrphanKeys({
       objects,
       referencedKeys: new Set(live.map((row) => row.storageKey)),
+      liveRenditions: new Map(live.map((row) => [row.id, row])),
       now,
       graceMs: ASSET_LIMITS.orphanGraceMs,
     });
@@ -87,6 +104,11 @@ export async function runAssetMaintenance(input: {
         else result.failedDeletes += 1;
       }
     }
+
+    result.renditionsGenerated = await backfillRenditions({
+      limit: RENDITION_BACKFILL_LIMIT,
+      deadline: Date.now() + RENDITION_BACKFILL_MS,
+    });
   } catch (error) {
     result.error = error instanceof Error ? error.message : "Asset maintenance failed.";
     console.error("[asset-maintenance] run failed", error);
