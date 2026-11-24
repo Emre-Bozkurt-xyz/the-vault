@@ -91,6 +91,8 @@ import {
 } from "@/components/markdown/slash-commands";
 import { BacklinksChip } from "@/components/markdown/DocumentBacklinks";
 import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
+import { DocumentBoard } from "@/components/markdown/board/DocumentBoard";
+import { isBoardDocument } from "@/lib/board/markdown-board";
 import { linkSelectionWithPastedUrl } from "@/components/markdown/paste-link";
 import { DocumentExcerptPreview } from "@/components/markdown/DocumentExcerptPreview";
 import { showWorkspaceToast } from "@/lib/workspace-toast";
@@ -954,6 +956,32 @@ export function MarkdownEditor({
   // the title. Only the changed lines are rewritten, so collaborators' edits
   // elsewhere are untouched.
   const pageArt = useMemo(() => parseDocumentAppearance(markdownValue), [markdownValue]);
+  // A document whose frontmatter says `view: board` opens as a board (Board |
+  // Source). The editor stays mounted underneath, so board edits go through it
+  // like typing does (collaboration, undo, saving).
+  const isBoard = useMemo(() => isBoardDocument(markdownValue), [markdownValue]);
+  const [boardChosen, setBoardChosen] = useState(true);
+  const boardVisible = isBoard && boardChosen;
+  const replaceMarkdown = useCallback((next: string) => {
+    const current = markdownValueRef.current;
+    if (next === current) return;
+    const view = viewRef.current;
+    if (view && view.state.doc.toString() === current) {
+      let start = 0;
+      while (start < current.length && start < next.length && current[start] === next[start]) start += 1;
+      let endCurrent = current.length;
+      let endNext = next.length;
+      while (endCurrent > start && endNext > start && current[endCurrent - 1] === next[endNext - 1]) {
+        endCurrent -= 1;
+        endNext -= 1;
+      }
+      view.dispatch({ changes: { from: start, to: endCurrent, insert: next.slice(start, endNext) }, userEvent: "input.board" });
+    } else {
+      markdownValueRef.current = next;
+      setMarkdownValue(next);
+      setDirty(true);
+    }
+  }, []);
   const setFrontmatterValue = useCallback(
     (key: "icon" | "cover", value: string | null) => {
       const current = markdownValueRef.current;
@@ -1885,7 +1913,13 @@ export function MarkdownEditor({
       onSubmit={handleSubmit}
       className="vault-editor-canvas min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10"
     >
-      <div className="vault-editor-column relative mx-auto flex min-h-full w-full max-w-[56rem] flex-col gap-5">
+      <div
+        className={cn(
+          "vault-editor-column relative mx-auto flex min-h-full w-full flex-col gap-5",
+          // A board wants the room for its columns; a page keeps its reading width.
+          boardVisible ? "vault-editor-column--board max-w-none" : "max-w-[56rem]",
+        )}
+      >
         <EditorOutline
           markdown={markdownValue}
           mode={editorMode}
@@ -1894,7 +1928,7 @@ export function MarkdownEditor({
           previewRef={readPreviewRef}
         />
         <div className="vault-editor-toolbar-row flex items-center gap-3">
-          {editorMode !== "read" ? (
+          {editorMode !== "read" && !boardVisible ? (
             <div className="min-w-0 flex-1">
               <MarkdownToolbar
                 onFormat={applyFormat}
@@ -1936,7 +1970,8 @@ export function MarkdownEditor({
             <div className="min-w-0 flex-1" />
           )}
           <CollaborationPresence users={presenceUsers} />
-          <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} />
+          {/* Source mode's own views; the board has none. */}
+          {!boardVisible ? <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} /> : null}
         </div>
         <UploadProgressList
           items={assetUploads.items}
@@ -1983,6 +2018,28 @@ export function MarkdownEditor({
           <DocumentFolderPath path={folderPath} />
           {/* Signed-in workspace only: an embed session has no user to ask as. */}
           {!embedSessionToken ? <BacklinksChip documentId={documentId} /> : null}
+          {isBoard ? (
+            <div role="group" aria-label="View" className="ml-auto inline-flex rounded-lg border border-border p-0.5 text-xs">
+              {([["board", "Board"], ["source", "Source"]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={(value === "board") === boardChosen}
+                  onClick={() => {
+                    setBoardChosen(value === "board");
+                    // The board edits through the editor, so it can't sit on Read.
+                    if (value === "board" && editorMode === "read") setEditorMode("live");
+                  }}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 transition",
+                    (value === "board") === boardChosen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         {editorMode === "read" ? (
           <h1 className="vault-editor-title w-full text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl vault-display">
@@ -2044,7 +2101,14 @@ export function MarkdownEditor({
               "min-h-[calc(100svh-18rem)] lg:min-h-[520px]",
             )}
           >
+            {boardVisible ? (
+              <div className="py-4">
+                <DocumentBoard markdown={markdownValue} onChange={replaceMarkdown} />
+              </div>
+            ) : null}
             {editorMode !== "read" ? (
+              // Kept mounted under the board: it carries collaboration and saving.
+              <div className={boardVisible ? "hidden" : undefined}>
               <DocumentCanvas
                 documentId={documentId}
                 snippetCss={snippetCss || null}
@@ -2083,8 +2147,9 @@ export function MarkdownEditor({
                   theme="none"
                 />
               </DocumentCanvas>
+              </div>
             ) : null}
-            {editorMode === "read" ? (
+            {editorMode === "read" && !boardVisible ? (
               <div
                 ref={readPreviewRef}
                 className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8"

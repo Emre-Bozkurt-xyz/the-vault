@@ -1,3 +1,5 @@
+import { DocumentBoard } from "@/components/markdown/board/DocumentBoard";
+import { isBoardDocument } from "@/lib/board/markdown-board";
 import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
 import { parseDocumentAppearance } from "@/lib/content-metadata";
 import { notFound, redirect } from "next/navigation";
@@ -326,12 +328,16 @@ export default async function DocumentPage({
                 snippetCss={readViewSnippetCss}
                 nonce={cspNonce}
               >
+                {isBoardDocument(markdown) ? (
+                  <DocumentBoard markdown={markdown} />
+                ) : (
                 <MarkdownDocument
                   markdown={markdown}
                   wikiLinks={wikiLinks}
                   assetLinks={assetLinks}
                   extensions={documentExtensions}
                 />
+                )}
               </DocumentStyling>
               </ExtensionOverlaySurface>
             </DocumentReadingFrame>

@@ -1,3 +1,5 @@
+import { DocumentBoard } from "@/components/markdown/board/DocumentBoard";
+import { isBoardDocument } from "@/lib/board/markdown-board";
 import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
 import { parseDocumentAppearance } from "@/lib/content-metadata";
 import Link from "next/link";
@@ -156,6 +158,9 @@ export default async function WorkspacePublicDocumentPage({
                 nonce={nonce}
                 authorLabel={ownerHandle ?? ownerName}
               >
+              {isBoardDocument(document.markdown) ? (
+                <DocumentBoard markdown={document.markdown} />
+              ) : (
               <MarkdownDocument
                 markdown={document.markdown}
                 className="vault-public-markdown"
@@ -164,6 +169,7 @@ export default async function WorkspacePublicDocumentPage({
                 contained={false}
                 extensions={documentExtensions}
               />
+              )}
               </DocumentStyling>
             </ExtensionOverlaySurface>
           </DocumentReadingFrame>

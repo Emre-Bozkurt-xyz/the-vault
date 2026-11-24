@@ -3451,6 +3451,11 @@
     width: min(100%, 56rem);
   }
 
+  /* A board document uses the room for its columns. */
+  .vault-editor-column.vault-editor-column--board {
+    width: 100%;
+  }
+
   .vault-document-overlay-host {
     position: relative;
     isolation: isolate;
