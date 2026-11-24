@@ -6,18 +6,31 @@ import { ChevronRight, Download, File as FileIcon, FileText, Film, Folder, Image
 
 import type { AssetLibraryItem } from "@/components/assets/AssetLibraryClient";
 import { formatDuration } from "@/components/assets/MediaItemViews";
+import { MasonryGrid } from "@/components/assets/MasonryGrid";
 import { MediaViewer } from "@/components/assets/MediaViewer";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetTypeLabel } from "@/components/assets/asset-ui";
 import { buttonVariants } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
+import { sharedGalleryColumnCount } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 export type SharedGalleryFolder = { id: string; name: string; files: number; folders: number; href: string };
 
+// Cards: 1px border, the picture, then a two-line caption (px-3 py-2.5).
+const CARD_CHROME = 60;
+const CARD_GAP = 16;
+const FALLBACK_COLUMNS = "columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4";
+
+/** A card's height at a column width, from the stored size (4:3 tile otherwise). */
+function cardHeight(asset: AssetLibraryItem, columnWidth: number) {
+  const pictured = asset.thumbUrl !== null && asset.width && asset.height && asset.width > 0 && asset.height > 0;
+  return columnWidth * (pictured ? asset.height! / asset.width! : 3 / 4) + CARD_CHROME;
+}
+
 /**
  * The public side of a media share link (`/s/<token>`): no workspace, no
- * account, just the shared folder (or file) — subfolders, a masonry grid of
+ * account, just the shared folder (or file): subfolders, a masonry grid of
  * display renditions, the same full-screen viewer as the library, and, when
  * the owner allows it, downloads.
  */
@@ -117,51 +130,24 @@ export function SharedMediaGallery({
       ) : null}
 
       {assets.length > 0 ? (
-        <div
-          className={cn(
-            "min-w-0",
-            singleItem
-              ? "mx-auto w-full max-w-3xl"
-              : "columns-1 gap-4 @sm:columns-2 @2xl:columns-3 @5xl:columns-4",
-          )}
-        >
-          {assets.map((asset, index) => (
-            <button
-              key={asset.id}
-              type="button"
-              onClick={() => setOpen(index)}
-              className="group mb-4 block w-full break-inside-avoid overflow-hidden rounded-md border border-border/70 bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            >
-              <span className="relative block bg-muted">
-                <RenditionImage
-                  src={singleItem ? asset.displayUrl : asset.thumbUrl}
-                  alt={asset.altText ?? asset.displayName}
-                  width={asset.width}
-                  height={asset.height}
-                  className="h-auto w-full object-cover"
-                  fallback={
-                    <span className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                      <KindIcon kind={asset.kind} />
-                      <span className="text-xs">{assetTypeLabel(asset)}</span>
-                    </span>
-                  }
-                />
-                {asset.kind === "video" ? (
-                  <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.7rem] font-medium text-white tabular-nums">
-                    <Play className="size-3 fill-current" aria-hidden />
-                    {asset.durationMs ? formatDuration(asset.durationMs) : "Video"}
-                  </span>
-                ) : null}
-              </span>
-              <span className="block px-3 py-2.5">
-                <span className="block truncate text-sm font-medium">{asset.displayName}</span>
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                  {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+        singleItem ? (
+          <div className="mx-auto w-full min-w-0 max-w-3xl">
+            <SharedCard asset={assets[0]} singleItem onOpen={() => setOpen(0)} />
+          </div>
+        ) : (
+          // Shortest-column masonry, like the library: CSS columns fill top to
+          // bottom and leave the last column short.
+          <MasonryGrid
+            entries={assets.map((asset, index) => ({
+              key: asset.id,
+              estimate: (columnWidth: number) => cardHeight(asset, columnWidth),
+              node: <SharedCard asset={asset} onOpen={() => setOpen(index)} />,
+            }))}
+            columnsFor={sharedGalleryColumnCount}
+            gap={CARD_GAP}
+            fallbackClassName={FALLBACK_COLUMNS}
+          />
+        )
       ) : folders.length === 0 ? (
         <p className="rounded-md border border-dashed border-border/80 px-5 py-12 text-center text-sm text-muted-foreground">
           This folder is empty.
@@ -178,6 +164,52 @@ export function SharedMediaGallery({
         />
       ) : null}
     </div>
+  );
+}
+
+function SharedCard({
+  asset,
+  singleItem = false,
+  onOpen,
+}: {
+  asset: AssetLibraryItem;
+  singleItem?: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group mb-4 block w-full overflow-hidden rounded-md border border-border/70 bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+    >
+      <span className="relative block bg-muted">
+        <RenditionImage
+          src={singleItem ? asset.displayUrl : asset.thumbUrl}
+          alt={asset.altText ?? asset.displayName}
+          width={asset.width}
+          height={asset.height}
+          className="h-auto w-full object-cover"
+          fallback={
+            <span className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 text-muted-foreground">
+              <KindIcon kind={asset.kind} />
+              <span className="text-xs">{assetTypeLabel(asset)}</span>
+            </span>
+          }
+        />
+        {asset.kind === "video" ? (
+          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.7rem] font-medium text-white tabular-nums">
+            <Play className="size-3 fill-current" aria-hidden />
+            {asset.durationMs ? formatDuration(asset.durationMs) : "Video"}
+          </span>
+        ) : null}
+      </span>
+      <span className="block px-3 py-2.5">
+        <span className="block truncate text-sm font-medium">{asset.displayName}</span>
+        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+          {assetTypeLabel(asset)} · {formatBytes(asset.sizeBytes)}
+        </span>
+      </span>
+    </button>
   );
 }
 

@@ -90,7 +90,7 @@ import {
   type MediaView,
 } from "@/lib/media-library";
 import { fetchAssetLibrary } from "@/lib/shared-request";
-import { attachVideoPoster } from "@/lib/video-poster";
+import { attachVideoPoster, requestServerPoster } from "@/lib/video-poster";
 import { setMediaLibraryViewAction } from "@/server/user-settings-actions";
 
 export type AssetLibraryItem = {
@@ -1079,6 +1079,15 @@ export function AssetLibraryClient({
             if (asset.thumbUrl || healedPosters.current.has(asset.id)) return;
             healedPosters.current.add(asset.id);
             void attachVideoPoster(asset.id, video).then((stored) => {
+              if (stored) dispatchAssetsChanged();
+            });
+          }}
+          onVideoUnplayable={(asset) => {
+            // This browser can't decode it (Motion-JPEG MOVs, some HEVC): the
+            // server can still make a poster for the grid.
+            if (asset.thumbUrl || healedPosters.current.has(asset.id)) return;
+            healedPosters.current.add(asset.id);
+            void requestServerPoster(asset.id).then((stored) => {
               if (stored) dispatchAssetsChanged();
             });
           }}

@@ -2,8 +2,6 @@
 
 import {
   useEffect,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -32,10 +30,11 @@ import {
   type FolderItemHandlers,
   type FolderTileData,
 } from "@/components/assets/FolderTiles";
+import { MasonryGrid, type MasonryEntry } from "@/components/assets/MasonryGrid";
 import { RenditionImage } from "@/components/assets/RenditionImage";
 import { assetExtensionBadge, assetTypeLabel } from "@/components/assets/asset-ui";
 import { formatBytes } from "@/lib/format";
-import { masonryColumnCount, packMasonry, type MediaSort, type MediaView } from "@/lib/media-library";
+import { masonryColumnCount, type MediaSort, type MediaView } from "@/lib/media-library";
 import { cn } from "@/lib/utils";
 
 /**
@@ -160,10 +159,8 @@ export function MediaItemView({
 
 /**
  * Masonry with folders as ordinary items: one list (folders first, then
- * files) dealt left to right into the shortest column (`packMasonry`), so a
- * lone folder takes one card's place in the first row rather than a row of
- * its own. Card heights are estimated from stored dimensions, so nothing
- * waits on images loading.
+ * files) in shortest-column order (`MasonryGrid`), so a lone folder takes one
+ * card's place in the first row rather than a row of its own.
  */
 function Masonry({
   assets,
@@ -176,54 +173,30 @@ function Masonry({
   folderHandlers: FolderItemHandlers;
   handlers: MediaItemHandlers;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    // The first callback arrives before paint, so client navigations never
-    // see the fallback. Rounded so sub-pixel jitter doesn't re-pack.
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width / 8) * 8));
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const folderCards = folders.map((folder) => (
-    <div key={`folder:${folder.id}`} className="mb-3 break-inside-avoid">
-      <FolderCard folder={folder} handlers={folderHandlers} />
-    </div>
-  ));
-  const assetCards = assets.map((asset) => (
-    <PhotoCard key={asset.id} asset={asset} square={false} {...handlers} />
-  ));
-  const cards = [...folderCards, ...assetCards];
-
-  const columns = width === null ? null : masonryColumnCount(width);
-  const packed = useMemo(() => {
-    if (width === null || columns === null) return null;
-    const columnWidth = (width - MASONRY_GAP * (columns - 1)) / columns;
-    const heights = [
-      ...folders.map(() => columnWidth),
-      ...assets.map((asset) => masonryCardHeight(asset, columnWidth, handlers.showNames)),
-    ];
-    return packMasonry(heights, columns, MASONRY_GAP);
-  }, [width, columns, folders, assets, handlers.showNames]);
+  const entries: MasonryEntry[] = [
+    ...folders.map((folder) => ({
+      key: `folder:${folder.id}`,
+      estimate: (columnWidth: number) => columnWidth,
+      node: (
+        <div className="mb-3">
+          <FolderCard folder={folder} handlers={folderHandlers} />
+        </div>
+      ),
+    })),
+    ...assets.map((asset) => ({
+      key: asset.id,
+      estimate: (columnWidth: number) => masonryCardHeight(asset, columnWidth, handlers.showNames),
+      node: <PhotoCard asset={asset} square={false} {...handlers} />,
+    })),
+  ];
 
   return (
-    <div ref={ref} className="min-w-0">
-      {packed === null ? (
-        <div className={MASONRY_FALLBACK}>{cards}</div>
-      ) : (
-        <div className="flex items-start gap-3">
-          {packed.map((column, index) => (
-            <div key={index} className="min-w-0 flex-1">
-              {column.map((cardIndex) => cards[cardIndex])}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <MasonryGrid
+      entries={entries}
+      columnsFor={masonryColumnCount}
+      gap={MASONRY_GAP}
+      fallbackClassName={MASONRY_FALLBACK}
+    />
   );
 }
 

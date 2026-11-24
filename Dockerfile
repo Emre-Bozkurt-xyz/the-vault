@@ -14,6 +14,11 @@ FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# ffmpeg/ffprobe: server-made poster frames for videos the uploader's browser
+# can't decode (Motion-JPEG MOVs from older cameras, some HEVC). Optional at
+# runtime: without it those videos just keep an icon tile.
+RUN apk add --no-cache ffmpeg
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 

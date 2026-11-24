@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { after } from "next/server";
 
 import { db } from "@/db";
@@ -14,8 +14,21 @@ import {
   renditionKey,
   supportsRenditions,
 } from "@/lib/asset-renditions";
-import { deleteAssetObject, getAssetObject, putAssetObject } from "@/lib/storage/r2";
+import {
+  deleteAssetObject,
+  getAssetObject,
+  presignAssetDownloadForServer,
+  putAssetObject,
+} from "@/lib/storage/r2";
 import { RenditionDecodeError, renderRenditions } from "@/server/asset-rendition-render";
+import {
+  VideoDecodeError,
+  VideoToolMissingError,
+  canReadVideoType,
+  extractVideoFrame,
+  posterTimeSeconds,
+  probeVideo,
+} from "@/server/video-frames";
 
 /**
  * Thumbnail/display renditions for image assets (docs/26 §4.4, §8). Generated
@@ -251,6 +264,105 @@ export async function storeVideoPoster(input: {
   return true;
 }
 
+/**
+ * A poster for a video made on the server with ffmpeg, for when the
+ * uploader's browser couldn't capture one (a codec it can't decode, such as
+ * Motion-JPEG from older digicams). Shares the rendition queue, so at most two
+ * decodes run at once. Resolves true when a poster was stored. A file ffmpeg
+ * can't read is marked failed for this rendition version (a browser capture
+ * can still replace it later); a missing ffmpeg records nothing, so the
+ * video is retried once it is installed.
+ */
+export function ensureServerVideoPoster(asset: RenditionAsset): Promise<boolean> {
+  if (asset.kind !== "video" || !canReadVideoType(asset.mimeType)) return Promise.resolve(false);
+  if (asset.renditionStatus === "ready") return Promise.resolve(true);
+  if (asset.renditionStatus === "failed" && asset.renditionVersion === RENDITION_VERSION) {
+    return Promise.resolve(false);
+  }
+
+  const key = `poster:${asset.id}`;
+  const existing = queue.inflight.get(key);
+  if (existing) return existing;
+
+  const job = withSlot(() => generateServerVideoPoster(asset)).finally(() => {
+    queue.inflight.delete(key);
+  });
+  queue.inflight.set(key, job);
+  return job;
+}
+
+let warnedMissingTool = false;
+
+async function generateServerVideoPoster(asset: RenditionAsset) {
+  // Long enough for a slow seek into a big file; ffmpeg's own timeout is shorter.
+  const url = await presignAssetDownloadForServer(asset.storageKey, 10 * 60);
+  try {
+    const probe = await probeVideo(url, asset.mimeType).catch((error: unknown) => {
+      if (error instanceof VideoToolMissingError) throw error;
+      // Some files have no readable duration; a frame may still come out.
+      return { durationMs: null, width: null, height: null };
+    });
+    const frame = await extractVideoFrame(url, asset.mimeType, posterTimeSeconds(probe.durationMs));
+    const stored = await storeVideoPoster({
+      asset,
+      bytes: frame,
+      mimeType: "image/png",
+      durationMs: probe.durationMs,
+      width: probe.width,
+      height: probe.height,
+    });
+    if (!stored) await markVideoPosterFailed(asset.id);
+    return stored;
+  } catch (error) {
+    if (error instanceof VideoToolMissingError) {
+      if (!warnedMissingTool) {
+        warnedMissingTool = true;
+        console.warn("[asset-renditions] no server-side video posters:", error.message);
+      }
+      return false;
+    }
+    if (error instanceof VideoDecodeError) {
+      console.warn("[asset-renditions] could not read video", { assetId: asset.id, error: error.message });
+      await markVideoPosterFailed(asset.id);
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** Records a failed server poster, unless a browser stored one meanwhile. */
+async function markVideoPosterFailed(assetId: string) {
+  await db
+    .update(assets)
+    .set({ renditionStatus: "failed", renditionVersion: RENDITION_VERSION })
+    .where(and(eq(assets.id, assetId), eq(assets.kind, "video"), ne(assets.renditionStatus, "ready")));
+}
+
+/**
+ * Starts a server-made poster (the uploader's browser couldn't make one, or
+ * the viewer couldn't play the video) and resolves whether one was stored.
+ * The work outlives the request (`after`), so a caller may stop waiting.
+ */
+export function scheduleServerVideoPoster(assetId: string): Promise<boolean> {
+  const job = (async () => {
+    try {
+      const asset = await loadRenditionAsset(assetId);
+      return asset ? await ensureServerVideoPoster(asset) : false;
+    } catch (error) {
+      // The daily backfill tries again.
+      console.error("[asset-renditions] server video poster failed", { assetId, error });
+      return false;
+    }
+  })();
+
+  try {
+    after(() => job);
+  } catch {
+    // Outside a request: the promise runs on its own.
+  }
+  return job;
+}
+
 async function readObject(key: string) {
   const object = await getAssetObject(key).catch((error: unknown) => {
     if (error instanceof Error && error.name === "NoSuchKey") return null;
@@ -326,19 +438,23 @@ export function scheduleRenditionsAfterUpload(assetId: string, bytes?: Buffer) {
 /**
  * Daily backfill: renders up to `limit` images that have no current renditions
  * (older uploads, or everything after a `RENDITION_VERSION` bump), newest
- * first, stopping at `deadline`. Returns how many were rendered.
+ * first, then, with what is left of `limit`, makes server posters for videos
+ * that never got one (left alone for their first hour, while the uploader's
+ * browser may still be capturing). Stops at `deadline`. Returns how many
+ * were rendered.
  */
 export async function backfillRenditions(input: { limit: number; deadline: number }) {
+  const columns = {
+    id: assets.id,
+    ownerId: assets.ownerId,
+    storageKey: assets.storageKey,
+    kind: assets.kind,
+    mimeType: assets.mimeType,
+    renditionStatus: assets.renditionStatus,
+    renditionVersion: assets.renditionVersion,
+  };
   const candidates = await db
-    .select({
-      id: assets.id,
-      ownerId: assets.ownerId,
-      storageKey: assets.storageKey,
-      kind: assets.kind,
-      mimeType: assets.mimeType,
-      renditionStatus: assets.renditionStatus,
-      renditionVersion: assets.renditionVersion,
-    })
+    .select(columns)
     .from(assets)
     .where(
       and(
@@ -361,6 +477,39 @@ export async function backfillRenditions(input: { limit: number; deadline: numbe
       if (await ensureRenditions(asset)) rendered += 1;
     } catch (error) {
       console.error("[asset-renditions] backfill failed", { assetId: asset.id, error });
+    }
+  }
+
+  const videoLimit = input.limit - candidates.length;
+  if (videoLimit <= 0 || Date.now() > input.deadline) return rendered;
+
+  const videos = await db
+    .select(columns)
+    .from(assets)
+    .where(
+      and(
+        eq(assets.kind, "video"),
+        inArray(assets.status, ["ready", "trashed"]),
+        isNull(assets.deletedAt),
+        or(
+          eq(assets.renditionStatus, "none"),
+          and(
+            eq(assets.renditionStatus, "failed"),
+            sql`${assets.renditionVersion} is distinct from ${RENDITION_VERSION}`,
+          ),
+        ),
+        lt(assets.createdAt, sql`now() - interval '1 hour'`),
+      ),
+    )
+    .orderBy(sql`${assets.createdAt} desc`)
+    .limit(videoLimit);
+
+  for (const video of videos) {
+    if (Date.now() > input.deadline) break;
+    try {
+      if (await ensureServerVideoPoster(video)) rendered += 1;
+    } catch (error) {
+      console.error("[asset-renditions] video poster backfill failed", { assetId: video.id, error });
     }
   }
   return rendered;

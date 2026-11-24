@@ -63,8 +63,9 @@ export function needsRenditions(asset: {
  * The rendition version to serve for an asset, or null when it has none.
  * Images render on the server, so they always target the current version
  * (rendered on first request if missing), unless rendering failed for it.
- * Video renditions come from a poster the uploader's browser captured, which
- * the server cannot redo, so a video serves whatever version it stored.
+ * Video renditions come from a poster frame (the uploader's browser, or
+ * ffmpeg on the server when the browser can't decode it) that is not
+ * re-taken on a version bump, so a video serves whatever version it stored.
  */
 export function servableRenditionVersion(asset: {
   kind: string;

@@ -186,6 +186,17 @@ export function masonryColumnCount(widthPx: number) {
 }
 
 /**
+ * Column count for the public share gallery (`/s/<token>`), which has room
+ * for bigger cards: @sm 24rem, @2xl 42rem, @5xl 64rem.
+ */
+export function sharedGalleryColumnCount(widthPx: number) {
+  if (widthPx >= 1024) return 4;
+  if (widthPx >= 672) return 3;
+  if (widthPx >= 384) return 2;
+  return 1;
+}
+
+/**
  * Deal items into columns in list order, each into the column that is
  * currently shortest (ties go left), so the list reads left to right across
  * the top and folders, which come first, sit in the first row like any other

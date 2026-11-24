@@ -6,7 +6,8 @@
  * nothing is downloaded — draws one frame to a canvas, and sends it with the
  * duration and size to `POST /api/assets/:id/poster`, which re-encodes it like
  * any photo. Every failure (a codec this browser can't decode, a timeout)
- * resolves quietly: the video then shows an icon tile instead of a poster.
+ * resolves quietly and asks the server to make one with ffmpeg instead
+ * ({@link requestServerPoster}); until then the video shows an icon tile.
  */
 
 const MAX_POSTER_WIDTH = 1280;
@@ -122,7 +123,8 @@ export async function attachVideoPoster(
 ) {
   const captured =
     source instanceof Blob ? await captureVideoPoster(source) : await captureFromVideoElement(source);
-  if (!captured) return false;
+  // This browser can't decode it: the server makes one instead.
+  if (!captured) return requestServerPoster(assetId, options);
 
   const form = new FormData();
   form.set("poster", captured.poster, "poster");
@@ -138,6 +140,29 @@ export async function attachVideoPoster(
     });
     return response.ok;
   } catch {
+    return false;
+  }
+}
+
+/**
+ * Asks the server to make the poster with ffmpeg (a codec this browser can't
+ * decode). Resolves true once one is stored; false when it failed or is still
+ * running after the server's wait (it then lands on a later refresh).
+ */
+export async function requestServerPoster(
+  assetId: string,
+  options: { bearerToken?: string | null } = {},
+) {
+  try {
+    const response = await fetch(`/api/assets/${assetId}/poster?generate=1`, {
+      method: "POST",
+      headers: options.bearerToken ? { Authorization: `Bearer ${options.bearerToken}` } : undefined,
+    });
+    if (!response.ok) return false;
+    const body = (await response.json().catch(() => null)) as { stored?: boolean } | null;
+    return body?.stored === true;
+  } catch {
+    // The daily backfill catches anything missed.
     return false;
   }
 }

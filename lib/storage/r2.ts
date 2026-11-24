@@ -173,6 +173,19 @@ export async function createAssetMultipartUpload(input: {
   return result.UploadId;
 }
 
+/**
+ * Short-lived GET URL for a server-side tool that reads over HTTP (ffmpeg for
+ * video posters), so it can fetch just the byte ranges it needs. Signed for
+ * the server's own endpoint, never handed to a browser.
+ */
+export async function presignAssetDownloadForServer(key: string, expiresInSeconds: number) {
+  return getSignedUrl(
+    getR2Client(),
+    new GetObjectCommand({ Bucket: getR2Bucket(), Key: key }),
+    { expiresIn: expiresInSeconds },
+  );
+}
+
 /** Short-lived URL the browser PUTs one part's bytes to. */
 export async function presignAssetUploadPart(input: {
   key: string;

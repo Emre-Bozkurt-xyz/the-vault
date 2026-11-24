@@ -12,6 +12,7 @@ import {
   Film,
   Info,
   Loader2,
+  Play,
   X,
   ZoomIn,
   ZoomOut,
@@ -30,6 +31,8 @@ import { cn } from "@/lib/utils";
  * `i` toggles details, `d` downloads, `z` or double-click zooms to the
  * original at full size. Images show the display rendition; zoom is the one
  * place the original is fetched for viewing, because the user asked for it.
+ * A filmstrip of thumbnails runs along the bottom; the current item stands
+ * out by size and brightness, and a click jumps to any other.
  */
 export function MediaViewer({
   items,
@@ -39,6 +42,7 @@ export function MediaViewer({
   locationOf,
   allowOriginals = true,
   onVideoReady,
+  onVideoUnplayable,
 }: {
   items: AssetLibraryItem[];
   index: number;
@@ -52,6 +56,8 @@ export function MediaViewer({
   allowOriginals?: boolean;
   /** Called once a video has a frame to show (the library heals missing posters). */
   onVideoReady?: (asset: AssetLibraryItem, video: HTMLVideoElement) => void;
+  /** Called when this browser can't play a video (the library asks the server for a poster). */
+  onVideoUnplayable?: (asset: AssetLibraryItem) => void;
 }) {
   const asset = items[index] ?? null;
   const [showInfo, setShowInfo] = useState(false);
@@ -141,19 +147,25 @@ export function MediaViewer({
           </header>
 
           <div className="flex min-h-0 flex-1">
-            <div className="relative flex min-w-0 flex-1 items-center justify-center">
-              {/* Keyed so loading state resets per item and per zoom level. */}
-              <Stage
-                key={`${asset.id}:${zoomed}`}
-                asset={asset}
-                allowOriginals={allowOriginals}
-                onVideoReady={onVideoReady}
-                zoomed={zoomed}
-                onToggleZoom={toggleZoom}
-                onSwipe={go}
-              />
-              <NavButton side="left" disabled={index === 0} onClick={() => go(-1)} />
-              <NavButton side="right" disabled={index === items.length - 1} onClick={() => go(1)} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="relative flex min-h-0 flex-1 items-center justify-center">
+                {/* Keyed so loading state resets per item and per zoom level. */}
+                <Stage
+                  key={`${asset.id}:${zoomed}`}
+                  asset={asset}
+                  allowOriginals={allowOriginals}
+                  onVideoReady={onVideoReady}
+                  onVideoUnplayable={onVideoUnplayable}
+                  zoomed={zoomed}
+                  onToggleZoom={toggleZoom}
+                  onSwipe={go}
+                />
+                <NavButton side="left" disabled={index === 0} onClick={() => go(-1)} />
+                <NavButton side="right" disabled={index === items.length - 1} onClick={() => go(1)} />
+              </div>
+              {items.length > 1 && !zoomed ? (
+                <Filmstrip items={items} index={index} onSelect={onIndexChange} />
+              ) : null}
             </div>
             {showInfo ? <InfoPanel asset={asset} location={locationOf?.(asset) ?? null} /> : null}
           </div>
@@ -167,6 +179,7 @@ function Stage({
   asset,
   allowOriginals,
   onVideoReady,
+  onVideoUnplayable,
   zoomed,
   onToggleZoom,
   onSwipe,
@@ -174,6 +187,7 @@ function Stage({
   asset: AssetLibraryItem;
   allowOriginals: boolean;
   onVideoReady?: (asset: AssetLibraryItem, video: HTMLVideoElement) => void;
+  onVideoUnplayable?: (asset: AssetLibraryItem) => void;
   zoomed: boolean;
   onToggleZoom: () => void;
   onSwipe: (delta: number) => void;
@@ -208,7 +222,10 @@ function Stage({
           playsInline
           preload="metadata"
           onLoadedData={(event) => onVideoReady?.(asset, event.currentTarget)}
-          onError={() => setFailed(true)}
+          onError={() => {
+            setFailed(true);
+            onVideoUnplayable?.(asset);
+          }}
           className="max-h-full max-w-full bg-black"
         />
       </div>
@@ -333,6 +350,96 @@ function Stage({
       </button>
       ) : null}
     </>
+  );
+}
+
+/** How many thumbnails either side of the current one the strip renders. */
+const FILMSTRIP_REACH = 60;
+
+/**
+ * Thumbnails of the whole list along the bottom. The current one is larger
+ * and at full brightness; the rest sit back, smaller and dimmed, until
+ * hovered. Only a window around the current item is rendered, so a folder of
+ * thousands doesn't build thousands of buttons; the current item is kept
+ * centred as you step.
+ */
+function Filmstrip({
+  items,
+  index,
+  onSelect,
+}: {
+  items: AssetLibraryItem[];
+  index: number;
+  onSelect: (index: number) => void;
+}) {
+  const current = useRef<HTMLButtonElement>(null);
+  const start = Math.max(0, index - FILMSTRIP_REACH);
+  const end = Math.min(items.length, index + FILMSTRIP_REACH + 1);
+
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    current.current?.scrollIntoView({ block: "nearest", inline: "center", behavior: reduce ? "auto" : "smooth" });
+  }, [index]);
+
+  return (
+    <nav aria-label="All items" className="shrink-0 border-t border-white/10 bg-black/60">
+      <div className="flex h-[4.5rem] items-center gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] sm:h-20 [&::-webkit-scrollbar]:hidden">
+        {/* Spacers let the first and last items reach the centre too. */}
+        <span aria-hidden className="w-[40vw] shrink-0" />
+        {items.slice(start, end).map((item, offset) => {
+          const position = start + offset;
+          const active = position === index;
+          return (
+            <button
+              key={item.id}
+              ref={active ? current : undefined}
+              type="button"
+              onClick={() => onSelect(position)}
+              aria-label={`${item.displayName} (${position + 1} of ${items.length})`}
+              aria-current={active ? "true" : undefined}
+              className={cn(
+                "relative shrink-0 overflow-hidden rounded bg-white/10 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+                active
+                  ? "size-14 opacity-100 shadow-[0_0_0_2px_rgba(255,255,255,0.9)] sm:size-16"
+                  : "size-10 opacity-45 saturate-50 hover:opacity-90 hover:saturate-100 sm:size-12",
+              )}
+            >
+              <FilmstripThumb item={item} />
+            </button>
+          );
+        })}
+        <span aria-hidden className="w-[40vw] shrink-0" />
+      </div>
+    </nav>
+  );
+}
+
+function FilmstripThumb({ item }: { item: AssetLibraryItem }) {
+  const [broken, setBroken] = useState(false);
+  if (item.thumbUrl && !broken) {
+    return (
+      <>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.thumbUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => setBroken(true)}
+          className="size-full object-cover"
+        />
+        {item.kind === "video" ? (
+          <Play aria-hidden className="absolute bottom-1 left-1 size-3 fill-white text-white drop-shadow" />
+        ) : null}
+      </>
+    );
+  }
+  const Icon = item.kind === "pdf" ? FileText : item.kind === "video" ? Film : FileIcon;
+  return (
+    <span className="grid size-full place-items-center text-white/70">
+      <Icon className="size-4" />
+    </span>
   );
 }
 
