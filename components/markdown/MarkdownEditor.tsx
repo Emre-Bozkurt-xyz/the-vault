@@ -91,10 +91,12 @@ import {
 } from "@/components/markdown/slash-commands";
 import { BacklinksChip } from "@/components/markdown/DocumentBacklinks";
 import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
+import { BoardBar, boardProgress, type BoardView } from "@/components/markdown/board/BoardBar";
+import { BOARD_USER_EVENT, boardFlashExtension } from "@/components/markdown/board/board-flash";
 import { DocumentBoard } from "@/components/markdown/board/DocumentBoard";
 import { BlockMenu } from "@/components/markdown/BlockMenu";
 import { createBlockHandleExtension, type BlockMenuRequest } from "@/components/markdown/block-handle";
-import { isBoardDocument } from "@/lib/board/markdown-board";
+import { isBoardDocument, parseBoard } from "@/lib/board/markdown-board";
 import { linkSelectionWithPastedUrl } from "@/components/markdown/paste-link";
 import {
   createLiveLinkOpenExtension,
@@ -525,7 +527,8 @@ export function MarkdownEditor({
   const [readTaskPending, setReadTaskPending] = useState(false);
   const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [editorMode, setEditorMode] = useState<EditorMode>("live");
+  // A board document's Source pane is the raw Markdown (see `isBoard`).
+  const [editorMode, setEditorMode] = useState<EditorMode>(() => (isBoardDocument(markdown) ? "source" : "live"));
   const [wikiLinkMap, setWikiLinkMap] = useState<WikiLinkResolutionMap>(
     wikiLinks ?? {},
   );
@@ -1033,8 +1036,19 @@ export function MarkdownEditor({
   // Source). The editor stays mounted underneath, so board edits go through it
   // like typing does (collaboration, undo, saving).
   const isBoard = useMemo(() => isBoardDocument(markdownValue), [markdownValue]);
-  const [boardChosen, setBoardChosen] = useState(true);
-  const boardVisible = isBoard && boardChosen;
+  const boardStats = useMemo(() => (isBoard ? boardProgress(parseBoard(markdownValue)) : null), [isBoard, markdownValue]);
+  const [boardView, setBoardView] = useState<BoardView>("board");
+  // Becoming a board (or not) swaps the page editor for the board's raw Source
+  // pane and back. Adjusted while rendering rather than in an effect, so the
+  // first frame is already right.
+  const [wasBoard, setWasBoard] = useState(isBoard);
+  if (wasBoard !== isBoard) {
+    setWasBoard(isBoard);
+    if (isBoard && editorMode === "live") setEditorMode("source");
+    if (!isBoard && editorMode === "source") setEditorMode("live");
+  }
+  // The board edits through the editor, which isn't mounted on Read.
+  const boardEditable = isBoard && editorMode !== "read";
   const replaceMarkdown = useCallback((next: string) => {
     const current = markdownValueRef.current;
     if (next === current) return;
@@ -1048,7 +1062,7 @@ export function MarkdownEditor({
         endCurrent -= 1;
         endNext -= 1;
       }
-      view.dispatch({ changes: { from: start, to: endCurrent, insert: next.slice(start, endNext) }, userEvent: "input.board" });
+      view.dispatch({ changes: { from: start, to: endCurrent, insert: next.slice(start, endNext) }, userEvent: BOARD_USER_EVENT });
     } else {
       markdownValueRef.current = next;
       setMarkdownValue(next);
@@ -1196,6 +1210,7 @@ export function MarkdownEditor({
       ),
       createBlockAnchorMarkerExtension(),
       anchorSurface.extension,
+      boardFlashExtension(),
       createLiveLinkOpenExtension({
         onOpen: (target, options) => void openLink(target, options),
         isUnresolved: isUnresolvedTitle,
@@ -1985,28 +2000,72 @@ export function MarkdownEditor({
           : "Local Markdown draft";
   const showManualSave =
     Boolean(saveError) || (collaboration && collabStatus === "disconnected");
+  const changeTitle = (nextTitle: string) => {
+    titleValueRef.current = nextTitle;
+    setTitleValue(nextTitle);
+    dispatchWorkspaceDocumentChanged({
+      id: documentId,
+      title: nextTitle.trim() || "Untitled document",
+      href: `/docs/${documentId}`,
+    });
+    setDirty(true);
+  };
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="vault-editor-canvas min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10"
+      className={cn(
+        "vault-editor-canvas",
+        // A board is a canvas filling the pane; a page keeps its margins.
+        isBoard ? "vault-editor-canvas--board" : "min-h-full px-4 py-6 sm:px-8 sm:py-8 lg:px-14 lg:py-10",
+      )}
     >
       <div
         className={cn(
-          "vault-editor-column relative mx-auto flex min-h-full w-full flex-col gap-5",
-          // A board wants the room for its columns; a page keeps its reading width.
-          boardVisible ? "vault-editor-column--board max-w-none" : "max-w-[56rem]",
+          "vault-editor-column relative flex w-full flex-col",
+          isBoard ? "vault-editor-column--board" : "mx-auto min-h-full max-w-[56rem] gap-5",
         )}
       >
-        <EditorOutline
-          markdown={markdownValue}
-          mode={editorMode}
-          viewRef={viewRef}
-          viewEpoch={viewEpoch}
-          previewRef={readPreviewRef}
-        />
-        <div className="vault-editor-toolbar-row flex items-center gap-3">
-          {editorMode !== "read" && !boardVisible ? (
+        {!isBoard ? (
+          <EditorOutline
+            markdown={markdownValue}
+            mode={editorMode}
+            viewRef={viewRef}
+            viewEpoch={viewEpoch}
+            previewRef={readPreviewRef}
+          />
+        ) : null}
+        {isBoard ? (
+          <BoardBar
+            folderPath={folderPath}
+            icon={pageArt.icon}
+            onSetIcon={embedSessionToken ? null : (icon) => setFrontmatterValue("icon", icon)}
+            title={titleValue}
+            onTitleChange={changeTitle}
+            progress={boardStats ?? { total: 0, done: 0, doing: 0 }}
+            view={boardView}
+            onViewChange={(view) => {
+              setBoardView(view);
+              if (view === "source" && editorMode === "read") changeEditorMode("source");
+            }}
+            extras={
+              <>
+                {!embedSessionToken ? <BacklinksChip documentId={documentId} /> : null}
+                <CollaborationPresence users={presenceUsers} />
+              </>
+            }
+            properties={
+              <DocumentPropertiesControls
+                markdown={markdownValue}
+                inheritedTags={inheritedTags}
+                onChange={applyDocumentMetadata}
+                defaultExpanded
+              />
+            }
+          />
+        ) : null}
+        <div className={cn("vault-editor-toolbar-row flex items-center gap-3", isBoard && "hidden")}>
+          {editorMode !== "read" && !isBoard ? (
             <div className="min-w-0 flex-1">
               <MarkdownToolbar
                 onFormat={applyFormat}
@@ -2047,9 +2106,9 @@ export function MarkdownEditor({
           ) : (
             <div className="min-w-0 flex-1" />
           )}
-          <CollaborationPresence users={presenceUsers} />
-          {/* Source mode's own views; the board has none. */}
-          {!boardVisible ? <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} /> : null}
+          {!isBoard ? <CollaborationPresence users={presenceUsers} /> : null}
+          {/* The page's own views; a board has Board | Source in its header. */}
+          {!isBoard ? <EditorModeSwitch mode={editorMode} onChange={changeEditorMode} /> : null}
         </div>
         <UploadProgressList
           items={assetUploads.items}
@@ -2078,6 +2137,7 @@ export function MarkdownEditor({
             onChangeAttributes={updateSelectedAssetGroupAttributes}
           />
         ) : null}
+        {!isBoard ? (
         <DocumentPageArt
           documentId={documentId}
           icon={pageArt.icon}
@@ -2092,34 +2152,13 @@ export function MarkdownEditor({
                 }
           }
         />
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        ) : null}
+        <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", isBoard && "hidden")}>
           <DocumentFolderPath path={folderPath} />
           {/* Signed-in workspace only: an embed session has no user to ask as. */}
-          {!embedSessionToken ? <BacklinksChip documentId={documentId} /> : null}
-          {isBoard ? (
-            <div role="group" aria-label="View" className="ml-auto inline-flex rounded-lg border border-border p-0.5 text-xs">
-              {([["board", "Board"], ["source", "Source"]] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={(value === "board") === boardChosen}
-                  onClick={() => {
-                    setBoardChosen(value === "board");
-                    // The board edits through the editor, so it can't sit on Read.
-                    if (value === "board" && editorMode === "read") setEditorMode("live");
-                  }}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 transition",
-                    (value === "board") === boardChosen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {!embedSessionToken && !isBoard ? <BacklinksChip documentId={documentId} /> : null}
         </div>
-        {editorMode === "read" ? (
+        {isBoard ? null : editorMode === "read" ? (
           <h1 className="vault-editor-title w-full text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl vault-display">
             {titleValue || "Untitled document"}
           </h1>
@@ -2127,22 +2166,12 @@ export function MarkdownEditor({
           <input
             name="title"
             value={titleValue}
-            onChange={(event) => {
-              const nextTitle = event.target.value;
-              titleValueRef.current = nextTitle;
-              setTitleValue(nextTitle);
-              dispatchWorkspaceDocumentChanged({
-                id: documentId,
-                title: nextTitle.trim() || "Untitled document",
-                href: `/docs/${documentId}`,
-              });
-              setDirty(true);
-            }}
+            onChange={(event) => changeTitle(event.target.value)}
             className="vault-editor-title w-full bg-transparent text-4xl font-semibold leading-[1.02] tracking-tight outline-none sm:text-5xl lg:text-6xl vault-display"
             aria-label="Document title"
           />
         )}
-        {editorMode === "live" ? (
+        {editorMode === "live" && !isBoard ? (
           <DocumentPropertiesControls
             markdown={markdownValue}
             inheritedTags={inheritedTags}
@@ -2153,6 +2182,7 @@ export function MarkdownEditor({
             track the document body, not the toolbar/title/properties chrome
             above it. */}
         <DocumentOverlayHost
+          className={isBoard ? "vault-board-host" : undefined}
           documentId={documentId}
           // The source editor measures lines itself; the Read preview is a
           // rendered page the host reads its tags from.
@@ -2170,23 +2200,29 @@ export function MarkdownEditor({
         >
         <div
           className={cn(
-            "vault-markdown-editor min-h-[calc(100svh-12rem)] overflow-visible bg-transparent text-card-foreground",
+            "vault-markdown-editor bg-transparent text-card-foreground",
+            isBoard ? "vault-board-surface" : "min-h-[calc(100svh-12rem)] overflow-visible",
             `vault-markdown-editor-${editorMode}`,
           )}
         >
           <div
             className={cn(
-              "min-h-[calc(100svh-18rem)] lg:min-h-[520px]",
+              isBoard
+                ? cn("vault-board-stage", boardView === "source" && "is-source")
+                : "min-h-[calc(100svh-18rem)] lg:min-h-[520px]",
             )}
           >
-            {boardVisible ? (
-              <div className="py-4">
-                <DocumentBoard markdown={markdownValue} onChange={replaceMarkdown} />
-              </div>
+            {isBoard ? (
+              <DocumentBoard
+                markdown={markdownValue}
+                documentId={documentId}
+                onChange={boardEditable ? replaceMarkdown : undefined}
+              />
             ) : null}
             {editorMode !== "read" ? (
-              // Kept mounted under the board: it carries collaboration and saving.
-              <div className={boardVisible ? "hidden" : undefined}>
+              // On a board, the Source pane beside it; hidden, it still carries
+              // collaboration and saving for the board's edits.
+              <div className={isBoard ? (boardView === "source" ? "vault-board-source" : "hidden") : undefined}>
               <DocumentCanvas
                 documentId={documentId}
                 snippetCss={snippetCss || null}
@@ -2227,7 +2263,7 @@ export function MarkdownEditor({
               </DocumentCanvas>
               </div>
             ) : null}
-            {editorMode === "read" && !boardVisible ? (
+            {editorMode === "read" && !isBoard ? (
               <div
                 ref={readPreviewRef}
                 onClick={(event) => {
@@ -2618,10 +2654,13 @@ function DocumentPropertiesControls({
   markdown,
   inheritedTags,
   onChange,
+  defaultExpanded = false,
 }: {
   markdown: string;
   inheritedTags?: string[];
   onChange: (metadata: ParsedDocumentMetadata) => void;
+  /** Open from the start (in the board header's popover). */
+  defaultExpanded?: boolean;
 }) {
   const metadata = useMemo(() => parseDocumentMetadata(markdown), [markdown]);
   const folderTags = useMemo(
@@ -2634,7 +2673,7 @@ function DocumentPropertiesControls({
     () => [...metadata.tags, ...folderTags],
     [folderTags, metadata.tags],
   );
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [draft, setDraft] = useState(() => toMetadataDraft(metadata));
 
   useEffect(() => {

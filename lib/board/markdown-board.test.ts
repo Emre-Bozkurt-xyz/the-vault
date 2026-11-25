@@ -96,6 +96,16 @@ describe("markdown board", () => {
     expect(parseBoard(renameColumn(doc, 14, "In progress")).columns[1].heading).toBe("In progress");
   });
 
+  it("reads tags and a cover image, and keeps the cover when details change", () => {
+    const asset = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const withArt = ["---", "view: board", "---", "## Ideas", "- [ ] Whispers #audio #vfx-pass :priority[low]", `  ![[asset:${asset}|sketch]]`, "  Quiet ones.", "- [ ] Snow ![](https://x.y/a.png) #c-sharp but not a#b or #1", "  ![](https://x.y/cover.png)"].join("\n");
+    const [whispers, snow] = parseBoard(withArt).columns[0].cards;
+    expect(whispers).toMatchObject({ title: "Whispers #audio #vfx-pass", label: "Whispers", tags: ["audio", "vfx-pass"], cover: { assetId: asset }, notes: ["Quiet ones."] });
+    expect(snow).toMatchObject({ tags: ["c-sharp"], cover: { url: "https://x.y/cover.png" }, notes: [] });
+    const edited = setCardDetails(withArt, 4, ["Louder."], []);
+    expect(edited.split("\n").slice(5, 7)).toEqual([`  ![[asset:${asset}|sketch]]`, "  Louder."]);
+  });
+
   it("finds the smallest edit", () => {
     expect(minimalChange("abcXdef", "abcYYdef")).toEqual({ from: 3, to: 4, insert: "YY" });
     expect(minimalChange("same", "same")).toBeNull();

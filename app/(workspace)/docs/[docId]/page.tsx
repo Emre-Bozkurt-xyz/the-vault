@@ -329,7 +329,7 @@ export default async function DocumentPage({
                 nonce={cspNonce}
               >
                 {isBoardDocument(markdown) ? (
-                  <DocumentBoard markdown={markdown} />
+                  <DocumentBoard markdown={markdown} documentId={document.id} />
                 ) : (
                 <MarkdownDocument
                   markdown={markdown}

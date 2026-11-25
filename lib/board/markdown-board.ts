@@ -2,7 +2,9 @@
  * A document with `view: board` in its frontmatter, read as a board: each
  * `## heading` is a column and each top-level task line under it (`- [ ]`,
  * `- [/]`, `- [x]`, `- [-]`) is a card. A card's indented lines are its notes
- * and subtasks; `:priority[…]` and `:due[…]` on its line are its fields.
+ * and subtasks; `:priority[…]` and `:due[…]` on its line are its fields,
+ * `#words` in its text are its tags, and an indented line that is only an
+ * image (`![[asset:…]]` or `![](https://…)`) is its cover.
  *
  * The Markdown stays the source of truth. Every operation here takes the text
  * and returns new text with only the lines it means to change rewritten, so
@@ -15,14 +17,22 @@ export type CardStatus = "open" | "in_progress" | "done" | "cancelled";
 
 export type BoardSubtask = { done: boolean; text: string };
 
+export type BoardCover = { assetId: string } | { url: string };
+
 export type BoardCard = {
   /** 0-based index of the card's task line. */
   line: number;
   /** One past its last line (the task line plus its indented lines). */
   end: number;
   status: CardStatus;
-  /** The task text without its fields. */
+  /** The task text without its fields (tags included: it is what gets edited). */
   title: string;
+  /** The title without its `#tags`, for the card face. */
+  label: string;
+  tags: string[];
+  /** The card's cover image line (kept as written), and what it shows. */
+  coverLine: string | null;
+  cover: BoardCover | null;
   priority: string | null;
   due: string | null;
   notes: string[];
@@ -49,6 +59,9 @@ const STATUS_TO_MARK: Record<CardStatus, string> = { open: " ", in_progress: "/"
 const cardLinePattern = /^[-*+] \[([ xX/-])\] ?(.*)$/;
 const subtaskPattern = /^\s+[-*+] \[([ xX/-])\] ?(.*)$/;
 const columnPattern = /^## +(.*?)\s*#*\s*$/;
+const tagPattern = /(^|\s)#(\p{L}[\p{L}\p{N}_/-]*)/gu;
+const assetCoverPattern = /^!\[\[asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]\n]*)?\]\](?:\{[^}\n]*\})?$/i;
+const urlCoverPattern = /^!\[[^\]\n]*\]\((https?:\/\/[^)\s]+)(?:\s+"[^"\n]*")?\)$/i;
 const fieldPattern = (key: string) => new RegExp(`\\s*:${key}\\[([^\\]]*)\\]`);
 
 function lines(markdown: string): string[] {
@@ -75,6 +88,24 @@ export function cardField(text: string, key: string): string | null {
 /** The card's title: its text with fields and inline directives' noise removed. */
 function cardTitle(text: string): string {
   return text.replace(/\s*:(priority|due|repeat|done)\[[^\]]*\]/g, "").trim();
+}
+
+/** A card's `#tags`, in order, without duplicates. */
+export function cardTags(text: string): string[] {
+  return [...new Set([...text.matchAll(tagPattern)].map((match) => match[2]))];
+}
+
+function withoutTags(text: string): string {
+  return text.replace(tagPattern, "$1").replace(/\s{2,}/g, " ").trim();
+}
+
+/** The cover an indented line shows, when the line is only an image. */
+export function coverOf(line: string): BoardCover | null {
+  const text = line.trim();
+  const asset = text.match(assetCoverPattern);
+  if (asset) return { assetId: asset[1].toLowerCase() };
+  const url = text.match(urlCoverPattern);
+  return url ? { url: url[1] } : null;
 }
 
 export function parseBoard(markdown: string): Board {
@@ -107,16 +138,27 @@ export function parseBoard(markdown: string): Board {
     while (end < all.length && /^\s+\S/.test(all[end])) end += 1;
     const notes: string[] = [];
     const subtasks: BoardSubtask[] = [];
+    let coverLine: string | null = null;
+    let cover: BoardCover | null = null;
     for (const child of all.slice(index + 1, end)) {
       const subtask = child.match(subtaskPattern);
+      const image = coverLine === null ? coverOf(child) : null;
       if (subtask) subtasks.push({ done: MARK_TO_STATUS[subtask[1]] === "done", text: subtask[2].trim() });
-      else notes.push(child.trim());
+      else if (image) {
+        coverLine = child.trim();
+        cover = image;
+      } else notes.push(child.trim());
     }
+    const title = cardTitle(card[2]);
     column.cards.push({
       line: index,
       end,
       status: MARK_TO_STATUS[card[1]] ?? "open",
-      title: cardTitle(card[2]),
+      title,
+      label: withoutTags(title),
+      tags: cardTags(title),
+      coverLine,
+      cover,
       priority: cardField(card[2], "priority"),
       due: cardField(card[2], "due"),
       notes,
@@ -171,12 +213,13 @@ export function setCardTitle(markdown: string, line: number, title: string): str
   });
 }
 
-/** Replaces a card's indented lines with `notes` and `subtasks`. */
+/** Replaces a card's indented lines with `notes` and `subtasks`; its cover stays, first. */
 export function setCardDetails(markdown: string, line: number, notes: string[], subtasks: BoardSubtask[]): string {
   const card = cardAt(markdown, line);
   if (!card) return markdown;
   return withLines(markdown, (all) => {
     const children = [
+      ...(card.coverLine ? [`  ${card.coverLine}`] : []),
       ...notes.filter((note) => note.trim()).map((note) => `  ${note.trim()}`),
       ...subtasks.map((subtask) => `  - [${subtask.done ? "x" : " "}] ${subtask.text.trim()}`),
     ];

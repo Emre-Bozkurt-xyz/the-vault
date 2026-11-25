@@ -3667,9 +3667,676 @@
     }
   }
 
-  /* A board document uses the room for its columns. */
+  /* Board documents (`DocumentBoard`, `BoardBar`): one header row, then a
+     dotted canvas filling the pane, with the Markdown beside it on Source. */
+  .vault-board-bar,
+  .vault-board-canvas,
+  .vault-board-source,
+  .vault-board-ghost {
+    --board-a1: oklch(0.66 0.13 300);
+    --board-a2: oklch(0.64 0.14 252);
+    --board-a3: oklch(0.7 0.13 70);
+    --board-a4: oklch(0.64 0.13 160);
+    --board-a5: oklch(0.66 0.15 20);
+    --board-open: oklch(0.72 0.01 250);
+    --board-doing: oklch(0.6 0.16 252);
+    --board-done: oklch(0.62 0.15 150);
+    --board-high: oklch(0.62 0.18 40);
+    --board-medium: oklch(0.74 0.14 80);
+    --board-low: oklch(0.62 0.06 250);
+    --board-lane: color-mix(in oklab, var(--muted) 55%, transparent);
+    --board-dot: color-mix(in oklab, var(--foreground) 16%, transparent);
+    --board-shadow: 0 1px 2px oklch(0 0 0 / 6%), 0 6px 18px oklch(0 0 0 / 6%);
+    --board-lift: 0 18px 40px oklch(0 0 0 / 18%);
+    --board-flash: oklch(0.93 0.07 95);
+  }
+
+  .dark :is(.vault-board-bar, .vault-board-canvas, .vault-board-source, .vault-board-ghost) {
+    --board-a1: oklch(0.74 0.12 300);
+    --board-a2: oklch(0.74 0.12 252);
+    --board-a3: oklch(0.8 0.12 75);
+    --board-a4: oklch(0.75 0.12 160);
+    --board-a5: oklch(0.74 0.14 22);
+    --board-open: oklch(0.55 0.01 250);
+    --board-doing: oklch(0.72 0.14 252);
+    --board-done: oklch(0.74 0.14 150);
+    --board-high: oklch(0.74 0.16 45);
+    --board-medium: oklch(0.82 0.13 85);
+    --board-low: oklch(0.72 0.06 250);
+    --board-lane: color-mix(in oklab, var(--card) 70%, transparent);
+    --board-dot: color-mix(in oklab, var(--foreground) 9%, transparent);
+    --board-shadow: 0 1px 2px oklch(0 0 0 / 40%), 0 8px 22px oklch(0 0 0 / 28%);
+    --board-lift: 0 22px 50px oklch(0 0 0 / 55%);
+    --board-flash: oklch(0.36 0.07 95);
+  }
+
+  /* The pane's own wrappers only have a min-height; give the chain down to
+     the board a real one, so the canvas fills the pane and scrolls itself. */
+  :has(> .vault-fade-up > .vault-editor-canvas--board),
+  .vault-fade-up:has(> .vault-editor-canvas--board) {
+    height: 100%;
+  }
+
+  .vault-editor-canvas.vault-editor-canvas--board {
+    height: 100%;
+    background: var(--background);
+  }
+
   .vault-editor-column.vault-editor-column--board {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .vault-editor-column--board > .vault-board-host {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .vault-board-surface,
+  .vault-board-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+
+  .vault-board-surface {
+    flex-direction: column;
+  }
+
+  /* The header row. */
+  .vault-board-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 52px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in oklab, var(--background) 88%, transparent);
+    backdrop-filter: blur(8px);
+    position: relative;
+    z-index: 20;
+  }
+
+  .vault-board-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  .vault-board-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .vault-board-title input,
+  .vault-board-title h1 {
+    min-width: 0;
+    max-width: 28rem;
+    margin: 0;
+    padding: 2px 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    outline: none;
+    font-size: 1.55rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vault-board-title input:hover,
+  .vault-board-title input:focus {
+    background: var(--muted);
+  }
+
+  .vault-board-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+
+  .vault-board-pbar {
+    display: flex;
+    width: 84px;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--muted);
+  }
+
+  .vault-board-pbar i {
+    display: block;
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+
+  .vault-board-seg {
+    display: inline-flex;
+    flex: none;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+
+  .vault-board-seg button {
+    padding: 4px 11px;
+    border-radius: 7px;
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .vault-board-seg button:hover {
+    color: var(--foreground);
+  }
+
+  .vault-board-seg button[aria-pressed="true"] {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .vault-board-icon-btn {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    color: var(--muted-foreground);
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .vault-board-icon-btn:hover,
+  .vault-board-icon-btn[data-popup-open] {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .vault-board-pop {
+    display: grid;
+    gap: 8px;
+    width: 270px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: 0 18px 40px oklch(0 0 0 / 18%);
+    font-size: 12.5px;
+  }
+
+  .vault-board-pop--wide {
+    width: min(26rem, calc(100vw - 2rem));
+    max-height: 70vh;
+    overflow: auto;
+    padding: 6px;
+  }
+
+  .vault-board-pop-heading {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .vault-board-keys {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0;
+  }
+
+  .vault-board-keys dd {
+    margin: 0;
+  }
+
+  .vault-board-keys kbd {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    background: var(--card);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 10.5px;
+  }
+
+  /* The canvas. */
+  .vault-board-canvas {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    cursor: grab;
+    background-color: var(--background);
+    background-image: radial-gradient(var(--board-dot) 1px, transparent 1.2px);
+    background-size: 22px 22px;
+    background-attachment: local;
+  }
+
+  .vault-board-canvas.is-panning {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  .vault-board-lanes {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    box-sizing: border-box;
+    width: max-content;
+    height: 100%;
+    padding: 22px;
+  }
+
+  .vault-board-lane {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: 300px;
+    min-height: 0;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--board-lane);
+    backdrop-filter: blur(2px);
+    cursor: default;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .vault-board-lane.is-drop {
+    border-color: var(--board-accent);
+    background: color-mix(in oklab, var(--board-accent) 10%, var(--board-lane));
+  }
+
+  .vault-board-lane-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 12px 8px 14px;
+  }
+
+  .vault-board-swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--board-accent);
+  }
+
+  .vault-board-lane-name {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    outline: none;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .vault-board-lane-name:focus {
+    text-decoration: underline;
+    text-decoration-color: var(--board-accent);
+    text-underline-offset: 3px;
+  }
+
+  .vault-board-count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vault-board-lane-accent {
+    height: 2px;
+    margin: 0 14px 6px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--board-accent), transparent);
+    opacity: 0.8;
+  }
+
+  .vault-board-cards {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 60px;
+    overflow-y: auto;
+    padding: 4px 10px 10px;
+  }
+
+  .vault-board-lane-empty {
+    padding: 18px 12px;
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+    text-align: center;
+  }
+
+  .vault-board-other {
+    padding: 0 4px;
+    color: color-mix(in oklab, var(--muted-foreground) 75%, transparent);
+    font-size: 0.7rem;
+  }
+
+  .vault-board-add {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 10px 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    text-align: left;
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .vault-board-add:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .vault-board-add-input {
+    padding: 8px 10px;
+    border: 1px solid var(--board-accent, var(--ring));
+    border-radius: 10px;
+    background: var(--card);
+    outline: none;
+    font-size: 13px;
+  }
+
+  .vault-board-lane-new {
+    display: grid;
+    flex: none;
+    align-self: flex-start;
+    gap: 4px;
+    width: 260px;
+    padding: 16px;
+    border: 1.5px dashed var(--border);
+    border-radius: 16px;
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+    color: var(--muted-foreground);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .vault-board-lane-new:hover {
+    border-color: var(--ring);
+    color: var(--foreground);
+  }
+
+  .vault-board-lane-new small {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+  }
+
+  .vault-board-lane-new.is-editing {
+    padding: 10px;
+    cursor: default;
+  }
+
+  .vault-board-lane-new.is-editing input {
     width: 100%;
+  }
+
+  /* Cards. */
+  .vault-board-card {
+    position: relative;
+    flex: none;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--board-shadow);
+    user-select: none;
+    transition: transform 140ms ease, border-color 140ms ease;
+  }
+
+  .vault-board-card.is-editable {
+    cursor: grab;
+  }
+
+  .vault-board-card.is-editable:hover {
+    transform: translateY(-1px);
+  }
+
+  .vault-board-card.is-hovered {
+    border-color: color-mix(in oklab, var(--foreground) 30%, var(--border));
+  }
+
+  .vault-board-card:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .vault-board-cover {
+    display: block;
+    width: 100%;
+    max-width: none;
+    height: 96px;
+    object-fit: cover;
+    background: var(--muted);
+    pointer-events: none;
+  }
+
+  .vault-board-card-body {
+    display: grid;
+    gap: 7px;
+    padding: 10px 12px 11px;
+  }
+
+  .vault-board-card-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .vault-board-card.is-finished .vault-board-card-title {
+    color: var(--muted-foreground);
+    font-weight: 400;
+    text-decoration: line-through;
+  }
+
+  .vault-board-card-notes {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .vault-board-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .vault-board-chip {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--chip) 16%, transparent);
+    color: color-mix(in oklab, var(--chip) 80%, var(--foreground));
+    font-size: 11px;
+  }
+
+  .vault-board-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 16px;
+    color: var(--muted-foreground);
+    font-size: 11.5px;
+  }
+
+  .vault-board-priority,
+  .vault-board-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .vault-board-priority {
+    text-transform: capitalize;
+  }
+
+  .vault-board-priority i {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  .vault-board-due.is-late {
+    color: var(--board-high);
+  }
+
+  .vault-board-ring {
+    width: 16px;
+    height: 16px;
+  }
+
+  .vault-board-status {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid var(--board-open);
+    border-radius: 50%;
+  }
+
+  .vault-board-status.is-in_progress {
+    border-color: var(--board-doing);
+    background: conic-gradient(var(--board-doing) 0 50%, transparent 50%);
+  }
+
+  .vault-board-status.is-done {
+    border-color: var(--board-done);
+    background: var(--board-done);
+  }
+
+  .vault-board-status.is-cancelled {
+    opacity: 0.5;
+  }
+
+  .vault-board-placeholder {
+    flex: none;
+    border: 1.5px dashed var(--board-accent, var(--ring));
+    border-radius: 12px;
+    background: color-mix(in oklab, var(--board-accent, var(--ring)) 8%, transparent);
+  }
+
+  .vault-board-card.vault-board-ghost {
+    transform: rotate(2.5deg) scale(1.02);
+    box-shadow: var(--board-lift);
+    opacity: 0.97;
+  }
+
+  /* The Markdown beside the board; board edits flash the lines they wrote. */
+  .vault-board-source {
+    flex: none;
+    width: min(40%, 520px);
+    min-height: 0;
+    overflow: auto;
+    border-left: 1px solid var(--border);
+    background: var(--background);
+  }
+
+  /* CodeMirror's injected theme is unlayered, so it beats this layer
+     whatever the specificity; hence !important. */
+  .vault-board-source .cm-editor {
+    min-height: 100%;
+    font-size: 12.5px !important;
+  }
+
+  .vault-board-source :is(.cm-scroller, .cm-content, .cm-gutters) {
+    font-size: inherit !important;
+  }
+
+  .vault-board-source :is(.cm-line, .cm-gutterElement) {
+    line-height: 1.7 !important;
+  }
+
+  .vault-cm-board-flash {
+    animation: vault-board-flash 1.4s ease-out;
+  }
+
+  @keyframes vault-board-flash {
+    from {
+      background-color: var(--board-flash);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .vault-board-crumb,
+    .vault-board-progress {
+      display: none;
+    }
+
+    .vault-board-bar {
+      gap: 8px;
+      padding: 0 12px;
+    }
+
+    .vault-board-canvas {
+      scroll-snap-type: x mandatory;
+    }
+
+    .vault-board-lanes {
+      gap: 12px;
+      padding: 16px;
+    }
+
+    .vault-board-lane {
+      width: 82vw;
+      scroll-snap-align: start;
+      scroll-margin-left: 16px;
+    }
+
+    /* No room for both: Source replaces the board. */
+    .vault-board-stage.is-source .vault-board-canvas {
+      display: none;
+    }
+
+    .vault-board-source {
+      width: 100%;
+      border-left: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-board-card,
+    .vault-board-pbar i {
+      transition: none;
+    }
+
+    .vault-cm-board-flash {
+      animation-duration: 0.01s;
+    }
   }
 
   .vault-document-overlay-host {

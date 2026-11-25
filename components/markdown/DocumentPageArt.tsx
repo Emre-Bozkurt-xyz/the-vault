@@ -112,7 +112,7 @@ function ArtButton({ onClick, children }: { onClick: () => void; children: React
   );
 }
 
-function IconPicker({
+export function IconPicker({
   icon,
   onSetIcon,
   children,

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Clock3, Plus, Trash2 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -17,6 +17,7 @@ import {
   setCardTitle,
   type BoardCard,
   type BoardColumn,
+  type BoardCover,
   type CardStatus,
 } from "@/lib/board/markdown-board";
 import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
@@ -40,6 +41,13 @@ const PRIORITY_DOT: Record<string, string> = {
   medium: "bg-amber-400",
   low: "bg-slate-400",
 };
+const PRIORITY_COLOR: Record<string, string> = {
+  high: "var(--board-high)",
+  medium: "var(--board-medium)",
+  low: "var(--board-low)",
+};
+/** Column and tag colours, in turn (`components.css`, `.vault-board-canvas`). */
+const ACCENTS = ["var(--board-a1)", "var(--board-a2)", "var(--board-a3)", "var(--board-a4)", "var(--board-a5)"];
 const DUE_STEPS = [0, 1, 3, 7] as const;
 
 type Drag = {
@@ -57,10 +65,21 @@ type Drag = {
  * back through `onChange` as new Markdown; without `onChange` it is read-only
  * (readers, public pages).
  *
- * Hover a card and press Space (start/pause), W (done), P (priority), D (due)
- * or Enter (open), as in the Tasks list; drag cards between columns.
+ * Drawn as a canvas: full-height lanes on a dotted background that pans when
+ * you drag empty space. Hover a card and press Space (start/pause), W (done),
+ * P (priority), D (due) or Enter (open), as in the Tasks list; drag cards
+ * between columns. The editor around it supplies the header (`BoardBar`).
  */
-export function DocumentBoard({ markdown, onChange }: { markdown: string; onChange?: (next: string) => void }) {
+export function DocumentBoard({
+  markdown,
+  documentId = null,
+  onChange,
+}: {
+  markdown: string;
+  /** For card covers that are the document's own images. */
+  documentId?: string | null;
+  onChange?: (next: string) => void;
+}) {
   const board = useMemo(() => parseBoard(markdown), [markdown]);
   const editable = Boolean(onChange);
   const [today] = useState(todayDayKey);
@@ -129,10 +148,11 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
         if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5) return;
         const rect = start.el.getBoundingClientRect();
         const ghost = start.el.cloneNode(true) as HTMLElement;
-        Object.assign(ghost.style, { position: "fixed", width: `${rect.width}px`, zIndex: "60", pointerEvents: "none", transform: "rotate(2deg)", opacity: "0.95" });
+        ghost.classList.add("vault-board-ghost");
+        Object.assign(ghost.style, { position: "fixed", width: `${rect.width}px`, zIndex: "60", pointerEvents: "none" });
         document.body.append(ghost);
         const placeholder = document.createElement("div");
-        placeholder.className = "rounded-lg border border-dashed border-ring/70";
+        placeholder.className = "vault-board-placeholder";
         placeholder.style.height = `${rect.height}px`;
         start.el.style.opacity = "0.35";
         drag.current = { line: start.line, ghost, placeholder, dx: start.x - rect.left, dy: start.y - rect.top, target: null };
@@ -142,6 +162,9 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
       current.ghost.style.top = `${event.clientY - current.dy}px`;
       const under = document.elementFromPoint(event.clientX, event.clientY);
       const column = under?.closest<HTMLElement>("[data-board-column]");
+      document.querySelectorAll(".vault-board-lane.is-drop").forEach((lane) => {
+        if (lane !== column) lane.classList.remove("is-drop");
+      });
       if (!column) {
         current.placeholder.remove();
         current.target = null;
@@ -159,6 +182,7 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
           break;
         }
       }
+      column.classList.add("is-drop");
       list.insertBefore(current.placeholder, cards[index] ?? null);
       current.target = { column: Number(column.dataset.boardColumn), index };
     };
@@ -175,6 +199,7 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
       }
       current.ghost.remove();
       current.placeholder.remove();
+      document.querySelectorAll(".vault-board-lane.is-drop").forEach((lane) => lane.classList.remove("is-drop"));
       if (current.target) {
         const { column, index } = current.target;
         change((md) => moveCard(md, current.line, column, index));
@@ -190,23 +215,47 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
     };
   }, [editable]);
 
+  // Drag empty canvas to pan (mouse); touch scrolls it natively.
+  const pan = useRef<{ x: number; y: number; left: number; top: number; el: HTMLElement } | null>(null);
+  const [panning, setPanning] = useState(false);
+  const onCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.pointerType === "touch") return;
+    if ((event.target as HTMLElement).closest(".vault-board-lane, .vault-board-lane-new, button, input, textarea, a")) return;
+    const el = event.currentTarget;
+    pan.current = { x: event.clientX, y: event.clientY, left: el.scrollLeft, top: el.scrollTop, el };
+    el.setPointerCapture(event.pointerId);
+    setPanning(true);
+  };
+  const onCanvasPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = pan.current;
+    if (!start) return;
+    start.el.scrollLeft = start.left - (event.clientX - start.x);
+    start.el.scrollTop = start.top - (event.clientY - start.y);
+  };
+  const endPan = () => {
+    if (!pan.current) return;
+    pan.current = null;
+    setPanning(false);
+  };
+
   const openCard = openLine === null ? null : board.columns.flatMap((column) => column.cards).find((card) => card.line === openLine) ?? null;
-  const total = board.columns.reduce((sum, column) => sum + column.cards.length, 0);
-  const done = board.columns.reduce((sum, column) => sum + column.cards.filter((card) => card.status === "done").length, 0);
 
   return (
-    <div className="vault-board grid gap-3">
-      <p className="text-xs text-muted-foreground">
-        {total === 0
-          ? "No cards yet. Add one to a column, or write task lines under a ## heading."
-          : `${done} of ${total} done${editable ? " · hover a card: Space start · W done · P priority · D due · Enter open" : ""}`}
-      </p>
-      <div className="flex items-start gap-3 overflow-x-auto pb-3" onPointerLeave={() => setHovered(null)}>
-        {board.columns.map((column) => (
+    <div
+      className={cn("vault-board-canvas", panning && "is-panning")}
+      onPointerDown={onCanvasPointerDown}
+      onPointerMove={onCanvasPointerMove}
+      onPointerUp={endPan}
+      onPointerCancel={endPan}
+    >
+      <div className="vault-board-lanes" onPointerLeave={() => setHovered(null)}>
+        {board.columns.map((column, index) => (
           <Column
             key={column.line}
             column={column}
+            accent={ACCENTS[index % ACCENTS.length]}
             today={today}
+            documentId={documentId}
             editable={editable}
             hovered={hovered}
             adding={adding === column.line}
@@ -220,30 +269,32 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
             onRename={(name) => change((md) => renameColumn(md, column.line, name))}
           />
         ))}
+        {board.columns.length === 0 && !editable ? <p className="vault-board-other">No columns yet.</p> : null}
         {editable ? (
           adding === "column" ? (
-            <input
-              autoFocus
-              aria-label="New column"
-              placeholder="Column name, then Enter"
-              className="h-10 w-60 shrink-0 rounded-xl border border-ring bg-background px-3 text-sm"
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setAdding(null);
-                if (event.key === "Enter" && event.currentTarget.value.trim()) {
-                  const name = event.currentTarget.value;
-                  change((md) => addColumn(md, name));
-                  setAdding(null);
-                }
-              }}
-              onBlur={() => setAdding(null)}
-            />
+            <div className="vault-board-lane-new is-editing">
+              <input
+                autoFocus
+                aria-label="New column"
+                placeholder="Column name, then Enter"
+                className="vault-board-add-input"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setAdding(null);
+                  if (event.key === "Enter" && event.currentTarget.value.trim()) {
+                    const name = event.currentTarget.value;
+                    change((md) => addColumn(md, name));
+                    setAdding(null);
+                  }
+                }}
+                onBlur={() => setAdding(null)}
+              />
+            </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setAdding("column")}
-              className="flex h-10 w-48 shrink-0 items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-muted-foreground transition hover:text-foreground"
-            >
-              <Plus className="size-4" /> Add column
+            <button type="button" onClick={() => setAdding("column")} className="vault-board-lane-new">
+              <span className="inline-flex items-center gap-1.5">
+                <Plus className="size-4" aria-hidden="true" /> Add column
+              </span>
+              <small>## heading</small>
             </button>
           )
         ) : null}
@@ -266,7 +317,9 @@ export function DocumentBoard({ markdown, onChange }: { markdown: string; onChan
 
 function Column({
   column,
+  accent,
   today,
+  documentId,
   editable,
   hovered,
   adding,
@@ -278,7 +331,9 @@ function Column({
   onRename,
 }: {
   column: BoardColumn;
+  accent: string;
   today: string;
+  documentId: string | null;
   editable: boolean;
   hovered: number | null;
   adding: boolean;
@@ -293,14 +348,16 @@ function Column({
     <section
       data-board-column={column.line}
       aria-label={column.heading}
-      className="flex max-h-[75vh] w-72 shrink-0 flex-col rounded-xl border border-border bg-muted/30"
+      className="vault-board-lane"
+      style={{ "--board-accent": accent } as CSSProperties}
     >
-      <header className="flex items-center gap-2 px-3 pb-1.5 pt-2.5">
+      <header className="vault-board-lane-head">
+        <span className="vault-board-swatch" aria-hidden="true" />
         {editable ? (
           <input
             defaultValue={column.heading}
             aria-label="Column name"
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none focus:underline"
+            className="vault-board-lane-name"
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
             }}
@@ -309,24 +366,27 @@ function Column({
             }}
           />
         ) : (
-          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{column.heading}</h3>
+          <h3 className="vault-board-lane-name truncate">{column.heading}</h3>
         )}
-        <span className="text-xs tabular-nums text-muted-foreground">{column.cards.length}</span>
+        <span className="vault-board-count">{column.cards.length}</span>
       </header>
-      <div data-board-cards className="flex min-h-8 flex-col gap-2 overflow-y-auto px-2.5 pb-2.5">
+      <div className="vault-board-lane-accent" aria-hidden="true" />
+      <div data-board-cards className="vault-board-cards">
         {column.cards.map((card) => (
           <Card
             key={card.line}
             card={card}
             today={today}
+            documentId={documentId}
             hovered={hovered === card.line}
             editable={editable}
             onHover={onHover}
             onPointerDown={onPointerDown}
           />
         ))}
+        {column.cards.length === 0 && editable ? <p className="vault-board-lane-empty">Drop cards here</p> : null}
         {column.otherLines > 0 ? (
-          <p className="px-1 text-[0.7rem] text-muted-foreground/70">
+          <p className="vault-board-other">
             +{column.otherLines} other line{column.otherLines === 1 ? "" : "s"}, in Source
           </p>
         ) : null}
@@ -337,7 +397,7 @@ function Column({
             autoFocus
             aria-label="New card"
             placeholder="Card title, then Enter"
-            className="mx-2.5 mb-2.5 rounded-lg border border-ring bg-background px-2.5 py-1.5 text-sm"
+            className="vault-board-add-input mx-2.5 mb-3"
             onKeyDown={(event) => {
               if (event.key === "Escape") onStopAdd();
               if (event.key === "Enter" && event.currentTarget.value.trim()) {
@@ -348,12 +408,8 @@ function Column({
             onBlur={onStopAdd}
           />
         ) : (
-          <button
-            type="button"
-            onClick={onStartAdd}
-            className="mx-2.5 mb-2.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            <Plus className="size-3.5" /> Add card
+          <button type="button" onClick={onStartAdd} className="vault-board-add">
+            <Plus className="size-3.5" aria-hidden="true" /> Add card
           </button>
         )
       ) : null}
@@ -361,9 +417,66 @@ function Column({
   );
 }
 
+function coverSrc(cover: BoardCover, documentId: string | null): string | null {
+  if ("url" in cover) return cover.url;
+  return documentId ? `/api/assets/${cover.assetId}/content?doc=${documentId}&r=display` : null;
+}
+
+/**
+ * A card's cover, gone if it can't load (binned, private, offline). The check
+ * on attach catches an image that failed before React was listening, as a
+ * server-rendered one can.
+ */
+function CardCover({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={(img) => {
+        if (img?.complete && img.naturalWidth === 0) setFailed(true);
+      }}
+      className="vault-board-cover"
+      src={src}
+      alt=""
+      draggable={false}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function tagColor(tag: string): string {
+  let sum = 0;
+  for (const char of tag) sum += char.codePointAt(0) ?? 0;
+  return ACCENTS[sum % ACCENTS.length];
+}
+
+function SubtaskRing({ done, total }: { done: number; total: number }) {
+  const radius = 6;
+  const length = 2 * Math.PI * radius;
+  return (
+    <svg viewBox="0 0 16 16" className="vault-board-ring" aria-hidden="true">
+      <circle cx="8" cy="8" r={radius} fill="none" stroke="var(--muted)" strokeWidth="2.5" />
+      <circle
+        cx="8"
+        cy="8"
+        r={radius}
+        fill="none"
+        stroke="var(--board-done)"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray={`${(done / total) * length} ${length}`}
+        transform="rotate(-90 8 8)"
+      />
+    </svg>
+  );
+}
+
 function Card({
   card,
   today,
+  documentId,
   hovered,
   editable,
   onHover,
@@ -371,6 +484,7 @@ function Card({
 }: {
   card: BoardCard;
   today: string;
+  documentId: string | null;
   hovered: boolean;
   editable: boolean;
   onHover: (line: number | null) => void;
@@ -379,50 +493,54 @@ function Card({
   const doneSubtasks = card.subtasks.filter((subtask) => subtask.done).length;
   const finished = card.status === "done" || card.status === "cancelled";
   const late = card.due && !finished && card.due < today;
+  const cover = card.cover ? coverSrc(card.cover, documentId) : null;
 
   return (
     <article
       data-board-card={card.line}
       tabIndex={editable ? 0 : undefined}
-      aria-label={card.title}
+      aria-label={card.label || card.title}
       onPointerEnter={() => onHover(card.line)}
       onPointerDown={(event) => onPointerDown(event, card.line)}
       onFocus={() => onHover(card.line)}
-      className={cn(
-        "relative grid select-none gap-1.5 rounded-lg border border-border bg-card py-2 pl-3.5 pr-2.5 shadow-sm transition",
-        editable && "cursor-grab active:cursor-grabbing",
-        hovered && "border-foreground/30",
-      )}
+      className={cn("vault-board-card", editable && "is-editable", hovered && "is-hovered", finished && "is-finished")}
     >
-      <span aria-hidden="true" className={cn("absolute bottom-2 left-0 top-2 w-[3px] rounded-r", STATUS_STRIPE[card.status])} />
-      <p className={cn("text-sm leading-snug", finished && "text-muted-foreground line-through decoration-muted-foreground/50")}>
-        {card.title || "Untitled card"}
-      </p>
-      {card.notes.length > 0 ? <p className="line-clamp-2 text-xs text-muted-foreground">{card.notes.join(" ")}</p> : null}
-      {card.priority || card.due || card.subtasks.length || card.status === "in_progress" ? (
-        <div className="flex flex-wrap items-center gap-1.5 text-[0.7rem] text-muted-foreground">
-          {card.status === "in_progress" ? <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-700 dark:text-sky-300">In progress</span> : null}
+      {cover ? <CardCover key={cover} src={cover} /> : null}
+      <div className="vault-board-card-body">
+        <p className="vault-board-card-title">{card.label || card.title || "Untitled card"}</p>
+        {card.notes.length > 0 ? <p className="vault-board-card-notes">{card.notes.join(" ")}</p> : null}
+        {card.tags.length > 0 ? (
+          <div className="vault-board-chips">
+            {card.tags.map((tag) => (
+              <span key={tag} className="vault-board-chip" style={{ "--chip": tagColor(tag) } as CSSProperties}>
+                #{tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="vault-board-meta">
           {card.priority ? (
-            <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 capitalize">
-              <span className={cn("size-1.5 rounded-full", PRIORITY_DOT[card.priority] ?? "bg-muted-foreground")} />
+            <span className="vault-board-priority">
+              <i style={{ background: PRIORITY_COLOR[card.priority] ?? "var(--muted-foreground)" }} />
               {card.priority}
             </span>
           ) : null}
           {card.due ? (
-            <span className={cn("rounded bg-muted px-1.5 py-0.5", late && "text-destructive")}>
+            <span className={cn("vault-board-due", late && "is-late")}>
+              <Clock3 className="size-3" aria-hidden="true" />
               {formatDueLabel(card.due, today)}
             </span>
           ) : null}
+          <span className="flex-1" />
           {card.subtasks.length > 0 ? (
-            <span className="inline-flex items-center gap-1 tabular-nums">
-              <span className="h-1 w-8 overflow-hidden rounded-full bg-muted">
-                <span className="block h-full bg-emerald-500" style={{ width: `${(doneSubtasks / card.subtasks.length) * 100}%` }} />
-              </span>
+            <span className="vault-board-priority tabular-nums" title={`${doneSubtasks} of ${card.subtasks.length} subtasks done`}>
+              <SubtaskRing done={doneSubtasks} total={card.subtasks.length} />
               {doneSubtasks}/{card.subtasks.length}
             </span>
           ) : null}
+          <span className={cn("vault-board-status", `is-${card.status}`)} title={STATUS_LABEL[card.status]} />
         </div>
-      ) : null}
+      </div>
     </article>
   );
 }

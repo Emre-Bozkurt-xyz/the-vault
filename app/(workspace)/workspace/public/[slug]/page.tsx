@@ -159,7 +159,7 @@ export default async function WorkspacePublicDocumentPage({
                 authorLabel={ownerHandle ?? ownerName}
               >
               {isBoardDocument(document.markdown) ? (
-                <DocumentBoard markdown={document.markdown} />
+                <DocumentBoard markdown={document.markdown} documentId={document.id} />
               ) : (
               <MarkdownDocument
                 markdown={document.markdown}
