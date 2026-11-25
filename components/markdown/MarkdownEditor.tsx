@@ -92,6 +92,8 @@ import {
 import { BacklinksChip } from "@/components/markdown/DocumentBacklinks";
 import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
 import { DocumentBoard } from "@/components/markdown/board/DocumentBoard";
+import { BlockMenu } from "@/components/markdown/BlockMenu";
+import { createBlockHandleExtension, type BlockMenuRequest } from "@/components/markdown/block-handle";
 import { isBoardDocument } from "@/lib/board/markdown-board";
 import { linkSelectionWithPastedUrl } from "@/components/markdown/paste-link";
 import { DocumentExcerptPreview } from "@/components/markdown/DocumentExcerptPreview";
@@ -556,6 +558,9 @@ export function MarkdownEditor({
   // only thing crossing the boundary is this setter, which React guarantees is
   // stable.
   const [linkHover, setLinkHover] = useState<LinkHoverTarget | null>(null);
+  // Live mode's block handle menu (`block-handle.ts`, `BlockMenu`).
+  const [blockMenu, setBlockMenu] = useState<BlockMenuRequest | null>(null);
+  const closeBlockMenu = useCallback(() => setBlockMenu(null), []);
   const wikiCompletionDismissal = useMemo(
     () => createWikiCompletionDismissalStore(),
     [],
@@ -1415,6 +1420,7 @@ export function MarkdownEditor({
           // refreshed it previews the current text. Extensions decide which
           // links get a card (the dictionary's definitions and, for authors
           // who use it, its offer to define an unresolved term).
+          createBlockHandleExtension(setBlockMenu),
           createLinkHoverExtension({
             getWikiLinks: () => wikiLinkMapStore.get(),
             hasPreview: (link) => Boolean(resolveLinkPreview(link, documentExtensions)),
@@ -2188,6 +2194,7 @@ export function MarkdownEditor({
             onClose={settleDialog}
           />
         ) : null}
+        {blockMenu ? <BlockMenu request={blockMenu} documentId={documentId} onClose={closeBlockMenu} /> : null}
         {linkHover ? (
           <ExtensionLinkHoverCard
             // Keyed on the link so moving between two links remounts the card
