@@ -451,15 +451,23 @@ export function DocumentBoard({
                   aria-label="New column"
                   placeholder="Column name, then Enter"
                   className="vault-board-add-input"
+                  {...singleLineEntry}
                   onKeyDown={(event) => {
-                    if (event.key === "Escape") setAdding(null);
-                    if (event.key === "Enter" && event.currentTarget.value.trim()) {
-                      const name = event.currentTarget.value;
-                      change((md) => addColumn(md, name));
+                    if (event.key === "Escape") {
+                      event.currentTarget.value = "";
                       setAdding(null);
                     }
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
                   }}
-                  onBlur={() => setAdding(null)}
+                  // Enter, the keyboard's own key, or tapping away all add it.
+                  onBlur={(event) => {
+                    const name = event.currentTarget.value;
+                    if (name.trim()) change((md) => addColumn(md, name));
+                    setAdding(null);
+                  }}
                 />
               </div>
             ) : (
@@ -508,6 +516,15 @@ export function DocumentBoard({
     </div>
   );
 }
+
+/**
+ * Props for the board's one-line "type, then Enter" fields. They sit inside
+ * the editor's <form>, so a phone keyboard would otherwise offer "Next" (which
+ * just moves focus to the next field, never pressing Enter); `enterKeyHint`
+ * makes its action key an Enter. Enter handlers also `preventDefault()` so it
+ * never submits that form.
+ */
+const singleLineEntry = { enterKeyHint: "enter", autoComplete: "off" } as const;
 
 /**
  * True for an event that reached this element through a React portal (a menu
@@ -581,8 +598,12 @@ function Column({
             defaultValue={column.heading}
             aria-label="Column name"
             className="vault-board-lane-name"
+            enterKeyHint="done"
             onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
               if (event.key === "Escape") {
                 event.currentTarget.value = column.heading;
                 event.currentTarget.blur();
@@ -637,14 +658,25 @@ function Column({
             aria-label="New card"
             placeholder="Card title, then Enter"
             className="vault-board-add-input mx-2.5 mb-3"
+            {...singleLineEntry}
             onKeyDown={(event) => {
-              if (event.key === "Escape") onStopAdd();
-              if (event.key === "Enter" && event.currentTarget.value.trim()) {
-                onAdd(event.currentTarget.value);
+              if (event.key === "Escape") {
+                event.currentTarget.value = "";
+                onStopAdd();
+              }
+              if (event.key === "Enter") {
+                // Stays open for the next card.
+                event.preventDefault();
+                if (event.currentTarget.value.trim()) onAdd(event.currentTarget.value);
                 event.currentTarget.value = "";
               }
             }}
-            onBlur={onStopAdd}
+            // A title left in the field when it loses focus (the phone
+            // keyboard's Done, tapping away) is added, not dropped.
+            onBlur={(event) => {
+              if (event.currentTarget.value.trim()) onAdd(event.currentTarget.value);
+              onStopAdd();
+            }}
           />
         ) : (
           <button type="button" onClick={() => onLaneAction({ type: "add" })} className="vault-board-add">
@@ -895,8 +927,12 @@ function CardSheet({
                 change((md) => setCardTitle(md, card.line, title));
               }
             }}
+            enterKeyHint="done"
             onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
             }}
           />
           <Field label="Status">
@@ -976,7 +1012,9 @@ function CardSheet({
                 placeholder="Add a subtask, then Enter"
                 aria-label="New subtask"
                 className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                {...singleLineEntry}
                 onKeyDown={(event) => {
+                  if (event.key === "Enter") event.preventDefault();
                   if (event.key === "Enter" && event.currentTarget.value.trim()) {
                     saveDetails(notes, [...card.subtasks, { done: false, text: event.currentTarget.value.trim() }]);
                     event.currentTarget.value = "";
