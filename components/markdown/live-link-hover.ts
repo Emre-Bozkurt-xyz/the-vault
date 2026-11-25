@@ -35,6 +35,8 @@ import {
 export type LinkHoverTarget = {
   anchor: HTMLElement;
   link: WikiLinkInfo;
+  /** Set for a web link (`[label](https://…)`): the card shows the page's preview. */
+  url?: string;
 };
 
 /** Class the live-preview pass puts on a rendered wiki link's visible text. */
@@ -88,6 +90,8 @@ export function findLinkAtNode(
   wikiLinks: WikiLinkResolutionMap,
 ): LinkHoverTarget | null {
   const element = node instanceof Element ? node : null;
+  const webAnchor = element?.closest(".vault-cm-preview-link");
+  if (webAnchor instanceof HTMLElement) return findWebLinkAtNode(view, webAnchor);
   const anchor = element?.closest(`.${wikiLinkClass}`);
 
   if (!(anchor instanceof HTMLElement)) {
@@ -228,7 +232,7 @@ export function createLinkHoverExtension(options: {
         }
 
         const found = findLinkAtNode(view, event.target, options.getWikiLinks());
-        const target = found && options.hasPreview(found.link) ? found : null;
+        const target = found && (found.url || options.hasPreview(found.link)) ? found : null;
 
         if (!target) {
           if (current) {
@@ -328,4 +332,28 @@ export function linkCompletionFilterAt(
 ): LinkCompletionScope["filter"] | null {
   const scope = state.field(linkCompletionScopeField, false) ?? null;
   return scope && scope.markerFrom === markerFrom ? scope.filter : null;
+}
+
+/** A rendered `[label](https://…)` under the pointer, as a web-link hover target. */
+function findWebLinkAtNode(view: EditorView, anchor: HTMLElement): LinkHoverTarget | null {
+  let position: number;
+  try {
+    position = view.posAtDOM(anchor);
+  } catch {
+    return null;
+  }
+  const line = view.state.doc.lineAt(position);
+  const offset = position - line.from;
+  for (const match of line.text.matchAll(/\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s\n]+)(?:\s+"[^"\n]*")?\)/g)) {
+    const start = match.index ?? 0;
+    if (offset < start || offset > start + match[0].length) continue;
+    const url = match[2].replace(/^<|>$/g, "");
+    if (!/^https?:\/\//i.test(url)) return null;
+    return {
+      anchor,
+      url,
+      link: { target: url, label: match[1], href: url, resolved: true, isDefinition: false, preview: null, excerpt: null, occurrence: 0 },
+    };
+  }
+  return null;
 }

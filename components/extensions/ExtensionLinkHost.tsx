@@ -44,20 +44,23 @@ export function ExtensionLinkHost({
   }
 
   const { preview } = resolved;
-  // `disableLinks` is also what caps preview depth at zero: every link inside
-  // a card renders as plain text, so no card can open another.
-  const renderMarkdown = (markdown: string) => (
-    <MarkdownDocument markdown={markdown} disableLinks compact contained={false} />
-  );
 
   return (
     <LinkPreviewCard
       href={link.href}
       title={preview.title}
       quiet={preview.quiet}
+      variant={resolved.core ? "page" : undefined}
       preview={
         resolved.core ? (
-          <DocumentExcerptPreview href={link.href} initial={preview.markdown} renderMarkdown={renderMarkdown} />
+          <DocumentExcerptPreview
+            href={link.href}
+            title={preview.title}
+            initial={preview.markdown}
+            renderMarkdown={(markdown) => (
+              <MarkdownDocument markdown={markdown} disableLinks contained={false} />
+            )}
+          />
         ) : preview.markdown ? (
           // `disableLinks` is also what caps preview depth at zero: every link
           // inside a card renders as plain text, so no card can open another.

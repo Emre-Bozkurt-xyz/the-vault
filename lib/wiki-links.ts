@@ -402,9 +402,14 @@ export function transformWikiLinks(
           ? "Ambiguous wiki link"
           : status === "private"
             ? "Private wiki link"
-            : "Unresolved wiki link";
+            : "No document called this yet";
+      // A title link to nothing yet: the editor creates it when clicked.
+      const target =
+        status === "unresolved" && wikiKeyForTarget(parts.target).startsWith("title:")
+          ? ` data-wiki-target="${escapeHtmlAttribute(parts.target)}"`
+          : "";
 
-      return `<span class="vault-md-wiki-link vault-md-wiki-link-${status}" title="${escapeHtmlAttribute(title)}">${escapeHtml(parts.label || parts.target)}</span>`;
+      return `<span class="vault-md-wiki-link vault-md-wiki-link-${status}" title="${escapeHtmlAttribute(title)}"${target}>${escapeHtml(parts.label || parts.target)}</span>`;
     }),
   );
 }
@@ -1304,7 +1309,13 @@ const excerptMaxChars = 900;
  * (`[[Doc#Heading]]`, `#^block`, `#@region`) or the document's opening, without
  * frontmatter or a leading title heading. Null when there is nothing to show.
  */
-export function documentExcerpt(markdown: string | null | undefined, href: string | null): string | null {
+export function documentExcerpt(
+  markdown: string | null | undefined,
+  href: string | null,
+  limits: { lines?: number; chars?: number } = {},
+): string | null {
+  const maxLines = limits.lines ?? excerptMaxLines;
+  const maxChars = limits.chars ?? excerptMaxChars;
   if (!markdown) return null;
   const hash = href?.indexOf("#") ?? -1;
   let fragment: string | null = null;
@@ -1333,8 +1344,8 @@ export function documentExcerpt(markdown: string | null | undefined, href: strin
     kept.push(line);
     chars += line.length;
     // Finish a code block if it's short, but never run on past twice the cap.
-    const over = kept.length >= excerptMaxLines || chars >= excerptMaxChars;
-    if ((over && !inFence) || kept.length >= excerptMaxLines * 2 || chars >= excerptMaxChars * 2) break;
+    const over = kept.length >= maxLines || chars >= maxChars;
+    if ((over && !inFence) || kept.length >= maxLines * 2 || chars >= maxChars * 2) break;
   }
   if (inFence) kept.push("```");
   const excerpt = kept.join("\n").trim();

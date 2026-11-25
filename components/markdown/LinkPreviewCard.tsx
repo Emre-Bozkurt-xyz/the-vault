@@ -38,12 +38,15 @@ export function LinkPreviewCard({
   title,
   preview,
   quiet = false,
+  variant,
   children,
 }: {
   href: string;
   /** The card's heading. */
   title: string;
   preview: ReactNode;
+  /** `page`: a miniature of the linked page (`DocumentExcerptPreview`), which shows its own title. */
+  variant?: "page";
   /** Still linked and previewable, but not emphasized (e.g. a repeat mention). */
   quiet?: boolean;
   /** The link text as it appears in the sentence. */
@@ -64,7 +67,7 @@ export function LinkPreviewCard({
       >
         {children}
       </PreviewCard.Trigger>
-      <LinkCardPopup title={title} footer={<LinkCardOpenLink href={href} />}>
+      <LinkCardPopup title={title} variant={variant} footer={<LinkCardOpenLink href={href} />}>
         {preview}
       </LinkCardPopup>
     </PreviewCard.Root>
@@ -76,11 +79,13 @@ export function LinkHoverCard({
   title,
   footer,
   onClose,
+  variant,
   children,
 }: {
   anchor: HTMLElement;
   title: string;
   footer?: ReactNode;
+  variant?: "page";
   /** Escape or an outside press — the extension closes on its own otherwise. */
   onClose: () => void;
   children: ReactNode;
@@ -94,7 +99,7 @@ export function LinkHoverCard({
         }
       }}
     >
-      <LinkCardPopup anchor={anchor} title={title} footer={footer}>
+      <LinkCardPopup anchor={anchor} title={title} footer={footer} variant={variant}>
         {children}
       </LinkCardPopup>
     </PreviewCard.Root>
@@ -114,11 +119,13 @@ function LinkCardPopup({
   anchor,
   title,
   footer,
+  variant,
   children,
 }: {
   anchor?: HTMLElement;
   title: string;
   footer?: ReactNode;
+  variant?: "page";
   children: ReactNode;
 }) {
   return (
@@ -129,8 +136,8 @@ function LinkCardPopup({
         side="top"
         align="start"
       >
-        <PreviewCard.Popup className="vault-md-definition-card">
-          <p className="vault-md-definition-card-title">{title}</p>
+        <PreviewCard.Popup className={cn("vault-md-definition-card", variant === "page" && "vault-md-definition-card--page")}>
+          {variant === "page" ? null : <p className="vault-md-definition-card-title">{title}</p>}
           <div className="vault-md-definition-card-body">{children}</div>
           {footer ? (
             <div className="vault-md-definition-card-footer">{footer}</div>

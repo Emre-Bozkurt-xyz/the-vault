@@ -96,7 +96,14 @@ import { BlockMenu } from "@/components/markdown/BlockMenu";
 import { createBlockHandleExtension, type BlockMenuRequest } from "@/components/markdown/block-handle";
 import { isBoardDocument } from "@/lib/board/markdown-board";
 import { linkSelectionWithPastedUrl } from "@/components/markdown/paste-link";
+import {
+  createLiveLinkOpenExtension,
+  refreshUnresolvedLinks,
+  type LiveLinkTarget,
+} from "@/components/markdown/live-link-open";
+import { useRouter } from "next/navigation";
 import { DocumentExcerptPreview } from "@/components/markdown/DocumentExcerptPreview";
+import { WebLinkOpen, WebLinkPreview } from "@/components/markdown/WebLinkPreview";
 import { showWorkspaceToast } from "@/lib/workspace-toast";
 import { DocumentFolderPath } from "@/components/markdown/DocumentFolderPath";
 import {
@@ -190,6 +197,7 @@ import {
   escapeWikiLinkLabel,
   extractWikiEmbedKeys,
   wikiDocKey,
+  wikiKeyForTarget,
   wikiTitleKey,
   type WikiLinkAnchor,
   type WikiLinkResolution,
@@ -620,6 +628,66 @@ export function MarkdownEditor({
     },
     [folderId, wikiLinkMapStore],
   );
+  const router = useRouter();
+  // Ctrl/Cmd+click (or middle-click) on a link in the editor, and a click on a
+  // greyed-out `[[link]]` in Read mode: open it, or, for a document that
+  // doesn't exist yet, create it beside this one and open that.
+  const isUnresolvedTitle = useCallback(
+    (target: string) => {
+      const key = wikiKeyForTarget(target);
+      if (!key.startsWith("title:")) return false;
+      const resolution = wikiLinkMapStore.get()[key];
+      return !resolution || resolution.status === "unresolved";
+    },
+    [wikiLinkMapStore],
+  );
+  const openLink = useCallback(
+    async (target: LiveLinkTarget, { newTab }: { newTab: boolean }) => {
+      const go = (href: string) => {
+        if (newTab || /^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
+        else router.push(href);
+      };
+      if (target.kind === "url") {
+        go(target.url);
+        return;
+      }
+      const resolution = wikiLinkMapStore.get()[wikiKeyForTarget(target.target)];
+      if (resolution?.status === "resolved" && resolution.href) {
+        const base = resolution.href.split("#")[0];
+        go(target.fragment ? `${base}#${encodeURIComponent(target.fragment)}` : resolution.href);
+        return;
+      }
+      if (embedSessionToken || !isUnresolvedTitle(target.target)) return;
+      // The map can be stale (a page restored by Back): ask the server before
+      // creating, so a document made a moment ago is opened, not made twice.
+      const fresh = await fetchWikiLinkCompletionMap(wikiLinkMapStore.get(), embedSessionToken);
+      wikiLinkMapStore.set(fresh);
+      const existing = fresh[wikiKeyForTarget(target.target)];
+      if (existing?.status === "resolved" && existing.href) {
+        go(existing.href);
+        return;
+      }
+      const created = await createLinkedDocument(target.target);
+      if (created) go(`/docs/${created.id}`);
+    },
+    [createLinkedDocument, embedSessionToken, isUnresolvedTitle, router, wikiLinkMapStore],
+  );
+  useEffect(() => {
+    if (embedSessionToken) return;
+    let cancelled = false;
+    void fetchWikiLinkCompletionMap(wikiLinkMapStore.get(), null).then((fresh) => {
+      if (cancelled) return;
+      wikiLinkMapStore.set(fresh);
+      viewRef.current?.dispatch({ effects: refreshUnresolvedLinks.of(null) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId, embedSessionToken, wikiLinkMapStore]);
+  // A link made or found since the editor opened: re-check greyed-out links.
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: refreshUnresolvedLinks.of(null) });
+  }, [wikiLinkMap]);
   const titleValueRef = useRef(title);
   const markdownValueRef = useRef(markdown);
   const savingRef = useRef(false);
@@ -1128,6 +1196,10 @@ export function MarkdownEditor({
       ),
       createBlockAnchorMarkerExtension(),
       anchorSurface.extension,
+      createLiveLinkOpenExtension({
+        onOpen: (target, options) => void openLink(target, options),
+        isUnresolved: isUnresolvedTitle,
+      }),
       EditorView.domEventHandlers({
         paste(event, view) {
           const file = firstSupportedAssetFile(event.clipboardData?.files);
@@ -1483,7 +1555,6 @@ export function MarkdownEditor({
               wikiLinkMapStore,
               wikiCompletionDismissal,
               embedSessionToken,
-              embedSessionToken ? undefined : createLinkedDocument,
             ),
             createAssetCompletionSource({
               documentId,
@@ -1547,7 +1618,8 @@ export function MarkdownEditor({
       toggleReadTask,
       liveContributions,
       anchorSurface,
-      createLinkedDocument,
+      openLink,
+      isUnresolvedTitle,
     ],
   );
 
@@ -2158,6 +2230,15 @@ export function MarkdownEditor({
             {editorMode === "read" && !boardVisible ? (
               <div
                 ref={readPreviewRef}
+                onClick={(event) => {
+                  const unresolved = (event.target as HTMLElement).closest<HTMLElement>("[data-wiki-target]");
+                  if (!unresolved?.dataset.wikiTarget || embedSessionToken) return;
+                  event.preventDefault();
+                  void openLink(
+                    { kind: "wiki", target: unresolved.dataset.wikiTarget, fragment: null },
+                    { newTab: event.ctrlKey || event.metaKey },
+                  );
+                }}
                 className="vault-markdown-editor-preview-pane min-h-[calc(100svh-18rem)] py-5 sm:min-h-[520px] sm:py-8"
               >
                 <DocumentCanvas
@@ -4880,7 +4961,6 @@ function createWikiLinkCompletionSource(
   wikiLinkMapStore: WikiLinkMapStore,
   wikiCompletionDismissal: WikiCompletionDismissalStore,
   embedSessionToken?: string | null,
-  createDocument?: (title: string) => Promise<{ id: string; title: string } | null>,
 ) {
   return async (context: CompletionContext) => {
     const region = getOpenWikiLinkCompletionRegion(context.state, context.pos);
@@ -4916,27 +4996,6 @@ function createWikiLinkCompletionSource(
       region.query,
       linkFilter,
     );
-    // Nothing called that yet: offer to make it, last in the list.
-    const newTitle = region.query.trim();
-    if (
-      createDocument &&
-      !linkFilter &&
-      newTitle &&
-      region.headingFrom === null &&
-      !/[#|[\]]/.test(newTitle) &&
-      !/^(doc|guide|public|asset):/i.test(newTitle) &&
-      !options.some((option) => (option.displayLabel ?? option.label).trim().toLowerCase() === newTitle.toLowerCase())
-    ) {
-      options.push({
-        label: region.query,
-        displayLabel: `Create “${newTitle}”`,
-        detail: "New document",
-        type: "keyword",
-        boost: -99,
-        apply: createNewDocumentLinkApply(newTitle, region.hasClosingMarker, createDocument),
-      });
-    }
-
     return {
       from: region.headingFrom ?? region.markerTo,
       to: region.contentTo,
@@ -5469,31 +5528,6 @@ function wikiCompletionAnchorInfo(anchor: WikiLinkAnchor) {
   }
 
   return "Link to an Obsidian-style block anchor inside this document";
-}
-
-/**
- * "Create “…”": links the title at once, then, when the document exists,
- * points the link at its id (so a later rename keeps it) if the text is
- * still there.
- */
-function createNewDocumentLinkApply(
-  title: string,
-  hasClosingMarker: boolean,
-  createDocument: (title: string) => Promise<{ id: string; title: string } | null>,
-) {
-  return (view: EditorView, completion: Completion, from: number, to: number) => {
-    view.dispatch({
-      changes: { from, to, insert: hasClosingMarker ? title : `${title}]]` },
-      selection: EditorSelection.cursor(from + title.length + 2),
-      annotations: pickedCompletion.of(completion),
-    });
-    void createDocument(title).then((created) => {
-      if (!created || view.state.sliceDoc(from, from + title.length) !== title) return;
-      view.dispatch({
-        changes: { from, to: from + title.length, insert: `doc:${created.id}|${escapeWikiLinkLabel(title)}` },
-      });
-    });
-  };
 }
 
 function createWikiCompletionApply(insertText: string, hasClosingMarker: boolean) {
@@ -6321,6 +6355,14 @@ function ExtensionLinkHoverCard({
   onAction: (command: string, args?: JsonValue) => void;
   onClose: () => void;
 }) {
+  // A web link: the page's own preview card.
+  if (hover.url) {
+    return (
+      <LinkHoverCard anchor={hover.anchor} title="" variant="page" footer={<WebLinkOpen url={hover.url} />} onClose={onClose}>
+        <WebLinkPreview url={hover.url} />
+      </LinkHoverCard>
+    );
+  }
   const resolved = resolveLinkPreview(hover.link, extensions);
   if (!resolved) return null;
   const { preview } = resolved;
@@ -6329,6 +6371,7 @@ function ExtensionLinkHoverCard({
     <LinkHoverCard
       anchor={hover.anchor}
       title={preview.title}
+      variant={resolved.core ? "page" : undefined}
       footer={
         preview.action ? (
           <button
@@ -6347,9 +6390,10 @@ function ExtensionLinkHoverCard({
       {resolved.core && hover.link.href ? (
         <DocumentExcerptPreview
           href={hover.link.href}
+          title={preview.title}
           initial={preview.markdown}
           renderMarkdown={(markdown) => (
-            <MarkdownDocument markdown={markdown} disableLinks compact contained={false} />
+            <MarkdownDocument markdown={markdown} disableLinks contained={false} />
           )}
         />
       ) : preview.markdown ? (

@@ -122,6 +122,9 @@ export const safeHtmlSchema: Schema = {
     // `[/]` and `[-]` task items (`remarkTasks`). Scoped to `li` for the same
     // reason as the calc key: it styles a checkbox and means nothing elsewhere.
     li: [...(defaultSchema.attributes?.li ?? []), "data-task-status", "dataTaskStatus"],
+    // An unresolved `[[link]]`'s target, so the editor can create that
+    // document when it's clicked (`transformWikiLinks`). Plain text.
+    span: [...(defaultSchema.attributes?.span ?? []), "data-wiki-target", "dataWikiTarget"],
     "vault-extension-inline": ["data-extension-key", "dataExtensionKey"],
   },
   protocols: {

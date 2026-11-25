@@ -44,6 +44,7 @@ import { CalloutIcon } from "@/components/markdown/CalloutIcon";
 import { CodeBlock, InlineCode } from "@/components/markdown/CodeBlock";
 import { codeInfoFromClassName, codeNodeText, rehypeCodeHighlight } from "@/lib/markdown/code-highlight";
 import { ExtensionLinkHost } from "@/components/extensions/ExtensionLinkHost";
+import { WebLinkHoverCard } from "@/components/markdown/WebLinkPreview";
 import { extensionDirectiveOwners } from "@/lib/extension-host/blocks";
 import { planExtensionParts } from "@/lib/extension-host/plan";
 import {
@@ -458,8 +459,18 @@ function createMarkdownComponents(
   div({ children, className, style }) {
     return <div {...styledProps("vault-md-html-block", className, style)}>{children}</div>;
   },
-  span({ children, className, style }) {
-    return <span {...styledProps("vault-md-html-inline", className, style)}>{children}</span>;
+  span({ children, className, style, title, ...rest }) {
+    // A wiki link to nothing yet carries its target (the editor creates it on click).
+    const wikiTarget = (rest as Record<string, unknown>)["data-wiki-target"];
+    return (
+      <span
+        {...styledProps("vault-md-html-inline", className, style)}
+        title={typeof title === "string" ? title : undefined}
+        data-wiki-target={typeof wikiTarget === "string" ? wikiTarget : undefined}
+      >
+        {children}
+      </span>
+    );
   },
   section({ children, className, style }) {
     return <section {...styledProps("vault-md-section", className, style)}>{children}</section>;
@@ -691,6 +702,19 @@ function createMarkdownComponents(
           {children}
         </ExtensionLinkHost>
       );
+    }
+
+    // A web link in the workspace gets a preview card (the page's OpenGraph
+    // card, fetched by the server when it opens). Public pages keep plain links:
+    // their readers can't call the preview route.
+    if (
+      extensions?.surface === "workspace" &&
+      linkTarget === "_blank" &&
+      /^https?:\/\//i.test(safeHref) &&
+      baseClassName === "vault-md-link" &&
+      !className
+    ) {
+      return <WebLinkHoverCard url={safeHref}>{children}</WebLinkHoverCard>;
     }
 
     return plainLink;
