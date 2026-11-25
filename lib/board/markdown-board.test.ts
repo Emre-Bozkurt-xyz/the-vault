@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   addCard,
   addColumn,
+  cardMarkdown,
+  deleteColumn,
+  duplicateCard,
+  moveColumn,
+  setColumnStatus,
+  sortColumn,
   deleteCard,
   isBoardDocument,
   minimalChange,
@@ -104,6 +110,30 @@ describe("markdown board", () => {
     expect(snow).toMatchObject({ tags: ["c-sharp"], cover: { url: "https://x.y/cover.png" }, notes: [] });
     const edited = setCardDetails(withArt, 4, ["Louder."], []);
     expect(edited.split("\n").slice(5, 7)).toEqual([`  ![[asset:${asset}|sketch]]`, "  Louder."]);
+  });
+
+  it("moves, deletes, sorts and fills columns, and copies cards", () => {
+    const headings = (md: string) => parseBoard(md).columns.map((column) => column.heading);
+    expect(headings(moveColumn(doc, 7, 1))).toEqual(["Doing", "Ideas", "Done"]);
+    expect(moveColumn(doc, 7, 1)).toContain("Intro text stays.");
+    expect(parseBoard(moveColumn(doc, 7, 1)).columns[1].cards[0].subtasks).toHaveLength(2);
+    expect(headings(moveColumn(doc, 17, -1))).toEqual(["Ideas", "Done", "Doing"]);
+    expect(moveColumn(doc, 7, -1)).toBe(doc);
+    expect(moveColumn(moveColumn(doc, 7, 1), 7, 1)).toBe(doc);
+
+    const deleted = deleteColumn(doc, 14);
+    expect(headings(deleted)).toEqual(["Ideas", "Done"]);
+    expect(deleted).not.toContain("Lantern");
+    expect(deleted).not.toMatch(/\n\n\n/);
+
+    const sorted = parseBoard(sortColumn(doc, 7, "priority")).columns[0].cards.map((card) => card.title);
+    expect(sorted).toEqual(["Sanity drain", "Footprints fade"]);
+    const byStatus = sortColumn(["## A", "- [x] Done one", "- [ ] Open one", "  note", "- [/] Doing one"].join("\n"), 0, "status");
+    expect(byStatus.split("\n")).toEqual(["## A", "- [/] Doing one", "- [ ] Open one", "  note", "- [x] Done one"]);
+
+    expect(parseBoard(setColumnStatus(doc, 7, "done")).columns[0].cards.every((card) => card.status === "done")).toBe(true);
+    expect(parseBoard(duplicateCard(doc, 8)).columns[0].cards.map((card) => card.title)).toEqual(["Sanity drain", "Sanity drain", "Footprints fade"]);
+    expect(cardMarkdown(doc, 8).split("\n")).toHaveLength(4);
   });
 
   it("finds the smallest edit", () => {

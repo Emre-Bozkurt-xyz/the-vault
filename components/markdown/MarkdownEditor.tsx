@@ -7,6 +7,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { todayDayKey } from "@/lib/tasks/dates";
 import { toggleReadCheckboxAction } from "@/server/tasks";
@@ -52,6 +54,7 @@ import {
   FileCode2,
   Grid3x3,
   Loader2,
+  PanelRightClose,
   SlidersHorizontal,
   Save,
   Tags,
@@ -91,7 +94,7 @@ import {
 } from "@/components/markdown/slash-commands";
 import { BacklinksChip } from "@/components/markdown/DocumentBacklinks";
 import { DocumentPageArt } from "@/components/markdown/DocumentPageArt";
-import { BoardBar, boardProgress, type BoardView } from "@/components/markdown/board/BoardBar";
+import { BoardBar, boardProgress } from "@/components/markdown/board/BoardBar";
 import { BOARD_USER_EVENT, boardFlashExtension } from "@/components/markdown/board/board-flash";
 import { DocumentBoard } from "@/components/markdown/board/DocumentBoard";
 import { BlockMenu } from "@/components/markdown/BlockMenu";
@@ -1037,7 +1040,9 @@ export function MarkdownEditor({
   // like typing does (collaboration, undo, saving).
   const isBoard = useMemo(() => isBoardDocument(markdownValue), [markdownValue]);
   const boardStats = useMemo(() => (isBoard ? boardProgress(parseBoard(markdownValue)) : null), [isBoard, markdownValue]);
-  const [boardView, setBoardView] = useState<BoardView>("board");
+  // The board's Markdown panel: the editor itself, shown beside the board.
+  const [boardSourceOpen, setBoardSourceOpen] = useState(false);
+  const [boardSourceWidth, setBoardSourceWidth] = useState(440);
   // Becoming a board (or not) swaps the page editor for the board's raw Source
   // pane and back. Adjusted while rendering rather than in an effect, so the
   // first frame is already right.
@@ -2000,6 +2005,48 @@ export function MarkdownEditor({
           : "Local Markdown draft";
   const showManualSave =
     Boolean(saveError) || (collaboration && collabStatus === "disconnected");
+  const toggleBoardSource = (open = !boardSourceOpen) => {
+    setBoardSourceOpen(open);
+    // The panel is the editor, which Read mode doesn't mount.
+    if (open && editorMode === "read") changeEditorMode("source");
+  };
+  // "Show in Markdown": open the panel and select those lines (0-based, `to` exclusive).
+  const revealBoardLines = (from: number, to: number) => {
+    toggleBoardSource(true);
+    setTimeout(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      const doc = view.state.doc;
+      const first = doc.line(Math.min(from + 1, doc.lines));
+      let lastNumber = Math.min(Math.max(to, from + 1), doc.lines);
+      while (lastNumber > first.number && !doc.line(lastNumber).text.trim()) lastNumber -= 1;
+      const last = doc.line(lastNumber);
+      view.dispatch({
+        selection: { anchor: first.from, head: last.to },
+        effects: EditorView.scrollIntoView(first.from, { y: "center" }),
+      });
+      view.focus();
+    }, 60);
+  };
+  const startBoardSourceResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = boardSourceWidth;
+    const max = Math.min(900, window.innerWidth * 0.65);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const move = (moveEvent: PointerEvent) => {
+      setBoardSourceWidth(Math.round(Math.max(300, Math.min(max, startWidth - (moveEvent.clientX - startX)))));
+    };
+    const up = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const changeTitle = (nextTitle: string) => {
     titleValueRef.current = nextTitle;
     setTitleValue(nextTitle);
@@ -2043,11 +2090,8 @@ export function MarkdownEditor({
             title={titleValue}
             onTitleChange={changeTitle}
             progress={boardStats ?? { total: 0, done: 0, doing: 0 }}
-            view={boardView}
-            onViewChange={(view) => {
-              setBoardView(view);
-              if (view === "source" && editorMode === "read") changeEditorMode("source");
-            }}
+            sourceOpen={boardSourceOpen}
+            onToggleSource={() => toggleBoardSource()}
             extras={
               <>
                 {!embedSessionToken ? <BacklinksChip documentId={documentId} /> : null}
@@ -2208,7 +2252,7 @@ export function MarkdownEditor({
           <div
             className={cn(
               isBoard
-                ? cn("vault-board-stage", boardView === "source" && "is-source")
+                ? cn("vault-board-stage", boardSourceOpen && "is-source")
                 : "min-h-[calc(100svh-18rem)] lg:min-h-[520px]",
             )}
           >
@@ -2217,12 +2261,43 @@ export function MarkdownEditor({
                 markdown={markdownValue}
                 documentId={documentId}
                 onChange={boardEditable ? replaceMarkdown : undefined}
+                onReveal={embedSessionToken ? undefined : revealBoardLines}
+                sourceOpen={boardSourceOpen}
+                onToggleSource={() => toggleBoardSource()}
               />
             ) : null}
             {editorMode !== "read" ? (
-              // On a board, the Source pane beside it; hidden, it still carries
-              // collaboration and saving for the board's edits.
-              <div className={isBoard ? (boardView === "source" ? "vault-board-source" : "hidden") : undefined}>
+              // On a board, the Markdown panel beside it; hidden, it still
+              // carries collaboration and saving for the board's edits. Its
+              // header sits inside this wrapper, never beside it, so the editor
+              // keeps its place in the tree (and its state) as the panel opens.
+              <div
+                className={isBoard ? (boardSourceOpen ? "vault-board-source" : "hidden") : undefined}
+                style={isBoard ? ({ "--board-source-width": `${boardSourceWidth}px` } as CSSProperties) : undefined}
+              >
+              {isBoard ? (
+                <>
+                  <div
+                    role="separator"
+                    aria-label="Resize the Markdown panel"
+                    aria-orientation="vertical"
+                    className="vault-board-source-resize"
+                    onPointerDown={startBoardSourceResize}
+                  />
+                  <div className="vault-board-source-head">
+                    <p>Markdown</p>
+                    <span className="vault-board-source-hint">Board edits highlight here</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleBoardSource(false)}
+                      aria-label="Hide Markdown"
+                      title="Hide Markdown"
+                    >
+                      <PanelRightClose className="size-4" />
+                    </button>
+                  </div>
+                </>
+              ) : null}
               <DocumentCanvas
                 documentId={documentId}
                 snippetCss={snippetCss || null}

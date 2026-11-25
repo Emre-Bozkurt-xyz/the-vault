@@ -46,6 +46,8 @@ export type BoardColumn = {
   cards: BoardCard[];
   /** Lines in the column the board doesn't show (paragraphs, other lists). */
   otherLines: number;
+  /** One past its last line: the next column's heading, or the end. */
+  end: number;
 };
 
 export type Board = {
@@ -124,7 +126,8 @@ export function parseBoard(markdown: string): Board {
     }
     const heading = line.match(columnPattern);
     if (heading) {
-      column = { line: index, heading: heading[1], cards: [], otherLines: 0 };
+      if (column) column.end = index;
+      column = { line: index, heading: heading[1], cards: [], otherLines: 0, end: all.length };
       columns.push(column);
       continue;
     }
@@ -288,6 +291,113 @@ export function moveCard(markdown: string, line: number, toColumnLine: number, t
     all.splice(card.line, block.length);
     all.splice(insertAt, 0, ...block);
   });
+}
+
+/** A card's lines as written (its task line and indented lines). */
+export function cardMarkdown(markdown: string, line: number): string {
+  const card = cardAt(markdown, line);
+  return card ? lines(markdown).slice(card.line, card.end).join("\n") : "";
+}
+
+/** Copies a card (its whole block) right below itself. */
+export function duplicateCard(markdown: string, line: number): string {
+  const card = cardAt(markdown, line);
+  if (!card) return markdown;
+  return withLines(markdown, (all) => {
+    all.splice(card.end, 0, ...all.slice(card.line, card.end));
+  });
+}
+
+/** A column's lines without the blank lines that trail it. */
+function columnBlock(all: string[], column: BoardColumn): string[] {
+  let end = column.end;
+  while (end > column.line + 1 && !all[end - 1].trim()) end -= 1;
+  return all.slice(column.line, end);
+}
+
+/**
+ * Swaps a column (its heading and everything under it) with its neighbour
+ * (`-1` left, `1` right). Blank lines between the two are kept between them.
+ */
+export function moveColumn(markdown: string, columnLine: number, direction: -1 | 1): string {
+  const { columns } = parseBoard(markdown);
+  const index = columns.findIndex((column) => column.line === columnLine);
+  const other = columns[index + direction];
+  if (index === -1 || !other) return markdown;
+  const [first, second] = direction === 1 ? [columns[index], other] : [other, columns[index]];
+  return withLines(markdown, (all) => {
+    const a = columnBlock(all, first);
+    const b = columnBlock(all, second);
+    const gap = all.slice(first.line + a.length, second.line);
+    const tail = all.slice(second.line + b.length, second.end);
+    all.splice(first.line, second.end - first.line, ...b, ...gap, ...a, ...tail);
+  });
+}
+
+/** Removes a column: its heading, its cards and anything else written under it. */
+export function deleteColumn(markdown: string, columnLine: number): string {
+  const column = parseBoard(markdown).columns.find((candidate) => candidate.line === columnLine);
+  if (!column) return markdown;
+  return withLines(markdown, (all) => {
+    all.splice(column.line, column.end - column.line);
+    // Don't leave two blank lines where the column was.
+    while (column.line > 0 && column.line < all.length && !all[column.line].trim() && !all[column.line - 1].trim()) {
+      all.splice(column.line, 1);
+    }
+    while (all.length > 1 && !all[all.length - 1].trim() && !all[all.length - 2].trim()) all.pop();
+  });
+}
+
+export type CardSort = "priority" | "due" | "status";
+
+const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+const STATUS_RANK: Record<CardStatus, number> = { in_progress: 0, open: 1, done: 2, cancelled: 3 };
+
+function compareCards(by: CardSort) {
+  return (a: BoardCard, b: BoardCard) => {
+    if (by === "priority") return (PRIORITY_RANK[a.priority ?? ""] ?? 3) - (PRIORITY_RANK[b.priority ?? ""] ?? 3);
+    if (by === "status") return STATUS_RANK[a.status] - STATUS_RANK[b.status];
+    // Undated last.
+    if (a.due === b.due) return 0;
+    if (!a.due) return 1;
+    if (!b.due) return -1;
+    return a.due < b.due ? -1 : 1;
+  };
+}
+
+/**
+ * Reorders a column's cards (stable: ties keep their order). Each card moves
+ * with its lines into the slot of the card it replaces, so whatever else is
+ * written between cards stays where it was.
+ */
+export function sortColumn(markdown: string, columnLine: number, by: CardSort): string {
+  const column = parseBoard(markdown).columns.find((candidate) => candidate.line === columnLine);
+  if (!column || column.cards.length < 2) return markdown;
+  const sorted = [...column.cards].sort(compareCards(by));
+  return withLines(markdown, (all) => {
+    const blocks = sorted.map((card) => all.slice(card.line, card.end));
+    const region: string[] = [];
+    let next = 0;
+    for (let index = column.line; index < column.end; ) {
+      const card = column.cards.find((candidate) => candidate.line === index);
+      if (card) {
+        region.push(...blocks[next]);
+        next += 1;
+        index = card.end;
+      } else {
+        region.push(all[index]);
+        index += 1;
+      }
+    }
+    all.splice(column.line, column.end - column.line, ...region);
+  });
+}
+
+/** Sets every card in a column to `status`. */
+export function setColumnStatus(markdown: string, columnLine: number, status: CardStatus): string {
+  const column = parseBoard(markdown).columns.find((candidate) => candidate.line === columnLine);
+  if (!column) return markdown;
+  return column.cards.reduce((current, card) => setCardStatus(current, card.line, status), markdown);
 }
 
 /** The smallest single replacement turning `before` into `after`, for an editor transaction. */

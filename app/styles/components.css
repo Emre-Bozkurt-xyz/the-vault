@@ -3668,7 +3668,8 @@
   }
 
   /* Board documents (`DocumentBoard`, `BoardBar`): one header row, then a
-     dotted canvas filling the pane, with the Markdown beside it on Source. */
+     dotted canvas filling the pane, with a Markdown panel that opens beside it. */
+  .vault-board,
   .vault-board-bar,
   .vault-board-canvas,
   .vault-board-source,
@@ -3691,7 +3692,7 @@
     --board-flash: oklch(0.93 0.07 95);
   }
 
-  .dark :is(.vault-board-bar, .vault-board-canvas, .vault-board-source, .vault-board-ghost) {
+  .dark :is(.vault-board, .vault-board-bar, .vault-board-canvas, .vault-board-source, .vault-board-ghost) {
     --board-a1: oklch(0.74 0.12 300);
     --board-a2: oklch(0.74 0.12 252);
     --board-a3: oklch(0.8 0.12 75);
@@ -3822,30 +3823,41 @@
     transition: width 0.3s ease;
   }
 
-  .vault-board-seg {
+  .vault-board-bar-divider {
+    flex: none;
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+
+  /* Opens the Markdown panel: shaped like the workspace's panel toggles. */
+  .vault-board-panel-toggle {
     display: inline-flex;
     flex: none;
-    gap: 2px;
-    padding: 2px;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px 0 8px;
     border: 1px solid var(--border);
-    border-radius: 9px;
-  }
-
-  .vault-board-seg button {
-    padding: 4px 11px;
-    border-radius: 7px;
+    border-radius: 8px;
     color: var(--muted-foreground);
     font-size: 12.5px;
-    transition: color 0.15s ease, background-color 0.15s ease;
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
   }
 
-  .vault-board-seg button:hover {
-    color: var(--foreground);
-  }
-
-  .vault-board-seg button[aria-pressed="true"] {
+  .vault-board-panel-toggle:hover {
     background: var(--muted);
     color: var(--foreground);
+  }
+
+  .vault-board-panel-toggle[aria-pressed="true"] {
+    border-color: color-mix(in oklab, var(--foreground) 22%, var(--border));
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .vault-board-bar-progress {
+    display: none;
   }
 
   .vault-board-icon-btn {
@@ -3916,9 +3928,24 @@
   }
 
   /* The canvas. */
+  .vault-board {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* Phones only: jump between columns. */
+  .vault-board-jump {
+    display: none;
+  }
+
   .vault-board-canvas {
+    position: relative;
     flex: 1;
     min-width: 0;
+    min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
     cursor: grab;
@@ -4103,6 +4130,7 @@
   .vault-board-card {
     position: relative;
     flex: none;
+    -webkit-touch-callout: none;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -4222,8 +4250,101 @@
     flex: none;
     width: 9px;
     height: 9px;
+    padding: 0;
     border: 1.5px solid var(--board-open);
     border-radius: 50%;
+  }
+
+  /* Clickable: mark done or reopen. The ring makes the hit area bigger
+     than the dot. */
+  button.vault-board-status {
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  button.vault-board-status::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+  }
+
+  button.vault-board-status:hover {
+    transform: scale(1.25);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--board-done) 22%, transparent);
+  }
+
+  button.vault-board-status:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Menus: a "⋯" in the lane header and the card's corner, shown on hover
+     (always on touch, where there is no hover). */
+  .vault-board-lane-head .vault-board-menu-trigger {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .vault-board-lane-head:hover .vault-board-menu-trigger,
+  .vault-board-lane-head:focus-within .vault-board-menu-trigger,
+  .vault-board-lane-head .vault-board-menu-trigger[data-popup-open] {
+    opacity: 1;
+  }
+
+  .vault-board-card-menu {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .vault-board-card-menu .vault-board-menu-trigger {
+    background: color-mix(in oklab, var(--card) 88%, transparent);
+    backdrop-filter: blur(4px);
+  }
+
+  .vault-board-card:hover .vault-board-card-menu,
+  .vault-board-card:focus-within .vault-board-card-menu,
+  .vault-board-card-menu:has([data-popup-open]) {
+    opacity: 1;
+  }
+
+  .vault-board-card.is-editable .vault-board-card-title {
+    padding-right: 20px;
+  }
+
+  @media (hover: none) {
+    .vault-board-lane-head .vault-board-menu-trigger,
+    .vault-board-card-menu {
+      opacity: 1;
+    }
+
+    .vault-board-keys-button {
+      display: none;
+    }
+  }
+
+  .vault-board-priority-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+  }
+
+  .vault-board-priority-dot.is-high {
+    background: oklch(0.66 0.18 40);
+  }
+
+  .vault-board-priority-dot.is-medium {
+    background: oklch(0.78 0.14 80);
+  }
+
+  .vault-board-priority-dot.is-low {
+    background: oklch(0.65 0.06 250);
   }
 
   .vault-board-status.is-in_progress {
@@ -4253,14 +4374,81 @@
     opacity: 0.97;
   }
 
-  /* The Markdown beside the board; board edits flash the lines they wrote. */
+  /* The Markdown panel beside the board, built like the workspace's side
+     panels (header, close, resize); board edits flash the lines they wrote. */
   .vault-board-source {
+    position: relative;
+    display: flex;
     flex: none;
-    width: min(40%, 520px);
+    flex-direction: column;
+    width: min(var(--board-source-width, 440px), 65%);
+    min-height: 0;
+    border-left: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+    background: color-mix(in oklab, var(--card) 35%, var(--background));
+  }
+
+  .vault-board-source > .vault-document-canvas {
+    flex: 1;
     min-height: 0;
     overflow: auto;
-    border-left: 1px solid var(--border);
-    background: var(--background);
+    overscroll-behavior: contain;
+  }
+
+  .vault-board-source-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 8px 0 16px;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  }
+
+  .vault-board-source-head p {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .vault-board-source-hint {
+    flex: 1;
+    overflow: hidden;
+    color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vault-board-source-head button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: var(--muted-foreground);
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .vault-board-source-head button:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .vault-board-source-resize {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    z-index: 3;
+    width: 6px;
+    cursor: col-resize;
+    transition: background-color 0.15s ease;
+  }
+
+  .vault-board-source-resize:hover {
+    background: color-mix(in oklab, var(--primary) 15%, transparent);
   }
 
   /* CodeMirror's injected theme is unlayered, so it beats this layer
@@ -4276,6 +4464,12 @@
 
   .vault-board-source :is(.cm-line, .cm-gutterElement) {
     line-height: 1.7 !important;
+  }
+
+  /* Live mode's selection colour; the default is too pale to read on. */
+  .vault-board-source .cm-selectionBackground,
+  .vault-board-source .cm-focused .cm-selectionBackground {
+    background: color-mix(in oklab, var(--primary) 28%, transparent) !important;
   }
 
   .vault-cm-board-flash {
@@ -4298,12 +4492,87 @@
     }
 
     .vault-board-bar {
-      gap: 8px;
-      padding: 0 12px;
+      gap: 6px;
+      padding: 0 8px 0 12px;
+    }
+
+    .vault-board-bar-divider,
+    .vault-board-panel-toggle span {
+      display: none;
+    }
+
+    .vault-board-panel-toggle {
+      width: 30px;
+      padding: 0;
+      justify-content: center;
+    }
+
+    .vault-board-title input,
+    .vault-board-title h1 {
+      font-size: 1.3rem;
+    }
+
+    /* The progress, as a hairline along the header's bottom edge. */
+    .vault-board-bar-progress {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      display: flex;
+      height: 2px;
+      background: transparent;
+    }
+
+    .vault-board-bar-progress i {
+      display: block;
+      height: 100%;
+    }
+
+    .vault-board-jump {
+      display: flex;
+      flex: none;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 10px 12px 2px;
+      scrollbar-width: none;
+    }
+
+    .vault-board-jump::-webkit-scrollbar {
+      display: none;
+    }
+
+    .vault-board-jump button {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      gap: 6px;
+      max-width: 60vw;
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted-foreground);
+      font-size: 13px;
+    }
+
+    .vault-board-jump button[aria-current="true"] {
+      border-color: var(--board-accent);
+      background: color-mix(in oklab, var(--board-accent) 12%, transparent);
+      color: var(--foreground);
+    }
+
+    .vault-board-jump-count {
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.7;
     }
 
     .vault-board-canvas {
       scroll-snap-type: x mandatory;
+    }
+
+    .vault-board-lane-new {
+      width: 82vw;
     }
 
     .vault-board-lanes {
@@ -4317,14 +4586,22 @@
       scroll-margin-left: 16px;
     }
 
-    /* No room for both: Source replaces the board. */
-    .vault-board-stage.is-source .vault-board-canvas {
-      display: none;
+    /* No room for both: the Markdown panel covers the board. */
+    .vault-board-stage {
+      position: relative;
     }
 
     .vault-board-source {
-      width: 100%;
+      position: absolute;
+      inset: 0;
+      z-index: 15;
+      width: auto;
       border-left: 0;
+      background: var(--background);
+    }
+
+    .vault-board-source-resize {
+      display: none;
     }
   }
 

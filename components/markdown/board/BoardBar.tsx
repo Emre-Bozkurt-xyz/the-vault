@@ -2,13 +2,11 @@
 
 import type { ReactNode } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { FolderOpen, Keyboard, MoreHorizontal, Smile } from "lucide-react";
+import { FolderOpen, Keyboard, MoreHorizontal, PanelRightClose, PanelRightOpen, Smile } from "lucide-react";
 
 import { IconPicker } from "@/components/markdown/DocumentPageArt";
 import type { Board } from "@/lib/board/markdown-board";
 import { cn } from "@/lib/utils";
-
-export type BoardView = "board" | "source";
 
 /** Done and in-progress counts for the header's progress bar. */
 export function boardProgress(board: Board) {
@@ -23,8 +21,9 @@ export function boardProgress(board: Board) {
 /**
  * A board document's header: one row in place of the page's toolbar, cover,
  * title block and Properties, so the board below it gets the window. Folder,
- * icon and title on the left; progress, people, Board | Source, the keys and
- * the properties (tucked into a popover) on the right.
+ * icon and title on the left; progress, people, the keys, the properties
+ * (tucked into a popover) and the Markdown panel's toggle on the right — a
+ * panel toggle like the workspace's own, since the board stays in view.
  */
 export function BoardBar({
   folderPath,
@@ -33,8 +32,8 @@ export function BoardBar({
   title,
   onTitleChange,
   progress,
-  view,
-  onViewChange,
+  sourceOpen,
+  onToggleSource,
   extras,
   properties,
 }: {
@@ -46,8 +45,8 @@ export function BoardBar({
   /** Null for a read-only title. */
   onTitleChange: ((title: string) => void) | null;
   progress: { total: number; done: number; doing: number };
-  view: BoardView;
-  onViewChange: (view: BoardView) => void;
+  sourceOpen: boolean;
+  onToggleSource: () => void;
   /** Backlinks, collaborators: shown before the view switch. */
   extras?: ReactNode;
   /** The document's properties, in the ⋯ popover. */
@@ -108,19 +107,7 @@ export function BoardBar({
       ) : null}
       <span className="flex-1" />
       {extras}
-      <div role="group" aria-label="View" className="vault-board-seg">
-        {(
-          [
-            ["board", "Board"],
-            ["source", "Source"],
-          ] as const
-        ).map(([value, label]) => (
-          <button key={value} type="button" aria-pressed={view === value} onClick={() => onViewChange(value)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <BarPopover label="Keyboard shortcuts" icon={<Keyboard className="size-4" />}>
+      <BarPopover label="Keyboard shortcuts" icon={<Keyboard className="size-4" />} className="vault-board-keys-button">
         <p className="vault-board-pop-heading">Hover a card</p>
         <dl className="vault-board-keys">
           <dt>
@@ -151,6 +138,10 @@ export function BoardBar({
           </dt>
           <dd>Empty space to pan</dd>
           <dt>
+            <kbd>Right-click</kbd>
+          </dt>
+          <dd>A card, column or the canvas for its actions</dd>
+          <dt>
             <kbd>#tag</kbd>
           </dt>
           <dd>In a card&apos;s text, a chip</dd>
@@ -165,6 +156,25 @@ export function BoardBar({
           {properties}
         </BarPopover>
       ) : null}
+      <span className="vault-board-bar-divider" aria-hidden="true" />
+      <button
+        type="button"
+        onClick={onToggleSource}
+        aria-pressed={sourceOpen}
+        aria-label={sourceOpen ? "Hide Markdown" : "Show Markdown"}
+        title={sourceOpen ? "Hide Markdown" : "Show Markdown"}
+        className="vault-board-panel-toggle"
+      >
+        {sourceOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+        <span>Markdown</span>
+      </button>
+      {progress.total > 0 ? (
+        // Phones: the progress as a hairline under the header.
+        <span className="vault-board-bar-progress" aria-hidden="true">
+          <i style={{ width: share(progress.done), background: "var(--board-done)" }} />
+          <i style={{ width: share(progress.doing), background: "var(--board-doing)" }} />
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -173,16 +183,18 @@ function BarPopover({
   label,
   icon,
   wide,
+  className,
   children,
 }: {
   label: string;
   icon: ReactNode;
   wide?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   return (
     <Popover.Root>
-      <Popover.Trigger className="vault-board-icon-btn" aria-label={label} title={label}>
+      <Popover.Trigger className={cn("vault-board-icon-btn", className)} aria-label={label} title={label}>
         {icon}
       </Popover.Trigger>
       <Popover.Portal>

@@ -1,14 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type UIEvent,
+} from "react";
 import { Clock3, Plus, Trash2 } from "lucide-react";
 
+import { CanvasMenu, CardMenu, LaneMenu, type CardAction, type LaneAction } from "@/components/markdown/board/BoardMenus";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useContextMenu } from "@/components/ui/use-context-menu";
 import {
   addCard,
   addColumn,
+  cardMarkdown,
   deleteCard,
+  deleteColumn,
+  duplicateCard,
   moveCard,
+  moveColumn,
+  setColumnStatus,
+  sortColumn,
   parseBoard,
   renameColumn,
   setCardDetails,
@@ -21,6 +39,7 @@ import {
   type CardStatus,
 } from "@/lib/board/markdown-board";
 import { addDaysToDayKey, formatDueLabel, todayDayKey } from "@/lib/tasks/dates";
+import { showWorkspaceToast } from "@/lib/workspace-toast";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<CardStatus, string> = {
@@ -68,17 +87,27 @@ type Drag = {
  * Drawn as a canvas: full-height lanes on a dotted background that pans when
  * you drag empty space. Hover a card and press Space (start/pause), W (done),
  * P (priority), D (due) or Enter (open), as in the Tasks list; drag cards
- * between columns. The editor around it supplies the header (`BoardBar`).
+ * between columns. Cards, columns and the empty canvas have right-click menus
+ * (`BoardMenus.tsx`; on touch, a long press or the "⋯" button). The editor
+ * around it supplies the header (`BoardBar`) and the Markdown panel.
  */
 export function DocumentBoard({
   markdown,
   documentId = null,
   onChange,
+  onReveal,
+  sourceOpen,
+  onToggleSource,
 }: {
   markdown: string;
   /** For card covers that are the document's own images. */
   documentId?: string | null;
   onChange?: (next: string) => void;
+  /** "Show in Markdown": select lines `from` (0-based) up to `to` in the Markdown panel. */
+  onReveal?: (from: number, to: number) => void;
+  /** Whether the Markdown panel is open, for the canvas menu's toggle. */
+  sourceOpen?: boolean;
+  onToggleSource?: () => void;
 }) {
   const board = useMemo(() => parseBoard(markdown), [markdown]);
   const editable = Boolean(onChange);
@@ -105,7 +134,8 @@ export function DocumentBoard({
     if (!editable) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || hovered === null) return;
-      if ((event.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      // Not while typing, nor while a menu or dialog (its own typeahead) has the keys.
+      if ((event.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog']")) return;
       const card = parseBoard(latest.current.markdown).columns.flatMap((column) => column.cards).find((c) => c.line === hovered);
       if (!card) return;
       const key = event.key.toLowerCase();
@@ -135,7 +165,7 @@ export function DocumentBoard({
   // Dragging: mouse and pen (on touch, open a card and pick its column).
   const onPointerDown = (event: ReactPointerEvent<HTMLElement>, line: number) => {
     if (!editable || event.button !== 0 || event.pointerType === "touch") return;
-    if ((event.target as HTMLElement).closest("button, input, textarea")) return;
+    if (outsideOwnDom(event) || (event.target as HTMLElement).closest("button, input, textarea")) return;
     press.current = { line, x: event.clientX, y: event.clientY, el: event.currentTarget };
   };
 
@@ -219,7 +249,7 @@ export function DocumentBoard({
   const pan = useRef<{ x: number; y: number; left: number; top: number; el: HTMLElement } | null>(null);
   const [panning, setPanning] = useState(false);
   const onCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || event.pointerType === "touch") return;
+    if (event.button !== 0 || event.pointerType === "touch" || outsideOwnDom(event)) return;
     if ((event.target as HTMLElement).closest(".vault-board-lane, .vault-board-lane-new, button, input, textarea, a")) return;
     const el = event.currentTarget;
     pan.current = { x: event.clientX, y: event.clientY, left: el.scrollLeft, top: el.scrollTop, el };
@@ -238,66 +268,210 @@ export function DocumentBoard({
     setPanning(false);
   };
 
+  // Which column is in view (the phone's column strip follows it).
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [activeLane, setActiveLane] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
+  const onCanvasScroll = (event: UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
+    setScrolled(el.scrollLeft > 40);
+    const lanes = [...el.querySelectorAll<HTMLElement>(".vault-board-lane")];
+    let best = 0;
+    lanes.forEach((lane, index) => {
+      if (Math.abs(lane.offsetLeft - el.scrollLeft) < Math.abs(lanes[best].offsetLeft - el.scrollLeft)) best = index;
+    });
+    setActiveLane(best);
+  };
+  const jumpToLane = (index: number) => {
+    const lane = canvasRef.current?.querySelectorAll<HTMLElement>(".vault-board-lane")[index];
+    lane?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  };
+
+  const canvasMenu = useContextMenu();
+  const [confirmDelete, setConfirmDelete] = useState<BoardColumn | null>(null);
+
+  const columnOf = (line: number) => board.columns.find((column) => column.cards.some((card) => card.line === line));
+
+  const cardAction = (card: BoardCard, action: CardAction) => {
+    switch (action.type) {
+      case "open":
+        setOpenLine(card.line);
+        break;
+      case "status":
+        change((md) => setCardStatus(md, card.line, action.status));
+        break;
+      case "priority":
+        change((md) => setCardField(md, card.line, "priority", action.priority));
+        break;
+      case "due":
+        change((md) => setCardField(md, card.line, "due", action.due));
+        break;
+      case "move": {
+        const target = board.columns.find((column) => column.line === action.column);
+        change((md) => moveCard(md, card.line, action.column, target?.cards.length ?? 0));
+        break;
+      }
+      case "position": {
+        const column = columnOf(card.line);
+        if (column) change((md) => moveCard(md, card.line, column.line, action.to === "top" ? 0 : column.cards.length));
+        break;
+      }
+      case "duplicate":
+        change((md) => duplicateCard(md, card.line));
+        break;
+      case "copy":
+        void navigator.clipboard
+          ?.writeText(cardMarkdown(latest.current.markdown, card.line))
+          .then(
+            () => showWorkspaceToast({ message: "Copied the card as Markdown", durationMs: 2500 }),
+            () => showWorkspaceToast({ message: "Couldn't copy the card", tone: "error" }),
+          );
+        break;
+      case "reveal":
+        onReveal?.(card.line, card.end);
+        break;
+      case "delete": {
+        const block = cardMarkdown(latest.current.markdown, card.line);
+        change((md) => deleteCard(md, card.line));
+        showWorkspaceToast({
+          message: `Deleted “${card.label || card.title || "card"}”`,
+          action: { label: "Undo", run: () => change((md) => insertLines(md, card.line, block)) },
+        });
+        break;
+      }
+    }
+  };
+
+  const laneAction = (column: BoardColumn, action: LaneAction) => {
+    switch (action.type) {
+      case "add":
+        setAdding(column.line);
+        break;
+      case "rename":
+        // After the menu has handed focus back to its button.
+        setTimeout(() => {
+          const input = canvasRef.current?.querySelector<HTMLInputElement>(
+            `[data-board-column="${column.line}"] .vault-board-lane-name`,
+          );
+          input?.focus();
+          input?.select();
+        }, 80);
+        break;
+      case "move":
+        change((md) => moveColumn(md, column.line, action.direction));
+        break;
+      case "sort":
+        change((md) => sortColumn(md, column.line, action.by));
+        break;
+      case "complete":
+        change((md) => setColumnStatus(md, column.line, "done"));
+        break;
+      case "reveal":
+        onReveal?.(column.line, column.end);
+        break;
+      case "delete":
+        if (column.cards.length === 0 && column.otherLines === 0) change((md) => deleteColumn(md, column.line));
+        else setConfirmDelete(column);
+        break;
+    }
+  };
+
   const openCard = openLine === null ? null : board.columns.flatMap((column) => column.cards).find((card) => card.line === openLine) ?? null;
 
   return (
-    <div
-      className={cn("vault-board-canvas", panning && "is-panning")}
-      onPointerDown={onCanvasPointerDown}
-      onPointerMove={onCanvasPointerMove}
-      onPointerUp={endPan}
-      onPointerCancel={endPan}
-    >
-      <div className="vault-board-lanes" onPointerLeave={() => setHovered(null)}>
-        {board.columns.map((column, index) => (
-          <Column
-            key={column.line}
-            column={column}
-            accent={ACCENTS[index % ACCENTS.length]}
-            today={today}
-            documentId={documentId}
-            editable={editable}
-            hovered={hovered}
-            adding={adding === column.line}
-            onHover={setHovered}
-            onPointerDown={onPointerDown}
-            onStartAdd={() => setAdding(column.line)}
-            onAdd={(title) => {
-              change((md) => addCard(md, column.line, title));
-            }}
-            onStopAdd={() => setAdding(null)}
-            onRename={(name) => change((md) => renameColumn(md, column.line, name))}
-          />
-        ))}
-        {board.columns.length === 0 && !editable ? <p className="vault-board-other">No columns yet.</p> : null}
-        {editable ? (
-          adding === "column" ? (
-            <div className="vault-board-lane-new is-editing">
-              <input
-                autoFocus
-                aria-label="New column"
-                placeholder="Column name, then Enter"
-                className="vault-board-add-input"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setAdding(null);
-                  if (event.key === "Enter" && event.currentTarget.value.trim()) {
-                    const name = event.currentTarget.value;
-                    change((md) => addColumn(md, name));
-                    setAdding(null);
-                  }
-                }}
-                onBlur={() => setAdding(null)}
-              />
-            </div>
-          ) : (
-            <button type="button" onClick={() => setAdding("column")} className="vault-board-lane-new">
-              <span className="inline-flex items-center gap-1.5">
-                <Plus className="size-4" aria-hidden="true" /> Add column
-              </span>
-              <small>## heading</small>
+    <div className="vault-board">
+      {board.columns.length > 1 ? (
+        <nav className="vault-board-jump" aria-label="Columns">
+          {board.columns.map((column, index) => (
+            <button
+              key={column.line}
+              type="button"
+              aria-current={index === activeLane ? "true" : undefined}
+              style={{ "--board-accent": ACCENTS[index % ACCENTS.length] } as CSSProperties}
+              onClick={() => jumpToLane(index)}
+            >
+              <span className="vault-board-swatch" aria-hidden="true" />
+              <span className="truncate">{column.heading}</span>
+              <span className="vault-board-jump-count">{column.cards.length}</span>
             </button>
-          )
+          ))}
+        </nav>
+      ) : null}
+      <div
+        ref={canvasRef}
+        className={cn("vault-board-canvas", panning && "is-panning")}
+        onPointerDown={onCanvasPointerDown}
+        onPointerMove={onCanvasPointerMove}
+        onPointerUp={endPan}
+        onPointerCancel={endPan}
+        onScroll={onCanvasScroll}
+        onContextMenu={editable ? canvasMenu.onContextMenu : undefined}
+      >
+        {editable ? (
+          <CanvasMenu
+            contextMenu={canvasMenu}
+            sourceOpen={sourceOpen ?? null}
+            canUndoScroll={scrolled}
+            onAddColumn={() => setAdding("column")}
+            onToggleSource={onToggleSource ?? null}
+            onScrollStart={() => canvasRef.current?.scrollTo({ left: 0, behavior: "smooth" })}
+          />
         ) : null}
+        <div className="vault-board-lanes" onPointerLeave={() => setHovered(null)}>
+          {board.columns.map((column, index) => (
+            <Column
+              key={column.line}
+              column={column}
+              columns={board.columns}
+              index={index}
+              accent={ACCENTS[index % ACCENTS.length]}
+              today={today}
+              documentId={documentId}
+              editable={editable}
+              hovered={hovered}
+              adding={adding === column.line}
+              onHover={setHovered}
+              onPointerDown={onPointerDown}
+              onOpenCard={setOpenLine}
+              onCardAction={cardAction}
+              onLaneAction={(action) => laneAction(column, action)}
+              onAdd={(title) => {
+                change((md) => addCard(md, column.line, title));
+              }}
+              onStopAdd={() => setAdding(null)}
+              onRename={(name) => change((md) => renameColumn(md, column.line, name))}
+            />
+          ))}
+          {board.columns.length === 0 && !editable ? <p className="vault-board-other">No columns yet.</p> : null}
+          {editable ? (
+            adding === "column" ? (
+              <div className="vault-board-lane-new is-editing">
+                <input
+                  autoFocus
+                  aria-label="New column"
+                  placeholder="Column name, then Enter"
+                  className="vault-board-add-input"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setAdding(null);
+                    if (event.key === "Enter" && event.currentTarget.value.trim()) {
+                      const name = event.currentTarget.value;
+                      change((md) => addColumn(md, name));
+                      setAdding(null);
+                    }
+                  }}
+                  onBlur={() => setAdding(null)}
+                />
+              </div>
+            ) : (
+              <button type="button" onClick={() => setAdding("column")} className="vault-board-lane-new">
+                <span className="inline-flex items-center gap-1.5">
+                  <Plus className="size-4" aria-hidden="true" /> {board.columns.length === 0 ? "Add your first column" : "Add column"}
+                </span>
+                <small>## heading</small>
+              </button>
+            )
+          ) : null}
+        </div>
       </div>
 
       {editable && openCard ? (
@@ -311,12 +485,51 @@ export function DocumentBoard({
           onMoved={(line) => setOpenLine(line)}
         />
       ) : null}
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDelete(null);
+        }}
+        tone="destructive"
+        icon={Trash2}
+        title={`Delete “${confirmDelete?.heading ?? ""}”?`}
+        description={
+          confirmDelete
+            ? `The column and its ${confirmDelete.cards.length} card${confirmDelete.cards.length === 1 ? "" : "s"}${confirmDelete.otherLines ? `, and ${confirmDelete.otherLines} other line${confirmDelete.otherLines === 1 ? "" : "s"} under its heading,` : ""} are removed from the document. Restore points still have them.`
+            : undefined
+        }
+        confirmLabel="Delete column"
+        onConfirm={() => {
+          const column = confirmDelete;
+          setConfirmDelete(null);
+          if (column) change((md) => deleteColumn(md, column.line));
+        }}
+      />
     </div>
   );
 }
 
+/**
+ * True for an event that reached this element through a React portal (a menu
+ * or dialog opened from inside it) rather than from its own DOM: React bubbles
+ * portal events up the component tree, so a click in a card's menu would
+ * otherwise also count as a click on the card.
+ */
+function outsideOwnDom(event: { currentTarget: EventTarget; target: EventTarget }): boolean {
+  return !(event.currentTarget as Node).contains(event.target as Node);
+}
+
+/** `block` (lines joined by newlines) put back at line `at`: a deleted card's Undo. */
+function insertLines(markdown: string, at: number, block: string): string {
+  const all = markdown.replace(/\r\n?/g, "\n").split("\n");
+  all.splice(Math.min(at, all.length), 0, ...block.split("\n"));
+  return all.join("\n");
+}
+
 function Column({
   column,
+  columns,
+  index,
   accent,
   today,
   documentId,
@@ -325,12 +538,16 @@ function Column({
   adding,
   onHover,
   onPointerDown,
-  onStartAdd,
+  onOpenCard,
+  onCardAction,
+  onLaneAction,
   onAdd,
   onStopAdd,
   onRename,
 }: {
   column: BoardColumn;
+  columns: BoardColumn[];
+  index: number;
   accent: string;
   today: string;
   documentId: string | null;
@@ -339,27 +556,37 @@ function Column({
   adding: boolean;
   onHover: (line: number | null) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>, line: number) => void;
-  onStartAdd: () => void;
+  onOpenCard: (line: number) => void;
+  onCardAction: (card: BoardCard, action: CardAction) => void;
+  onLaneAction: (action: LaneAction) => void;
   onAdd: (title: string) => void;
   onStopAdd: () => void;
   onRename: (name: string) => void;
 }) {
+  const menu = useContextMenu();
   return (
     <section
       data-board-column={column.line}
       aria-label={column.heading}
       className="vault-board-lane"
       style={{ "--board-accent": accent } as CSSProperties}
+      onContextMenu={editable ? menu.onContextMenu : undefined}
     >
       <header className="vault-board-lane-head">
         <span className="vault-board-swatch" aria-hidden="true" />
         {editable ? (
           <input
+            // Remounted when the heading changes elsewhere (Source, a collaborator).
+            key={column.heading}
             defaultValue={column.heading}
             aria-label="Column name"
             className="vault-board-lane-name"
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                event.currentTarget.value = column.heading;
+                event.currentTarget.blur();
+              }
             }}
             onBlur={(event) => {
               if (event.currentTarget.value.trim() && event.currentTarget.value !== column.heading) onRename(event.currentTarget.value);
@@ -369,6 +596,15 @@ function Column({
           <h3 className="vault-board-lane-name truncate">{column.heading}</h3>
         )}
         <span className="vault-board-count">{column.cards.length}</span>
+        {editable ? (
+          <LaneMenu
+            column={column}
+            first={index === 0}
+            last={index === columns.length - 1}
+            contextMenu={menu}
+            onAction={onLaneAction}
+          />
+        ) : null}
       </header>
       <div className="vault-board-lane-accent" aria-hidden="true" />
       <div data-board-cards className="vault-board-cards">
@@ -376,18 +612,21 @@ function Column({
           <Card
             key={card.line}
             card={card}
+            columns={columns}
             today={today}
             documentId={documentId}
             hovered={hovered === card.line}
             editable={editable}
             onHover={onHover}
             onPointerDown={onPointerDown}
+            onOpen={onOpenCard}
+            onAction={(action) => onCardAction(card, action)}
           />
         ))}
         {column.cards.length === 0 && editable ? <p className="vault-board-lane-empty">Drop cards here</p> : null}
         {column.otherLines > 0 ? (
           <p className="vault-board-other">
-            +{column.otherLines} other line{column.otherLines === 1 ? "" : "s"}, in Source
+            +{column.otherLines} other line{column.otherLines === 1 ? "" : "s"}, in Markdown
           </p>
         ) : null}
       </div>
@@ -408,7 +647,7 @@ function Column({
             onBlur={onStopAdd}
           />
         ) : (
-          <button type="button" onClick={onStartAdd} className="vault-board-add">
+          <button type="button" onClick={() => onLaneAction({ type: "add" })} className="vault-board-add">
             <Plus className="size-3.5" aria-hidden="true" /> Add card
           </button>
         )
@@ -475,25 +714,40 @@ function SubtaskRing({ done, total }: { done: number; total: number }) {
 
 function Card({
   card,
+  columns,
   today,
   documentId,
   hovered,
   editable,
   onHover,
   onPointerDown,
+  onOpen,
+  onAction,
 }: {
   card: BoardCard;
+  columns: BoardColumn[];
   today: string;
   documentId: string | null;
   hovered: boolean;
   editable: boolean;
   onHover: (line: number | null) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>, line: number) => void;
+  onOpen: (line: number) => void;
+  onAction: (action: CardAction) => void;
 }) {
+  const menu = useContextMenu();
+  // Touch: a tap opens the card, a long press its menu (iOS has no
+  // contextmenu event; Android's arrives too and just re-anchors the menu).
+  const touch = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number; menu: boolean } | null>(null);
   const doneSubtasks = card.subtasks.filter((subtask) => subtask.done).length;
   const finished = card.status === "done" || card.status === "cancelled";
   const late = card.due && !finished && card.due < today;
   const cover = card.cover ? coverSrc(card.cover, documentId) : null;
+
+  const endTouch = () => {
+    if (touch.current?.timer) clearTimeout(touch.current.timer);
+    if (touch.current) touch.current.timer = null;
+  };
 
   return (
     <article
@@ -501,11 +755,60 @@ function Card({
       tabIndex={editable ? 0 : undefined}
       aria-label={card.label || card.title}
       onPointerEnter={() => onHover(card.line)}
-      onPointerDown={(event) => onPointerDown(event, card.line)}
+      onPointerDown={(event) => {
+        if (editable && event.pointerType === "touch" && !outsideOwnDom(event) && !(event.target as HTMLElement).closest("button")) {
+          const el = event.currentTarget;
+          const { clientX: x, clientY: y } = event;
+          touch.current = {
+            x,
+            y,
+            menu: false,
+            timer: setTimeout(() => {
+              if (!touch.current) return;
+              touch.current.menu = true;
+              navigator.vibrate?.(8);
+              menu.onContextMenu({
+                currentTarget: el,
+                target: el,
+                clientX: x,
+                clientY: y,
+                shiftKey: false,
+                preventDefault() {},
+                stopPropagation() {},
+              } as unknown as ReactMouseEvent<HTMLElement>);
+            }, 480),
+          };
+        }
+        onPointerDown(event, card.line);
+      }}
+      onPointerMove={(event) => {
+        const start = touch.current;
+        if (start?.timer && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) endTouch();
+      }}
+      onPointerUp={(event) => {
+        endTouch();
+        // The finger lifting after a long press isn't a press outside the menu
+        // it just opened (which would close it again).
+        if (touch.current?.menu) event.stopPropagation();
+      }}
+      onPointerCancel={endTouch}
+      onClick={(event) => {
+        // Mouse clicks open through the drag handler; this is the tap.
+        if (!editable || !touch.current || outsideOwnDom(event)) return;
+        const opened = touch.current.menu;
+        touch.current = null;
+        if (opened) {
+          event.stopPropagation();
+          return;
+        }
+        if (!(event.target as HTMLElement).closest("button")) onOpen(card.line);
+      }}
+      onContextMenu={editable ? menu.onContextMenu : undefined}
       onFocus={() => onHover(card.line)}
       className={cn("vault-board-card", editable && "is-editable", hovered && "is-hovered", finished && "is-finished")}
     >
       {cover ? <CardCover key={cover} src={cover} /> : null}
+      {editable ? <CardMenu card={card} columns={columns} today={today} contextMenu={menu} onAction={onAction} /> : null}
       <div className="vault-board-card-body">
         <p className="vault-board-card-title">{card.label || card.title || "Untitled card"}</p>
         {card.notes.length > 0 ? <p className="vault-board-card-notes">{card.notes.join(" ")}</p> : null}
@@ -526,7 +829,7 @@ function Card({
             </span>
           ) : null}
           {card.due ? (
-            <span className={cn("vault-board-due", late && "is-late")}>
+            <span className={cn("vault-board-due", late && "is-late")} title={card.due}>
               <Clock3 className="size-3" aria-hidden="true" />
               {formatDueLabel(card.due, today)}
             </span>
@@ -538,7 +841,17 @@ function Card({
               {doneSubtasks}/{card.subtasks.length}
             </span>
           ) : null}
-          <span className={cn("vault-board-status", `is-${card.status}`)} title={STATUS_LABEL[card.status]} />
+          {editable ? (
+            <button
+              type="button"
+              className={cn("vault-board-status", `is-${card.status}`)}
+              aria-label={finished ? `${STATUS_LABEL[card.status]}: reopen` : `${STATUS_LABEL[card.status]}: mark done`}
+              title={finished ? `${STATUS_LABEL[card.status]} · click to reopen` : `${STATUS_LABEL[card.status]} · click to mark done`}
+              onClick={() => onAction({ type: "status", status: finished ? "open" : "done" })}
+            />
+          ) : (
+            <span className={cn("vault-board-status", `is-${card.status}`)} title={STATUS_LABEL[card.status]} />
+          )}
         </div>
       </div>
     </article>
