@@ -321,6 +321,18 @@ function safeIframeSrc(src: unknown) {
   return allowed ? url.toString() : null;
 }
 
+/** A sanitized `<img>` width/height, kept so the browser reserves the box. */
+function imageDimension(value: unknown) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : Number.NaN;
+
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 20000) : undefined;
+}
+
 function iframeDimension(value: unknown, fallback: number, max: number) {
   const parsed =
     typeof value === "number"
@@ -530,7 +542,7 @@ function createMarkdownComponents(
   dd({ children, className, style }) {
     return <dd {...styledProps("vault-md-dd", className, style)}>{children}</dd>;
   },
-  img({ src, alt, title, className, style }) {
+  img({ src, alt, title, width, height, className, style }) {
     const safeSrc =
       typeof src === "string" && allowedImageProtocol.test(src) ? src : null;
 
@@ -545,6 +557,8 @@ function createMarkdownComponents(
           src={safeSrc}
           alt={alt ?? ""}
           title={title}
+          width={imageDimension(width)}
+          height={imageDimension(height)}
           loading="lazy"
           decoding="async"
           {...styledProps("vault-md-img", className, style)}

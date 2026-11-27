@@ -2,15 +2,19 @@ import { syntaxTree } from "@codemirror/language";
 import {
   EditorSelection,
   Prec,
+  StateEffect,
   StateField,
   type EditorState,
+  type Transaction,
 } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
+  ViewPlugin,
   WidgetType,
   keymap,
+  type ViewUpdate,
 } from "@codemirror/view";
 import katex from "katex";
 import { createElement } from "react";
@@ -46,6 +50,18 @@ import type {
   LiveBlockSpec,
   LiveBlockWidgetContext,
 } from "@/lib/extensions/types";
+import {
+  findInlineObjectAt,
+  isInLabel,
+  isInsideHiddenSyntax,
+  knownBlockHeight,
+  knownImageSize,
+  parseStandaloneImageLine,
+  rememberBlockHeight,
+  rememberImageSize,
+  type InlineObject,
+  type StandaloneImage,
+} from "@/components/markdown/live-objects";
 
 export type LiveAssetGroupLineKind = "first" | "middle" | "last" | "single";
 
@@ -119,13 +135,29 @@ export type LiveExtensionBlock = {
   attributes: Record<string, string>;
 };
 
+/**
+ * A line that is only an image (asset embed, `![[https://…]]`, `![alt](url)`).
+ * Unlike the other blocks it stays rendered while revealed: its source line is
+ * shown *above* the picture instead of in place of it.
+ */
+export type LiveImageBlock = {
+  kind: "image";
+  from: number;
+  to: number;
+  startLine: number;
+  endLine: number;
+  source: string;
+  image: StandaloneImage;
+};
+
 export type LiveBlock =
   | LiveAssetGroupBlock
   | LiveCalloutBlock
   | LiveDocumentEmbedBlock
   | LiveTableBlock
   | LiveMathBlock
-  | LiveExtensionBlock;
+  | LiveExtensionBlock
+  | LiveImageBlock;
 export type LiveAssetGroupSelection = Pick<
   LiveAssetGroupBlock,
   "from" | "to" | "startLine" | "endLine" | "source" | "attributes"
@@ -192,6 +224,23 @@ const coreMarkdownLiveBlockSpecs = [
       new CalloutBlockWidget(block as LiveCalloutBlock, context),
   },
   {
+    // Before document embeds: `![[asset:id|label]]` also parses as a wiki
+    // embed, and an asset line must render (and format) as the image it is.
+    id: "image",
+    priority: 25,
+    scan: (state, context) => getLiveImageBlocks(state, context.occupiedRanges),
+    widget: (block, context) =>
+      new ImageBlockWidget(block as LiveImageBlock, context),
+    activeDecorations: (_state, block, context) => [
+      // Revealed, the source line shows above the picture, which stays put.
+      Decoration.widget({
+        block: true,
+        side: 1,
+        widget: new ImageBlockWidget(block as LiveImageBlock, context, true),
+      }).range(block.to),
+    ],
+  },
+  {
     id: "documentEmbed",
     priority: 30,
     scan: (state, context) =>
@@ -248,8 +297,12 @@ export function createLiveBlockDecorationExtension(
   options: LiveBlockOptions,
 ) {
   return [
+    liveRevealField,
     createLiveBlockDecorationField(options),
     Prec.highest(keymap.of(createLiveBlockNavigationKeymap())),
+    liveObjectInputHandler,
+    liveObjectMouseHandlers,
+    liveObjectSelectionPlugin,
   ];
 }
 
@@ -300,13 +353,218 @@ export function getLiveBlockLineNumbers(state: EditorState) {
   return lineNumbers;
 }
 
+// ---------------------------------------------------------------------------
+// Rendered by default, source on intent.
+//
+// Live mode used to swap any rendered object for its source the moment the
+// caret touched it, so arrowing or clicking through a document collapsed
+// images, re-flowed tables and re-wrapped links: the page jumped under the
+// reader. Now an object shows its source only when the author shows intent to
+// edit it:
+//
+// - they edit its syntax (typing that creates or changes the object — but not
+//   typing inside a link's visible label, which edits the label in place);
+// - the caret lands inside its hidden syntax (a search jump, undo), where a
+//   caret would otherwise be invisible;
+// - they double-click it, step into it with ←/→, or choose "Edit source" on the
+//   object toolbar (`revealLiveSource`).
+//
+// Each reveal is a *point* in the document, mapped through edits, that keeps
+// the object containing it revealed until no caret is on that object any more.
+// Navigation that only *arrives* at an object (↑/↓, a click, a selection
+// spanning it) selects it instead: a ring and a toolbar, no layout change.
+// ---------------------------------------------------------------------------
+
+/** Show the source of the object containing this document position. */
+export const revealLiveSource = StateEffect.define<number>();
+
+export type LiveObjectAt =
+  | { kind: "block"; from: number; to: number; block: LiveBlock }
+  | {
+      kind: "inline";
+      from: number;
+      to: number;
+      object: InlineObject;
+      lineFrom: number;
+    };
+
+/**
+ * The rendered object at a document position: a Live block containing it, or
+ * an inline link/wiki link/image on its line (either end inclusive).
+ */
+export function liveObjectAt(state: EditorState, position: number): LiveObjectAt | null {
+  const block = getLiveBlocks(state).find(
+    (candidate) => position >= candidate.from && position <= candidate.to,
+  );
+
+  if (block) {
+    return { kind: "block", from: block.from, to: block.to, block };
+  }
+
+  const line = state.doc.lineAt(position);
+
+  if (!line.text.includes("[") || isInsideSyntaxRange(line.from, getSyntaxExclusionRanges(state))) {
+    return null;
+  }
+
+  const object = findInlineObjectAt(line.text, position - line.from);
+
+  return object
+    ? {
+        kind: "inline",
+        from: line.from + object.from,
+        to: line.from + object.to,
+        object,
+        lineFrom: line.from,
+      }
+    : null;
+}
+
+function isRevealWorthyEdit(transaction: Transaction) {
+  // Typing and deleting only: a toolbar command, a collaborator's change, an
+  // upload, or an accepted completion should leave the object rendered.
+  return (
+    (transaction.isUserEvent("input") && !transaction.isUserEvent("input.complete")) ||
+    transaction.isUserEvent("delete")
+  );
+}
+
+function isCaretInsideHiddenSyntax(target: LiveObjectAt, position: number) {
+  if (target.kind === "block") {
+    return position > target.from && position < target.to;
+  }
+
+  return isInsideHiddenSyntax(target.object, position - target.lineFrom);
+}
+
+/** Whether an edit only changed a link's visible label, leaving it intact. */
+function isLabelEdit(transaction: Transaction, after: LiveObjectAt) {
+  if (after.kind !== "inline" || after.object.kind === "image") {
+    return false;
+  }
+
+  const head = transaction.state.selection.main.head;
+  const startHead = transaction.startState.selection.main.head;
+  const before = liveObjectAt(transaction.startState, startHead);
+
+  return Boolean(
+    before &&
+      before.kind === "inline" &&
+      before.object.kind === after.object.kind &&
+      isInLabel(before.object, startHead - before.lineFrom) &&
+      isInLabel(after.object, head - after.lineFrom),
+  );
+}
+
+export const liveRevealField = StateField.define<readonly number[]>({
+  create: () => [],
+  update(points, transaction) {
+    const hasRevealEffect = transaction.effects.some((effect) =>
+      effect.is(revealLiveSource),
+    );
+
+    if (!transaction.docChanged && !transaction.selection && !hasRevealEffect) {
+      return points;
+    }
+
+    const state = transaction.state;
+    const next = transaction.docChanged
+      ? points.map((point) => transaction.changes.mapPos(point, -1))
+      : [...points];
+
+    for (const effect of transaction.effects) {
+      if (effect.is(revealLiveSource)) {
+        next.push(Math.min(Math.max(effect.value, 0), state.doc.length));
+      }
+    }
+
+    if (transaction.docChanged && isRevealWorthyEdit(transaction)) {
+      const head = state.selection.main.head;
+      const edited = liveObjectAt(state, head);
+
+      if (edited && !isLabelEdit(transaction, edited)) {
+        next.push(head);
+      }
+    }
+
+    for (const range of state.selection.ranges) {
+      const target = liveObjectAt(state, range.head);
+
+      if (target && isCaretInsideHiddenSyntax(target, range.head)) {
+        next.push(range.head);
+      }
+    }
+
+    // Keep one point per object, and only while a caret is still on it.
+    const kept: number[] = [];
+    const seen = new Set<number>();
+
+    for (const point of next) {
+      const target = liveObjectAt(state, point);
+
+      if (
+        !target ||
+        seen.has(target.from) ||
+        !state.selection.ranges.some(
+          (range) => range.head >= target.from && range.head <= target.to,
+        )
+      ) {
+        continue;
+      }
+
+      seen.add(target.from);
+      kept.push(point);
+    }
+
+    return kept.length === points.length &&
+      kept.every((point, index) => point === points[index])
+      ? points
+      : kept;
+  },
+});
+
+/** Reveal points, for the inline Live preview pass in `MarkdownEditor`. */
+export function liveRevealPoints(state: EditorState): readonly number[] {
+  return state.field(liveRevealField, false) ?? [];
+}
+
+/** Whether the object spanning `from..to` is showing its source. */
+export function isLiveSourceRevealed(state: EditorState, from: number, to: number) {
+  return liveRevealPoints(state).some((point) => point >= from && point <= to);
+}
+
+/**
+ * The Live block the caret has selected as an object: an empty caret on one of
+ * its edges, or a selection that is exactly the block. Null while revealed.
+ */
+export function selectedLiveBlock(state: EditorState): LiveBlock | null {
+  const selection = state.selection.main;
+
+  for (const block of getLiveBlocks(state)) {
+    const onEdge = selection.empty
+      ? selection.head === block.from || selection.head === block.to
+      : selection.from === block.from && selection.to === block.to;
+
+    if (onEdge && !isBlockActive(state, block)) {
+      return block;
+    }
+  }
+
+  return null;
+}
+
 function createLiveBlockDecorationField(options: LiveBlockOptions) {
   return StateField.define<DecorationSet>({
     create(state) {
       return buildLiveBlockDecorations(state, options);
     },
     update(decorations, transaction) {
-      if (!transaction.docChanged && !transaction.selection) {
+      if (
+        !transaction.docChanged &&
+        !transaction.selection &&
+        transaction.startState.field(liveRevealField, false) ===
+          transaction.state.field(liveRevealField, false)
+      ) {
         return decorations;
       }
 
@@ -348,80 +606,409 @@ function createLiveBlockNavigationKeymap() {
   return [
     {
       key: "ArrowDown",
-      run: (view: EditorView) => moveIntoAdjacentLiveBlock(view, true),
+      run: (view: EditorView) => moveVerticallyAroundLiveBlocks(view, true),
     },
     {
       key: "ArrowUp",
-      run: (view: EditorView) => moveIntoAdjacentLiveBlock(view, false),
+      run: (view: EditorView) => moveVerticallyAroundLiveBlocks(view, false),
     },
+    // ←/→ from a selected block's edge step *into* its source.
+    { key: "ArrowRight", run: (view: EditorView) => stepIntoSelectedBlock(view, true) },
+    { key: "ArrowLeft", run: (view: EditorView) => stepIntoSelectedBlock(view, false) },
+    { key: "Enter", run: insertLineBesideSelectedBlock },
+    { key: "Backspace", run: (view: EditorView) => deleteAroundLiveBlock(view, false) },
+    { key: "Delete", run: (view: EditorView) => deleteAroundLiveBlock(view, true) },
   ];
 }
 
-function moveIntoAdjacentLiveBlock(view: EditorView, forward: boolean) {
-  const selection = view.state.selection.main;
+function inactiveBlockStartingAt(state: EditorState, blocks: LiveBlock[], lineNumber: number) {
+  return blocks.find(
+    (block) => block.startLine === lineNumber && !isBlockActive(state, block),
+  );
+}
+
+function inactiveBlockEndingAt(state: EditorState, blocks: LiveBlock[], lineNumber: number) {
+  return blocks.find(
+    (block) => block.endLine === lineNumber && !isBlockActive(state, block),
+  );
+}
+
+/**
+ * ↑/↓ treat a rendered block as one stop: arriving selects it, the next press
+ * leaves it. CodeMirror's own vertical motion would put the caret on the
+ * block's far edge (a press that visibly does nothing) or skip the line next
+ * to it.
+ */
+function moveVerticallyAroundLiveBlocks(view: EditorView, forward: boolean) {
+  const { state } = view;
+  const selection = state.selection.main;
 
   if (!selection.empty) {
     return false;
   }
 
-  const line = view.state.doc.lineAt(selection.head);
-  const blocks = getLiveBlocks(view.state);
-  const targetBlock = forward
-    ? blocks.find((block) => block.startLine === line.number + 1)
-    : blocks.find((block) => block.endLine === line.number - 1);
+  const blocks = getLiveBlocks(state);
+  const doc = state.doc;
+  const selected = selectedLiveBlock(state);
 
-  if (!targetBlock || isBlockActive(view.state, targetBlock)) {
-    const predictedSelection = view.moveVertically(selection, forward);
-    const predictedLine = view.state.doc.lineAt(predictedSelection.head);
+  if (selected) {
+    if (forward) {
+      if (selected.endLine >= doc.lines) {
+        return true;
+      }
 
-    if (Math.abs(predictedLine.number - line.number) <= 1) {
-      return false;
-    }
-
-    const nextLineNumber = line.number + (forward ? 1 : -1);
-
-    if (nextLineNumber < 1 || nextLineNumber > view.state.doc.lines) {
-      return false;
-    }
-
-    const nextBlock = getBlockAtLine(blocks, nextLineNumber);
-
-    if (nextBlock && !isBlockActive(view.state, nextBlock)) {
+      const nextLine = doc.line(selected.endLine + 1);
+      const nextBlock = inactiveBlockStartingAt(state, blocks, nextLine.number);
       view.dispatch({
-        selection: EditorSelection.cursor(forward ? nextBlock.from : nextBlock.to),
+        selection: EditorSelection.cursor(nextBlock ? nextBlock.from : nextLine.from),
         scrollIntoView: true,
+        userEvent: "select",
       });
       return true;
     }
 
-    const nextLine = view.state.doc.line(nextLineNumber);
-    const columnOffset = selection.head - line.from;
-    const nextPosition = Math.min(nextLine.to, nextLine.from + columnOffset);
+    if (selected.startLine <= 1) {
+      return true;
+    }
+
+    const previousLine = doc.line(selected.startLine - 1);
+    const previousBlock = inactiveBlockEndingAt(state, blocks, previousLine.number);
+    let target = previousBlock?.to ?? previousLine.from;
+
+    if (!previousBlock) {
+      // The last visual row of a wrapped paragraph, not its first.
+      const predicted = view.moveVertically(EditorSelection.cursor(selected.from), false);
+
+      if (predicted.head >= previousLine.from && predicted.head <= previousLine.to) {
+        target = predicted.head;
+      }
+    }
 
     view.dispatch({
-      selection: EditorSelection.cursor(
-        nextPosition,
-        undefined,
-        undefined,
-        predictedSelection.goalColumn,
-      ),
+      selection: EditorSelection.cursor(target),
       scrollIntoView: true,
+      userEvent: "select",
     });
     return true;
   }
 
+  const line = doc.lineAt(selection.head);
+  const predicted = view.moveVertically(selection, forward);
+  const predictedLine = doc.lineAt(predicted.head);
+
+  if (predictedLine.number === line.number) {
+    // Still inside a wrapped line: ordinary motion.
+    return false;
+  }
+
+  const adjacent = forward
+    ? inactiveBlockStartingAt(state, blocks, line.number + 1)
+    : inactiveBlockEndingAt(state, blocks, line.number - 1);
+
+  if (adjacent) {
+    view.dispatch({
+      selection: EditorSelection.cursor(forward ? adjacent.from : adjacent.to),
+      scrollIntoView: true,
+      userEvent: "select",
+    });
+    return true;
+  }
+
+  if (Math.abs(predictedLine.number - line.number) <= 1) {
+    return false;
+  }
+
+  // CodeMirror's motion skipped a line (a replaced range in between): land on
+  // the next line instead, keeping the column.
+  const nextLineNumber = line.number + (forward ? 1 : -1);
+
+  if (nextLineNumber < 1 || nextLineNumber > doc.lines) {
+    return false;
+  }
+
+  const nextLine = doc.line(nextLineNumber);
+  const columnOffset = selection.head - line.from;
   view.dispatch({
-    selection: EditorSelection.cursor(forward ? targetBlock.from : targetBlock.to),
+    selection: EditorSelection.cursor(
+      Math.min(nextLine.to, nextLine.from + columnOffset),
+      undefined,
+      undefined,
+      predicted.goalColumn,
+    ),
+    scrollIntoView: true,
+    userEvent: "select",
+  });
+  return true;
+}
+
+function stepIntoSelectedBlock(view: EditorView, forward: boolean) {
+  const selection = view.state.selection.main;
+  const selected = selection.empty ? selectedLiveBlock(view.state) : null;
+
+  if (!selected) {
+    return false;
+  }
+
+  // → from the top edge, ← from the bottom edge: into the block. The other
+  // direction leaves it like any line end.
+  if (forward ? selection.head !== selected.from : selection.head !== selected.to) {
+    return false;
+  }
+
+  view.dispatch({
+    effects: revealLiveSource.of(selected.from),
+    selection: EditorSelection.cursor(selection.head),
     scrollIntoView: true,
   });
   return true;
 }
 
-function getBlockAtLine(blocks: LiveBlock[], lineNumber: number) {
-  return blocks.find(
-    (block) => block.startLine <= lineNumber && block.endLine >= lineNumber,
-  );
+/** Enter on a selected block opens a new line after it (before it, from the top edge). */
+function insertLineBesideSelectedBlock(view: EditorView) {
+  const selection = view.state.selection.main;
+  const selected = selection.empty ? selectedLiveBlock(view.state) : null;
+
+  if (!selected) {
+    return false;
+  }
+
+  const atTop = selection.head === selected.from && selected.from !== selected.to;
+  const position = atTop ? selected.from : selected.to;
+  view.dispatch({
+    changes: { from: position, insert: "\n" },
+    selection: EditorSelection.cursor(atTop ? selected.from : selected.to + 1),
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+  return true;
 }
+
+/**
+ * Backspace/Delete around rendered blocks, without ever merging a paragraph
+ * into a block's hidden last line (which turns `![[image]]` into
+ * `![[image]]text` and the image back into source):
+ *
+ * - on a selected block, they delete the block;
+ * - next to one, an empty line is removed and a non-empty one selects the
+ *   block instead of joining onto it.
+ */
+function deleteAroundLiveBlock(view: EditorView, forward: boolean) {
+  const { state } = view;
+  const selection = state.selection.main;
+
+  if (!selection.empty && !selectedLiveBlock(state)) {
+    return false;
+  }
+
+  const selected = selectedLiveBlock(state);
+
+  if (selected) {
+    view.dispatch(deleteBlockTransaction(state, selected));
+    return true;
+  }
+
+  const doc = state.doc;
+  const line = doc.lineAt(selection.head);
+  const blocks = getLiveBlocks(state);
+
+  if (!forward && selection.head === line.from && line.number > 1) {
+    const above = inactiveBlockEndingAt(state, blocks, line.number - 1);
+
+    if (!above) {
+      return false;
+    }
+
+    view.dispatch(
+      line.length === 0
+        ? {
+            changes: { from: above.to, to: line.to },
+            selection: EditorSelection.cursor(above.to),
+            userEvent: "delete.backward",
+          }
+        : { selection: EditorSelection.cursor(above.to), userEvent: "select" },
+    );
+    return true;
+  }
+
+  if (forward && selection.head === line.to && line.number < doc.lines) {
+    const below = inactiveBlockStartingAt(state, blocks, line.number + 1);
+
+    if (!below) {
+      return false;
+    }
+
+    view.dispatch(
+      line.length === 0
+        ? {
+            changes: { from: line.from, to: below.from },
+            selection: EditorSelection.cursor(line.from),
+            userEvent: "delete.forward",
+          }
+        : { selection: EditorSelection.cursor(below.from), userEvent: "select" },
+    );
+    return true;
+  }
+
+  return false;
+}
+
+/** Removes a block and one of the line breaks around it. */
+export function deleteBlockTransaction(state: EditorState, block: Pick<LiveBlock, "from" | "to">) {
+  const doc = state.doc;
+  const from = block.to < doc.length ? block.from : Math.max(0, block.from - 1);
+  const to = block.to < doc.length ? block.to + 1 : block.to;
+
+  return {
+    changes: { from, to },
+    selection: EditorSelection.cursor(Math.min(from, doc.length - (to - from))),
+    scrollIntoView: true,
+    userEvent: "delete",
+  };
+}
+
+/**
+ * Typing on a selected block starts a new paragraph beside it rather than
+ * appending text to the block's hidden source line.
+ */
+const liveObjectInputHandler = EditorView.inputHandler.of((view, from, to, text) => {
+  if (from !== to || view.composing || text.includes("\n")) {
+    return false;
+  }
+
+  const selection = view.state.selection.main;
+  const selected = selection.empty && selection.head === from ? selectedLiveBlock(view.state) : null;
+
+  if (!selected) {
+    return false;
+  }
+
+  const atTop = from === selected.from && selected.from !== selected.to;
+  view.dispatch({
+    changes: atTop
+      ? { from: selected.from, insert: `${text}\n` }
+      : { from: selected.to, insert: `\n${text}` },
+    selection: EditorSelection.cursor(
+      atTop ? selected.from + text.length : selected.to + 1 + text.length,
+    ),
+    scrollIntoView: true,
+    userEvent: "input.type",
+  });
+  return true;
+});
+
+const liveObjectMouseHandlers = EditorView.domEventHandlers({
+  dblclick(event, view) {
+    const target = event.target;
+
+    if (!(target instanceof Element) || target.closest("a, button, input, select, textarea")) {
+      return false;
+    }
+
+    // Rendered callouts and tables are `pointer-events: none`, so the event
+    // lands on the content behind them; the coordinates still name the block.
+    const element = target.closest<HTMLElement>("[data-live-block]");
+    const position =
+      element && view.contentDOM.contains(element)
+        ? view.posAtDOM(element)
+        : view.posAtCoords({ x: event.clientX, y: event.clientY });
+
+    if (position === null) {
+      return false;
+    }
+
+    const block = getLiveBlocks(view.state).find(
+      (candidate) =>
+        position >= candidate.from &&
+        position <= candidate.to &&
+        !isBlockActive(view.state, candidate),
+    );
+
+    if (!block) {
+      return false;
+    }
+
+    event.preventDefault();
+    view.dispatch({
+      effects: revealLiveSource.of(block.from),
+      selection: EditorSelection.cursor(block.kind === "image" ? block.to : block.from),
+      scrollIntoView: true,
+    });
+    view.focus();
+    return true;
+  },
+});
+
+/**
+ * Marks selected blocks (`vault-cm-live-object-selected`) and tells the editor
+ * root whether the caret is "on" an object, so the caret line is hidden while
+ * the ring stands in for it. Classes only: no layout changes, and CodeMirror
+ * ignores DOM changes inside widgets.
+ */
+const liveObjectSelectionPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {
+      this.schedule();
+    }
+
+    update(update: ViewUpdate) {
+      if (
+        update.selectionSet ||
+        update.docChanged ||
+        update.viewportChanged ||
+        update.focusChanged ||
+        update.startState.field(liveRevealField, false) !==
+          update.state.field(liveRevealField, false)
+      ) {
+        this.schedule();
+      }
+    }
+
+    schedule() {
+      this.view.requestMeasure({
+        key: this,
+        read: () => null,
+        write: () => this.apply(),
+      });
+    }
+
+    apply() {
+      const { view } = this;
+      const state = view.state;
+      const blocks = getLiveBlocks(state).filter((block) => !isBlockActive(state, block));
+      const selected = new Set<number>();
+
+      for (const range of state.selection.ranges) {
+        for (const block of blocks) {
+          const covered = range.empty
+            ? range.head === block.from || range.head === block.to
+            : range.from <= block.from && range.to >= block.to;
+
+          if (covered) selected.add(block.from);
+        }
+      }
+
+      for (const element of view.contentDOM.querySelectorAll<HTMLElement>("[data-live-block]")) {
+        let position = -1;
+
+        try {
+          position = view.posAtDOM(element);
+        } catch {
+          // Detached mid-update; the next pass will catch it.
+        }
+
+        element.classList.toggle("vault-cm-live-object-selected", selected.has(position));
+      }
+
+      const caretOnObject =
+        state.selection.main.empty && selected.size > 0;
+      view.dom.classList.toggle("vault-cm-object-caret", caretOnObject);
+    }
+
+    destroy() {
+      this.view.dom.classList.remove("vault-cm-object-caret");
+    }
+  },
+);
 
 function getLiveBlockSpec(block: LiveBlock): LiveBlockSpecForEditor {
   const spec = liveBlockSpecs.find((candidate) => candidate.id === block.kind);
@@ -472,6 +1059,7 @@ class AssetGroupBlockWidget extends WidgetType {
       "vault-cm-asset-group-rendered",
     ].join(" ");
     applyStableBlockWidgetSpacing(figure);
+    figure.dataset.liveBlock = "assetGroup";
 
     const configureButton = document.createElement("button");
     configureButton.className = "vault-cm-asset-group-configure";
@@ -598,6 +1186,11 @@ class AssetGroupBlockWidget extends WidgetType {
 
 class CalloutBlockWidget extends WidgetType {
   private root: Root | null = null;
+  private releaseHeight: (() => void) | null = null;
+
+  get estimatedHeight() {
+    return knownBlockHeight(liveBlockHeightKey(this.block));
+  }
 
   constructor(
     private readonly block: LiveCalloutBlock,
@@ -614,11 +1207,13 @@ class CalloutBlockWidget extends WidgetType {
     );
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const container = document.createElement("div");
     container.className = "vault-cm-callout-rendered";
     applyStableBlockWidgetSpacing(container);
+    container.dataset.liveBlock = "callout";
     this.root = createRoot(container);
+    this.releaseHeight = holdWidgetHeight(container, liveBlockHeightKey(this.block), view);
     this.root.render(
       createElement(MarkdownDocument, {
         markdown: this.block.source,
@@ -634,6 +1229,8 @@ class CalloutBlockWidget extends WidgetType {
   }
 
   destroy() {
+    this.releaseHeight?.();
+    this.releaseHeight = null;
     const root = this.root;
     this.root = null;
 
@@ -649,6 +1246,11 @@ class CalloutBlockWidget extends WidgetType {
 
 class DocumentEmbedBlockWidget extends WidgetType {
   private root: Root | null = null;
+  private releaseHeight: (() => void) | null = null;
+
+  get estimatedHeight() {
+    return knownBlockHeight(liveBlockHeightKey(this.block));
+  }
 
   constructor(
     private readonly block: LiveDocumentEmbedBlock,
@@ -665,11 +1267,13 @@ class DocumentEmbedBlockWidget extends WidgetType {
     );
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const container = document.createElement("div");
     container.className = "vault-cm-document-embed-preview";
     applyStableBlockWidgetSpacing(container, "0.35rem");
+    container.dataset.liveBlock = "documentEmbed";
     this.root = createRoot(container);
+    this.releaseHeight = holdWidgetHeight(container, liveBlockHeightKey(this.block), view);
     this.root.render(
       createElement(MarkdownDocument, {
         markdown: this.block.source,
@@ -684,6 +1288,8 @@ class DocumentEmbedBlockWidget extends WidgetType {
   }
 
   destroy() {
+    this.releaseHeight?.();
+    this.releaseHeight = null;
     const root = this.root;
     this.root = null;
 
@@ -699,6 +1305,11 @@ class DocumentEmbedBlockWidget extends WidgetType {
 
 class TableBlockWidget extends WidgetType {
   private root: Root | null = null;
+  private releaseHeight: (() => void) | null = null;
+
+  get estimatedHeight() {
+    return knownBlockHeight(liveBlockHeightKey(this.block));
+  }
 
   constructor(
     private readonly block: LiveTableBlock,
@@ -715,11 +1326,13 @@ class TableBlockWidget extends WidgetType {
     );
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const container = document.createElement("div");
     container.className = "vault-cm-table-rendered";
     applyStableBlockWidgetSpacing(container);
+    container.dataset.liveBlock = "table";
     this.root = createRoot(container);
+    this.releaseHeight = holdWidgetHeight(container, liveBlockHeightKey(this.block), view);
     this.root.render(
       createElement(MarkdownDocument, {
         markdown: this.block.source,
@@ -735,6 +1348,8 @@ class TableBlockWidget extends WidgetType {
   }
 
   destroy() {
+    this.releaseHeight?.();
+    this.releaseHeight = null;
     const root = this.root;
     this.root = null;
 
@@ -750,6 +1365,11 @@ class TableBlockWidget extends WidgetType {
 
 class MathBlockWidget extends WidgetType {
   private root: Root | null = null;
+  private releaseHeight: (() => void) | null = null;
+
+  get estimatedHeight() {
+    return knownBlockHeight(liveBlockHeightKey(this.block));
+  }
 
   constructor(
     private readonly block: LiveMathBlock,
@@ -766,11 +1386,13 @@ class MathBlockWidget extends WidgetType {
     );
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const container = document.createElement("div");
     container.className = "vault-cm-math-rendered";
     applyStableBlockWidgetSpacing(container);
+    container.dataset.liveBlock = "mathBlock";
     this.root = createRoot(container);
+    this.releaseHeight = holdWidgetHeight(container, liveBlockHeightKey(this.block), view);
     this.root.render(
       createElement(MarkdownDocument, {
         markdown: this.block.source,
@@ -786,6 +1408,8 @@ class MathBlockWidget extends WidgetType {
   }
 
   destroy() {
+    this.releaseHeight?.();
+    this.releaseHeight = null;
     const root = this.root;
     this.root = null;
 
@@ -801,6 +1425,11 @@ class MathBlockWidget extends WidgetType {
 
 class ExtensionBlockWidget extends WidgetType {
   private root: Root | null = null;
+  private releaseHeight: (() => void) | null = null;
+
+  get estimatedHeight() {
+    return knownBlockHeight(liveBlockHeightKey(this.block));
+  }
 
   constructor(
     private readonly block: LiveExtensionBlock,
@@ -821,13 +1450,15 @@ class ExtensionBlockWidget extends WidgetType {
     );
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const container = document.createElement("div");
     container.className = `vault-cm-extension-block vault-cm-${this.block.name}-rendered`;
     container.contentEditable = "false";
     applyStableBlockWidgetSpacing(container);
+    container.dataset.liveBlock = "extensionBlock";
 
     this.root = createRoot(container);
+    this.releaseHeight = holdWidgetHeight(container, liveBlockHeightKey(this.block), view);
     const host = createElement(ExtensionBlockHost, {
         // Live mode is where blocks are edited, so the widget carries the
         // page's own `canEdit` (Read mode always renders them read-only).
@@ -850,6 +1481,8 @@ class ExtensionBlockWidget extends WidgetType {
   }
 
   destroy() {
+    this.releaseHeight?.();
+    this.releaseHeight = null;
     const root = this.root;
     this.root = null;
 
@@ -862,6 +1495,203 @@ class ExtensionBlockWidget extends WidgetType {
   // the block never fall through to CodeMirror selection handling.
   ignoreEvent() {
     return true;
+  }
+}
+
+/**
+ * A standalone image line, drawn as a block that reserves its height before
+ * the picture arrives: an asset's stored pixel size, or the natural size this
+ * tab saw last time, sets the frame's aspect ratio, so neither loading nor
+ * scrolling it back into view moves the text below.
+ */
+class ImageBlockWidget extends WidgetType {
+  constructor(
+    private readonly block: LiveImageBlock,
+    private readonly options: LiveBlockOptions,
+    /** Drawn under the revealed source line rather than in place of it. */
+    private readonly preview = false,
+  ) {
+    super();
+  }
+
+  private get asset() {
+    const { image } = this.block;
+    return image.variant === "asset" ? this.options.assetLinks[image.parsed.assetId] ?? null : null;
+  }
+
+  private get src() {
+    const { image } = this.block;
+
+    if (image.variant === "external") {
+      return image.src;
+    }
+
+    const asset = this.asset;
+    return asset ? asset.displayUrl ?? asset.url : "";
+  }
+
+  private get heightKey() {
+    return `${this.block.source}\u0000${this.src}\u0000${this.preview ? "p" : "b"}`;
+  }
+
+  eq(widget: ImageBlockWidget) {
+    // Compare the one resolution this block shows, not the map's identity:
+    // the map is replaced whenever any asset resolves.
+    const mine = this.asset;
+    const theirs = widget.asset;
+
+    return (
+      widget.block.source === this.block.source &&
+      widget.preview === this.preview &&
+      widget.src === this.src &&
+      (mine?.kind ?? null) === (theirs?.kind ?? null) &&
+      (mine?.url ?? null) === (theirs?.url ?? null)
+    );
+  }
+
+  get estimatedHeight() {
+    return knownBlockHeight(this.heightKey);
+  }
+
+  toDOM(view: EditorView) {
+    const wrapper = document.createElement("div");
+    wrapper.className = this.preview
+      ? "vault-cm-image-block vault-cm-image-block-preview"
+      : "vault-cm-image-block";
+
+    if (!this.preview) {
+      wrapper.dataset.liveBlock = "image";
+    }
+
+    const remember = () => {
+      const height = wrapper.getBoundingClientRect().height;
+      rememberBlockHeight(this.heightKey, height);
+      view.requestMeasure();
+    };
+    const { image } = this.block;
+
+    if (image.variant === "external") {
+      wrapper.append(this.createImage(image.src, image.src, image.alt, null, remember));
+      return wrapper;
+    }
+
+    const asset = this.asset;
+
+    if (!asset) {
+      const missing = document.createElement("span");
+      missing.className = "vault-asset-embed vault-asset-embed--missing";
+      missing.textContent = image.parsed.label || "Private asset";
+      wrapper.append(missing);
+      return wrapper;
+    }
+
+    if (asset.kind !== "image") {
+      wrapper.append(createAssetFileCard(asset, image.parsed.label));
+      return wrapper;
+    }
+
+    const attributes = image.parsed.attributes;
+    const figure = document.createElement("figure");
+    figure.className = getAssetEmbedClassName(
+      attributes,
+      "vault-cm-wiki-image-preview vault-asset-embed vault-asset-embed--image",
+    );
+    const figureStyle = getAssetEmbedStyle(attributes);
+
+    if (figureStyle) {
+      figure.setAttribute("style", figureStyle);
+    }
+
+    const frameAndImage = this.createImage(
+      asset.displayUrl ?? asset.url,
+      asset.url,
+      attributes.alt || asset.altText || image.parsed.label || asset.displayName,
+      asset.width && asset.height ? { width: asset.width, height: asset.height } : null,
+      remember,
+    );
+    figure.append(frameAndImage);
+
+    if (attributes.caption) {
+      const caption = document.createElement("figcaption");
+      caption.className = "vault-asset-embed-caption";
+      caption.textContent = attributes.caption;
+      figure.append(caption);
+    }
+
+    wrapper.append(figure);
+    return wrapper;
+  }
+
+  private createImage(
+    src: string,
+    original: string,
+    alt: string,
+    storedSize: { width: number; height: number } | null,
+    onSettled: () => void,
+  ) {
+    const frame = document.createElement("span");
+    frame.className = "vault-md-image-frame";
+
+    const image = document.createElement("img");
+    image.className = "vault-md-img vault-asset-embed-image";
+    image.alt = alt;
+    image.decoding = "async";
+    // CodeMirror already only draws what is near the viewport; lazy loading on
+    // top of that only delays the picture the reader scrolled to.
+    image.loading = "eager";
+    image.draggable = false;
+
+    const size = storedSize ?? knownImageSize(src);
+
+    if (size) {
+      image.width = size.width;
+      image.height = size.height;
+      frame.dataset.sized = "true";
+      frame.style.setProperty("--vault-image-ratio", `${size.width} / ${size.height}`);
+    }
+
+    image.addEventListener("load", () => {
+      rememberImageSize(src, image.naturalWidth, image.naturalHeight);
+
+      if (!frame.dataset.sized && image.naturalWidth > 0) {
+        image.width = image.naturalWidth;
+        image.height = image.naturalHeight;
+        frame.dataset.sized = "true";
+        frame.style.setProperty(
+          "--vault-image-ratio",
+          `${image.naturalWidth} / ${image.naturalHeight}`,
+        );
+      }
+
+      onSettled();
+    });
+
+    let retried = false;
+    image.addEventListener("error", () => {
+      // A display copy that fails (storage hiccup) falls back to the original.
+      if (!retried && original && original !== src) {
+        retried = true;
+        image.src = original;
+        return;
+      }
+
+      frame.dataset.imageState = "error";
+      onSettled();
+    });
+
+    image.src = src;
+
+    const fallback = document.createElement("span");
+    fallback.className = "vault-md-image-fallback";
+    fallback.textContent = "Image unavailable";
+
+    frame.append(image, fallback);
+    return frame;
+  }
+
+  ignoreEvent(event: Event) {
+    // A file card's Open link works; everything else selects the block.
+    return event.target instanceof Element && Boolean(event.target.closest("a"));
   }
 }
 
@@ -906,6 +1736,50 @@ class ActiveMathBlockPreviewWidget extends WidgetType {
   ignoreEvent() {
     return false;
   }
+}
+
+function liveBlockHeightKey(block: LiveBlock) {
+  return `${block.kind} ${block.source}`;
+}
+
+/**
+ * React-rendered block widgets (callouts, tables, math, embeds) fill in a beat
+ * after CodeMirror inserts and measures them. Without this, a block scrolling
+ * back into view was first measured as an empty, padding-only box and then
+ * grew, shifting everything below. Hold the height it had last time until its
+ * content has arrived, then let it size itself and remember the new height.
+ */
+function holdWidgetHeight(container: HTMLElement, key: string, view: EditorView) {
+  const known = knownBlockHeight(key);
+
+  if (known > 0) {
+    container.style.minHeight = `${known}px`;
+  }
+
+  const observer = new ResizeObserver(() => {
+    if (!container.isConnected || container.childElementCount === 0) {
+      return;
+    }
+
+    container.style.minHeight = "";
+    rememberBlockHeight(key, container.getBoundingClientRect().height);
+    view.requestMeasure();
+  });
+  observer.observe(container);
+
+  // Content that renders at exactly the held height never resizes the box,
+  // so also settle once React has committed.
+  const settle = window.setTimeout(() => {
+    if (container.isConnected && container.childElementCount > 0) {
+      container.style.minHeight = "";
+      rememberBlockHeight(key, container.getBoundingClientRect().height);
+    }
+  }, 250);
+
+  return () => {
+    observer.disconnect();
+    window.clearTimeout(settle);
+  };
 }
 
 function applyStableBlockWidgetSpacing(
@@ -1010,17 +1884,46 @@ function formatAssetFileSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function isBlockActive(state: EditorState, block: LiveBlock) {
+/**
+ * Whether a block shows its source. A caret merely *on* a block's edge, or a
+ * selection covering it whole, selects it instead (see `liveRevealField`).
+ */
+export function isBlockActive(state: EditorState, block: Pick<LiveBlock, "from" | "to">) {
+  if (isLiveSourceRevealed(state, block.from, block.to)) {
+    return true;
+  }
+
   return state.selection.ranges.some((range) => {
     if (range.empty) {
-      return range.from >= block.from && range.from <= block.to;
+      return range.head > block.from && range.head < block.to;
     }
 
-    return range.from < block.to && range.to > block.from;
+    // A selection that starts or ends inside the block selects source text.
+    return (
+      (range.from > block.from && range.from < block.to) ||
+      (range.to > block.from && range.to < block.to)
+    );
   });
 }
 
+// Scans are pure functions of the state, and the reveal field, the decoration
+// field, the selection ring and the Live preview pass all ask for the same
+// state's blocks within one update.
+const liveBlocksByState = new WeakMap<EditorState, LiveBlock[]>();
+
 function getLiveBlocks(state: EditorState): LiveBlock[] {
+  const cached = liveBlocksByState.get(state);
+
+  if (cached) {
+    return cached;
+  }
+
+  const blocks = scanLiveBlocks(state);
+  liveBlocksByState.set(state, blocks);
+  return blocks;
+}
+
+function scanLiveBlocks(state: EditorState): LiveBlock[] {
   const syntaxExclusions = getSyntaxExclusionRanges(state);
   const blocks: LiveBlock[] = [];
   const occupiedRanges: SyntaxRange[] = [...syntaxExclusions];
@@ -1452,7 +2355,55 @@ function splitTableRow(text: string) {
   return cells;
 }
 
+function getLiveImageBlocks(
+  state: EditorState,
+  excludedRanges: SyntaxRange[],
+): LiveImageBlock[] {
+  const blocks: LiveImageBlock[] = [];
+  const doc = state.doc;
+
+  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
+    const line = doc.line(lineNumber);
+
+    if (!line.text.includes("![") || isInsideSyntaxRange(line.from, excludedRanges)) {
+      continue;
+    }
+
+    const image = parseStandaloneImageLine(line.text);
+
+    if (!image) {
+      continue;
+    }
+
+    blocks.push({
+      kind: "image",
+      from: line.from,
+      to: line.to,
+      startLine: lineNumber,
+      endLine: lineNumber,
+      source: line.text.trim(),
+      image,
+    });
+  }
+
+  return blocks;
+}
+
+const syntaxExclusionsByState = new WeakMap<EditorState, SyntaxRange[]>();
+
 function getSyntaxExclusionRanges(state: EditorState): SyntaxRange[] {
+  const cached = syntaxExclusionsByState.get(state);
+
+  if (cached) {
+    return cached;
+  }
+
+  const ranges = scanSyntaxExclusionRanges(state);
+  syntaxExclusionsByState.set(state, ranges);
+  return ranges;
+}
+
+function scanSyntaxExclusionRanges(state: EditorState): SyntaxRange[] {
   const ranges: SyntaxRange[] = [];
 
   syntaxTree(state).iterate({

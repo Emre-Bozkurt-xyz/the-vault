@@ -1355,6 +1355,187 @@
   }
   .vault-code-tools-message[data-tone="error"] { color: var(--destructive); }
 
+  /*
+   * Live-mode rendered objects (`live-blocks.ts`, "Rendered by default, source
+   * on intent"). A selected image/table/callout/embed gets a ring and a
+   * floating toolbar instead of turning into Markdown, so nothing here may
+   * change layout: outlines, not borders; padding inside block widgets, never
+   * margin (CodeMirror measures widgets with getBoundingClientRect).
+   */
+  .vault-cm-image-block {
+    display: flow-root;
+    position: relative;
+    padding-block: 0.35rem;
+    white-space: normal;
+    line-height: normal;
+    cursor: default;
+  }
+  .vault-cm-image-block-preview { padding-block: 0.2rem 0.45rem; }
+  .vault-cm-image-block .vault-asset-embed--image,
+  .vault-cm-image-block .vault-asset-embed--file,
+  .vault-cm-image-block .vault-asset-embed--missing {
+    /* Read mode's margin, as padding on the wrapper's terms. */
+    margin-block: 0.5rem;
+  }
+  .vault-cm-image-block > .vault-md-image-frame { margin-inline: auto; }
+  /* A known size reserves the box before the bytes arrive. */
+  .vault-cm-image-block .vault-md-image-frame[data-sized] { min-height: 0; }
+  .vault-cm-image-block .vault-md-image-frame[data-sized] > .vault-md-img {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: var(--vault-image-ratio, auto);
+  }
+  .vault-cm-image-block .vault-md-img { -webkit-user-drag: none; }
+  .vault-markdown-editor-live .vault-cm-image-block .vault-cm-wiki-image-preview {
+    margin-block: 0;
+  }
+
+  .vault-markdown-editor-live [data-live-block] {
+    border-radius: 0.6rem;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition: outline-color 120ms ease;
+  }
+  .vault-markdown-editor-live [data-live-block].vault-cm-live-object-selected {
+    outline-color: color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+  /* Images ring the picture itself, not the full-width row it sits in. */
+  .vault-markdown-editor-live [data-live-block="image"].vault-cm-live-object-selected {
+    outline-color: transparent;
+  }
+  .vault-markdown-editor-live [data-live-block="image"] .vault-md-image-frame,
+  .vault-markdown-editor-live [data-live-block="image"] .vault-asset-embed--file,
+  .vault-markdown-editor-live [data-live-block="image"] .vault-asset-embed--missing {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition: outline-color 120ms ease;
+  }
+  .vault-markdown-editor-live [data-live-block="image"].vault-cm-live-object-selected .vault-md-image-frame,
+  .vault-markdown-editor-live [data-live-block="image"].vault-cm-live-object-selected .vault-asset-embed--file,
+  .vault-markdown-editor-live [data-live-block="image"].vault-cm-live-object-selected .vault-asset-embed--missing {
+    outline-color: color-mix(in oklab, var(--primary) 60%, transparent);
+  }
+  /* The ring stands in for the caret while an object is selected. */
+  .vault-cm-object-caret .cm-cursorLayer { visibility: hidden; }
+
+  .vault-markdown-editor .cm-tooltip.vault-object-tooltip {
+    overflow: visible;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.5rem;
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 10px 24px -12px rgb(0 0 0 / 0.45);
+    font-family: var(--font-sans);
+  }
+  .vault-object-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    max-width: min(34rem, calc(100vw - 1.5rem));
+    padding: 0.2rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .vault-object-tools-segment { display: flex; align-items: center; gap: 0.05rem; }
+  .vault-object-tools-label {
+    max-width: 10rem;
+    padding: 0 0.45rem 0 0.35rem;
+    overflow: hidden;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .vault-object-tools-url {
+    max-width: 16rem;
+    padding: 0 0.45rem;
+    overflow: hidden;
+    color: var(--foreground);
+    font-size: 0.75rem;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--foreground) 35%, transparent);
+    text-underline-offset: 0.18rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .vault-object-tools-url[data-unresolved] {
+    color: var(--muted-foreground);
+    text-decoration-style: dashed;
+  }
+  .vault-object-tools-divider {
+    flex: none;
+    align-self: stretch;
+    width: 1px;
+    margin: 0.2rem 0.15rem;
+    background: color-mix(in oklab, var(--border) 85%, transparent);
+  }
+  .vault-object-tool {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    padding: 0 0.35rem;
+    border-radius: 0.375rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    font-weight: 600;
+    transition: background-color 100ms ease, color 100ms ease;
+  }
+  .vault-object-tool svg { width: 0.95rem; height: 0.95rem; }
+  .vault-object-tool:hover { background: var(--muted); color: var(--foreground); }
+  .vault-object-tool[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--primary) 16%, transparent);
+    color: var(--foreground);
+  }
+  .vault-object-tool:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 0;
+  }
+  .vault-object-tools-select select {
+    height: 1.75rem;
+    padding: 0 1.2rem 0 0.45rem;
+    appearance: none;
+    border: 0;
+    border-radius: 0.375rem;
+    background-color: transparent;
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 0.65rem) 55%, calc(100% - 0.4rem) 55%;
+    background-size: 0.25rem 0.25rem;
+    background-repeat: no-repeat;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .vault-object-tools-select select:hover { background-color: var(--muted); }
+  .vault-object-tools-select option {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+  }
+  .dark .vault-object-tools-select select { color-scheme: dark; }
+  .vault-object-tools-field {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+  }
+  .vault-object-tools-field input {
+    width: min(20rem, 60vw);
+    height: 1.75rem;
+    padding: 0 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border-radius: 0.375rem;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .vault-object-tools-field input:focus { border-color: var(--ring); }
+
   /* A native select, restyled: same font as the rest of the toolbar (the
      options used to fall back to the platform serif), no box, a drawn caret. */
   .vault-code-language-select {

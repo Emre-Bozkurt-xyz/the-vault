@@ -14,6 +14,9 @@ export type AssetEmbedResolution = {
    * and Download.
    */
   displayUrl?: string | null;
+  /** Pixel size, when known, so an image reserves its space before loading. */
+  width?: number | null;
+  height?: number | null;
 };
 
 export type AssetEmbedResolutionMap = Record<string, AssetEmbedResolution>;
@@ -378,7 +381,7 @@ function renderAssetEmbedHtml(
     )}"${figureStyle ? ` style="${figureStyle}"` : ""}>`,
     `<img class="vault-asset-embed-image" src="${escapeHtml(url)}" alt="${escapeHtml(
       alt,
-    )}" loading="lazy" />`,
+    )}"${imageSizeAttributes(asset)} loading="lazy" />`,
     renderCaption
       ? `<figcaption class="vault-asset-embed-caption">${escapeHtml(
           caption,
@@ -386,6 +389,17 @@ function renderAssetEmbedHtml(
       : "",
     `</${containerTag}>`,
   ].join("");
+}
+
+/**
+ * `width`/`height` from the stored pixel size, so the browser reserves the
+ * image's box before it loads instead of growing the page under the reader.
+ */
+function imageSizeAttributes(asset: AssetEmbedResolution) {
+  const width = Math.round(Number(asset.width));
+  const height = Math.round(Number(asset.height));
+
+  return width > 0 && height > 0 ? ` width="${width}" height="${height}"` : "";
 }
 
 function parseAttributeTokens(rawAttributes: string) {

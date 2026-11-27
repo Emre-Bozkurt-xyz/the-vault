@@ -108,6 +108,9 @@ export type AssetResolution = {
    * and Download.
    */
   displayUrl?: string | null;
+  /** Pixel size, when known, so an image reserves its space before loading. */
+  width?: number | null;
+  height?: number | null;
 };
 
 export type AssetCompletion = {
@@ -1398,6 +1401,8 @@ export async function listAssetResolutionsForDocument(
     visibility: assets.visibility,
     renditionStatus: assets.renditionStatus,
     renditionVersion: assets.renditionVersion,
+    width: assets.width,
+    height: assets.height,
   };
 
   // Linked assets: the document_assets row is an access grant, which is what
@@ -1457,6 +1462,8 @@ export async function listAssetResolutionsForDocument(
         sizeBytes: row.sizeBytes,
         url: buildAssetContentUrl(row.id, documentId, embedSessionToken),
         displayUrl: embedDisplayUrl(row, documentId, embedSessionToken),
+        width: row.width,
+        height: row.height,
       } satisfies AssetResolution,
     ]),
   );
@@ -1490,6 +1497,8 @@ export async function resolveEmbeddableAssetForDocument(input: {
       sizeBytes: assets.sizeBytes,
       renditionStatus: assets.renditionStatus,
       renditionVersion: assets.renditionVersion,
+      width: assets.width,
+      height: assets.height,
     })
     .from(assets)
     .where(
@@ -1515,6 +1524,8 @@ export async function resolveEmbeddableAssetForDocument(input: {
     sizeBytes: asset.sizeBytes,
     url: buildAssetContentUrl(asset.id, input.documentId),
     displayUrl: embedDisplayUrl(asset, input.documentId),
+    width: asset.width,
+    height: asset.height,
   } satisfies AssetResolution;
 }
 

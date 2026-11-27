@@ -728,6 +728,12 @@ Plan: `docs/26_MEDIA_LIBRARY_AND_FOLDERS_PLAN.md` (2026-11-23). Separate media f
 | [x] | Slice 6 - Share links and `/s/<token>` | 2026-11-23. `asset_share_links` (migration 0037), derived HMAC tokens, owner dialog, public page with subtree browsing and viewer, streamed zip, downloads-off rules. Verified with unit, real-Postgres and cookie-less Chromium checks |
 | [~] | Slice 7 - Hardening | 2026-11-23. DB suites for every slice, rate limits, user guide done. Remaining: a committed Playwright e2e suite (needs an auth/storage bootstrap), a shared rate-limit store if Vault ever runs more than one instance, and a first run against real R2 |
 
+## Live Mode UX Pass
+
+| Status | Task | Notes |
+|---|---|---|
+| [x] | Rendered by default, source on intent | 2026-11-27, browser-verified with Playwright (layout stable across clicks, arrows, drag and scroll): whole-document image blocks with reserved size, reveal points (`liveRevealField`), object selection + toolbar, link toolbar, block keyboard semantics, heading/list styling kept while editing. Typecheck, 16 new tests, changed-file lint at baseline. Follow-ups: a constant ~10 px heightmap rounding gap remains near the top of a long test doc; possibly inline emphasis/math under the same rule, inline image chips, table cell editing without source |
+
 ---
 
 ## Bugs / Issues

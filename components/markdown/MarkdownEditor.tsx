@@ -80,8 +80,12 @@ import {
   createLiveBlockDecorationExtension,
   getLiveBlockLineNumbers,
   getMarkdownLiveBlocks,
+  liveRevealField,
+  liveRevealPoints,
   type LiveAssetGroupSelection,
 } from "@/components/markdown/live-blocks";
+import { createLiveObjectToolsExtension } from "@/components/markdown/live-object-tools";
+import { knownImageSize, rememberImageSize } from "@/components/markdown/live-objects";
 import {
   MarkdownToolbar,
   type MarkdownFormat,
@@ -134,8 +138,6 @@ import {
   extractAssetEmbedIds,
   formatAssetEmbedSource,
   formatAssetGroupFence,
-  getAssetEmbedClassName,
-  getAssetEmbedStyle,
   parseAssetEmbedSource,
   type AssetEmbedAttributes,
   type AssetEmbedResolutionMap,
@@ -1493,6 +1495,15 @@ export function MarkdownEditor({
             onConfigureAssetGroup: configureAssetGroup,
             extensions: documentExtensions,
           }),
+          // The toolbar that stands in for source on rendered images, blocks
+          // and links (`live-object-tools.tsx`).
+          createLiveObjectToolsExtension({
+            onOpenLink: (target, options) => void openLink(target, options),
+            getAssetLinks: () => assetLinkMap,
+            getWikiLinks: () => wikiLinkMapStore.get(),
+            onConfigureAssetGroup: configureAssetGroup,
+          }),
+          Prec.high(keymap.of(liveCaretKeymap)),
           // Extensions' own Live-mode rendering (calc's inline values and
           // declaration rows), for the document's render set and the author's
           // enabled extensions. One that throws while building is left out
@@ -2165,7 +2176,9 @@ export function MarkdownEditor({
             {assetUploadError}
           </p>
         ) : null}
-        {editorMode !== "read" && selectedAssetEmbed ? (
+        {/* Live mode formats a selected image from its floating toolbar
+            (`live-object-tools.tsx`); this panel serves Source mode. */}
+        {editorMode === "source" && selectedAssetEmbed ? (
           <AssetEmbedControls
             selected={selectedAssetEmbed}
             widthDraft={assetWidthDraft}
@@ -3134,9 +3147,6 @@ const previewCode = Decoration.mark({ class: "vault-cm-preview-code" });
 const previewLink = Decoration.mark({ class: "vault-cm-preview-link" });
 const previewWikiLink = Decoration.mark({ class: "vault-cm-preview-wiki-link" });
 const previewBlockAnchor = Decoration.mark({ class: "vault-cm-preview-block-anchor" });
-const previewStandaloneEmbedLine = Decoration.line({
-  class: "vault-cm-document-embed-line",
-});
 const previewHeading1 = Decoration.line({ class: "vault-cm-preview-heading-1" });
 const previewHeading2 = Decoration.line({ class: "vault-cm-preview-heading-2" });
 const previewHeading3 = Decoration.line({ class: "vault-cm-preview-heading-3" });
@@ -3537,10 +3547,20 @@ class WikiImagePreviewWidget extends WidgetType {
 
     const image = document.createElement("img");
     image.className = "vault-md-img";
-    image.src = this.src;
     image.alt = this.alt;
-    image.loading = "lazy";
+    // CodeMirror only draws what is near the viewport already.
+    image.loading = "eager";
     image.decoding = "async";
+    const size = knownImageSize(this.src);
+
+    if (size) {
+      image.width = size.width;
+      image.height = size.height;
+    }
+
+    image.addEventListener("load", () => {
+      rememberImageSize(this.src, image.naturalWidth, image.naturalHeight);
+    });
     image.addEventListener(
       "error",
       () => {
@@ -3548,6 +3568,7 @@ class WikiImagePreviewWidget extends WidgetType {
       },
       { once: true },
     );
+    image.src = this.src;
 
     const fallback = document.createElement("figcaption");
     fallback.className = "vault-md-image-fallback";
@@ -3557,146 +3578,6 @@ class WikiImagePreviewWidget extends WidgetType {
 
     return figure;
   }
-}
-
-class AssetEmbedPreviewWidget extends WidgetType {
-  constructor(
-    private readonly asset: AssetEmbedResolutionMap[string],
-    private readonly label: string,
-    private readonly attributes: AssetEmbedAttributes,
-  ) {
-    super();
-  }
-
-  eq(widget: AssetEmbedPreviewWidget) {
-    return (
-      widget.asset.id === this.asset.id &&
-      widget.asset.url === this.asset.url &&
-      widget.asset.displayUrl === this.asset.displayUrl &&
-      widget.label === this.label &&
-      JSON.stringify(widget.attributes) === JSON.stringify(this.attributes)
-    );
-  }
-
-  toDOM() {
-    if (this.asset.kind === "image") {
-      const figure = document.createElement("figure");
-      figure.className = getAssetEmbedClassName(
-        this.attributes,
-        "vault-cm-wiki-image-preview vault-asset-embed vault-asset-embed--image",
-      );
-
-      const figureStyle = getAssetEmbedStyle(this.attributes);
-
-      if (figureStyle) {
-        figure.setAttribute("style", figureStyle);
-      }
-
-      const frame = document.createElement("span");
-      frame.className = "vault-md-image-frame";
-
-      const image = document.createElement("img");
-      image.className = "vault-md-img vault-asset-embed-image";
-      image.src = this.asset.displayUrl ?? this.asset.url;
-      // A display copy that fails (storage hiccup) falls back to the original.
-      const original = this.asset.url;
-      image.addEventListener("error", () => {
-        if (image.src !== new URL(original, window.location.href).href) image.src = original;
-      }, { once: true });
-      image.alt =
-        this.attributes.alt ||
-        this.asset.altText ||
-        this.label ||
-        this.asset.displayName;
-      image.loading = "lazy";
-      image.decoding = "async";
-      image.addEventListener(
-        "error",
-        () => {
-          frame.dataset.imageState = "error";
-        },
-        { once: true },
-      );
-
-      const fallback = document.createElement("figcaption");
-      fallback.className = "vault-md-image-fallback";
-      fallback.textContent = "Image unavailable";
-
-      frame.append(image, fallback);
-      figure.append(frame);
-
-      if (this.attributes.caption) {
-        const caption = document.createElement("figcaption");
-        caption.className = "vault-asset-embed-caption";
-        caption.textContent = this.attributes.caption;
-        figure.append(caption);
-      }
-
-      return figure;
-    }
-
-    return createAssetFileCard(this.asset, this.label);
-  }
-}
-
-function createAssetFileCard(
-  asset: AssetEmbedResolutionMap[string],
-  label: string | null,
-) {
-  const kindLabel = asset.kind === "pdf" ? "PDF" : asset.kind === "video" ? "Video" : "File";
-  const card = document.createElement("span");
-  card.className = [
-    "vault-asset-embed",
-    "vault-asset-embed--file",
-    `vault-asset-embed--${asset.kind}`,
-  ].join(" ");
-  card.setAttribute("role", "group");
-
-  const icon = document.createElement("span");
-  icon.className = "vault-asset-file-icon";
-  icon.setAttribute("aria-hidden", "true");
-  icon.textContent = kindLabel;
-
-  const body = document.createElement("span");
-  body.className = "vault-asset-file-body";
-
-  const title = document.createElement("span");
-  title.className = "vault-asset-file-title";
-  title.textContent = label || asset.displayName;
-
-  const meta = document.createElement("span");
-  meta.className = "vault-asset-file-meta";
-  meta.textContent = [kindLabel, formatAssetFileSize(asset.sizeBytes)]
-    .filter(Boolean)
-    .join(" - ");
-
-  const action = document.createElement("a");
-  action.className = "vault-asset-file-action";
-  action.href = asset.url;
-  action.target = "_blank";
-  action.rel = "noreferrer";
-  action.textContent = "Open";
-
-  body.append(title, meta);
-  card.append(icon, body, action);
-
-  return card;
-}
-
-function formatAssetFileSize(sizeBytes: number) {
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-    return "";
-  }
-
-  if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
-  }
-
-  if (sizeBytes < 1024 * 1024) {
-    return `${Math.round(sizeBytes / 1024)} KiB`;
-  }
-
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 class ListMarkerWidget extends WidgetType {
@@ -3790,7 +3671,9 @@ function createMarkdownLivePreviewExtension(
           update.docChanged ||
           update.selectionSet ||
           update.viewportChanged ||
-          update.focusChanged
+          update.focusChanged ||
+          update.startState.field(liveRevealField, false) !==
+            update.state.field(liveRevealField, false)
         ) {
           this.decorations = buildLivePreviewDecorations(
             update.view,
@@ -3872,6 +3755,64 @@ function createMarkdownLivePreviewExtension(
     },
   );
 }
+
+/**
+ * ←/→ that never "do nothing". A link's hidden syntax (`](url)`, `[[doc:…|`)
+ * stays hidden while the caret is on the link, and stepping over it moves the
+ * caret through characters that are not drawn: a key press with no visible
+ * effect. Keep stepping until the caret actually moves on screen.
+ */
+function moveCaretVisibly(view: EditorView, forward: boolean) {
+  const selection = view.state.selection.main;
+
+  if (!selection.empty) {
+    return false;
+  }
+
+  const start = view.coordsAtPos(selection.head);
+  let range = selection;
+
+  for (let step = 0; step < 4; step += 1) {
+    const next = view.moveByChar(range, forward);
+
+    if (next.head === range.head) {
+      break;
+    }
+
+    range = next;
+    const coords = view.coordsAtPos(range.head);
+
+    if (
+      !start ||
+      !coords ||
+      Math.abs(coords.left - start.left) > 1 ||
+      Math.abs(coords.top - start.top) > 1
+    ) {
+      break;
+    }
+  }
+
+  if (range.head === selection.head || view.state.doc.lineAt(range.head).number !== view.state.doc.lineAt(selection.head).number) {
+    // Nothing hidden in the way (or the step crossed a line): default motion.
+    return false;
+  }
+
+  if (Math.abs(range.head - selection.head) <= 1) {
+    return false;
+  }
+
+  view.dispatch({
+    selection: EditorSelection.cursor(range.head, forward ? -1 : 1),
+    scrollIntoView: true,
+    userEvent: "select",
+  });
+  return true;
+}
+
+const liveCaretKeymap = [
+  { key: "ArrowRight", run: (view: EditorView) => moveCaretVisibly(view, true) },
+  { key: "ArrowLeft", run: (view: EditorView) => moveCaretVisibly(view, false) },
+];
 
 function createBlockAnchorMarkerExtension() {
   return ViewPlugin.fromClass(
@@ -3956,6 +3897,10 @@ function buildLivePreviewDecorations(
   }
   const doc = view.state.doc;
   const frontmatterEndLine = getFrontmatterEndLine(doc);
+  // Links, wiki links and inline images stay rendered while the caret is on
+  // them; only these points (an edit of their syntax, Edit source) show their
+  // source (`liveRevealField`).
+  const revealPoints = liveRevealPoints(view.state);
 
   for (const visibleRange of view.visibleRanges) {
     let position = visibleRange.from;
@@ -3983,32 +3928,10 @@ function buildLivePreviewDecorations(
           }
         }
 
-        const isLiveBlockLine = liveBlockLines.has(line.number);
-
-        const assetEmbed = isLiveBlockLine || codeFenceLines.all.has(line.number)
-          ? null
-          : getAssetEmbedPreview(line.text, assetLinks);
-
-        if (
-          assetEmbed &&
-          !hasActivePositionInRange(activePositions, line.from, line.to)
-        ) {
-          ranges.push(previewStandaloneEmbedLine.range(line.from));
-          ranges.push(
-            Decoration.replace({
-              widget: new AssetEmbedPreviewWidget(
-                assetEmbed.asset,
-                assetEmbed.label,
-                assetEmbed.attributes,
-              ),
-            }).range(line.from, line.to),
-          );
-
-          position = line.to + 1;
-          continue;
-        }
-
-        if (!isLiveBlockLine) {
+        // Standalone images (asset embeds included) are Live blocks now
+        // (`live-blocks.ts`), drawn by a state field over the whole document so
+        // their height is known before they scroll into view.
+        if (!liveBlockLines.has(line.number)) {
           const lineRanges = decorateInactiveMarkdownLine(
             doc,
             line.number,
@@ -4018,6 +3941,7 @@ function buildLivePreviewDecorations(
             codeFenceLines.marks.has(line.number),
             activePositions,
             frontmatterEndLine,
+            revealPoints,
           );
 
           ranges.push(...lineRanges);
@@ -4033,29 +3957,6 @@ function buildLivePreviewDecorations(
   }
 
   return Decoration.set(ranges, true);
-}
-
-function getAssetEmbedPreview(
-  lineText: string,
-  assetLinks: AssetEmbedResolutionMap,
-) {
-  const parsed = parseAssetEmbedSource(lineText);
-
-  if (!parsed) {
-    return null;
-  }
-
-  const asset = assetLinks[parsed.assetId];
-
-  if (!asset) {
-    return null;
-  }
-
-  return {
-    asset,
-    label: parsed.label || asset.displayName,
-    attributes: parsed.attributes,
-  };
 }
 
 function findAssetEmbedAtSelection(
@@ -4201,23 +4102,12 @@ function getActiveMarkdownBlockRange(
       : { from: fromLineNumber, to: toLineNumber };
   }
 
-  if (/^(#{1,6}\s+)/.test(startLine.text)) {
-    return { from: fromLineNumber, to: toLineNumber };
-  }
-
-  if (/^(>\s?)/.test(startLine.text)) {
-    const calloutBlock = calloutBlockRangeContainingLine(doc, fromLineNumber);
-
-    if (calloutBlock) {
-      return {
-        from: calloutBlock.from,
-        to: Math.max(calloutBlock.to, toLineNumber),
-      };
-    }
-
-    return { from: fromLineNumber, to: toLineNumber };
-  }
-
+  // Headings, quotes and lists used to drop *all* their Live styling while the
+  // caret was in them — a heading shrank to body text, and a click in a list
+  // turned every bullet, checkbox and link in it (and in any paragraph touching
+  // it) back into source, so the page jumped on every click. Their markers now
+  // reveal one at a time, only where the caret actually is
+  // (`decorateInactiveMarkdownLine`), and the line keeps its shape.
   const htmlBlock = htmlBlockRangeContainingLine(doc, fromLineNumber);
 
   if (htmlBlock) {
@@ -4225,23 +4115,6 @@ function getActiveMarkdownBlockRange(
       from: htmlBlock.from,
       to: Math.max(htmlBlock.to, toLineNumber),
     };
-  }
-
-  const listPrefix = startLine.text.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/);
-
-  if (listPrefix) {
-    let from = fromLineNumber;
-    let to = toLineNumber;
-
-    while (from > 1 && isListContinuation(doc.line(from - 1).text)) {
-      from -= 1;
-    }
-
-    while (to < doc.lines && isListContinuation(doc.line(to + 1).text)) {
-      to += 1;
-    }
-
-    return { from, to };
   }
 
   return null;
@@ -4358,6 +4231,7 @@ function decorateInactiveMarkdownLine(
   isFenceDelimiter: boolean,
   activePositions: number[],
   frontmatterEndLine = 0,
+  revealPoints: readonly number[] = [],
 ) {
   const ranges: RangeLike[] = [];
 
@@ -4383,6 +4257,7 @@ function decorateInactiveMarkdownLine(
       text,
       calloutBlock,
       activePositions,
+      revealPoints,
     );
   }
 
@@ -4410,7 +4285,7 @@ function decorateInactiveMarkdownLine(
 
   if (setextHeadingLevel) {
     ranges.push(headingDecorationForLevel(setextHeadingLevel).range(lineFrom));
-    addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+    addInlinePreviewDecorations(ranges, lineFrom, text, activePositions, revealPoints);
 
     return ranges;
   }
@@ -4451,8 +4326,12 @@ function decorateInactiveMarkdownLine(
   const quote = text.match(/^(>\s*)/);
 
   if (quote) {
+    const markerTo = lineFrom + quote[0].length;
     ranges.push(previewQuote.range(lineFrom));
-    ranges.push(hiddenMarkdown.range(lineFrom, lineFrom + quote[0].length));
+
+    if (!hasActivePositionInRange(activePositions, lineFrom, markerTo)) {
+      ranges.push(hiddenMarkdown.range(lineFrom, markerTo));
+    }
   }
 
   const list = text.match(/^(\s*)([-*+]\s+\[[ xX/-]]\s+|[-*+]\s+|\d+\.\s+)/);
@@ -4502,7 +4381,7 @@ function decorateInactiveMarkdownLine(
     }
   }
 
-  addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+  addInlinePreviewDecorations(ranges, lineFrom, text, activePositions, revealPoints);
 
   return ranges;
 }
@@ -4621,6 +4500,7 @@ function decorateInactiveCalloutLine(
   text: string,
   calloutBlock: NonNullable<ReturnType<typeof calloutBlockRangeContainingLine>>,
   activePositions: number[],
+  revealPoints: readonly number[] = [],
 ) {
   const isFirst = lineNumber === calloutBlock.from;
   const isLast = lineNumber === calloutBlock.to;
@@ -4664,7 +4544,7 @@ function decorateInactiveCalloutLine(
         ),
       }).range(lineFrom, lineFrom + calloutBlock.callout.markerLength),
     );
-    addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+    addInlinePreviewDecorations(ranges, lineFrom, text, activePositions, revealPoints);
 
     return ranges;
   }
@@ -4683,7 +4563,7 @@ function decorateInactiveCalloutLine(
     );
   }
 
-  addInlinePreviewDecorations(ranges, lineFrom, text, activePositions);
+  addInlinePreviewDecorations(ranges, lineFrom, text, activePositions, revealPoints);
 
   return ranges;
 }
@@ -4740,6 +4620,7 @@ function addInlinePreviewDecorations(
   lineFrom: number,
   text: string,
   activePositions: number[],
+  revealPoints: readonly number[] = [],
 ) {
   const inlineCodeRanges = getInlineCodeRanges(text).map(({ from, to }) => ({
     from: lineFrom + from,
@@ -4762,7 +4643,7 @@ function addInlinePreviewDecorations(
   ];
 
   addInlineHtmlDecorations(ranges, lineFrom, text, activePositions);
-  addWikiImageDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
+  addWikiImageDecorations(ranges, lineFrom, text, revealPoints, inlineCodeRanges);
   addInlineMathDecorations(ranges, lineFrom, text, activePositions, inlineCodeRanges);
   addRegexDecorations(
     ranges,
@@ -4845,8 +4726,8 @@ function addInlinePreviewDecorations(
     activePositions,
     protectedInlineRanges,
   );
-  addLinkDecorations(ranges, lineFrom, text, activePositions, protectedInlineRanges);
-  addWikiLinkDecorations(ranges, lineFrom, text, activePositions, protectedInlineRanges);
+  addLinkDecorations(ranges, lineFrom, text, revealPoints, protectedInlineRanges);
+  addWikiLinkDecorations(ranges, lineFrom, text, revealPoints, protectedInlineRanges);
 }
 
 /**
@@ -4983,11 +4864,12 @@ function getInlineCodeRanges(text: string) {
   return ranges;
 }
 
+/** Rendered unless a reveal point (`liveRevealField`) is on it. */
 function addWikiImageDecorations(
   ranges: RangeLike[],
   lineFrom: number,
   text: string,
-  activePositions: number[],
+  revealPoints: readonly number[],
   protectedRanges: Array<{ from: number; to: number }> = [],
 ) {
   for (const match of text.matchAll(/!\[\[([^\]\n]+)\]\]/g)) {
@@ -5004,7 +4886,7 @@ function addWikiImageDecorations(
 
     if (
       !safeSrc ||
-      hasActivePositionInRange(activePositions, from, to) ||
+      hasActivePositionInRange(revealPoints, from, to) ||
       overlapsAnyRange(from, to, protectedRanges)
     ) {
       continue;
@@ -5018,11 +4900,12 @@ function addWikiImageDecorations(
   }
 }
 
+/** Rendered unless a reveal point (`liveRevealField`) is on it. */
 function addWikiLinkDecorations(
   ranges: RangeLike[],
   lineFrom: number,
   text: string,
-  activePositions: number[],
+  revealPoints: readonly number[],
   protectedRanges: Array<{ from: number; to: number }> = [],
 ) {
   for (const match of text.matchAll(/(?<!!)\[\[([^\]\n]+)\]\]/g)) {
@@ -5034,7 +4917,7 @@ function addWikiLinkDecorations(
     const to = from + match[0].length;
 
     if (
-      hasActivePositionInRange(activePositions, from, to) ||
+      hasActivePositionInRange(revealPoints, from, to) ||
       overlapsAnyRange(from, to, protectedRanges)
     ) {
       continue;
@@ -5833,11 +5716,12 @@ function addRegexDecorations(
   }
 }
 
+/** Rendered unless a reveal point (`liveRevealField`) is on it. */
 function addLinkDecorations(
   ranges: RangeLike[],
   lineFrom: number,
   text: string,
-  activePositions: number[],
+  revealPoints: readonly number[],
   protectedRanges: Array<{ from: number; to: number }> = [],
 ) {
   for (const match of text.matchAll(/\[([^\]\n]+)]\(([^)\n]+)\)/g)) {
@@ -5851,7 +5735,7 @@ function addLinkDecorations(
     const to = from + match[0].length;
 
     if (
-      hasActivePositionInRange(activePositions, from, to) ||
+      hasActivePositionInRange(revealPoints, from, to) ||
       overlapsAnyRange(from, to, protectedRanges)
     ) {
       continue;
@@ -5872,7 +5756,7 @@ function overlapsAnyRange(
 }
 
 function hasActivePositionInRange(
-  activePositions: number[],
+  activePositions: readonly number[],
   from: number,
   to: number,
 ) {
