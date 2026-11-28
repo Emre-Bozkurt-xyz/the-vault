@@ -15,4 +15,7 @@ RUN apk add --no-cache nodejs
 WORKDIR /app
 COPY worker.mjs ./
 
-CMD ["node", "worker.mjs"]
+# This must be the entrypoint, not CMD: the docker image's docker-entrypoint.sh prefixes `docker`
+# to any command that is also a Docker subcommand, and `node` is one (swarm
+# nodes). With CMD the container ran `docker node worker.mjs` and crash-looped.
+ENTRYPOINT ["node", "worker.mjs"]

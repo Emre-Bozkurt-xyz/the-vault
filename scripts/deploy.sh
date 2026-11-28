@@ -115,8 +115,10 @@ if grep -qx 'CODE_EXECUTION_ENABLED=true' "$ENV_FILE"; then
   # flight gets stop_grace_period to finish; one that cannot is reported as an
   # infrastructure error and is never re-run.
   dc --profile runner up -d --build --force-recreate runner
-  sleep 3
-  if [[ "$(docker inspect -f '{{.State.Running}}' vault-runner 2>/dev/null)" != "true" ]]; then
+  sleep 5
+  # A crash-looping container reads Running=true between restarts, so also
+  # require that it has not restarted at all since this recreate.
+  if [[ "$(docker inspect -f '{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}' vault-runner 2>/dev/null)" != "true false 0" ]]; then
     echo "[deploy] ERROR: the runner did not stay up."
     dc --profile runner logs --tail=50 runner || true
     exit 1
