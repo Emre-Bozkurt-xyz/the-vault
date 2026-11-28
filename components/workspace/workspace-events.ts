@@ -149,3 +149,30 @@ export function subscribeToWorkspaceTabOpened(
     window.removeEventListener(workspaceTabOpenedEvent, handler);
   };
 }
+
+export const workspaceCloseActiveTabEvent = "vault:workspace-close-active-tab";
+
+/**
+ * Asks the tab strip to close the active tab, as its X button would. For entry
+ * points outside the strip (the command palette); the `global.closeTab`
+ * shortcut is handled by the strip itself.
+ */
+export function dispatchWorkspaceCloseActiveTab() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event(workspaceCloseActiveTabEvent));
+}
+
+export function subscribeToWorkspaceCloseActiveTab(listener: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  window.addEventListener(workspaceCloseActiveTabEvent, listener);
+
+  return () => {
+    window.removeEventListener(workspaceCloseActiveTabEvent, listener);
+  };
+}

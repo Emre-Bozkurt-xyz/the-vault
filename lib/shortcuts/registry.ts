@@ -34,6 +34,14 @@ export const shortcuts: ShortcutDef[] = [
     scope: "global",
     defaultBinding: "Mod-Alt-t",
   },
+  {
+    // Not Mod-w: browsers reserve Ctrl/Cmd+W and pages cannot intercept it.
+    id: "global.closeTab",
+    label: "Close tab",
+    category: "Global",
+    scope: "global",
+    defaultBinding: "Alt-w",
+  },
 
   // Editor — inline formatting
   {

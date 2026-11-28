@@ -54,7 +54,10 @@ import type {
   WorkspacePageDescriptor,
   WorkspacePageType,
 } from "@/components/workspace/workspace-types";
-import { dispatchWorkspaceDocumentRemoved } from "@/components/workspace/workspace-events";
+import {
+  dispatchWorkspaceCloseActiveTab,
+  dispatchWorkspaceDocumentRemoved,
+} from "@/components/workspace/workspace-events";
 import {
   dispatchDocumentCommand,
   requestOpenRightPanel,
@@ -173,6 +176,15 @@ export function WorkspaceCommandPalette() {
         keywords: "workspace",
         icon: Home,
         run: navigate("/workspace"),
+      },
+      {
+        id: "close-tab",
+        slug: "close",
+        label: "Close tab",
+        group: "Go to",
+        keywords: "tab close shut",
+        icon: X,
+        run: () => dispatchWorkspaceCloseActiveTab(),
       },
       ...(tasksEnabled
         ? [

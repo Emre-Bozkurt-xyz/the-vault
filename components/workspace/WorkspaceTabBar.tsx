@@ -25,7 +25,9 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { cn } from "@/lib/utils";
+import { useGlobalShortcuts } from "@/components/shortcuts/KeybindingsProvider";
 import {
+  subscribeToWorkspaceCloseActiveTab,
   subscribeToWorkspaceDocumentChanges,
   subscribeToWorkspaceDocumentRemovals,
   subscribeToWorkspaceTabOpened,
@@ -217,6 +219,24 @@ export function WorkspaceTabBar({
       return nextTabs;
     });
   }
+
+  function closeActiveTab() {
+    const activeTab = tabsRef.current.find((tab) => tab.href === canonicalActiveHref);
+    if (activeTab) {
+      closeTab(activeTab);
+    }
+  }
+
+  // Alt+W by default (Ctrl/Cmd+W belongs to the browser). The palette's
+  // "Close tab" command reaches the same path through a window event.
+  useGlobalShortcuts({ "global.closeTab": closeActiveTab });
+  const closeActiveTabRef = useRef(closeActiveTab);
+  useEffect(() => {
+    closeActiveTabRef.current = closeActiveTab;
+  });
+  useEffect(() => {
+    return subscribeToWorkspaceCloseActiveTab(() => closeActiveTabRef.current());
+  }, []);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
